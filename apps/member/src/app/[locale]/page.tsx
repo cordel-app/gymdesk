@@ -8,7 +8,7 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
-import { HomeCartCard } from '@/components/HomeCartCard';
+import { MemberCart } from '@/components/MemberCart';
 import { MemberDialog } from '@/components/MemberDialog';
 import { MembersSectionCard, useSectionImageUrl } from '@/components/MembersSectionCard';
 import {
@@ -282,7 +282,7 @@ export default function HomePage() {
       {/* #2973 stage 1 — the cart card, the same cart My Products shows. */}
       {!loading && member && featureEnabled('member_web.my_membership') && (
         <section style={styles.section}>
-          <HomeCartCard viewerId={member.id ?? null} />
+          <MemberCart />
         </section>
       )}
 

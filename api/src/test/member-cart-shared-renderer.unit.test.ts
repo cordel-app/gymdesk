@@ -9,35 +9,40 @@ const member = join(__dirname, '../../../apps/member');
 const read = (p: string) => readFileSync(join(member, p), 'utf8');
 
 describe('shared cart renderer', () => {
-  it('both pages render CartCard and neither restates the cart card markup', () => {
-    const home = read('src/components/HomeCartCard.tsx');
+  it('#2973 stage 6: Home and My Products mount the one MemberCart and neither restates the card', () => {
+    const home = read('src/app/[locale]/page.tsx');
     const page = read('src/app/[locale]/membership/page.tsx');
-    expect(home).toContain('<CartCard');
-    expect(page).toContain('<CartCard');
-    expect(home).not.toContain('cartSummaryStyle');
+    expect(home).toContain('<MemberCart');
+    expect(page).toContain('<MemberCart');
+    expect(() => read('src/components/HomeCartCard.tsx')).toThrow();
+    expect(page).not.toContain('<CartCard');
     expect(page).not.toContain('style={cartSummaryStyle}');
   });
 
-  it('the Home cart has no Open my cart button and says when staff are editing', () => {
-    const home = read('src/components/HomeCartCard.tsx');
-    expect(home).not.toContain('cart_open');
-    expect(home).toContain('staffEditing');
+  it('the cart carries its Summary, beneficiaries, countdown, actions and dialogs; the Add buttons stay outside it', () => {
+    const cart = read('src/components/MemberCart.tsx');
+    const card = read('src/components/CartCard.tsx');
+    const page = read('src/app/[locale]/membership/page.tsx');
+    expect(cart).toContain('<CartCard');
+    expect(cart).toContain('cartBeneficiaryLabel');
+    expect(cart).toContain('<CartSummary');
+    expect(cart).toContain('data-draft-expiry');
+    expect(cart).toContain('cart_discard_title');
+    expect(cart).toContain('payment_consent');
+    expect(cart).not.toContain('add_plan');
+    expect(cart).not.toContain('add_product');
+    expect(card).toContain('data-cart-beneficiary');
+    expect(page).toContain('renderCartAddButtons');
+    expect(page.indexOf('<MemberCart')).toBeLessThan(page.indexOf('{renderCartAddButtons(phase'));
+  });
+
+  it('says when staff are editing (locale keys exist)', () => {
+    expect(read('src/components/MemberCart.tsx')).toContain('staffEditing');
     for (const l of ['en', 'es', 'ca']) {
       const msgs = JSON.parse(read(`locales/base/${l}.json`));
       expect(msgs.membership.cart_staff_editing).toBeTruthy();
       expect(msgs.home.cart_open).toBeUndefined();
     }
-  });
-
-  it('#2973 stage 4: the Summary sits inside the card on both pages and lines name their beneficiary', () => {
-    const home = read('src/components/HomeCartCard.tsx');
-    const page = read('src/app/[locale]/membership/page.tsx');
-    const card = read('src/components/CartCard.tsx');
-    expect(home).toContain('cartBeneficiaryLabel');
-    expect(page).toContain('cartBeneficiaryLabel');
-    expect(card).toContain('data-cart-beneficiary');
-    expect(page).toContain("summary={review && setView?.status === 'in_cart' ? <CartSummary review={review} /> : undefined}");
-    expect(page).toContain('!hasCart(setView, viewerId, standaloneCart) && <CartSummary');
   });
 });
 

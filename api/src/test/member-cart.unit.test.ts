@@ -124,10 +124,11 @@ describe('the cart awaiting payment (#2746 stage 3, §6)', () => {
   });
 
   it('cancels the whole purchase through #2747’s route, after a confirmation', () => {
-    const page = readFileSync(PAGE, 'utf-8');
-    expect(page).toContain('/cancel`, { method: \'POST\' }');
-    expect(page).toContain('setConfirmPendingCancel(true)');
-    expect(page).toContain('headingKey="membership.cart_pending_heading"');
+    // #2973 stage 6: the cart is the shared MemberCart, which owns the route and the confirmation.
+    const cart = readFileSync(join(MEMBER, 'src', 'components', 'MemberCart.tsx'), 'utf-8');
+    expect(cart).toContain('/cancel`, { method: \'POST\' }');
+    expect(cart).toContain('setConfirmPendingCancel(true)');
+    expect(cart).toContain('headingKey="membership.cart_pending_heading"');
   });
 });
 
@@ -224,8 +225,9 @@ describe('the page (§1–§2)', () => {
   });
 
   it('asks before the global Cancel discards the whole Draft', () => {
-    expect(page).toContain('setConfirmDiscard(true)');
-    expect(page).toContain("t('membership.cart_discard_body')");
+    const cart = readFileSync(join(MEMBER, 'src', 'components', 'MemberCart.tsx'), 'utf-8');
+    expect(cart).toContain('setConfirmDiscard(true)');
+    expect(cart).toContain("t('membership.cart_discard_body')");
   });
 
   it('spells no colour of its own: the cart card is memberChrome’s', () => {
