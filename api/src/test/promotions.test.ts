@@ -1673,3 +1673,40 @@ describe('applies_to', () => {
     ).rejects.toThrow();
   });
 });
+
+// ─── #3081: the plan picker offers Membership Plan Promotions only ────────────
+
+describe('GET /promotions?membership_plan_id= respects applies_to (#3081)', () => {
+  let gymId: string;
+  let planId: number;
+  let planPromo: number;
+  let productPromo: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Applies To Filter Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, `ATF Plan ${Date.now()}`, 'active');
+    planPromo = await createPromo(gymId, 'ATF Plan Promo');
+    productPromo = await createPromo(gymId, 'ATF Product Promo');
+    await db.query(`UPDATE promotions SET applies_to = 'product' WHERE id = ?`, [productPromo]);
+    // A Product Promotion keeps the Suitable Membership Plans it had before its
+    // target was switched (#926), so both are linked to the plan.
+    for (const id of [planPromo, productPromo]) {
+      await db.query(
+        'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+        [gymId, id, planId],
+      );
+    }
+  });
+
+  it('lists the Membership Plan Promotion and not the Product one', async () => {
+    const res = await request
+      .get(`/promotions?lifecycle_status=active&membership_plan_id=${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((p: any) => p.id);
+    expect(ids).toContain(planPromo);
+    expect(ids).not.toContain(productPromo);
+  });
+});
