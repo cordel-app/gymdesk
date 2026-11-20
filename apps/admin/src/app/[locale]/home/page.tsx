@@ -314,6 +314,8 @@ export default function HomePage() {
                           <button type="button" style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center' }} title={t('class_celebrate')} aria-label={t('class_celebrate')}
                             data-testid={`home-class-celebrate-${k.id}`} onClick={() => setAttendeesFor({ id: k.id, name: k.name, mode: 'celebrate' })}><PartyIcon size={16} /></button>
                         )}
+                        <Link href={startClassHref(k.id, locale)} style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }} title={t('class_open_calendar')} aria-label={t('class_open_calendar')}
+                          data-testid={`home-class-calendar-${k.id}`}><CalendarIcon size={16} /></Link>
                         <button type="button" style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center' }} title={t('class_attendees')} aria-label={t('class_attendees')}
                           data-testid={`home-class-attendees-${k.id}`} onClick={() => setAttendeesFor({ id: k.id, name: k.name, mode: 'view' })}><ListIcon size={16} /></button>
                         {canStartClass(k.status) && canWriteCalendar && (

@@ -5897,7 +5897,8 @@
     "cancel_class": "Cancelar clase",
     "class_celebrate": "Celebrar",
     "class_cancel": "Cancelar",
-    "class_attendees": "Ver asistentes"
+    "class_attendees": "Ver asistentes",
+    "class_open_calendar": "Abrir en el Calendario"
   },
   "base_products": {
     "no_description": "Sin descripción disponible.",
