@@ -19,6 +19,7 @@ import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 import { cartChargeLine, cartPurchasesForCharge, joinCartPurchasesToEvent } from './cart-checkout';
+import { writeEventLines } from './billing-line-origins';
 import { initialEventNameFor } from './billing-event-name';
 import { loadInitialChargeTaxRates } from './initial-charge-taxes';
 import { initialLineTaxRate, withLineTax } from '../domain/initialChargeTaxes';
@@ -241,19 +242,8 @@ export async function initialCharge(
   };
 }
 
-export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
-  for (const l of lines) {
-    await tx.query(
-      `INSERT INTO billing_event_lines
-         (gym_id, billing_event_id, kind, product_id, item_name, item_type, quantity, regular_unit_price,
-          treatment_action, treatment_value, promotion_name, prorated_days, period_days,
-          tax_rate_percent, tax_behavior, amount_excl_tax, amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, eventId, l.kind, l.product_id, l.item_name, l.item_type, l.quantity, l.regular_unit_price,
-        l.treatment_action, l.treatment_value, l.promotion_name, l.prorated_days, l.period_days,
-        l.tax_rate_percent, l.tax_behavior, l.amount_excl_tax, l.amount],
-    );
-  }
+export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[], productSetId: number | null = null) {
+  await writeEventLines(tx, gymId, eventId, productSetId, lines);
 }
 
 /**
@@ -311,7 +301,7 @@ export async function ensureInitialEvent(tx: Tx, input: {
     [input.gymId, input.memberId, name, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
       scheduleId, input.startsAt, input.charge.billingDate ?? input.startsAt, input.actor],
   );
-  await writeLines(tx, input.gymId, insertId, input.charge.lines);
+  await writeLines(tx, input.gymId, insertId, input.charge.lines, input.productSetId);
   // #2746: each one-time Product of the cart reaches its payment through this event.
   await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, insertId);
   // #2949 stage 5: and so does every standalone cart purchase the charge included (pending_payment now).
