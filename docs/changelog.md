@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3104 (Admin Home → Today's tasks gets *Members with access to be reviewed*: `GET /dashboard/home` adds the `access_to_review` task, counting members whose stored access is `granted` and whose Payment Status is failed or expired — the predicate `deriveAccessRights()` uses — with sample names; it links to `Members?access_rights=to_be_reviewed`, the filter the list already offers; shown only with Members access.)
 - **Done**: #3007 stage 6 (removing a recurring line from a Draft follows the In Cart rule: a line the Draft added is removed from it, a line running on the Active version is marked ended on the Draft's own copy — last paid day, else today — so the Active version keeps billing it until Save & Pay and a discarded Draft leaves it untouched; no column on a shared snapshot, `removeService()` only)
 - **Done**: #3101 stage 2 (Members → Products → `+ Add Product`: the Products table's add row now has its own Quantity cell, an editable field starting at 1 for a recurring Product and a fixed 1 for a one-time one; stage 1 only added the field to the standalone add form, not to the table row the admin actually uses; no API change).
 - **Done**: #3097 (Admin Home → Today's Classes: every class row keeps a calendar-icon link that opens the event in the Calendar, including after the class is completed or cancelled, when the Start button is no longer offered.)

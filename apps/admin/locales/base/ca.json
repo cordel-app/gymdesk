@@ -5866,6 +5866,7 @@
     "task_events_without_space": "{count, plural, one {# esdeveniment d’aquesta setmana no té espai} other {# esdeveniments d’aquesta setmana no tenen espai}}",
     "task_events_without_trainer": "{count, plural, one {# esdeveniment d’aquesta setmana no té entrenador} other {# esdeveniments d’aquesta setmana no tenen entrenador}}",
     "task_welcome_new_members": "{count, plural, one {# membre nou per rebre} other {# membres nous per rebre}}",
+    "task_access_to_review": "{count, plural, one {# membre té l'accés pendent de revisar} other {# membres tenen l'accés pendent de revisar}}",
     "task_services_not_scheduled": "{count, plural, one {# membre té sessions de servei sense programar} other {# membres tenen sessions de servei sense programar}}",
     "task_events_with_waitlist": "{count, plural, one {# esdeveniment proper té llista d’espera} other {# esdeveniments propers tenen llista d’espera}} ({people, plural, one {# persona} other {# persones}})",
     "task_payments_with_issues": "{count, plural, one {# pagament té una incidència} other {# pagaments tenen una incidència}}",

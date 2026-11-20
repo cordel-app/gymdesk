@@ -49,6 +49,7 @@ describe('tasks', () => {
   });
   it('lead to the existing management screens', () => {
     expect(taskHref('welcome_new_members', 'en')).toBe('/en/members?welcomed=false');
+    expect(taskHref('access_to_review', 'en')).toBe('/en/members?access_rights=to_be_reviewed');
     expect(taskHref('payments_with_issues', 'es')).toBe('/es/payments/billing-events?status=failed');
     expect(taskHref('events_without_space', 'ca')).toBe('/ca/calendar');
     expect(memberHref(7, 'en')).toBe('/en/members?member=7&tab=products_services');

@@ -12,7 +12,7 @@ export const STORED_ACCESS_RIGHTS = ['granted', 'revoked'] as const;
 export type StoredAccessRights = (typeof STORED_ACCESS_RIGHTS)[number];
 export type AccessRights = StoredAccessRights | 'to_be_reviewed';
 
-const PAYMENT_PROBLEM_STATUSES = ['failed', 'expired'];
+export const PAYMENT_PROBLEM_STATUSES = ['failed', 'expired'];
 
 export function isStoredAccessRights(v: unknown): v is StoredAccessRights {
   return typeof v === 'string' && (STORED_ACCESS_RIGHTS as readonly string[]).includes(v);
