@@ -75,11 +75,14 @@ const uniqueById = <T extends { id: number }>(rows: readonly T[]): T[] => {
 };
 
 /**
- * #2887 — Past plans are the plan snapshots of this Member (gym and member scoped by the
- * server) whose end date is before today, flagged `is_past` by the configuration read. The
- * list and the count beside the heading are the same array, so they cannot disagree; a plan
- * is listed once. Cancelled Product Sets are not a second source.
+ * #2887 / #3086 — the Past list and the count beside the heading are this one array, so
+ * they cannot disagree, and a plan is listed once. Cancelled Product Sets are not a second
+ * source: their summary header is not drawn above the table.
+ *
+ * A plan is past when its snapshot end date is before today (`is_past`) or when it is
+ * neither live nor current — the assignment rows the table showed before `is_past`, including
+ * a finished plan with no end date. Listing only `is_past` dropped that table and the section.
  */
 export function pastPlans(plans: readonly MemberPlanRow[]): MemberPlanRow[] {
-  return uniqueById(plans.filter((p) => p.is_past === true));
+  return uniqueById(plans.filter((p) => p.is_past === true || (!p.is_live && !p.is_current)));
 }

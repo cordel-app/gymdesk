@@ -135,7 +135,8 @@ export function MemberMembershipPlans({
   const live = plans.filter((p) => p.is_live);
   // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
   const visible = visiblePlans(plans);
-  // #2887: the Past list and its count come from one decision.
+  // #2887/#3086: the Past list and its count come from one decision. Cancelled
+  // never-assigned plans are not drawn as a summary above the table.
   const history = pastPlans(plans);
   // #2742: a plan the member chose in the Members App and has not paid yet has no
   // assignment row until the payment activates it; it is listed in Active from its

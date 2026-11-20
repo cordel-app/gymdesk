@@ -3,13 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { pastPlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, over: Record<string, unknown> = {}) => ({
-  id, membership_plan_id: 1, plan_name: `P${id}`, status: 'cancelled', is_live: false, is_past: true, ...over,
+  id, membership_plan_id: 1, plan_name: `P${id}`, status: 'cancelled',
+  is_live: false, is_current: true, is_past: true, ...over,
 }) as any;
 
 describe('pastPlans', () => {
   it('lists exactly the plans whose end date is before today', () => {
     const r = pastPlans([plan(1), plan(2, { is_past: false }), plan(3, { is_past: undefined })]);
     expect(r.map((p) => p.id)).toEqual([1]);
+  });
+
+  it('#3086: keeps a finished assignment in the list when it has no end date before today', () => {
+    const finished = plan(5, { is_past: false, is_live: false, is_current: false });
+    const stillCurrent = plan(6, { is_past: false, is_live: false, is_current: true });
+    expect(pastPlans([finished, stillCurrent]).map((p) => p.id)).toEqual([5]);
   });
 
   it('lists a plan read twice once', () => {
