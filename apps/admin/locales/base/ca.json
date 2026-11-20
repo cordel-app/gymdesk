@@ -483,7 +483,7 @@
     "quote_direct_discount": "Descompte directe ({percent}%)",
     "quote_vat": "IVA",
     "quote_final_price": "Preu final (IVA incl.)",
-    "add_product_simulation_recurring_hint": "Crea l'esborrany per veure els períodes de facturació resultants.",
+    "add_product_simulation_recurring_hint": "Afegeix aquest producte a la cistella per veure els períodes de facturació resultants.",
     "add_product_simulation_one_time": "Pagament únic: {amount}. Sense càrrecs recurrents.",
     "add_product_create_purchase": "Crear compra",
     "add_product_cancel": "Cancel·la",

@@ -482,7 +482,7 @@
     "quote_direct_discount": "Descuento directo ({percent}%)",
     "quote_vat": "IVA",
     "quote_final_price": "Precio final (IVA incl.)",
-    "add_product_simulation_recurring_hint": "Crea el borrador para ver los periodos de facturación resultantes.",
+    "add_product_simulation_recurring_hint": "Añade este producto al carrito para ver los periodos de facturación resultantes.",
     "add_product_simulation_one_time": "Pago único: {amount}. Sin cargos recurrentes.",
     "add_product_create_purchase": "Crear compra",
     "add_product_cancel": "Cancelar",
