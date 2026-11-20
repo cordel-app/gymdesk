@@ -100,7 +100,7 @@ export interface HomeTask {
   /** Secondary figure (waiting-list people for E). */
   secondary?: number;
   /** Up to a few names, for the member tasks. */
-  samples?: { id: number; name: string; detail?: string | null }[];
+  samples?: { id: number; name: string; detail?: string | null; image_url?: string | null; image_thumbnail_url?: string | null }[];
 }
 
 /** A task is shown only when something is outstanding. */

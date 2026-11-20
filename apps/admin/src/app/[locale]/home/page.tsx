@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
+import { PromotionImageModal } from '../promotions/PromotionImageModal';
 import { useUser } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
@@ -67,6 +68,7 @@ export default function HomePage() {
   const { flags: featureFlags } = useFeatureFlags();
   const motivationalSentence = ((activeGym?.theme?.tokens as { motivationalSentence?: unknown } | undefined)?.motivationalSentence);
   const sentence = typeof motivationalSentence === 'string' ? motivationalSentence.trim() : '';
+  const [imageFor, setImageFor] = useState<{ id: number; name: string; image_url?: string | null; image_thumbnail_url?: string | null } | null>(null);
   const [welcomeFor, setWelcomeFor] = useState<{ id: number; name: string } | null>(null);
   const [messageClass, setMessageClass] = useState<{ id: number; name: string } | null>(null);
   const tc = useTranslations('calendar');
@@ -196,7 +198,15 @@ export default function HomePage() {
                       </div>
                       {task.samples.map((s) => (
                         <div key={s.id} className="gd-home-row" style={{ ...row, borderTop: 0, paddingTop: 4 }} data-testid={`home-welcome-${s.id}`}>
-                          <Link href={memberHref(s.id, locale)} style={{ color: 'inherit', fontWeight: 600 }}>{s.name}</Link>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                            {s.image_thumbnail_url || s.image_url ? (
+                              <button type="button" onClick={() => setImageFor(s)} aria-label={s.name} data-testid={`home-welcome-photo-${s.id}`}
+                                style={{ padding: 0, border: 0, background: 'none', cursor: 'zoom-in', borderRadius: '50%', display: 'inline-flex' }}>
+                                <Avatar name={s.name} src={s.image_thumbnail_url ?? s.image_url ?? null} />
+                              </button>
+                            ) : <Avatar name={s.name} src={null} />}
+                            <Link href={memberHref(s.id, locale)} style={{ color: 'inherit', fontWeight: 600 }}>{s.name}</Link>
+                          </div>
                           <button type="button" style={primaryBtnSmall()} onClick={() => setWelcomeFor(s)}>{t(TASK_ACTION_KEY[task.key])}</button>
                         </div>
                       ))}
@@ -349,6 +359,10 @@ export default function HomePage() {
       {cancelFor && (
         <HomeClassCancel sessionId={cancelFor.id} sessionName={cancelFor.name} hasEnded={cancelFor.hasEnded}
           onClose={() => setCancelFor(null)} onCancelled={load} />
+      )}
+      {imageFor && (
+        <PromotionImageModal name={imageFor.name} imageUrl={imageFor.image_url ?? imageFor.image_thumbnail_url}
+          onClose={() => setImageFor(null)} closeLabel={tm('close')} noImageLabel={tm('image_none')} />
       )}
       {welcomeFor && (
         <MemberCommunicationModal
