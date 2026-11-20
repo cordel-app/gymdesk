@@ -208,6 +208,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
       emptyText={emptyText}
       expandedRowKeys={expandedIds}
       onToggleExpand={toggleExpand}
+      clickRowToExpand
       renderExpanded={(row) => (
         <div
           tabIndex={-1}
