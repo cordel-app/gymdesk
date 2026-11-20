@@ -482,7 +482,7 @@
     "quote_direct_discount": "Direct discount ({percent}%)",
     "quote_vat": "VAT",
     "quote_final_price": "Final price (incl. VAT)",
-    "add_product_simulation_recurring_hint": "Create the draft to see the resulting billing periods.",
+    "add_product_simulation_recurring_hint": "Add this product to the cart to see the resulting billing periods.",
     "add_product_simulation_one_time": "One-time payment: {amount}. No recurring charges.",
     "add_product_create_purchase": "Create purchase",
     "add_product_cancel": "Cancel",
