@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3101 (Members → Products → `+ Add Product`: a recurring Product's Quantity is an editable field defaulting to 1; `POST /members/:id/product-purchases` accepts an optional `quantity` 1–999 for a recurring Product, `400` otherwise, and the line is created with it; one-time Products are unchanged).
 - **Done**: #3094 (Admin → Members → Products: the access rows of an Assigned Plan (Access to … / All centers / On-line) show the Membership Fee's Billing Frequency instead of an empty value; the plan's other Products already show their own frequency)
 - **Done**: #3093 (Assigned Plan card: when the plan has a Pre-paid Duration above one period, the Membership Fee's Base Price reads `€70.00 × 2 (prepaid periods)` — `original_price_note` on the fee row, display only; the Final Price and billing are untouched)
 - **Done**: #3102 (Admin → Members → Products: a Plan row and a Product row expand and collapse when clicked anywhere on the row, not only on the arrow — `clickRowToExpand` on the Assigned Plans table and the purchased Products table; the arrow stays, and clicks on buttons, links and the `⋮` menu still do not toggle)
