@@ -5219,6 +5219,7 @@
     "col_promotion_benefit": "Promotion Benefit",
     "col_direct_discount": "Direct Discount",
     "fee_breakdown_fee": "Membership Fee",
+    "fee_prepaid_multiplier": "× {count} (prepaid periods)",
     "access_all_centers": "Access to all centers",
     "access_all_centers_online": "Access to all centers and On-line",
     "access_centers": "Access to {centers}",

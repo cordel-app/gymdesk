@@ -5205,6 +5205,7 @@
     "col_promotion_benefit": "Beneficio de la promoción",
     "col_direct_discount": "Descuento directo",
     "fee_breakdown_fee": "Cuota de membresía",
+    "fee_prepaid_multiplier": "× {count} (periodos prepagados)",
     "access_all_centers": "Acceso a todos los centros",
     "access_all_centers_online": "Acceso a todos los centros y On-line",
     "access_centers": "Acceso a {centers}",

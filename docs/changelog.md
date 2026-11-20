@@ -7,6 +7,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 ## November 2026
 
 - **Done**: #3094 (Admin → Members → Products: the access rows of an Assigned Plan (Access to … / All centers / On-line) show the Membership Fee's Billing Frequency instead of an empty value; the plan's other Products already show their own frequency)
+- **Done**: #3093 (Assigned Plan card: when the plan has a Pre-paid Duration above one period, the Membership Fee's Base Price reads `€70.00 × 2 (prepaid periods)` — `original_price_note` on the fee row, display only; the Final Price and billing are untouched)
 - **Done**: #3102 (Admin → Members → Products: a Plan row and a Product row expand and collapse when clicked anywhere on the row, not only on the arrow — `clickRowToExpand` on the Assigned Plans table and the purchased Products table; the arrow stays, and clicks on buttons, links and the `⋮` menu still do not toggle)
 
 - **Done**: #3098 (Home → Today's tasks → New members to welcome shows each member's circular profile thumbnail; clicking it opens the 1080 × 1080 image in the shared image modal. `GET /dashboard/home` task samples gain `image_url` / `image_thumbnail_url`.)
