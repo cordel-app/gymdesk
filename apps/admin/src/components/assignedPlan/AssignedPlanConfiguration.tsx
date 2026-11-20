@@ -338,6 +338,10 @@ export function AssignedPlanConfiguration({
     direct_discount_line_incl_tax: null,
     original_price_incl_tax: feeInclTax ?? (snapshot.membership_fee_price != null ? Number(snapshot.membership_fee_price) : null),
     final_price_incl_tax: currentFee,
+    // #3093: a pre-paid duration charges several periods up front, so the Base Price says
+    // how many it is multiplied by (display only; the Final Price is the engine's).
+    original_price_note: Number(snapshot.pay_beforehand_periods) > 1
+      ? t('fee_prepaid_multiplier', { count: Number(snapshot.pay_beforehand_periods) }) : null,
     original_line_price_incl_tax: null,
     final_line_price_incl_tax: null,
   };
