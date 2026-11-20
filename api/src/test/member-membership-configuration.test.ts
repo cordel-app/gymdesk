@@ -506,7 +506,7 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    // Full history, newest starts_at first.
+    // Full history, in creation order (#3111).
     expect(res.body.plans.map((p: any) => p.id)).toEqual([liveUm, cancelledUm, expiredUm]);
     expect(res.body.plans.map((p: any) => p.is_live)).toEqual([true, false, false]);
     expect(dateOnly(res.body.plans[1].ends_at)).toBe('2026-05-31');
