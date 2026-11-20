@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3085 (Activity edit gets **Apply to future events**: `PUT /activity-types/:id` with `apply_to_future_events: true` re-applies the Activity's whole resulting configuration — space, trainer, center, color, capacity, Professional Service — to its future non-cancelled events and clears their image and waitlist-mode overrides; past events are untouched. A change of Professional Service that would cancel booked or waitlisted bookings answers `409 booking_cancellation_required` with the event and booking counts and writes nothing until `confirm_cancel_bookings: true`; the Admin shows that as an Accept/Cancel dialog.)
+
 - **Done**: #3111 (Members → Products: a newly added Membership Plan row is appended at the end of the Plans list; `GET /user-memberships/member/:id/configuration` now lists plans oldest first by creation; no other behaviour changed).
 - **Done**: #3103 (Home's Add Member quick action reliably opens the Add Member form on the Members page: the `?add=1` param is read after mount instead of during the first render, which missed it on client-side navigation).
 - **Done**: #3086 (Members → Products → Past Plans shows only the Assigned Plans table when expanded: the summary header of cancelled never-assigned plans stays removed, and a finished assignment stays in that table even with no end date before today, so the section is not dropped; the count is the table's row count; no API change)
