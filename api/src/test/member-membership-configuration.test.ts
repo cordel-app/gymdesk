@@ -420,17 +420,17 @@ describe('GET /user-memberships/member/:memberId/configuration — a replaced pl
       .toHaveLength(1);
   });
 
-  it('returns both plans newest starts_at first, with only the current one live', async () => {
+  it('returns both plans in creation order (a newly added plan last, #3111), with only the current one live', async () => {
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
     expect(res.body.plans).toHaveLength(2);
-    expect(res.body.plans.map((p: any) => p.id)).toEqual([premiumUm, standardUm]);
+    expect(res.body.plans.map((p: any) => p.id)).toEqual([standardUm, premiumUm]);
     expect(res.body.plans.map((p: any) => p.plan_name)).toEqual([
-      'Parallel Premium', 'Parallel Standard',
+      'Parallel Standard', 'Parallel Premium',
     ]);
-    expect(res.body.plans.map((p: any) => p.is_live)).toEqual([true, false]);
+    expect(res.body.plans.map((p: any) => p.is_live)).toEqual([false, true]);
     // A fee is still resolved for the replaced plan: it is what that cycle cost.
-    expect(res.body.plans.map((p: any) => Number(p.membership_fee))).toEqual([100, 75]);
+    expect(res.body.plans.map((p: any) => Number(p.membership_fee))).toEqual([75, 100]);
   });
 
   it('reports no promotions, though both plans carry one (#931)', async () => {
