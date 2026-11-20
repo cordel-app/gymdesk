@@ -37,14 +37,14 @@ describe('#3020 inline product row editing', () => {
     // The area is drawn inside the product cell, not as a block below the row.
     expect(src).toContain('{promotionsArea(item)}');
     expect(src).not.toContain('              {promotionsArea(item)}\n              {editing?.rowId');
-    expect(src).toContain('addProductDraftCells(editForm, null)');
+    expect(src).toContain('addProductDraftCells(editForm, null, { frequencyInCell: false })');
     expect(src).not.toContain('promotionsInCell: false');
   });
   it('does not show the draft hint while editing a row', () => {
     const feedback = form.slice(form.indexOf('export function AddProductFeedback'), form.indexOf('export function AddProductActions'));
     expect(feedback).not.toContain('add_product_simulation_recurring_hint');
   });
-  it('shows the thumbnail (opens the Product modal), the frequency in the header and the tax in the expanded row (#3021)', () => {
+  it('shows the thumbnail (opens the Product modal), the frequency in its own column (#3088) and the tax in the expanded row (#3021)', () => {
     expect(src).toContain('data-product-thumbnail');
     expect(src).toContain('setImageOf(item)');
     expect(src).toContain('<ProfessionalServiceImageModal');
