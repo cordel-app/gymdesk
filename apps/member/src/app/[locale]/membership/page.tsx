@@ -366,6 +366,10 @@ export default function MembershipPage() {
   const [planDraftError, setPlanDraftError] = useState<{ planId: number; key: string } | null>(null);
   // #2496 stage 5 — the Draft's Summary (the Admin's own review) and its one commit.
   const [review, setReview] = useState<MemberSetReview | null>(null);
+  // #2973 stage 5 — the Summary of a cart with no Draft to review: one awaiting payment
+  // (the version's own review) or standalone purchases alone (`GET /me/cart/summary`).
+  // Display only: the commit logic keeps reading `review`.
+  const [cartSummary, setCartSummary] = useState<MemberSetReview | null>(null);
   const [commitBusy, setCommitBusy] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   // #2746 stage 2 — the cart's global Cancel asks first; the item a per-item
@@ -599,6 +603,20 @@ export default function MembershipPage() {
       .catch(() => { if (!cancelled) setReview(null); });
     return () => { cancelled = true; };
   }, [setView]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const done = (r: MemberSetReview | null) => { if (!cancelled) setCartSummary(r); };
+    if (setView?.status === 'pending_payment') {
+      apiFetch<MemberSetReview>(`/me/product-sets/${setView.id}/review`).then(done).catch(() => done(null));
+    } else if (!setView && standaloneCart.purchases.length > 0) {
+      apiFetch<MemberSetReview>('/me/cart/summary').then(done).catch(() => done(null));
+    } else {
+      done(null);
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setView, standaloneCart]);
 
   /**
    * #2496 stage 5 — one Save & Pay for the whole Draft: the Admin's own commit,
@@ -1310,6 +1328,7 @@ export default function MembershipPage() {
           counts={counts}
           total={total}
           hintKeys={['membership.cart_pending_hint']}
+          summary={cartSummary ? <CartSummary review={cartSummary} /> : undefined}
           items={toCartCardItems(items as any, (a: number | null | undefined, c?: string | null) => (a == null ? null : formatPaymentAmount(a, c ?? 'EUR', gymFmt)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
           actions={(
             <>
@@ -1365,6 +1384,7 @@ export default function MembershipPage() {
           counts={t('membership.cart_products', { count: items.length })}
           total={total}
           hintKeys={beside ? ['membership.cart_standalone_hint'] : []}
+          summary={!beside && cartSummary ? <CartSummary review={cartSummary} /> : undefined}
           extra={!beside && remaining != null ? (
             <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
               {t('membership.draft_expires_in')} {remaining}

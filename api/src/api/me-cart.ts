@@ -3,6 +3,8 @@
  * Product Set carries (§3). Mounted at `/me/cart`, the member never named by the request (#1036).
  *
  *   GET    /purchases        the member's standalone `in_cart` purchases, with their expiry (#2962)
+ *   GET    /summary          #2973 stage 5: the Summary of a cart of standalone purchases alone, in the
+ *                            shape of `GET /me/product-sets/:id/review` (same lines `POST /checkout` charges)
  *   POST   /purchases        adds one (`resolveDraftPurchase()` + `writeDraftPurchase()`, the path a
  *                            staff draft and a cart Product Set's purchase already take); no Product
  *                            Set is created, read or required
@@ -31,7 +33,8 @@ import {
 } from './me-products';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { lockPurchase, deletePurchase } from './purchase-writer';
-import { CartCheckoutRefused, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
+import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
+import { chargeLineView, contractedItems } from '../domain/checkoutSummary';
 
 export const meCartRouter = Router();
 meCartRouter.use(requireRole('member'), requireFeatureEnabled('member_web.my_membership'), requireFeatureEnabled('financials.products'));
@@ -76,6 +79,51 @@ meCartRouter.get('/purchases', async (req: Request, res: Response, next: NextFun
     const { gymId, memberId } = await memberOf(req);
     await expireStandalonePurchaseDrafts({ gymId, memberId });
     res.json(await cartBody(gymId, memberId));
+  } catch (err) { next(err); }
+});
+
+/**
+ * #2973 stage 5 — the Summary of a cart that holds only standalone purchases (no Product Set carries
+ * them; when one does, its own review lists them). Read-only; the figures are the very lines
+ * `POST /checkout` charges (`cartChargeLine()`), reported in the review's shape so the one Members App
+ * Summary draws both. Nothing is priced here.
+ */
+meCartRouter.get('/summary', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { gymId, memberId } = await memberOf(req);
+    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    const cart = await loadCartPurchases(db, gymId, memberId);
+    const amountDue = cartTotal(cart);
+    const memberIds = [...new Set(cart.map((p) => p.assigned_member_id ?? memberId))];
+    const names = new Map<number, string | null>();
+    if (memberIds.length > 0) {
+      const { rows } = await db.query<any>(
+        `SELECT id, name FROM members WHERE gym_id = ? AND id IN (${memberIds.map(() => '?').join(',')})`,
+        [gymId, ...memberIds]);
+      for (const r of rows) names.set(Number(r.id), r.name ?? null);
+    }
+    const lines = cart.map((p) => chargeLineView(cartChargeLine(p).line));
+    res.json({
+      product_set_id: 0,
+      status: 'in_cart',
+      summary_items: cart.map((p) => ({
+        state: 'draft', type: 'product', name: p.product_name, quantity: null, billing_frequency: null,
+        regular_price: p.list_price ?? p.amount, promotions: [], initial_amount: p.amount, final_price: null,
+      })),
+      immediate_lines: lines,
+      amount_due: amountDue,
+      payment_required: amountDue > 0,
+      tax_total: null,
+      currency: cart[0]?.currency ?? 'EUR',
+      error: null,
+      contracted_items: contractedItems({
+        plans: [], lines: [],
+        purchases: cart.map((p) => ({
+          product_name: p.product_name, units: null, billing_frequency: null,
+          assigned_member_id: p.assigned_member_id, member_id: memberId,
+        })),
+      }, names),
+    });
   } catch (err) { next(err); }
 });
 
