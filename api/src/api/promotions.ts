@@ -110,6 +110,10 @@ promotionsRouter.get('/', async (req, res, next) => {
       WHERE pmp.promotion_id = p.id AND pmp.membership_plan_id = ? AND pmp.gym_id = ?
     )`);
     params.push(membershipPlanId, gymId);
+    // #3081: a Product Promotion keeps its (hidden) Suitable Membership Plans
+    // rows when the target is switched (#926), so the join alone would offer it
+    // for a plan assignment; the target decides.
+    where.push('p.applies_to = ?'); params.push('membership_plan');
   }
 
   try {
