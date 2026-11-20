@@ -58,11 +58,15 @@ interface DataTableProps<T> {
   // as its child (a Product's Promotion). `null` draws nothing, so a row with
   // nothing to nest gets no empty block.
   renderNested?: (row: T) => React.ReactNode | null;
+  // #3088: top-aligns every cell and gives each value a line of this height, so
+  // a row whose first cell is tall (a name with its Promotions under it) keeps
+  // the other values level with the name instead of centred on the whole row.
+  alignTop?: number;
 }
 
 export function DataTable<T>({
   columns, rows, rowKey, loading, loadingText, emptyText,
-  renderExpanded, expandedRowKeys, onToggleExpand, clickRowToExpand, draftRow, draftRowPosition = 'top', renderNested,
+  renderExpanded, expandedRowKeys, onToggleExpand, clickRowToExpand, draftRow, draftRowPosition = 'top', renderNested, alignTop,
 }: DataTableProps<T>) {
   if (loading) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{loadingText}</p>;
   if (rows.length === 0 && !draftRow) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{emptyText}</p>;
@@ -147,11 +151,13 @@ export function DataTable<T>({
                         className={listCellClass(col.mobile)}
                         // The full name, for the cell a phone truncates.
                         title={col.mobile === 'name' ? col.title?.(row) : undefined}
-                        style={td}
+                        style={alignTop ? { ...td, verticalAlign: 'top' } : td}
                       >
                         {col.mobile === 'name'
                           ? <div className={LIST_NAME_VALUE_CLASS}>{value}</div>
-                          : value}
+                          : alignTop && col.header !== ''
+                            ? <div style={{ minHeight: alignTop, display: 'flex', alignItems: 'center' }}>{value}</div>
+                            : value}
                       </td>
                     );
                   })}

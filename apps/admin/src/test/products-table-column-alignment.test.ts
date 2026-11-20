@@ -9,7 +9,7 @@ import { draftRowCells } from '../components/draftRowCells';
 const TABLE = readFileSync(join(__dirname, '..', 'app', '[locale]', 'members', 'MemberPurchasedProducts.tsx'), 'utf8');
 
 const EXPECTED_ORDER = [
-  'product', 'quantity', 'assigned_to', 'date', 'end_date', 'price', 'promotion',
+  'product', 'frequency', 'quantity', 'assigned_to', 'date', 'end_date', 'price', 'promotion',
   'promotion_benefit', 'discount', 'final', 'payment_status', 'status',
 ];
 
