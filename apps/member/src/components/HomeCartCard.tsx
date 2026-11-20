@@ -41,16 +41,23 @@ export function HomeCartCard({ viewerId }: { viewerId: number | null }) {
         .catch(() => EMPTY_STANDALONE_CART);
       let v: MemberCartView | null = null;
       let r: MemberSetReview | null = null;
+      let inFlight = false;
       try {
         const rows = await apiFetch<SetRow[]>('/me/product-sets');
         const row = rows.find((x) => x.status === 'in_cart') ?? rows.find((x) => x.status === 'pending_payment');
         if (row) {
           v = await apiFetch<MemberCartView>(`/me/product-sets/${row.id}`);
-          if (v.status === 'in_cart' && !v.awaiting_staff_setup) {
+          // #2973 stage 5: a cart awaiting payment has its Summary too (the same review).
+          if ((v.status === 'in_cart' && !v.awaiting_staff_setup) || v.status === 'pending_payment') {
             r = await apiFetch<MemberSetReview>(`/me/product-sets/${row.id}/review`).catch(() => null);
           }
+          inFlight = true;
         }
       } catch { v = null; }
+      // A cart of standalone purchases alone has no set to review: the member-scoped summary read.
+      if (!inFlight && cart.purchases.length > 0) {
+        r = await apiFetch<MemberSetReview>('/me/cart/summary').catch(() => null);
+      }
       if (cancelled) return;
       setStandalone(cart); setView(v); setReview(r);
     }
@@ -98,7 +105,7 @@ export function HomeCartCard({ viewerId }: { viewerId: number | null }) {
       total={total}
       staffEditing={phase === 'awaiting_staff'}
       hintKeys={phase === 'awaiting_staff' ? ['membership.cart_staff_hint'] : []}
-      summary={review && phase === 'draft' ? <CartSummary review={review} /> : undefined}
+      summary={review && (phase === 'draft' || phase === 'pending_payment' || phase === 'standalone') ? <CartSummary review={review} /> : undefined}
       items={toCartCardItems(items as any, (a, c) => (a == null ? null : formatPaymentAmount(a, c ?? currency, gymFormat)), cartBeneficiaryLabel(review, t('membership.summary_beneficiary_family')))}
     />
   );
