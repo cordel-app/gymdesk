@@ -124,4 +124,18 @@ describe('owning a recurring line (#2126 stage 5c-2c)', () => {
     const original = (await db.query<any>(`SELECT id FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [lineId])).rows;
     expect(original).toHaveLength(1);
   });
+
+  it('removing a line running on the previous version marks it ended on the Draft\'s copy only (#3007)', async () => {
+    const { creatorSet, otherSet, lineId, snapshotId } = await sharedLine();
+    await db.query('UPDATE product_sets SET previous_product_set_id = ? WHERE id = ?', [creatorSet, otherSet]);
+    const res = await db.transaction(async (tx) => removeService(tx, await locked(tx, otherSet), lineId));
+    expect(res).toMatchObject({ ok: true, deleted: false, ends_at: TODAY });
+    const mine = await linkedSnapshots(otherSet);
+    expect(mine).toHaveLength(1);
+    expect(Number(mine[0].id)).not.toBe(snapshotId);
+    expect(new Date(mine[0].ends_at).toDateString()).toBe(new Date(TODAY + 'T12:00:00').toDateString());
+    const theirs = await linkedSnapshots(creatorSet);
+    expect(theirs.map((r: any) => Number(r.id))).toEqual([snapshotId]);
+    expect(theirs[0].ends_at).toBeNull();
+  });
 });

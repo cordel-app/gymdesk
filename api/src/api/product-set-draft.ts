@@ -654,7 +654,9 @@ export async function removeService(
     [serviceId, draft.gym_id]);
   if (!locked[0]) return { kind: 'not_found' };
   const { rows } = await tx.query<any>(
-    `SELECT s.starts_at, s.ends_at, s.schedule_id FROM product_set_periodical_snapshots lnk
+    `SELECT s.starts_at, s.ends_at, s.schedule_id,
+            ${recurringLineInheritedSql('s', 'lnk.product_set_id')} AS inherited
+       FROM product_set_periodical_snapshots lnk
        JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
       WHERE s.source_id = ? AND s.gym_id = ? AND lnk.product_set_id = ?`,
     [serviceId, draft.gym_id, draft.id]);
@@ -664,7 +666,12 @@ export async function removeService(
     return { kind: 'conflict', error: message, message };
   }
   const today = new Date().toISOString().slice(0, 10);
-  const deleted = !opts.legacy || dateOnly(rows[0].starts_at) > today;
+  // #3007 stage 6 — a line the Draft itself added (In Cart) is simply removed from it; a line that
+  // is running on the Active version is marked to be cancelled on the Draft's own copy of it (the
+  // copy below, so the Active version keeps billing it until Save & Pay and a discarded Draft takes
+  // the mark with it), ending on its last paid day. The legacy route keeps ending any started line.
+  const inherited = Number(rows[0].inherited) === 1;
+  const deleted = (opts.legacy ? false : !inherited) || dateOnly(rows[0].starts_at) > today;
   let endsAt = today;
   // #2126 stage 5c-2c: a line another Product Set links is copied for the Draft
   // before it is written; `lineId` is the Draft's own line.
