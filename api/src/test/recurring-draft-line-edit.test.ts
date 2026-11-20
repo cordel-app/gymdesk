@@ -262,7 +262,10 @@ describe('editing a Draft line (#2856)', () => {
     expect(await openLines(draftId)).toHaveLength(0);
     expect(await openLines(activeId)).toHaveLength(1);
     const pending = (await listed(m)).find((i) => i.product_id === towel);
-    expect(pending).toMatchObject({ status: 'active', pending_termination: true, draft_line_id: null });
+    // #3007 stage 6: a line running on the Active version is ended on the Draft's own copy (it stays
+    // listed, carried by the Draft), never deleted from it; the Active version keeps billing it.
+    expect(pending).toMatchObject({ status: 'active', });
+    expect(pending.draft_line_id).not.toBeNull();
     expect(await setsOf(m)).toBe(2);
   });
 
