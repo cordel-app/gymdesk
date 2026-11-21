@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
 import { createDraft, addCoverage, cancelInFlight } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { ensureRecurringDraft } from '../api/recurring-purchase-draft';
@@ -105,14 +105,18 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     const v1 = await commit(owner, [promo]);
     const umV1 = await assignmentOf(v1);
     const heldByV1 = await rowsHeldBy(v1);
-    expect(heldByV1['user_membership_promotions']).toBeGreaterThan(0);
+    // #3026 stage 3d-1: the application is the plan snapshot's own row.
+    const planApplications = async (setId: number) => (await legacyChildQuery(
+      'SELECT id, status FROM user_membership_promotions WHERE product_set_id = ?', [setId])).rows;
+    expect((await planApplications(v1)).length).toBeGreaterThan(0);
 
     const draft = await draftFrom(owner);
     const heldByDraft = await rowsHeldBy(draft);
-    // The Draft holds independent copies of the applications; the plan it leaves unchanged is the
-    // Active version's own snapshot, linked rather than copied (#2125 M4b-3).
+    // The plan the Draft leaves unchanged is the Active version's own snapshot, linked rather than
+    // copied (#2125 M4b-3), and its applications are that snapshot's rows: the Draft reads the very
+    // same ones and holds no copy.
     expect(heldByDraft['plan_snapshots']).toBeUndefined();
-    expect(heldByDraft['user_membership_promotions']).toBeGreaterThan(0);
+    expect((await planApplications(draft)).map((a: any) => a.id)).toEqual((await planApplications(v1)).map((a: any) => a.id));
     const { rows: links } = await db.query<any>(
       `SELECT j.plan_snapshot_id FROM product_set_plan_snapshots j WHERE j.product_set_id IN (?, ?) ORDER BY j.product_set_id`, [v1, draft]);
     expect(links).toHaveLength(2);
@@ -162,12 +166,12 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     expect(await names(umV2)).toEqual([promo]);
     // ...the plan was not changed, so its assignment is the same one, still active (#2125 M4b-3)...
     expect(umV2).toBe(umV1);
-    // ...and the previous version is superseded, never deleted, still readable: its applications are its
-    // own history, detached from the assignment the successor's copies now belong to.
+    // ...and the previous version is superseded, never deleted, still readable. The plan was not
+    // changed, so both versions link one plan snapshot and its application stands on it (#3026).
     expect(await statusOf('product_sets', v1)).toBe('superseded');
-    const { rows: apps } = await db.query<any>(
+    const { rows: apps } = await legacyChildQuery(
       'SELECT status, user_membership_id FROM user_membership_promotions WHERE product_set_id = ?', [v1]);
-    expect(apps.map((a: any) => [a.status, a.user_membership_id])).toEqual([['superseded', null]]);
+    expect(apps.map((a: any) => [a.status, a.user_membership_id])).toEqual([['applied', umV1]]);
     expect((await rowsHeldBy(v1))['product_set_plan_snapshots']).toBeGreaterThan(0);
     const { rows: shared } = await db.query<any>(
       'SELECT COUNT(DISTINCT plan_snapshot_id) AS n FROM product_set_plan_snapshots WHERE product_set_id IN (?, ?)', [v1, draft]);

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
 import { addCoverage } from '../api/product-sets';
 import { activateWithEvents } from '../api/product-set-configuration';
 import { ensureRecurringDraft, startRecurringPurchaseDraft } from '../api/recurring-purchase-draft';
@@ -55,7 +55,7 @@ async function activate(setId: number, owner: number, first: boolean) {
     if (out.kind !== 'ok') throw new Error(out.kind);
   });
 }
-const apps = async (setId: number) => (await db.query<any>(
+const apps = async (setId: number) => (await legacyChildQuery(
   'SELECT id, promotion_id, status, recurrent_snapshot_id FROM user_membership_promotions WHERE product_set_id = ? ORDER BY id', [setId])).rows;
 
 beforeAll(async () => { gymId = await createTestGym('Product promo line owner'); });
@@ -91,7 +91,7 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
       `SELECT id, product_set_id FROM ${TEST_RECURRING_LINES} AS legacy WHERE id = ?`, [copied[0].recurrent_snapshot_id]);
     expect(Number(line[0].product_set_id)).toBe(first.productSetId);
     expect(Number(line[0].id)).toBe(first.lineId);
-    const { rows: grants } = await db.query<any>(
+    const { rows: grants } = await legacyChildQuery(
       'SELECT user_membership_promotion_id FROM user_membership_promotion_periodical_snapshot WHERE user_membership_promotion_id IN (?, ?)',
       [a1.id, copied[0].id]);
     expect(grants).toHaveLength(2);
@@ -113,7 +113,7 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     // #2126 stage 5d-1: through the line writer, which deletes the snapshot the application references.
     await db.transaction((tx) => deleteRecurringLine(tx, gymId, Number(copied[0].recurrent_snapshot_id)));
     expect(await apps(draft)).toHaveLength(0);
-    const { rows: gone } = await db.query<any>(
+    const { rows: gone } = await legacyChildQuery(
       'SELECT id FROM user_membership_promotion_periodical_snapshot WHERE user_membership_promotion_id = ?', [copied[0].id]);
     expect(gone).toHaveLength(0);
   });

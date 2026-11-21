@@ -1,11 +1,10 @@
-// #3026 stage 3a — a Plan Promotion application is written onto the plan snapshot by the writer
-// itself (apply / revoke / confirm), not only derived later by syncPlanSnapshot(). The row is the
-// same one the derivation would write (keyed by the legacy application id), so the two never duplicate.
+// #3026 — a Membership Plan Promotion application is the plan snapshot's own row
+// (`plan_promotion_snapshots`), written by `plan-promotion-writer.ts` and nothing else. Since stage
+// 3d-1 no `user_membership_promotions` row is written for it.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { recordPlanPromotionApplied, recordPlanPromotionGrants, recordPlanPromotionRevoked } from '../api/plan-promotion-writer';
-import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
+import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
@@ -37,70 +36,66 @@ beforeAll(async () => {
      VALUES (?, ?, NULL, 1, 'percentage_discount', 10)`, [gymId, promoId]);
 });
 
-describe('Plan Promotion snapshot writer (#3026 stage 3a)', () => {
-  it('apply and revoke write the plan snapshot row; the later derivation adds no duplicate', async () => {
-    const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'PPW Member', `ppw-${Date.now()}@test.com`]);
+describe('Plan Promotion snapshot writer (#3026)', () => {
+  const draft = async (label: string) => {
+    const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, label, `ppw-${Date.now()}-${Math.random()}@test.com`]);
     const umId = await createTestDraftAssignment(gymId, Number(m.insertId), planId, { config: { base_price: 100 } });
-
     const res = await request.post(`/user-memberships/${umId}/promotions`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ promotion_id: promoId });
     expect(res.status).toBe(201);
-
     const { rows: set } = await db.query<any>(
       `SELECT ps.id FROM product_sets ps WHERE ps.owner_member_id = ? AND ps.status = 'in_cart'`, [Number(m.insertId)]);
-    const setId = Number(set[0].id);
-    const rows = async () => (await db.query<any>(
-      `SELECT pps.status, pps.source_id FROM plan_promotion_snapshots pps
-         JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = pps.plan_snapshot_id
-        WHERE psj.product_set_id = ? AND pps.promotion_id = ?`, [setId, promoId])).rows;
+    return { umId, setId: Number(set[0].id) };
+  };
+  const rows = async (setId: number) => (await db.query<any>(
+    `SELECT pps.id, pps.status, pps.source_id, pps.snapshot, pps.snapshot_confirmed_at FROM plan_promotion_snapshots pps
+       JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = pps.plan_snapshot_id
+      WHERE psj.product_set_id = ? AND pps.promotion_id = ?`, [setId, promoId])).rows;
 
-    expect(await rows()).toHaveLength(1);
-    // The writer is idempotent on the application id and the derivation lands on the same row.
-    await db.transaction(async (tx) => {
-      const { rows: ump } = await tx.query<any>('SELECT id FROM user_membership_promotions WHERE product_set_id = ?', [setId]);
-      await recordPlanPromotionApplied(tx, gymId, setId, { id: Number(ump[0].id), promotionId: promoId, actor: 'Test' });
-      await syncPlanSnapshot(tx, gymId, setId);
-    });
-    expect(await rows()).toHaveLength(1);
+  it('applying writes one reference on the plan snapshot and no legacy row; removing it deletes it', async () => {
+    const { umId, setId } = await draft('PPW Member');
+    const applied = await rows(setId);
+    expect(applied).toHaveLength(1);
+    expect(applied[0]).toMatchObject({ status: 'applied', source_id: null, snapshot: null, snapshot_confirmed_at: null });
+    const { rows: legacy } = await db.query<any>('SELECT id FROM user_membership_promotions WHERE product_set_id = ?', [setId]);
+    expect(legacy).toHaveLength(0);
 
-    await db.transaction(async (tx) => { await recordPlanPromotionRevoked(tx, gymId, setId, promoId, 'Test'); });
-    expect((await rows())[0].status).toBe('revoked');
+    // A second application of the same Promotion on the same plan is refused.
+    const again = await request.post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ promotion_id: promoId });
+    expect(again.status).toBe(409);
+    expect(await rows(setId)).toHaveLength(1);
+
+    const removed = await request.delete(`/user-memberships/${umId}/promotions/${promoId}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(removed.status).toBeLessThan(300);
+    expect(await rows(setId)).toHaveLength(0);
   });
 
-  it('confirming writes the grant rows under the plan promotion snapshot, once, keyed by the legacy grant id (#3026 stage 3c-1)', async () => {
-    const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'PPW Grants', `ppw-g-${Date.now()}@test.com`]);
-    const umId = await createTestDraftAssignment(gymId, Number(m.insertId), planId, { config: { base_price: 100 } });
-    const res = await request.post(`/user-memberships/${umId}/promotions`)
-      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ promotion_id: promoId });
-    expect(res.status).toBe(201);
-    const { rows: set } = await db.query<any>(
-      `SELECT ps.id FROM product_sets ps WHERE ps.owner_member_id = ? AND ps.status = 'in_cart'`, [Number(m.insertId)]);
-    const setId = Number(set[0].id);
+  it('confirming freezes the snapshot and the grant rows from the Promotion as it stands, once', async () => {
     const prod = await db.query(
-      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status) VALUES (?, 'PPW Locker', 'other', 15, 'EUR', 'month', 'active')`, [gymId]);
-
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status) VALUES (?, 'PPW Locker', 'other', 15, 'EUR', 'once', 'active')`, [gymId]);
+    await db.query(
+      `INSERT INTO promotion_oneoff (gym_id, promotion_id, product_id, quantity) VALUES (?, ?, ?, 2)`,
+      [gymId, promoId, Number(prod.insertId)]);
+    const { setId } = await draft('PPW Grants');
     const grants = async () => (await db.query<any>(
-      `SELECT g.source_id, g.product_id, g.quantity FROM plan_promotion_oneoff_product_snapshots g
+      `SELECT g.product_id, g.product_name, g.quantity, g.unit_price FROM plan_promotion_oneoff_product_snapshots g
          JOIN plan_promotion_snapshots pps ON pps.id = g.plan_promotion_snapshot_id
          JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = pps.plan_snapshot_id
         WHERE psj.product_set_id = ?`, [setId])).rows;
     expect(await grants()).toHaveLength(0);
 
-    let legacyId = 0;
-    await db.transaction(async (tx) => {
-      const { rows: ump } = await tx.query<any>('SELECT id FROM user_membership_promotions WHERE product_set_id = ?', [setId]);
-      const ins = await tx.query(
-        `INSERT INTO user_membership_promotion_oneoff_snapshot
-           (gym_id, user_membership_promotion_id, product_id, product_name, quantity, item_type, unit_price, currency)
-         VALUES (?, ?, ?, 'PPW Locker', 2, 'other', 15, 'EUR')`, [gymId, Number(ump[0].id), Number(prod.insertId)]);
-      legacyId = Number(ins.insertId);
-      await recordPlanPromotionGrants(tx, gymId, Number(ump[0].id));
-      await recordPlanPromotionGrants(tx, gymId, Number(ump[0].id)); // idempotent
-      await syncPlanSnapshot(tx, gymId, setId); // the derivation lands on the same row
-    });
-    const rows = await grants();
-    expect(rows).toHaveLength(1);
-    expect(Number(rows[0].source_id)).toBe(legacyId);
-    expect(Number(rows[0].quantity)).toBe(2);
+    await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, setId));
+    await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, setId)); // a retry writes nothing more
+
+    const confirmed = await rows(setId);
+    expect(confirmed).toHaveLength(1);
+    expect(confirmed[0].snapshot_confirmed_at).not.toBeNull();
+    expect(confirmed[0].snapshot).not.toBeNull();
+    const frozen = await grants();
+    expect(frozen).toHaveLength(1);
+    expect(frozen[0]).toMatchObject({ product_id: Number(prod.insertId), product_name: 'PPW Locker', quantity: 2 });
+    expect(Number(frozen[0].unit_price)).toBe(15);
   });
 });

@@ -22,7 +22,7 @@ import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { deletePlanPromotionReferences, recordPlanPromotionRevoked } from './plan-promotion-writer';
+import { deletePlanPromotionReferences, removePlanPromotion } from './plan-promotion-writer';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -81,7 +81,10 @@ export async function copyProductTargetApplications(tx: Tx, gymId: string, fromS
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId }, { onlyProductTarget: true });
 }
 
-/** Copies applied Promotions (and the grants each froze) between two versions. */
+/**
+ * Copies applied **Product-target** Promotions (and the grants each froze) between two versions.
+ * #3026 stage 3d-1: a Plan application is its plan snapshot's row, linked or copied with the snapshot.
+ */
 async function copyApplications(
   tx: Tx, gymId: string, from: { productSetId: number }, to: { productSetId: number },
   opts: { onlyProductTarget?: boolean } = {},
@@ -90,7 +93,7 @@ async function copyApplications(
     `SELECT id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
             modified_at, modified_by, recurrent_snapshot_id, snapshot_confirmed_at
        FROM user_membership_promotions ump WHERE gym_id = ? AND product_set_id = ?
-        ${opts.onlyProductTarget ? "AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')" : ''}`,
+        AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')`,
     [gymId, from.productSetId]);
   // #2126 stage 3u — a line-owned application finds its line in the successor through
   // `product_periodical_snapshots` and the successor's links (since stage 5c-2c-2 a clone links the
@@ -521,6 +524,11 @@ export function revokePromotionMutator(promotionId: number, actor: string | null
     // M4b-2: revoking changes the plan's applied Promotions, so the version takes its own copy of the plan.
     const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
     await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+    // #3026 stage 3d-1: a Plan application is the plan snapshot's own row, removed there first
+    // (a Draft's reference deleted, a confirmed application revoked and kept).
+    const onSnapshot = await removePlanPromotion(tx, draft.gym_id, draft.id, promotionId, actor);
+    // Product-target applications (and a Plan application written before stage 3d-1) are
+    // `user_membership_promotions` rows: the same rule, asked of that table.
     const { draftReferenceApplicationSql } = await import('../domain/draftPromotionApplication');
     const { rows: standingRef } = await tx.query<{ id: number }>(
       `SELECT ump.id FROM user_membership_promotions ump
@@ -548,8 +556,7 @@ export function revokePromotionMutator(promotionId: number, actor: string | null
               modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ? AND status = 'applied'`,
       [actor, draft.gym_id, draft.id, promotionId]);
-    if (rowCount === 0) return { kind: 'not_found' };
-    await recordPlanPromotionRevoked(tx, draft.gym_id, draft.id, promotionId, actor);
+    if (rowCount === 0 && onSnapshot === 'none') return { kind: 'not_found' };
     return { ok: true };
   };
 }

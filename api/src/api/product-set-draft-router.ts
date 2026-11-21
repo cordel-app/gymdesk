@@ -205,10 +205,18 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
     const { rowCount } = await tx.query(
       'DELETE FROM user_membership_promotions WHERE id = ? AND gym_id = ? AND product_set_id = ?',
       [Number(req.params.applicationId), draft.gym_id, draft.id]);
-    if (rowCount === 0) return { kind: 'not_found' as const };
-    // #3026 stage 3c-3: the plan snapshot's row goes with it (nothing derives it away any more).
+    // #3026 stage 3d-1: a Plan application's id is its plan snapshot row's, on the Draft's own primary plan.
     const { deletePlanPromotionReferences } = await import('./plan-promotion-writer');
-    await deletePlanPromotionReferences(tx, draft.gym_id, [Number(req.params.applicationId)]);
+    if (rowCount > 0) {
+      await deletePlanPromotionReferences(tx, draft.gym_id, [Number(req.params.applicationId)]);
+    } else {
+      const { primaryPlanSnapshotId } = await import('./plan-snapshot-lines');
+      const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+      const { rowCount: onSnapshot } = snapshotId == null ? { rowCount: 0 } : await tx.query(
+        'DELETE FROM plan_promotion_snapshots WHERE id = ? AND gym_id = ? AND plan_snapshot_id = ?',
+        [Number(req.params.applicationId), draft.gym_id, snapshotId]);
+      if (onSnapshot === 0) return { kind: 'not_found' as const };
+    }
     await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [draft.id]);
     return { ok: true as const };
   }, next, { remove_promotion: Number(req.params.applicationId) }));

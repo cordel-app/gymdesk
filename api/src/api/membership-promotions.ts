@@ -1,7 +1,9 @@
 import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { recordPlanPromotionApplied, recordPlanPromotionConfirmed, recordPlanPromotionGrants } from './plan-promotion-writer';
+import {
+  confirmPlanPromotionReferences, insertPlanPromotionReference, recordPlanPromotionConfirmed, recordPlanPromotionGrants,
+} from './plan-promotion-writer';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionMutator, revokePromotionMutator } from './product-set-bridge';
@@ -799,13 +801,6 @@ export async function applyPromotionToProductSet(
     throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
   }
 
-  // The owner is the assignment the version is itself linked to (a set-first
-  // Draft); a clone Draft is linked at projection, never to its predecessor's.
-  const { rows: own } = await tx.query<any>(
-    `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
-    [productSetId, gymId]);
-  const ownUm = promo.applies_to === 'membership_plan' && own[0]?.user_membership_id != null
-    ? Number(own[0].user_membership_id) : null;
   // M4b-2: a Plan Promotion changes the plan it is applied to, so the version takes its own copy of
   // that plan first — `syncPlanSnapshot()` writes the application onto the primary snapshot only when
   // no other set shares it.
@@ -816,14 +811,22 @@ export async function applyPromotionToProductSet(
   // #2833: a Draft records the reference to the Promotion and nothing else — no snapshot and no
   // grant snapshot rows. The Draft is priced and shown from the live Promotion, and the snapshot is
   // taken by `confirmDraftPromotionSnapshots()` in the transaction that confirms the Draft.
+  // #3026 stage 3d-1: a Plan application is the plan snapshot's own row and nothing else — no
+  // `user_membership_promotions` row is written for it; the application's id is that row's.
+  if (!opts.productTarget) {
+    const applicationId = await insertPlanPromotionReference(tx, gymId, productSetId, promotionId, actor);
+    if (applicationId == null) {
+      throw Object.assign(new Error('This ProductSet has no Membership Plan to apply the promotion to'), { status: 400 });
+    }
+    await syncPlanSnapshot(tx, gymId, productSetId);
+    return { application_id: applicationId };
+  }
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
        (gym_id, product_set_id, user_membership_id, recurrent_snapshot_id, promotion_id, created_by, status, snapshot)
-     VALUES (?, ?, ?, ?, ?, ?, 'applied', NULL)`,
-    [gymId, productSetId, ownUm, lineId, promotionId, actor],
+     VALUES (?, ?, NULL, ?, ?, ?, 'applied', NULL)`,
+    [gymId, productSetId, lineId, promotionId, actor],
   );
-  // #3026 stage 3a: a Plan application is written onto the plan snapshot here, not only derived by the sync.
-  if (!opts.productTarget) await recordPlanPromotionApplied(tx, gymId, productSetId, { id: Number(insertId), promotionId, actor });
   await syncPlanSnapshot(tx, gymId, productSetId);
   return { application_id: Number(insertId) };
 }
@@ -873,7 +876,10 @@ export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, prod
     await recordPlanPromotionConfirmed(tx, gymId, Number(app.id), snapshot != null ? JSON.stringify(snapshot) : null);
     await recordPlanPromotionGrants(tx, gymId, Number(app.id));
   }
-  if (rows.length > 0 || discarded > 0) await syncPlanSnapshot(tx, gymId, productSetId);
+  // #3026 stage 3d-1: the references the plan snapshot itself holds (no legacy twin) are confirmed there.
+  const native = await confirmPlanPromotionReferences(
+    tx, gymId, productSetId, (promotionId) => buildPromotionSnapshot(tx, gymId, promotionId));
+  if (rows.length > 0 || discarded > 0 || native > 0) await syncPlanSnapshot(tx, gymId, productSetId);
 }
 
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */

@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment,
-  createTestGym, createTestMembership, request,
+  createTestGym, createTestMembership, request, legacyChildQuery,
 } from './helpers';
 
 afterAll(async () => {
@@ -94,7 +94,7 @@ describe('Promotions only on a plan added in the Draft (#1863)', () => {
     const versionsAfter = await db.query<any>(
       'SELECT id, status FROM product_sets WHERE owner_member_id = ? ORDER BY id', [memberId]);
     expect(versionsAfter.rows).toEqual(versionsBefore.rows);
-    const { rows: apps } = await db.query<any>(
+    const { rows: apps } = await legacyChildQuery(
       `SELECT ump.promotion_id FROM user_membership_promotions ump
          JOIN product_sets ps ON ps.id = ump.product_set_id
         WHERE ps.owner_member_id = ? AND ps.status = 'active'`,

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
 import { createDraft, addCoverage } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { ensureRecurringDraft } from '../api/recurring-purchase-draft';
@@ -89,7 +89,7 @@ async function anchorOf(um: number): Promise<number> {
   return Number(rows[0].a);
 }
 async function keysOf(setId: number) {
-  const { rows } = await db.query<any>(
+  const { rows } = await legacyChildQuery(
     'SELECT promotion_id, user_membership_id, assignment_id FROM user_membership_promotions WHERE product_set_id = ? ORDER BY id', [setId]);
   return rows.map((r: any) => ({
     promotion: Number(r.promotion_id),
@@ -114,21 +114,22 @@ describe('#2125 M6b-33: an application carries its assignment_id beside user_mem
     expect(Number(rows[0].assignment_id)).toBe(anchor);
   });
 
-  it('a successor Draft\'s copy has neither key; at activation it takes the assignment and the predecessor\'s copy loses both', async () => {
+  it('a successor that leaves the plan unchanged reads the same application, on the assignment\'s snapshot', async () => {
     const owner = await member();
     const promo = await promotion();
     const v1 = await commit(owner, [promo]);
     const um = await assignmentOf(v1);
     const anchor = await anchorOf(um);
     const draftId = await draftFrom(owner);
-    expect(await keysOf(draftId)).toEqual([{ promotion: promo, um: null, assignment: null }]);
+    // #3026 stage 3d-1: the application is the plan snapshot's row; the Draft links that snapshot.
+    expect(await keysOf(draftId)).toEqual([{ promotion: promo, um, assignment: anchor }]);
     await db.transaction(async (tx) => {
       const out = await activateWithEvents(tx, { gymId, productSetId: draftId, today: TODAY });
       if (out.kind !== 'ok') throw new Error(out.kind);
     });
     expect(await assignmentOf(draftId)).toBe(um);
     expect(await keysOf(draftId)).toEqual([{ promotion: promo, um, assignment: anchor }]);
-    expect(await keysOf(v1)).toEqual([{ promotion: promo, um: null, assignment: null }]);
+    expect(await keysOf(v1)).toEqual([{ promotion: promo, um, assignment: anchor }]);
   });
 
   it('a Product-target application has no assignment_id', async () => {
@@ -150,18 +151,13 @@ describe('#2125 M6b-33: an application carries its assignment_id beside user_mem
     expect(await keysOf(setId)).toEqual([{ promotion: productPromo, um: null, assignment: null }]);
   });
 
-  it('plan-assignments:validate reports a drifted application, and the backfill repairs it', async () => {
-    expect((await promotionDrift()).count).toBe(0);
+  it('a Plan application writes no legacy row, so there is nothing to drift (#3026 stage 3d-1)', async () => {
     const owner = await member();
     const promo = await promotion();
     const setId = await commit(owner, [promo]);
-    const um = await assignmentOf(setId);
-    await db.query('UPDATE user_membership_promotions SET assignment_id = NULL WHERE product_set_id = ?', [setId]);
-    const drift = await promotionDrift();
-    expect(drift.sample.map((r: any) => [Number(r.user_membership_id), r.assignment_id, Number(r.expected_assignment_id)]))
-      .toEqual([[um, null, await anchorOf(um)]]);
-    await backfillPromotionAssignmentIds({ raw: (sql: string) => db.query(sql) });
+    const { rows } = await db.query<any>(
+      'SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?', [gymId, setId]);
+    expect(rows).toHaveLength(0);
     expect((await promotionDrift()).count).toBe(0);
-    expect((await keysOf(setId))[0].assignment).toBe(await anchorOf(um));
   });
 });
