@@ -202,6 +202,9 @@ export interface PurchasableProductPromotion {
   value: number | null;
   duration_cycles: number | null;
   stackable: boolean;
+  /** #3020: the Promotion's own image, never the Product's. */
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
 }
 
 /** The server's quote (`POST …/product-purchases/quote`): every figure VAT-inclusive. */

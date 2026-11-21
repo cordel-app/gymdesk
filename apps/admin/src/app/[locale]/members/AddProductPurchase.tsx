@@ -292,8 +292,8 @@ export function productPromotionsCell(f: AddProductForm): React.ReactNode {
             name: promo.promotion_name,
             stackable: promo.stackable,
             description: d ? t(d.key as any, d.values as any) : null,
-            // #2854: a Promotion offered here is about this Product, so it shows this Product's thumbnail.
-            imageUrl: product.image_url ?? null,
+            // #3020: the Promotion's own thumbnail (never the Product's), falling back to its image.
+            imageUrl: promo.promotion_image_thumbnail_url ?? promo.promotion_image_url ?? null,
           };
         })}
         selectedIds={f.promotionIds}
