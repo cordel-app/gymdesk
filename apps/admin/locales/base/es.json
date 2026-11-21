@@ -536,7 +536,7 @@
     "add_product_error_duplicate_promotion": "Esta promoción ya está aplicada a este producto.",
     "add_product_error_nothing_to_pay": "Hoy no hay nada que pagar.",
     "add_product_error_draft_expired": "El borrador ha caducado. Empieza de nuevo.",
-    "section_pt_slots": "Franjas de Entrenamiento Personal",
+    "section_pt_slots": "Agenda de Servicios Profesionales",
     "pt_slots_loading": "Cargando franjas…",
     "pt_slots_error": "No se han podido cargar las franjas de Entrenamiento Personal.",
     "pt_slots_no_services": "Este miembro no dispone de sesiones de ningún Servicio Profesional, por lo que no hay franjas elegibles.",
