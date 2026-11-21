@@ -85,7 +85,12 @@ import {
   type MemberPendingPlan,
   type MemberPlanOffer,
   assignErrorKey,
+  beneficiaryCountErrorKey,
   declinedBenefitsPayload,
+  defaultBeneficiaryIds,
+  offersBeneficiaryChoice,
+  toggleBeneficiary,
+  type FamilyMemberOption,
   planBenefitKey,
   planFinalPriceText,
   planFrequencyKey,
@@ -387,6 +392,9 @@ export default function MembershipPage() {
   // #2776 — the Payments tab is the Family Owner's; the API decides.
   const [paymentsVisible, setPaymentsVisible] = useState(true);
   const [planCatalogue, setPlanCatalogue] = useState<MemberPlanOffer[] | null>(null);
+  // #3091 — who a plan covers, chosen while contracting (the member's own family, themselves first).
+  const [planFamily, setPlanFamily] = useState<FamilyMemberOption[]>([]);
+  const [planBeneficiaries, setPlanBeneficiaries] = useState<Record<number, number[]>>({});
   // `null` = not read yet or the read failed: the control stays; `[]` = the gym has
   // nothing to offer, so it is absent rather than leading to an empty list.
   const gymOffersPlans = planCatalogue === null || planCatalogue.length > 0;
@@ -433,7 +441,7 @@ export default function MembershipPage() {
           // Read with the page, not on opening the catalogue: a gym with no plans
           // to offer must not show a control that opens onto "no plans". A failed
           // read leaves `null`, which keeps the control (and the read on open).
-          apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans').catch(() => null),
+          apiFetch<{ plans: MemberPlanOffer[]; family_members?: FamilyMemberOption[] }>('/me/membership-plans').catch(() => null),
           apiFetch<{ items: MemberServiceBalanceItem[] }>('/me/professional-services').catch(() => null),
           apiFetch<{ items: OwnPurchase[] }>('/me/purchases').catch(() => null),
           // #2609: a failed read is "no family" — the Buy dialog then asks nothing.
@@ -455,6 +463,7 @@ export default function MembershipPage() {
         setProducts(catalogue?.items ?? null);
         setServiceOptions(catalogue?.professional_services ?? []);
         setPlanCatalogue(plansRes?.plans ?? null);
+        setPlanFamily(plansRes?.family_members ?? []);
         setServiceBalances(serviceRes?.items ?? null);
         setOwnPurchases(ownRes?.items ?? []);
         setAssignees(assigneeRes?.members ?? []);
@@ -564,6 +573,7 @@ export default function MembershipPage() {
           membership_plan_id: plan.id,
           promotion_ids: applied ? [applied] : [],
           declined_benefits: declinedBenefitsPayload(plan.benefits, new Set(declinedPlanBenefits[plan.id] ?? [])),
+          ...beneficiaryBody(plan),
         }),
       });
     } catch (err: any) {
@@ -1681,13 +1691,47 @@ export default function MembershipPage() {
     if (planCatalogue !== null) return;
     setCatalogueLoading(true);
     try {
-      const res = await apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans');
+      const res = await apiFetch<{ plans: MemberPlanOffer[]; family_members?: FamilyMemberOption[] }>('/me/membership-plans');
       setPlanCatalogue(res.plans);
+      setPlanFamily(res.family_members ?? []);
     } catch {
       // Stays `null`: the control remains and a second open reads again.
     } finally {
       setCatalogueLoading(false);
     }
+  }
+
+  /** #3091 — the selection on screen for a plan (the default until the member changes it). */
+  function beneficiariesOf(plan: MemberPlanOffer): number[] {
+    return planBeneficiaries[plan.id] ?? defaultBeneficiaryIds(plan.member_limit, planFamily);
+  }
+  /** `beneficiary_member_ids` for the request; nothing is sent while the member has no family to choose from. */
+  function beneficiaryBody(plan: MemberPlanOffer) {
+    return offersBeneficiaryChoice(planFamily) ? { beneficiary_member_ids: beneficiariesOf(plan) } : {};
+  }
+  function beneficiaryErrorKey(plan: MemberPlanOffer): string | null {
+    return offersBeneficiaryChoice(planFamily) ? beneficiaryCountErrorKey(plan.member_limit, beneficiariesOf(plan)) : null;
+  }
+  function renderBeneficiaries(plan: MemberPlanOffer) {
+    if (!offersBeneficiaryChoice(planFamily)) return null;
+    const selected = beneficiariesOf(plan);
+    const errorKey = beneficiaryErrorKey(plan);
+    return (
+      <fieldset style={{ border: 'none', margin: '10px 0 0', padding: 0 }}>
+        <legend style={{ fontSize: 12.5, fontWeight: 600, padding: 0 }}>{t('membership.beneficiaries_title')}</legend>
+        {planFamily.map((m) => (
+          <label key={m.member_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, padding: '3px 0' }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(m.member_id)}
+              onChange={() => setPlanBeneficiaries((prev) => ({ ...prev, [plan.id]: toggleBeneficiary(selected, m.member_id) }))}
+            />
+            <span>{m.member_id === selfMemberId ? t('membership.beneficiaries_you', { name: m.name }) : m.name}</span>
+          </label>
+        ))}
+        {errorKey && <span role="alert" style={{ fontSize: 12.5 }}>{t(errorKey as any)}</span>}
+      </fieldset>
+    );
   }
 
   function applyPlanPromotion(planId: number, promotionId: number) {
@@ -1723,6 +1767,7 @@ export default function MembershipPage() {
         body: JSON.stringify({
           promotion_ids: applied ? [applied] : [],
           declined_benefits: declinedBenefitsPayload(plan.benefits, new Set(declinedPlanBenefits[plan.id] ?? [])),
+          ...beneficiaryBody(plan),
         }),
       });
       // My Products reads the new Draft on mount; the button stays busy while
@@ -1875,7 +1920,7 @@ export default function MembershipPage() {
         <button
           type="button"
           style={primaryButtonStyle}
-          disabled={choosingPlanId !== null}
+          disabled={choosingPlanId !== null || beneficiaryErrorKey(plan) !== null}
           aria-busy={choosingPlanId === plan.id}
           onClick={() => choosePlan(plan)}
         >
@@ -1895,7 +1940,7 @@ export default function MembershipPage() {
     }
     if (placed.state === 'taken') return null;
     return (
-      <button type="button" style={primaryButtonStyle} disabled={busy} onClick={() => addPlanToDraft(plan)}>
+      <button type="button" style={primaryButtonStyle} disabled={busy || beneficiaryErrorKey(plan) !== null} onClick={() => addPlanToDraft(plan)}>
         {draftBusy === PLAN_BUSY ? t('membership.product_adding') : t('membership.plan_add_to_draft')}
       </button>
     );
@@ -1925,6 +1970,7 @@ export default function MembershipPage() {
           ? { label: t('membership.plan_ov_initial'), value: money((overviewOverrides[plan.id] ?? plan.overview)!.initial_payment) ?? '—' }
           : null,
         overview: planOverviewView(plan),
+        beneficiaries: renderBeneficiaries(plan),
         promotions: plan.promotions.map((promotion) => {
           const benefit = planPromotionBenefitNote(promotion, gymFmt);
           const duration = planPromotionDurationNote(promotion);
