@@ -120,7 +120,7 @@ export function priceProductPurchase(input: {
     const next = promotionalPrice(running, benefit);
     // An offer is only ever one that prices the Product lower and above
     // nothing (the loader's rule); applied in sequence it must still hold.
-    if (next == null || !(next > 0) || !(next < running)) {
+    if (next == null || !(next >= 0) || !(next < running)) {
       return { ok: false, refusal: 'promotion_not_lowering_price' };
     }
     steps.push({

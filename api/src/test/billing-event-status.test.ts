@@ -45,6 +45,8 @@ describe('statusFromEventType', () => {
 
   it('falls back to recorded for informational events', () => {
     expect(statusFromEventType('adjustment')).toBe('recorded');
+    // #3082: a waived one-time purchase has no transaction and is paid.
+    expect(statusFromEventType('product_purchase')).toBe('paid');
     expect(statusFromEventType('status_changed')).toBe('recorded');
     expect(statusFromEventType('charge_created')).toBe('recorded');
   });
