@@ -111,7 +111,9 @@ export async function loadPromotionOffersDetailed(
     arms.push(`
       SELECT p.id AS promotion_id, p.name AS promotion_name, b.product_id,
              b.\`action\`, b.\`value\`, b.quantity,
-             p.only_applicable_for_new_members, p.stackable, '${category}' AS category
+             p.only_applicable_for_new_members, p.stackable,
+             p.image_url AS promotion_image_url, p.image_thumbnail_url AS promotion_image_thumbnail_url,
+             '${category}' AS category
         FROM ${promotionGrantTableFor(category)} b
         JOIN promotions p ON p.id = b.promotion_id AND p.gym_id = b.gym_id
        WHERE b.gym_id = ?

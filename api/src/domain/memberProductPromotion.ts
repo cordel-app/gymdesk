@@ -126,6 +126,9 @@ export interface MemberProductPromotionOffer {
   final_price_incl_tax: number | null;
   /** #1521: whether it may be combined with another Promotion on one purchase. */
   stackable: boolean;
+  /** #3020: the Promotion's own image (never the Product's), so a picker draws the Promotion. */
+  promotion_image_url: string | null;
+  promotion_image_thumbnail_url: string | null;
 }
 
 /** The columns an offer is read from, as mysql2 hands them back. */
@@ -138,6 +141,8 @@ export interface PromotionOfferRow {
   quantity?: unknown;
   only_applicable_for_new_members?: number | boolean | null;
   stackable?: number | boolean | null;
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
 }
 
 /**
@@ -165,6 +170,8 @@ export function shapePromotionOffer(
     regular_price_incl_tax: regularPriceInclTax,
     final_price_incl_tax: promotionalPrice(regularPriceInclTax, benefit),
     stackable: !!row.stackable,
+    promotion_image_url: row.promotion_image_url ?? null,
+    promotion_image_thumbnail_url: row.promotion_image_thumbnail_url ?? null,
   };
 }
 

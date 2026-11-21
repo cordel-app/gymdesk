@@ -178,6 +178,16 @@ describe('what applying one does to the price (§5)', () => {
     });
   });
 
+  it('carries the Promotion\'s own image, never the Product\'s (#3020)', () => {
+    const offer = shapePromotionOffer(
+      grant({ promotion_image_url: 'https://x/p.webp', promotion_image_thumbnail_url: 'https://x/p-thumbnail.webp' } as any),
+      'oneoff', 100,
+    );
+    expect(offer.promotion_image_url).toBe('https://x/p.webp');
+    expect(offer.promotion_image_thumbnail_url).toBe('https://x/p-thumbnail.webp');
+    expect(shapePromotionOffer(grant(), 'oneoff', 100).promotion_image_thumbnail_url).toBeNull();
+  });
+
   it('reads a grant in the Promotion\'s own option set', () => {
     // A Promotion configures all five (#896 §16); read as a Plan's two, a
     // `fixed_discount` would normalize away and quote the full price.
