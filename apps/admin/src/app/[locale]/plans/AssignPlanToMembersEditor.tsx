@@ -197,6 +197,28 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
       setConflict(null);
       onAssigned(typeof created?.id === 'number' ? { id: created.id } : undefined);
     } catch (err: any) {
+      // #2966 stage 3: the owner already has a cart (Draft) — the plan joins it as a snapshot.
+      const setId = err?.status === 409 && err?.body?.code === 'in_flight' ? Number(err.body.product_set_id) : NaN;
+      if (Number.isInteger(setId) && setId > 0 && plan) {
+        try {
+          await apiFetch(`/product-sets/${setId}/plans`, {
+            method: 'POST',
+            body: JSON.stringify({
+              membership_plan_id: plan.id,
+              starts_at: startsAt,
+              owner_is_beneficiary: selectedIds.includes(ownerId),
+            }),
+          });
+          setConflict(null);
+          onAssigned(undefined);
+        } catch (addErr: any) {
+          setConflict(null);
+          setError(apiErrorMessage(addErr) ?? t('plans.error_generic'));
+        } finally {
+          setSaving(false);
+        }
+        return;
+      }
       const replacement = confirmReplacement ? null : activePlanConflict(err);
       if (replacement) {
         setConflict(replacement);
