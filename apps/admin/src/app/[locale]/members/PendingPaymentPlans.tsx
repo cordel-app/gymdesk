@@ -19,12 +19,15 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { listCellStyle, listRowDividerStyle, listSurfaceStyle } from '@/components/listChrome';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDateOnly } from '@/lib/gymFormat';
+import { secondaryBtnSmall } from '@/components/formChrome';
 import type { ProductSetRow } from './membershipConfiguration';
 
-export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment' }: {
+export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment', onRemove }: {
   sets: ProductSetRow[];
   spaced: boolean;
   status?: 'pending_payment' | 'cancelled' | 'in_cart';
+  /** #2966 stage 5 — offered on an in-cart row only; the caller owns the request. */
+  onRemove?: (row: ProductSetRow) => void;
 }) {
   const t = useTranslations('members');
   const tStatus = useTranslations('status');
@@ -50,6 +53,9 @@ export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment' }
             : ps.starts_at && <span>{formatGymDateOnly(ps.starts_at, gymFmt)}</span>}
           {ps.amount_due != null && <span>{formatGymAmount(ps.amount_due, gymFmt)}</span>}
           <StatusBadge status={status} label={tStatus(status as never)} />
+          {status === 'in_cart' && onRemove && (
+            <button type="button" style={secondaryBtnSmall} onClick={() => onRemove(ps)}>{t('added_plan_remove')}</button>
+          )}
         </div>
       ))}
     </div>
