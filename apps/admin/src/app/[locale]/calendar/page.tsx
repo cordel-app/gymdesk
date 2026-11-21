@@ -121,6 +121,7 @@ export default function CalendarPage() {
 
   // Class session panel
   const [sessionPanelId, setSessionPanelId] = useState<number | null>(null);
+  const [sessionStartInEdit, setSessionStartInEdit] = useState(false);
 
   const role = activeGym?.role ?? 'member';
   // #613: impersonation-aware (isSuperadmin stays true while impersonating).
@@ -238,11 +239,11 @@ export default function CalendarPage() {
   // #1754 — Home's deep links: `?new=1` opens the new-event form on the next
   // HH:00/HH:30 for one hour (nothing is created until it is saved) and
   // `?session=<id>` opens that class's panel, attendance included.
-  const homeIntentRef = useRef<{ create: boolean; session: number | null } | null>(null);
+  const homeIntentRef = useRef<{ create: boolean; session: number | null; edit?: boolean } | null>(null);
   if (homeIntentRef.current === null) {
     const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const sid = Number(q.get('session'));
-    homeIntentRef.current = { create: q.get('new') === '1', session: Number.isInteger(sid) && sid > 0 ? sid : null };
+    homeIntentRef.current = { create: q.get('new') === '1', session: Number.isInteger(sid) && sid > 0 ? sid : null, edit: q.get('edit') === '1' };
   }
   useEffect(() => {
     const intent = homeIntentRef.current;
@@ -250,6 +251,7 @@ export default function CalendarPage() {
     homeIntentRef.current = { create: false, session: null };
     if (intent.session) {
       setSessionPanelId(intent.session);
+      setSessionStartInEdit(!!intent.edit);
       setPanelOpen(false);
       setEditingId(null);
     } else if (intent.create && canWrite) {
@@ -762,6 +764,7 @@ export default function CalendarPage() {
             <div style={{ width: panelWidth, flexShrink: 0, overflow: 'hidden' }}>
               <ClassSessionDetailPanel
                 sessionId={sessionPanelId}
+                startInEdit={sessionStartInEdit}
                 onClose={closeSessionPanel}
                 onMutated={refetch}
                 canWrite={canWrite}

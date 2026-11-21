@@ -5926,7 +5926,9 @@
     "class_celebrate": "Celebrar",
     "class_cancel": "Cancel·lar",
     "class_attendees": "Veure assistents",
-    "class_open_calendar": "Obrir al Calendari"
+    "class_open_calendar": "Obrir al Calendari",
+    "class_last_attended": "Última assistència {date}",
+    "class_never_attended": "Encara sense assistències"
   },
   "base_products": {
     "no_description": "Cap descripció disponible.",

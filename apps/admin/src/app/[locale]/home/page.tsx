@@ -22,10 +22,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { InlineStyle } from '@/components/InlineStyle';
 import { secondaryBtnSmall, cardMutedTextStyle as mutedTextStyle } from '@/components/formChrome';
 import { HomeClassAttendees, HomeClassCancel, type AttendeesMode } from '@/components/home/HomeClassAttendees';
-import { CalendarClockIcon, CheckIcon, ListIcon, PartyIcon, XCircleIcon, ClipboardCheckIcon, ContactsIcon, PlusIcon, UserPlusIcon, WalletIcon, ArrowRightIcon } from '@/components/home/HomeIcons';
-import { CalendarIcon, CreditCardIcon, UsersIcon } from '@/components/icons/NavIcons';
+import { CalendarClockIcon, CheckIcon, ListIcon, XCircleIcon, ClipboardCheckIcon, ContactsIcon, PlusIcon, UserPlusIcon, WalletIcon, ArrowRightIcon } from '@/components/home/HomeIcons';
+import { CalendarIcon, CreditCardIcon, UsersIcon, DumbbellIcon, BuildingIcon } from '@/components/icons/NavIcons';
 import {
-  HomeData, TASK_ACTION_KEY, canStartClass, memberHref, orderedTasks, quickActionHref, startClassHref, taskHref,
+  HomeData, TASK_ACTION_KEY, canStartClass, editClassHref, memberHref, orderedTasks, quickActionHref, startClassHref, taskHref,
   type HomeTaskKey, type QuickActionKey,
 } from '@/lib/homeDashboard';
 
@@ -74,7 +74,7 @@ export default function HomePage() {
   const [welcomeFor, setWelcomeFor] = useState<{ id: number; name: string } | null>(null);
   const [messageClass, setMessageClass] = useState<{ id: number; name: string } | null>(null);
   const tc = useTranslations('calendar');
-  const [attendeesFor, setAttendeesFor] = useState<{ id: number; name: string; mode: AttendeesMode } | null>(null);
+  const [attendeesFor, setAttendeesFor] = useState<{ id: number; name: string; mode: AttendeesMode; hasService?: boolean } | null>(null);
   const [cancelFor, setCancelFor] = useState<{ id: number; name: string; hasEnded: boolean } | null>(null);
   const { canWrite: canWriteCalendar } = useModuleAccess('CALENDAR');
   const { canWrite: canMessageClass } = useModuleAccess('CALENDAR', 'calendar.staff_communications');
@@ -298,8 +298,32 @@ export default function HomePage() {
                           <div style={{ fontWeight: 600 }}>{k.name}</div>
                           <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>
                             {t('class_duration', { minutes: classMinutes(k) })}
-                            {k.trainer_name ? ` · ${k.trainer_name}` : ''}{k.space_name ? ` · ${k.space_name}` : ''}
+                            {k.service_name ? ` · ${k.service_name}` : ''}
                           </div>
+                          {(k.trainer_name || k.center_name || k.space_name) && (
+                            <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                              {k.trainer_name && <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><DumbbellIcon size={14} />{k.trainer_name}</span>}
+                              {(k.center_name || k.space_name) && <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><BuildingIcon size={14} />{[k.center_name, k.space_name].filter(Boolean).join(' · ')}</span>}
+                            </div>
+                          )}
+                          {k.attendees.length > 0 && (
+                            <div style={{ marginTop: 4, display: 'grid', gap: 4 }} data-testid={`home-class-attendees-list-${k.id}`}>
+                              {k.attendees.map((a) => (
+                                <div key={a.member_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  {a.image_url
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    ? <img src={a.image_url} alt="" width={24} height={24} style={{ borderRadius: '50%', objectFit: 'cover' }} />
+                                    : <span aria-hidden style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--gd-border, #e5e7eb)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{a.name.charAt(0).toUpperCase()}</span>}
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, lineHeight: 1.2 }}>{a.name}</div>
+                                    <div style={{ fontSize: 10, color: 'var(--gd-text-muted, #6b7280)' }}>
+                                      {a.last_attended ? t('class_last_attended', { date: formatGymDate(a.last_attended, fmt) }) : t('class_never_attended')}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <div style={{ fontSize: 12, marginTop: 2 }}>
                             <span style={{ fontWeight: 600, color: full ? 'var(--gd-warning, #d97706)' : 'inherit' }}>
                               {k.booked_count}{k.capacity != null ? `/${k.capacity}` : ''} {t('class_booked')}
@@ -310,13 +334,10 @@ export default function HomePage() {
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         {canStartClass(k.status) && (
-                          <Link href={startClassHref(k.id, locale)} style={{ ...primaryBtnSmall(), textDecoration: 'none' }}>{t('class_start')}</Link>
+                          <button type="button" style={primaryBtnSmall()} data-testid={`home-class-start-${k.id}`}
+                            onClick={() => setAttendeesFor({ id: k.id, name: k.name, mode: 'celebrate', hasService: k.has_service })}>{t('class_start')}</button>
                         )}
-                        {canStartClass(k.status) && canWriteCalendar && (
-                          <button type="button" style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center' }} title={t('class_celebrate')} aria-label={t('class_celebrate')}
-                            data-testid={`home-class-celebrate-${k.id}`} onClick={() => setAttendeesFor({ id: k.id, name: k.name, mode: 'celebrate' })}><PartyIcon size={16} /></button>
-                        )}
-                        <Link href={startClassHref(k.id, locale)} style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }} title={t('class_open_calendar')} aria-label={t('class_open_calendar')}
+                        <Link href={editClassHref(k.id, locale)} style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }} title={t('class_open_calendar')} aria-label={t('class_open_calendar')}
                           data-testid={`home-class-calendar-${k.id}`}><CalendarIcon size={16} /></Link>
                         <button type="button" style={{ ...secondaryBtnSmall, display: 'inline-flex', alignItems: 'center' }} title={t('class_attendees')} aria-label={t('class_attendees')}
                           data-testid={`home-class-attendees-${k.id}`} onClick={() => setAttendeesFor({ id: k.id, name: k.name, mode: 'view' })}><ListIcon size={16} /></button>
@@ -357,7 +378,7 @@ export default function HomePage() {
         <ClassCommunicationModal sessionId={messageClass.id} sessionName={messageClass.name} onClose={() => setMessageClass(null)} />
       )}
       {attendeesFor && (
-        <HomeClassAttendees sessionId={attendeesFor.id} sessionName={attendeesFor.name} mode={attendeesFor.mode}
+        <HomeClassAttendees sessionId={attendeesFor.id} sessionName={attendeesFor.name} mode={attendeesFor.mode} hasService={attendeesFor.hasService}
           onClose={() => setAttendeesFor(null)} onCompleted={load} />
       )}
       {cancelFor && (

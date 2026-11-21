@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3096 (Admin Home → Today's classes: each class shows its Professional Service, trainer, center/space and read-only attendees with thumbnail and last attended date; **Start** opens the attendance dialog with a refund option for an absence on a Professional Service class; the Celebrate button is replaced by the calendar icon, which opens the occurrence in Edit details via `/calendar?session=<id>&edit=1`. Not included: adding attendees from that dialog.)
 - **Done**: #3119 (In Cart Membership Plans stay visible in the Member card's Active Plans: `visiblePlans()` now lists an in-cart or pending-payment plan beside the running plans and hides only the running plan of the same Membership Plan that the Draft re-freezes; admin view logic only, no API change)
 
 - **Done**: #3090 stage 1 (the Member card's *Personal Training Class Slots* section reads **Professional Services Schedule** (en/es/ca, label only, key `section_pt_slots` unchanged); `calendar_events.booking_source` (`manual` default | `recurring_slot`, migration 446, `api/src/domain/bookingSource.ts`) records how an event was created. Every current writer is `manual`; `recurring_slot` is written from stage 2. Remaining: schedule entries linked to a Professional Service, admin UI, weekly-allowance warning.)

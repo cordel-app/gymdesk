@@ -5913,7 +5913,9 @@
     "class_celebrate": "Celebrate",
     "class_cancel": "Cancel",
     "class_attendees": "View attendees",
-    "class_open_calendar": "Open in Calendar"
+    "class_open_calendar": "Open in Calendar",
+    "class_last_attended": "Last attended {date}",
+    "class_never_attended": "No attendance yet"
   },
   "base_products": {
     "no_description": "No description available.",

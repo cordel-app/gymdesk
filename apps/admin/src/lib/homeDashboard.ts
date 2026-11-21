@@ -46,6 +46,11 @@ export function startClassHref(sessionId: number, locale: string): string {
   return `/${locale}/calendar?session=${sessionId}`;
 }
 
+/** #3096: the calendar icon opens the occurrence directly in Edit details. */
+export function editClassHref(sessionId: number, locale: string): string {
+  return `/${locale}/calendar?session=${sessionId}&edit=1`;
+}
+
 /** Start is offered only for a class that is still on the calendar and not yet held. */
 export function canStartClass(status: string): boolean {
   return status === 'scheduled';
@@ -134,7 +139,7 @@ export interface HomeData {
     members: { member_id: number; name: string; outstanding_amount: number; plan_name: string | null; payment_status: string }[];
   };
   tasks: HomeTask[];
-  classes?: { id: number; name: string; starts_at: string; ends_at: string; status: string; trainer_name: string | null; space_name: string | null; capacity: number | null; booked_count: number; waitlist_count: number }[];
+  classes?: { id: number; name: string; starts_at: string; ends_at: string; status: string; trainer_name: string | null; space_name: string | null; service_name: string | null; center_name: string | null; has_service: boolean; attendees: { member_id: number; name: string; image_url: string | null; last_attended: string | null }[]; capacity: number | null; booked_count: number; waitlist_count: number }[];
   /** #1984 stage 3: upcoming services with some, not all, places booked. */
   incomplete_classes?: {
     count: number;
