@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #2966 stage 3 (the Admin Assign flow, when the owner already has an in-cart Draft, adds the plan to it through `POST /product-sets/:id/plans` instead of showing `in_flight`; `POST /membership-plans/:id/assign` now reports `code: in_flight` and `product_set_id`. Beneficiaries beyond the owner, Promotions on an added plan and the Assigned Plan / Member card listings from set snapshots remain.)
 - **Done**: #3119 (In Cart Membership Plans stay visible in the Member card's Active Plans: `visiblePlans()` now lists an in-cart or pending-payment plan beside the running plans and hides only the running plan of the same Membership Plan that the Draft re-freezes; admin view logic only, no API change)
 
 - **Done**: #3090 stage 1 (the Member card's *Personal Training Class Slots* section reads **Professional Services Schedule** (en/es/ca, label only, key `section_pt_slots` unchanged); `calendar_events.booking_source` (`manual` default | `recurring_slot`, migration 446, `api/src/domain/bookingSource.ts`) records how an event was created. Every current writer is `manual`; `recurring_slot` is written from stage 2. Remaining: schedule entries linked to a Professional Service, admin UI, weekly-allowance warning.)
