@@ -912,3 +912,61 @@ export async function removeMemberPlanFromDraft(tx: Tx, draft: LockedDraft, plan
   await touch(tx, { ...draft, membership_plan_id: remaining == null ? null : draft.membership_plan_id });
   return { ok: true };
 }
+
+/* ── #2966 stage 2 — staff adds a further plan to an in-cart set ─────────── */
+
+/**
+ * Adds a further Membership Plan to a Draft that is the member's cart, as a **plan snapshot of its
+ * own** (`addPlanSnapshotToVersion()`), with no `user_memberships` row (the owner's #2125 decision:
+ * a set holds several plans, each addressed by its snapshot id). Every plan, product, beneficiary
+ * and Promotion already on the Draft is left exactly as it is; nothing is priced or charged here.
+ * The caller has judged the plan (`planAssignabilityError()`), its price and the declined benefits.
+ */
+export async function addStaffPlanToDraft(tx: Tx, draft: LockedDraft, input: {
+  membershipPlanId: number; membershipFeePrice: number | null; startsAt: string; ownerIsBeneficiary: boolean;
+  declinedBenefits: Array<{ section: string; product_id: number }>; actor: string | null;
+}): Promise<{ ok: true; plan_snapshot_id: number } | DraftRefusal> {
+  const { addPlanSnapshotToVersion } = await import('./plan-snapshot-add');
+  const first = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+  const snapshotId = await addPlanSnapshotToVersion(tx, {
+    gymId: draft.gym_id, productSetId: draft.id, memberId: draft.owner_member_id,
+    membershipPlanId: input.membershipPlanId, membershipFeePrice: input.membershipFeePrice,
+    startsAt: input.startsAt, actor: input.actor, declinedBenefits: input.declinedBenefits,
+  });
+  if (first == null) {
+    // A cart with no plan yet: this plan is its first, so the set names it.
+    await tx.query('UPDATE product_sets SET membership_plan_id = ? WHERE id = ? AND gym_id = ?',
+      [input.membershipPlanId, draft.id, draft.gym_id]);
+  }
+  if (!input.ownerIsBeneficiary) await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, false);
+  await touch(tx, draft);
+  return { ok: true, plan_snapshot_id: snapshotId };
+}
+
+/**
+ * Takes one plan snapshot back off the Draft: only a plan the Draft added itself (not shared with,
+ * nor inherited from, another version) and never the set's primary plan, which is an assignment's
+ * and leaves through that assignment's own discard. A Draft has charged nothing, so the snapshot
+ * is deleted outright; every other plan and product stays.
+ */
+export async function removeStaffPlanFromDraft(tx: Tx, draft: LockedDraft, planSnapshotId: number)
+  : Promise<{ ok: true } | DraftRefusal> {
+  const { rows } = await tx.query<{ id: number; shared: number }>(
+    `SELECT s.id, (${planSnapshotSharedSql('s.id', '?')} OR ${planSnapshotInheritedSql('s', 'j.product_set_id')}) AS shared
+       FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+      WHERE j.product_set_id = ? AND s.id = ? AND s.gym_id = ?`,
+    [draft.id, draft.id, planSnapshotId, draft.gym_id]);
+  if (!rows[0]) return { kind: 'not_found' };
+  if (Number(rows[0].shared) === 1) {
+    return { kind: 'conflict', error: 'plan_not_removable', message: 'This plan belongs to a running version and cannot be removed from the cart.' };
+  }
+  const primary = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+  if (primary != null && Number(primary) === planSnapshotId) {
+    return { kind: 'conflict', error: 'primary_plan_not_removable', message: "The cart's first plan is removed by discarding its assignment." };
+  }
+  await tx.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?',
+    [draft.id, planSnapshotId]);
+  await deleteUnlinkedPlanSnapshots(tx, draft.gym_id, [planSnapshotId]);
+  await touch(tx, draft);
+  return { ok: true };
+}
