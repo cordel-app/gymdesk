@@ -59,7 +59,7 @@ describe('POST /members/:memberId/personal-training-slots/book-family', () => {
     await db.query(`INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`, [gymId, sid]);
     const { insertId: at } = await db.query(`INSERT INTO activity_types (gym_id, name, max_capacity, public_event, status) VALUES (?, ?, 5, 0, 'active')`, [gymId, `Act-${uniq()}`]);
     await db.query('INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id) VALUES (?, ?, ?)', [gymId, at, sid]);
-    // Only a and b hold sessions; c does not.
+    // Only a and b hold sessions; c is in their family and shares the balance.
     await grantSessions(gymId, a, sid);
     await grantSessions(gymId, b, sid);
     const weekday = DateTime.utc().plus({ days: 3 }).weekday;
@@ -84,15 +84,15 @@ describe('POST /members/:memberId/personal-training-slots/book-family', () => {
     center_id: slot.center_id ?? null,
   });
 
-  it('books each eligible member and reports an ineligible one without booking them', async () => {
+  it('books every family member through the family's shared balance', async () => {
     const res = await post(gymId, a, { member_ids: [a, b, c], slots: [identity()] });
     expect(res.status).toBe(200);
     const byId = new Map<number, any>(res.body.members.map((m: any) => [m.member_id, m]));
     expect(byId.get(a).created).toBeGreaterThan(0);
     expect(byId.get(b).created).toBeGreaterThan(0);
-    expect(byId.get(c).error).toBe('slot_not_available');
+    expect(byId.get(c).created).toBeGreaterThan(0); // the Professional Services balance is the family's (#2670)
     const { rows } = await db.query('SELECT DISTINCT member_id FROM calendar_event_bookings WHERE gym_id = ? AND status = ?', [gymId, 'booked']);
-    expect(rows.map((r: any) => r.member_id).sort()).toEqual([a, b].sort());
+    expect(rows.map((r: any) => r.member_id).sort()).toEqual([a, b, c].sort());
   });
 
   it('is idempotent: a second call creates nothing new', async () => {
