@@ -2,7 +2,7 @@ import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-li
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import {
-  confirmPlanPromotionReferences, insertPlanPromotionReference, recordPlanPromotionConfirmed, recordPlanPromotionGrants,
+  confirmPlanPromotionReferences, insertPlanPromotionReference,
 } from './plan-promotion-writer';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -873,8 +873,6 @@ export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, prod
       await tx.query(`DELETE FROM ${target} WHERE gym_id = ? AND user_membership_promotion_id = ?`, [gymId, app.id]);
     }
     await snapshotPromotionGrants(tx, gymId, Number(app.id), Number(app.promotion_id));
-    await recordPlanPromotionConfirmed(tx, gymId, Number(app.id), snapshot != null ? JSON.stringify(snapshot) : null);
-    await recordPlanPromotionGrants(tx, gymId, Number(app.id));
   }
   // #3026 stage 3d-1: the references the plan snapshot itself holds (no legacy twin) are confirmed there.
   const native = await confirmPlanPromotionReferences(

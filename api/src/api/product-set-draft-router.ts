@@ -206,10 +206,7 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
       'DELETE FROM user_membership_promotions WHERE id = ? AND gym_id = ? AND product_set_id = ?',
       [Number(req.params.applicationId), draft.gym_id, draft.id]);
     // #3026 stage 3d-1: a Plan application's id is its plan snapshot row's, on the Draft's own primary plan.
-    const { deletePlanPromotionReferences } = await import('./plan-promotion-writer');
-    if (rowCount > 0) {
-      await deletePlanPromotionReferences(tx, draft.gym_id, [Number(req.params.applicationId)]);
-    } else {
+    if (rowCount === 0) {
       const { primaryPlanSnapshotId } = await import('./plan-snapshot-lines');
       const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
       const { rowCount: onSnapshot } = snapshotId == null ? { rowCount: 0 } : await tx.query(

@@ -123,7 +123,7 @@ describe('GET /me/membership — past plan details (#2779)', () => {
         membership_fee_benefits: [{ enabled: true, action: 'percentage_discount', value: 20, duration_months: 3 }],
       })],
     );
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_promotion_session_snapshot
          (gym_id, user_membership_promotion_id, product_id, product_name, quantity, item_type,
           item_billing_frequency, unit_price, currency, \`action\`, \`value\`, requirement)

@@ -1,6 +1,6 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { syncPromotionAssignmentIds, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import { nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
@@ -119,26 +119,6 @@ async function loadSet(tx: Tx, gymId: string, productSetId: number): Promise<Set
   return rows[0] ?? null;
 }
 
-/** Points a version's Membership Plan Promotion applications at its assignment. */
-async function attachApplications(tx: Tx, gymId: string, productSetId: number, umId: number) {
-  // A version that takes over an assignment in place (the Admin's set-first
-  // edit) supersedes the applications of the version it replaces: they stay as
-  // that version's history, keyed by it, and stop being the assignment's.
-  await tx.query(
-    `UPDATE user_membership_promotions
-        SET user_membership_id = NULL, assignment_id = NULL
-      WHERE gym_id = ? AND user_membership_id = ? AND product_set_id <> ?`,
-    [gymId, umId, productSetId]);
-  await tx.query(
-    `UPDATE user_membership_promotions ump
-       JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
-        SET user_membership_id = ?
-      WHERE ump.gym_id = ? AND ump.product_set_id = ?`,
-    [umId, gymId, productSetId]);
-  // #2125 M6b-33: the re-keyed column follows in the same transaction.
-  await syncPromotionAssignmentIds(tx, gymId, [umId]);
-}
-
 /**
  * Whether the version's primary plan snapshot is the predecessor's own — linked by
  * `previous_product_set_id` too — and the contract of the predecessor's assignment.
@@ -217,7 +197,6 @@ export async function projectActiveProductSet(
         WHERE id = ? AND gym_id = ?`,
       [dateOnly(set.ends_at), actor, umId, gymId],
     );
-    await attachApplications(tx, gymId, productSetId, umId);
     if (continuedUmId != null) await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
     return umId;
   }
@@ -253,10 +232,8 @@ export async function projectActiveProductSet(
   );
   const umId = Number(insertId);
 
-  // The version's Membership Plan Promotion applications (and, through their
-  // ids, the grant snapshots) belong to the assignment it projects.
-  await attachApplications(tx, gymId, productSetId, umId);
-
+  // #3026 stage 3d-2: the plan's Promotion applications are its plan snapshot's own rows, which the
+  // assignment reads through that snapshot; there is nothing to attach.
   await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
   // #2125 M6b-44: the assignment just opened is named on the set's plan snapshot now, so it has an anchor.
   await nameAssignmentSnapshot(tx, gymId, productSetId, umId);
