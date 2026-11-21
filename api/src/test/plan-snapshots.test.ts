@@ -1,5 +1,6 @@
 // #2125 stage 1: the plan snapshot tables and their repeatable backfill, against real MySQL
 // (since stage 17 the snapshots are written by the real writers; the backfill only has promotions left to copy).
+import { derivePlanPromotionSnapshotsForFixture } from './planPromotionFixture';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { createRequire } from 'node:module';
@@ -82,6 +83,8 @@ beforeAll(async () => {
     await syncPlanSnapshot(tx, gymId, setA);
     await syncPlanSnapshot(tx, gymId, setB);
   });
+  // #3026 stage 3c-3: the Plan Promotion rows of a legacy-shaped fixture are derived by the fixture.
+  await derivePlanPromotionSnapshotsForFixture(gymId, setA);
 });
 
 describe('plan snapshots (#2125)', () => {

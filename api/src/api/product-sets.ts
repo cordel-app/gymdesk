@@ -200,6 +200,9 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
         WHERE gym_id = ? AND product_set_id = ? AND status = 'applied'`,
       [SYSTEM_ACTOR, gymId, previous.id],
     );
+    // #3026 stage 3c-3: and on the plan snapshots only the predecessor links.
+    const { supersedePlanPromotionsOfSet } = await import('./plan-promotion-writer');
+    await supersedePlanPromotionsOfSet(tx, gymId, Number(previous.id), SYSTEM_ACTOR);
   }
   await tx.query(
     `UPDATE product_sets SET status = 'active', activated_at = UTC_TIMESTAMP() WHERE id = ?`,
