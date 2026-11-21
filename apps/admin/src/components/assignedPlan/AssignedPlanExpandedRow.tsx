@@ -155,7 +155,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // #1108 stage 2: the two ways a Pending Payment row is paid from here.
   const [paymentStep, setPaymentStep] = useState<'none' | 'confirm_cash'>('none');
   // #1240: Cancel on a Draft is a hard delete, confirmed first.
-  const [discardOpen, setDiscardOpen] = useState(false);
   const [paymentLink, setPaymentLink] = useState<string | null>(null);
   // #2097: Save & Pay opens the payment modal (review, method, Pay) instead of
   // committing inline; nothing is committed or charged until Pay inside it.
@@ -267,22 +266,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       });
       setPaymentLink(result.checkoutUrl);
     } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  /** #1240: Cancel on a Draft — `DELETE /:id/draft` removes it; nothing was billed. */
-  async function discardDraft() {
-    setActionBusy(true);
-    try {
-      await apiFetch(`/user-memberships/${assignedPlanId}/draft`, { method: 'DELETE' });
-      setDiscardOpen(false);
-      setIsEditing(false);
-      onChanged();
-    } catch (err: any) {
-      setDiscardOpen(false);
       toast(err.message ?? t('error_generic'));
     } finally {
       setActionBusy(false);
@@ -658,12 +641,10 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         </>
       )}
 
-      {/* #1240: a Draft in Edit mode closes with Cancel | Save | Save & Pay in
+      {/* #1240: a Draft in Edit mode closes with Save | Save & Pay in
           place of Done Editing. */}
       {editing && detail.status === 'in_cart' && (
         <div style={inlineActionsRowStyle}>
-          <button type="button" style={secondaryBtnSmall} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
-            onClick={() => setDiscardOpen(true)}>{t('action_draft_cancel')}</button>
           {!embedded && <button type="button" style={secondaryBtnSmall} disabled={actionBusy || beneficiariesPending}
             title={beneficiariesPending ? t('beneficiaries_unsaved') : undefined} onClick={() => saveDraft()}>
             {t('action_draft_save')}
@@ -673,16 +654,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             onClick={() => startSaveAndPay()}>{t('action_save_and_pay')}</button>}
         </div>
       )}
-
-      <ConfirmDialog
-        open={discardOpen}
-        message={t('confirm_discard_draft')}
-        confirmLabel={t('action_discard_draft_confirm')}
-        cancelLabel={t('action_discard_draft_dismiss')}
-        onConfirm={discardDraft}
-        onCancel={() => setDiscardOpen(false)}
-        busy={actionBusy}
-      />
 
       {detail.product_set_id != null && (
         <ReviewChangesModal
