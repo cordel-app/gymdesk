@@ -323,7 +323,7 @@ describe('Promotion item Requirement (#959)', () => {
     // flag has to be *in* the snapshot — otherwise the screen that will offer the
     // member the choice would read a Promotion that may have been edited since.
     // #2833: the snapshot is taken when the Draft is confirmed.
-    const { rows: setRows } = await db.query<any>(
+    const { rows: setRows } = await legacyChildQuery(
       `SELECT ump.product_set_id FROM user_membership_promotions ump
          JOIN product_sets ps ON ps.id = ump.product_set_id
         WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ump.promotion_id = ?`, [umId, promotion]);

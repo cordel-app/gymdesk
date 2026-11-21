@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { deleteRecurringLine, insertRecurringLine } from '../api/recurring-line-writer';
@@ -87,7 +87,7 @@ describe('migration 411 (#2126 stage 5d-1)', () => {
        VALUES (?, ?, ?, 'revoked', ?)`, [gymId, setId, promotionId, 999999999])).rejects.toThrow(/foreign key/i);
 
     await db.transaction((tx) => deleteRecurringLine(tx, gymId, lineId!));
-    const { rows } = await db.query<any>('SELECT id FROM user_membership_promotions WHERE id = ?', [appId]);
+    const { rows } = await legacyChildQuery('SELECT id FROM user_membership_promotions WHERE id = ?', [appId]);
     expect(rows).toEqual([]);
   });
 

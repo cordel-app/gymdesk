@@ -7,7 +7,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, snapshotTestAssignment } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, snapshotTestAssignment, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -58,7 +58,7 @@ function assign(gymId: string, planId: number, memberId: number, extra: Record<s
 }
 
 async function appliedPromotionIds(userMembershipId: number): Promise<number[]> {
-  const { rows } = await db.query(
+  const { rows } = await legacyChildQuery(
     `SELECT promotion_id FROM user_membership_promotions
      WHERE user_membership_id = ? AND status = 'applied' ORDER BY promotion_id`,
     [userMembershipId],

@@ -23,7 +23,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, legacyChildQuery } from './helpers';
 
 const SECRET = 'test-2856-webhook';
 let gymId: string;
@@ -134,7 +134,7 @@ afterAll(async () => {
 });
 
 const line = (m: number, id: number) => `${base(m)}/recurring/${id}`;
-const applications = async (setId: number) => (await db.query<any>(
+const applications = async (setId: number) => (await legacyChildQuery(
   `SELECT promotion_id, recurrent_snapshot_id, snapshot, snapshot_confirmed_at FROM user_membership_promotions
     WHERE product_set_id = ? AND status = 'applied' ORDER BY id`, [setId])).rows;
 const setsOf = async (m: number) => Number((await db.query<any>(
@@ -173,7 +173,7 @@ describe('editing a Draft line (#2856)', () => {
     expect(apps.map((x) => Number(x.promotion_id))).toEqual([b]);
     expect(apps[0].snapshot).toBeNull();
     expect(apps[0].snapshot_confirmed_at).toBeNull();
-    const { rows: grants } = await db.query<any>(
+    const { rows: grants } = await legacyChildQuery(
       `SELECT COUNT(*) AS n FROM user_membership_promotion_periodical_snapshot g
          JOIN user_membership_promotions ump ON ump.id = g.user_membership_promotion_id
         WHERE ump.product_set_id = ?`, [draftId]);

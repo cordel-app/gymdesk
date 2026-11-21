@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
 import { createDraft, addCoverage, cancelInFlight } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { ensureRecurringDraft } from '../api/recurring-purchase-draft';
@@ -86,22 +86,24 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     const owner = await member();
     const promo = await promotion();
     const um = await assignmentOf(await commit(owner, [promo]));
-    const { rows } = await db.query<any>(
+    const { rows } = await legacyChildQuery(
       'SELECT user_membership_id, product_set_id, snapshot FROM user_membership_promotions WHERE user_membership_id = ?', [um]);
     expect(rows.length).toBe(1);
     expect(rows[0].snapshot).toBeTruthy();
     expect(await names(um)).toEqual([promo]);
   });
 
-  it('a successor Draft holds independent copies; editing it leaves the current assignment untouched', async () => {
+  it('a successor Draft reads the running plan\'s applications; editing it leaves the current assignment untouched', async () => {
     const owner = await member();
     const promo = await promotion();
     const um = await assignmentOf(await commit(owner, [promo]));
     const draftId = await draftFrom(owner);
-    const { rows: copies } = await db.query<any>(
+    const { rows: copies } = await legacyChildQuery(
       'SELECT id, user_membership_id FROM user_membership_promotions WHERE product_set_id = ?', [draftId]);
+    // #3026 stage 3d-1: the Draft links the running plan's snapshot, so it reads the very same
+    // application row; removing it in the Draft acts on the Draft's own copy of the plan.
     expect(copies.length).toBe(1);
-    expect(copies[0].user_membership_id).toBeNull(); // belongs to the successor assignment, attached at activation
+    expect(Number(copies[0].user_membership_id)).toBe(um);
     await db.transaction(async (tx) => {
       const r = await revokePromotionMutator(promo, 'T')(tx, { id: draftId, gym_id: gymId } as any);
       expect('ok' in r).toBe(true);
@@ -119,12 +121,12 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     const { rows: st } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [um]);
     expect(st[0].status).toBe('active');
     const second = await draftFrom(owner);
-    const { rows: copies } = await db.query<any>(
+    const { rows: copies } = await legacyChildQuery(
       'SELECT id FROM user_membership_promotions WHERE product_set_id = ?', [second]);
     expect(copies.length).toBe(1);
   });
 
-  it('activation of a version that leaves the plan unchanged keeps the assignment, which owns the copies; the predecessor\'s are history (M4b-3)', async () => {
+  it('activation of a version that leaves the plan unchanged keeps the assignment and its applications (M4b-3)', async () => {
     const owner = await member();
     const promo = await promotion();
     const v1 = await commit(owner, [promo]);
@@ -139,13 +141,13 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     const umV2 = await assignmentOf(draftId);
     expect(umV2).toBe(umV1);
     expect(await names(umV1)).toEqual([promo]);
-    const { rows: own } = await db.query<any>(
+    const { rows: own } = await legacyChildQuery(
       'SELECT product_set_id, status FROM user_membership_promotions WHERE user_membership_id = ?', [umV1]);
-    expect(own.map((r: any) => [Number(r.product_set_id), r.status])).toEqual([[draftId, 'applied']]);
-    // #1991: the predecessor's application is `superseded`, kept as that version's history, snapshot untouched.
-    const { rows: kept } = await db.query<any>(
+    // #3026 stage 3d-1: both versions link one plan snapshot, whose one application stands.
+    expect(own.map((r: any) => [Number(r.product_set_id), r.status]).sort()).toEqual([[v1, 'applied'], [draftId, 'applied']].sort());
+    const { rows: kept } = await legacyChildQuery(
       'SELECT promotion_id, status, user_membership_id, snapshot IS NOT NULL AS has_snapshot FROM user_membership_promotions WHERE product_set_id = ?', [v1]);
-    expect(kept.map((r: any) => [Number(r.promotion_id), r.status, r.user_membership_id, Number(r.has_snapshot)])).toEqual([[promo, 'superseded', null, 1]]);
+    expect(kept.map((r: any) => [Number(r.promotion_id), r.status, Number(r.user_membership_id), Number(r.has_snapshot)])).toEqual([[promo, 'applied', umV1, 1]]);
     const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [umV1]);
     expect(rows[0].status).toBe('active');
   });
@@ -180,7 +182,7 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     });
     const um = await assignmentOf(setId);
     expect(await names(um)).toEqual([planPromo]);
-    const { rows } = await db.query<any>(
+    const { rows } = await legacyChildQuery(
       'SELECT user_membership_id FROM user_membership_promotions WHERE product_set_id = ? AND promotion_id = ?', [setId, productPromo]);
     expect(rows.length).toBe(1);
     expect(rows[0].user_membership_id).toBeNull();

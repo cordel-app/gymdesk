@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym,
-  createTestMembership, request,
+  createTestMembership, request, legacyChildQuery,
 } from './helpers';
 
 afterAll(async () => {
@@ -152,14 +152,14 @@ describe('Assigned Plan card display data (#2478)', () => {
       .send({ promotion_id: promotionId });
     expect(apply.status).toBe(201);
     // The application is the assignment's version's (#1995): find it by the Promotion.
-    const { rows: apps } = await db.query(
+    const { rows: apps } = await legacyChildQuery(
       `SELECT ump.id FROM user_membership_promotions ump
          JOIN promotions p ON p.id = ump.promotion_id
         WHERE ump.gym_id = ? AND ump.promotion_id = ? AND ump.status = 'applied'
         ORDER BY ump.id DESC LIMIT 1`, [gymId, promotionId]);
     // A confirmed snapshot carries the image it was taken with.
     await db.query(
-      `UPDATE user_membership_promotions
+      `UPDATE plan_promotion_snapshots
           SET snapshot = JSON_OBJECT('name', 'Frozen', 'description', NULL, 'stackable', 1,
                 'starts_at', '2026-01-01', 'ends_at', '2099-12-31',
                 'free_months', NULL, 'paid_months', 6, 'bonus_months', NULL,
@@ -168,14 +168,6 @@ describe('Assigned Plan card display data (#2478)', () => {
                 'image_thumbnail_url', 'https://img.test/promotions/frozen-thumbnail.webp'),
               snapshot_confirmed_at = NOW()
         WHERE id = ? AND gym_id = ?`,
-      [apps[0].id, gymId],
-    );
-    // #3026 stage 3c-2: the card reads the plan snapshot's own row, so the fixture writes it too.
-    await db.query(
-      `UPDATE plan_promotion_snapshots pps
-         JOIN user_membership_promotions ump ON ump.id = pps.source_id
-          SET pps.snapshot = ump.snapshot, pps.snapshot_confirmed_at = ump.snapshot_confirmed_at
-        WHERE ump.id = ? AND ump.gym_id = ?`,
       [apps[0].id, gymId],
     );
     const res = await getDetail(umId);

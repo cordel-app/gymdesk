@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, legacyChildQuery } from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -149,7 +149,7 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
     await db.query('INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)', [gymId, promo.insertId, planId]);
     const applied = await auth(request.post(`/product-sets/${id}/promotions`)).send({ promotion_id: promo.insertId });
     expect(applied.status).toBe(200);
-    const { rows } = await db.query<any>('SELECT snapshot FROM user_membership_promotions WHERE id = ?', [applied.body.application_id]);
+    const { rows } = await legacyChildQuery('SELECT snapshot FROM user_membership_promotions WHERE id = ?', [applied.body.application_id]);
     expect(rows[0].snapshot).toBeNull();
     const again = await auth(request.post(`/product-sets/${id}/promotions`)).send({ promotion_id: promo.insertId });
     expect(again.status).toBe(400); // already applied

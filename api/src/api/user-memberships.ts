@@ -465,15 +465,29 @@ async function loadApplicationsKeyedBy(
         WHERE pa.source_user_membership_id IN (${marks}) AND pa.gym_id = ?
           AND ${isCurrentAssignmentSnapshotSql('pa')}`,
       [...ids, gymId])
+    // #3026 stage 3d-1: a version read directly takes its Plan applications from its primary plan
+    // snapshot's own rows too; only its Product-target applications are `user_membership_promotions`.
     : await exec.query(
-      `SELECT ump.id, ump.product_set_id AS owner_key, ump.promotion_id, ump.status,
+      `SELECT pps.id, psj.product_set_id AS owner_key, pps.promotion_id, pps.status,
+              pps.applied_at, pps.revoked_at, pps.snapshot,
+              p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
+              'membership_plan' AS applies_to
+         FROM product_set_plan_snapshots psj
+         JOIN plan_promotion_snapshots pps
+           ON pps.plan_snapshot_id = ${promotionHolderSql('psj.plan_snapshot_id')}
+         LEFT JOIN promotions p ON p.id = pps.promotion_id
+        WHERE psj.product_set_id IN (${marks}) AND pps.gym_id = ?
+          AND psj.id = (SELECT MIN(f.id) FROM product_set_plan_snapshots f
+                         WHERE f.product_set_id = psj.product_set_id AND f.entitlement_only = 0)
+       UNION ALL
+       SELECT ump.id, ump.product_set_id AS owner_key, ump.promotion_id, ump.status,
               ump.applied_at, ump.revoked_at, ump.snapshot,
               p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
               p.applies_to
          FROM user_membership_promotions ump
-         LEFT JOIN promotions p ON p.id = ump.promotion_id
+         JOIN promotions p ON p.id = ump.promotion_id AND p.applies_to = 'product'
         WHERE ump.product_set_id IN (${marks}) AND ump.gym_id = ?`,
-      [...ids, gymId]);
+      [...ids, gymId, ...ids, gymId]);
   const shaped = await Promise.all(rows.map(async (row: any) => {
     const snap = row.snapshot as {
       name?: string; free_months?: number | null; paid_months?: number | null; bonus_months?: number | null;
