@@ -207,6 +207,10 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
               membership_plan_id: plan.id,
               starts_at: startsAt,
               owner_is_beneficiary: selectedIds.includes(ownerId),
+              // #2966 stage 6: the beneficiaries picked here cover the added plan too, and the
+              // selected Promotions are sent so the server refuses them rather than dropping them.
+              beneficiary_member_ids: selectedIds,
+              promotion_ids: selectedPromotionIds,
             }),
           });
           setConflict(null);
