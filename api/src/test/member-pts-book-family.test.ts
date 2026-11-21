@@ -57,7 +57,7 @@ describe('POST /members/:memberId/personal-training-slots/book-family', () => {
     const { insertId: sid } = await db.query('INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)', [gymId, `Svc-${uniq()}`]);
     serviceId = sid;
     await db.query(`INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`, [gymId, sid]);
-    const { insertId: at } = await db.query(`INSERT INTO activity_types (gym_id, name, max_capacity, public_event, status) VALUES (?, ?, 5, 1, 'active')`, [gymId, `Act-${uniq()}`]);
+    const { insertId: at } = await db.query(`INSERT INTO activity_types (gym_id, name, max_capacity, public_event, status) VALUES (?, ?, 5, 0, 'active')`, [gymId, `Act-${uniq()}`]);
     await db.query('INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id) VALUES (?, ?, ?)', [gymId, at, sid]);
     // Only a and b hold sessions; c does not.
     await grantSessions(gymId, a, sid);
