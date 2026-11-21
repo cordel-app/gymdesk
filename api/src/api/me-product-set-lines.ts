@@ -11,6 +11,8 @@ import { membershipFeeUnits, toMembershipFeeScope, type MembershipFeeScope } fro
 import { cancellationEndDate } from '../domain/cancellationEntitlement';
 import { loadPaidThrough } from './cancellation-entitlement';
 import { productBenefitPrices } from './product-benefit-pricing';
+import { loadPlanAccessEntries } from './plan-center-access';
+import type { PlanAccessEntry } from '../domain/planAccessBenefit';
 import { toProductBenefit } from '../domain/productBenefitActions';
 
 /**
@@ -123,6 +125,8 @@ export interface MemberProductSetPlan {
   membership_fee_units: number;
   discount_reason: string | null;
   beneficiaries: { member_id: number; name: string | null; is_owner: boolean }[];
+  /** #3099 — the access the plan grants each beneficiary (`Access to [center]`), as the Admin card reads it. */
+  plan_access: PlanAccessEntry[];
   benefits: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory: boolean;
     /** #2805 — the member a per-member line is for (#2657 stage 3); null for a Family line or one not split yet. */
     assigned_member_id: number | null; member_name: string | null;
@@ -291,6 +295,12 @@ export async function loadMemberProductSetView(
   const marked = set.status === 'in_cart' ? planRows.filter((r) => r.lifecycle_status === 'to_be_canceled') : [];
   const paidThrough = marked.length > 0 ? await loadPaidThrough(db as any, gymId, Number(set.id)) : null;
   const todayIso = new Date().toISOString().slice(0, 10);
+  const accessBySnapshot = new Map<number, PlanAccessEntry[]>();
+  for (const r of planRows) {
+    accessBySnapshot.set(Number(r.plan_snapshot_id), await loadPlanAccessEntries(
+      gymId, r.membership_plan_id == null ? null : Number(r.membership_plan_id),
+      beneficiaries.get(Number(r.plan_snapshot_id)) ?? []));
+  }
   const plans: MemberProductSetPlan[] = planRows
     .map((r) => {
       const umId = r.user_membership_id == null ? null : Number(r.user_membership_id);
@@ -320,6 +330,7 @@ export async function loadMemberProductSetView(
         ),
         discount_reason: r.discount_reason ?? null,
         beneficiaries: beneficiaries.get(Number(r.plan_snapshot_id)) ?? [],
+        plan_access: accessBySnapshot.get(Number(r.plan_snapshot_id)) ?? [],
         benefits: benefits.get(Number(r.plan_snapshot_id)) ?? [],
       };
     })

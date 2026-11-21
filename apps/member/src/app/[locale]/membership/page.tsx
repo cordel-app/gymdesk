@@ -113,6 +113,7 @@ import {
   pastPlanStatusKey,
   pastPromotionBenefitText,
   pastPromotionName,
+  planAccessLines,
 } from '@/lib/memberPlans';
 import {
   type AppliedMemberProductPromotion,
@@ -904,7 +905,11 @@ export default function MembershipPage() {
     const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
     const feeScopeNote = planFeeScopeNote(plan);
-    const names = (mandatory: boolean) => [...new Set(benefits.filter((b) => (b.mandatory !== false) === mandatory).map((b) => b.name))].join(', ') || null;
+    // #3099 — everything the plan contracts is *Included*: its access (`Access to [center]` for each
+    // beneficiary, as Admin words it) and every line it holds; there is no Optional group.
+    const accessNames = planAccessLines(plan.plan_access).map((l) =>
+      [t(`membership.${l.key}` as any, l.values as any), l.beneficiary ? `(${l.beneficiary})` : null].filter(Boolean).join(' '));
+    const included = [...accessNames, ...new Set(benefits.map((b) => b.name))].join(', ') || null;
     const pendingAmount = payable && pendingMembership?.membership_fee != null
       ? formatPaymentAmount(pendingMembership.membership_fee, 'EUR', gymFmt) : null;
     return {
@@ -922,9 +927,7 @@ export default function MembershipPage() {
       imageUrl: plan.plan_image_thumbnail_url ?? null,
       imageFullUrl: plan.plan_image_url ?? null,
       includedLabel: t('membership.plan_included'),
-      included: names(true),
-      optionalLabel: t('membership.plan_optional'),
-      optional: names(false),
+      included,
       // #2798 — always the start date; the end date, or *Open-ended* when the plan has none.
       period: t('membership.plan_period', {
         start: plan.starts_at ? formatGymDateOnly(plan.starts_at, gymFmt) : '—',

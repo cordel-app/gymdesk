@@ -193,3 +193,38 @@ export function pastPromotionBenefitText(
 export function pastPromotionName(promotion: PastPlanPromotion): string | null {
   return promotion.name && promotion.name.trim() !== '' ? promotion.name : null;
 }
+
+/** #3099 — a plan's access, as the Admin words it (`Access to [center]`), one entry per beneficiary. */
+export interface MemberPlanAccessEntry {
+  member_id: number;
+  member_name: string | null;
+  all_centers: boolean;
+  centers: { id: number; name: string }[];
+  online: boolean;
+}
+
+export interface MemberPlanAccessLine {
+  key: 'plan_access_all' | 'plan_access_all_online' | 'plan_access_centers' | 'plan_access_centers_online' | 'plan_access_online';
+  values?: { centers: string };
+  /** The beneficiary the access is for; `null` when the entry names none. */
+  beneficiary: string | null;
+}
+
+/** The locale key (under `membership.`) and values for each entry; an entry granting nothing is dropped. */
+export function planAccessLines(entries: readonly MemberPlanAccessEntry[] | null | undefined): MemberPlanAccessLine[] {
+  const out: MemberPlanAccessLine[] = [];
+  for (const e of entries ?? []) {
+    const beneficiary = e.member_name ?? null;
+    if (e.all_centers) {
+      out.push({ key: e.online ? 'plan_access_all_online' : 'plan_access_all', beneficiary });
+    } else if (e.centers.length > 0) {
+      out.push({
+        key: e.online ? 'plan_access_centers_online' : 'plan_access_centers',
+        values: { centers: e.centers.map((c) => c.name).join(', ') }, beneficiary,
+      });
+    } else if (e.online) {
+      out.push({ key: 'plan_access_online', beneficiary });
+    }
+  }
+  return out;
+}

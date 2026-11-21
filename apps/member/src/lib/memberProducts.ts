@@ -504,6 +504,8 @@ export interface MemberSetPlan {
   membership_fee_units?: number;
   discount_reason?: string | null;
   beneficiaries?: { member_id: number; name: string | null; is_owner: boolean }[];
+  /** #3099 — the access the plan grants each beneficiary. */
+  plan_access?: { member_id: number; member_name: string | null; all_centers: boolean; centers: { id: number; name: string }[]; online: boolean }[];
   benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null }[];
 }
 
