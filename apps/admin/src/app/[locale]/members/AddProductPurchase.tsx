@@ -183,8 +183,11 @@ export function useAddProductForm({
 
   const showAssignee = showsAssigneeSelector(assignees, product);
 
+  // #3020 stage 6: a one-time Product's quantity (a Sessions Product: packages) is 1-99, like the API's.
+  const oneTimeRow = edit ? edit.kind === 'one_time' : !!product && !product.recurring;
+  const quantityMax = oneTimeRow ? 99 : 999;
   const quantityValue = Number(quantity);
-  const quantityValid = Number.isInteger(quantityValue) && quantityValue >= 1 && quantityValue <= 999;
+  const quantityValid = Number.isInteger(quantityValue) && quantityValue >= 1 && quantityValue <= quantityMax;
 
   async function saveEdit() {
     if (!edit) return;
@@ -195,7 +198,7 @@ export function useAddProductForm({
       await apiFetch(oneTime ? `${base}/${edit.lineId}` : `${base}/recurring/${edit.lineId}`, {
         method: 'PUT',
         body: JSON.stringify({
-          ...(oneTime ? {} : { quantity: quantityValue }),
+          quantity: quantityValue,
           promotion_ids: promotionIds,
           // The direct discount is the Admin's alone; anyone else leaves it as stored.
           ...(isAdmin ? { direct_discount_percent: discountValue } : oneTime ? { direct_discount_percent: edit.directDiscountPercent } : {}),
@@ -223,7 +226,7 @@ export function useAddProductForm({
         body: JSON.stringify({
           product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue,
           ...(showAssignee ? { assigned_member_id: assignedMemberId } : {}),
-          ...(product.recurring ? { quantity: quantityValue } : { draft: true }),
+          ...(product.recurring ? { quantity: quantityValue } : { draft: true, quantity: quantityValue }),
           ...(confirmBillingFrequency ? { confirm_billing_frequency: true } : {}),
           ...(requiredProducts.length > 0 && !requiredPending ? { confirm_required_products: true } : {}),
         }),
@@ -257,9 +260,9 @@ export function useAddProductForm({
   }
 
   const canCreate = !busy && !outcome && !requiredPending && productId != null && quote != null && !Number.isNaN(discountValue)
-    && (edit ? edit.kind === 'one_time' || quantityValid : !product?.recurring || quantityValid);
+    && quantityValid;
   return {
-    edit, quantity, setQuantity, quantityValid,
+    edit, quantity, setQuantity, quantityValid, quantityMax,
     t, tFreq, isAdmin, embedded, recurringOnly, onClose,
     catalogue, productId, product, promotionIds, discount, setDiscount, quote, error, busy, outcome,
     requiredProducts, requiredPending, selectionKey, setConfirmedKey, cancelRequired, togglePromotion,
@@ -410,7 +413,7 @@ export function EditQuantityField({ form: f, label }: { form: AddProductForm; la
         aria-label={label}
         type="number"
         min={1}
-        max={999}
+        max={f.quantityMax}
         style={{ ...formControlStyle, width: 80 }}
         value={f.quantity}
         disabled={f.busy}
@@ -514,14 +517,14 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
           <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
           {cells.product}
         </div>
-        {(form.edit ? form.edit.kind !== 'one_time' : form.product?.recurring) && (
+        {(form.edit ? true : !!form.product) && (
           <div style={{ flex: '0 0 96px' }}>
             <label style={formFieldLabelStyle} htmlFor="edit-product-quantity">{t('draft_line_quantity')}</label>
             <input
               id="edit-product-quantity"
               type="number"
               min={1}
-              max={999}
+              max={form.quantityMax}
               style={{ ...formControlStyle, width: 80 }}
               value={form.quantity}
               disabled={form.busy}
