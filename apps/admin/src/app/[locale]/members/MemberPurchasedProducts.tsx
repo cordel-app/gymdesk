@@ -571,7 +571,10 @@ function ExpandedProductFacts({ item, gymFmt }: { item: PurchasedProduct; gymFmt
   };
   const sharing = sharingTypeKey(item.product_sharing_type);
   const sectionTitle = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, margin: '0 0 2px', opacity: 0.7 };
-  const price = [money(item.regular_amount, item.currency), formatAppliedTax(item.tax_rate_percent) ? `${t('purchase_exp_tax')} ${formatAppliedTax(item.tax_rate_percent)}` : null].filter(Boolean).join(' · ');
+  // #3160 — the stored amount is VAT-inclusive; say so only where a rate was stored (no claim of a
+  // tax that is not configured, #1121), and give the rate a row of its own.
+  const appliedTax = formatAppliedTax(item.tax_rate_percent);
+  const price = [money(item.regular_amount, item.currency), appliedTax ? t('purchase_exp_vat_included') : null].filter(Boolean).join(' · ');
   // #3021 — compact: three sections side by side (wrapping on a phone), the way the creation layout is one dense block.
   return (
     <div style={{ padding: '6px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '4px 24px' }} data-product-facts>
@@ -592,6 +595,7 @@ function ExpandedProductFacts({ item, gymFmt }: { item: PurchasedProduct; gymFmt
       <div>
         <div style={sectionTitle}>{t('purchase_exp_billing')}</div>
         <CardDetailRow label={t('purchase_exp_price')} value={price} />
+        <CardDetailRow label={t('purchase_exp_tax')} value={appliedTax ?? dash} />
         {item.product_notes ? <CardDetailRow label={t('purchase_exp_notes')} value={item.product_notes} /> : null}
       </div>
     </div>
