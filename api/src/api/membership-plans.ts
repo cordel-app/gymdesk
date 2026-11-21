@@ -1014,7 +1014,8 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     recordDeclinedBenefitsAudit(req, insertId, declinedResult.declined);
     res.status(201).json({ ...rows[0], members: coveredMembers, applied_promotion_ids: [...new Set(promotionIds)] });
   } catch (err: any) {
-    if (err?.status) return res.status(err.status).json({ error: err.message });
+    // #2966 stage 3: `in_flight` names the version, so the Admin can add the plan to it as a snapshot.
+    if (err?.status) return res.status(err.status).json({ error: err.message, ...(err.code === 'in_flight' ? { code: 'in_flight', product_set_id: err.productSetId } : {}) });
     // #956 (migration 213): a Member holds at most one live Membership Plan.
     // Since #1108 stage 1 this route inserts a Draft, whose `active_member_key`
     // is NULL, so the restored UNIQUE index cannot fire here at all — the
