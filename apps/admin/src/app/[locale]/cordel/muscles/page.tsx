@@ -8,6 +8,7 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MuscleImageField } from '@/components/MuscleImageField';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall, overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { formControlStyle, formFieldLabelStyle, inlineActionsRowStyle, secondaryBtnSmall, formErrorStyle } from '@/components/formChrome';
 import { formatExerciseTimestamp, exerciseDisplayValue } from '@/components/exercises/exerciseForm';
@@ -55,6 +56,8 @@ export default function CordelMusclesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // #3173 — the image open in the viewer; the list, its search and scroll stay as they were.
+  const [viewing, setViewing] = useState<{ name: string; imageUrl: string | null; version: string | null } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Muscle | null>(null);
@@ -152,6 +155,13 @@ export default function CordelMusclesPage() {
 
   return (
     <div>
+      <ProfessionalServiceImageModal
+        target={viewing ? { name: viewing.name, imageUrl: viewing.imageUrl, description: null, version: viewing.version } : null}
+        onClose={() => setViewing(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('image_none')}
+        noDescriptionLabel=""
+      />
       <FieldTranslationsModal
         open={langModal !== null}
         title={t('translations_title', { field: t('name') })}
@@ -198,9 +208,10 @@ export default function CordelMusclesPage() {
       {loading ? null : rows.length === 0 ? (
         <p style={{ color: '#888' }}>{t('empty')}</p>
       ) : rows.map((row) => {
+        // #3173 — each thumbnail opens its own full image (the 1080 × 1080 master) in the viewer.
         const thumbs = [
-          { sex: 'male' as const, src: row.image_male_url_thumbnail ?? row.image_male_url },
-          { sex: 'female' as const, src: row.image_female_url_thumbnail ?? row.image_female_url },
+          { sex: 'male' as const, src: row.image_male_url_thumbnail ?? row.image_male_url, full: row.image_male_url },
+          { sex: 'female' as const, src: row.image_female_url_thumbnail ?? row.image_female_url, full: row.image_female_url },
         ];
         const editing = editingId === row.id;
         const expanded = expandedId === row.id || editing;
@@ -217,18 +228,32 @@ export default function CordelMusclesPage() {
                 style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, cursor: 'pointer' }}
               >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
-                {thumbs.map(({ sex, src }) => (
-                  <div
-                    key={sex}
-                    title={t(sex === 'male' ? 'image_male' : 'image_female')}
-                    style={{ width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', flex: '0 0 auto', background: '#f3f4f6' }}
-                  >
-                    {src && SAFE_IMAGE_SRC.test(src) && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={src} alt={t(sex === 'male' ? 'image_male' : 'image_female')} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    )}
-                  </div>
-                ))}
+                {thumbs.map(({ sex, src, full }) => {
+                  const label = t(sex === 'male' ? 'image_male' : 'image_female');
+                  const shown = !!src && SAFE_IMAGE_SRC.test(src);
+                  const circle = { width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', flex: '0 0 auto', background: '#f3f4f6' } as const;
+                  const img = shown ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={src!} alt={label} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  ) : null;
+                  return shown ? (
+                    <button
+                      key={sex}
+                      type="button"
+                      data-muscle-thumbnail={sex}
+                      title={label}
+                      aria-label={t('image_open', { image: label.toLowerCase(), muscle: row.name })}
+                      // The row header expands on click; opening the image must not.
+                      onClick={(e) => { e.stopPropagation(); setViewing({ name: `${row.name} — ${label}`, imageUrl: full ?? src, version: row.modified_at ?? null }); }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      style={{ ...circle, border: 'none', padding: 0, cursor: 'zoom-in' }}
+                    >
+                      {img}
+                    </button>
+                  ) : (
+                    <div key={sex} title={label} style={circle} />
+                  );
+                })}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.name}>{row.name}</div>

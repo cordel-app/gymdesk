@@ -5782,6 +5782,7 @@
     "image_male": "Imagen masculina",
     "image_female": "Imagen femenina",
     "image_requirements": "Cualquier imagen JPEG, PNG, WebP o GIF. El servidor la ajusta a un WebP de 1080 × 1080 con fondo transparente y genera una miniatura de 256 × 256. Masculina y femenina se gestionan por separado.",
+    "image_open": "Abrir la {image} de {muscle}",
     "image_none": "Sin imagen",
     "image_upload": "Subir imagen",
     "image_replace": "Reemplazar imagen",
