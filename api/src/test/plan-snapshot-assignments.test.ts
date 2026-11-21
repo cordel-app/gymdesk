@@ -225,7 +225,7 @@ describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
     expect(secondLines[0].line.actual_charge).toBeGreaterThan(0);
     // After the prorated stretch the plan bills on the first plan's dates, in full.
     const firstDates = events.flatMap((e) => e.lines.filter((l) => l.regular_price === 50).map(() => e.date));
-    expect(secondLines[1].date).toBe(firstDates[1]);
+    expect(secondLines[1].date).toBe(firstDates.find((d) => d > joinStart));
     expect(secondLines[1].line.actual_charge).toBe(31);
   });
 });
