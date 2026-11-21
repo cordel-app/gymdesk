@@ -17,14 +17,18 @@ interface Attendee {
   member_name: string;
   status: string;
   attendance_status: 'pending' | 'present' | 'absent';
+  service_consumed?: number | boolean;
+  service_returned?: number | boolean;
 }
 
 export type AttendeesMode = 'view' | 'celebrate';
 
-export function HomeClassAttendees({ sessionId, sessionName, mode, onClose, onCompleted }: {
+export function HomeClassAttendees({ sessionId, sessionName, mode, hasService, onClose, onCompleted }: {
   sessionId: number;
   sessionName: string;
   mode: AttendeesMode;
+  /** #3096: the class is linked to a Professional Service, so an absence may be refunded. */
+  hasService?: boolean;
   onClose: () => void;
   onCompleted: () => void;
 }) {
@@ -57,6 +61,22 @@ export function HomeClassAttendees({ sessionId, sessionName, mode, onClose, onCo
       setRows((cur) => (cur ?? []).map((r) => (r.id === b.id ? { ...r, ...updated } : r)));
     } catch (err: any) {
       toast(err?.message ?? tc('attendance_error'));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // #3096: giving back the session an absence spent is the calendar panel's own
+  // route and rule (`POST /bookings/:id/refund-balance`), offered only for a
+  // class linked to a Professional Service whose spend is still unreturned.
+  async function refund(b: Attendee) {
+    if (busyId !== null) return;
+    setBusyId(b.id);
+    try {
+      const updated = await apiFetch<Attendee>(`/bookings/${b.id}/refund-balance`, { method: 'POST' });
+      setRows((cur) => (cur ?? []).map((r) => (r.id === b.id ? { ...r, ...updated } : r)));
+    } catch (err: any) {
+      toast(err?.message ?? tc('refund_balance_error'));
     } finally {
       setBusyId(null);
     }
@@ -107,6 +127,9 @@ export function HomeClassAttendees({ sessionId, sessionName, mode, onClose, onCo
                   <button type="button" disabled={busyId !== null} aria-pressed={b.attendance_status === 'absent'} onClick={() => setAttendance(b, 'absent')}
                     style={{ ...(b.attendance_status === 'absent' ? primaryBtnSmall() : secondaryBtnSmall), opacity: busyId !== null ? 0.6 : 1 }}>{tc('attendance_mark_absent')}</button>
                 </div>
+              )}
+              {celebrate && hasService && b.attendance_status === 'absent' && !!b.service_consumed && (
+                <button type="button" disabled={busyId !== null} style={secondaryBtnSmall} onClick={() => refund(b)}>{tc('refund_balance')}</button>
               )}
             </div>
           ))}
