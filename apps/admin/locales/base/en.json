@@ -536,7 +536,7 @@
     "add_product_error_duplicate_promotion": "This promotion is already applied to this product.",
     "add_product_error_nothing_to_pay": "Nothing is owed today.",
     "add_product_error_draft_expired": "The draft expired. Start again.",
-    "section_pt_slots": "Personal Training Class Slots",
+    "section_pt_slots": "Professional Services Schedule",
     "pt_slots_loading": "Loading slots…",
     "pt_slots_error": "Could not load Personal Training slots.",
     "pt_slots_no_services": "This member holds no Professional Service sessions, so no slots are eligible.",
