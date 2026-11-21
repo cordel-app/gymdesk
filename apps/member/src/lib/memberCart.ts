@@ -40,6 +40,8 @@ export interface MemberStandalonePurchase {
   product_id: number | null;
   product_name: string;
   amount: number;
+  /** #3020 stage 7: the quantity (a Sessions Product: packages); `amount` is the total for it. */
+  quantity?: number | null;
   currency?: string | null;
   cart_expires_at?: string | null;
 }
@@ -69,7 +71,7 @@ export type MemberCartView = MemberSetView & {
 export type CartItem =
   | { kind: 'plan'; key: string; name: string; planSnapshotId: number; planId: number | null }
   | { kind: 'line'; key: string; name: string; lineId: number; productId: number }
-  | { kind: 'purchase'; key: string; name: string; purchaseId: number; productId: number | null; amount: number; currency: string; standalone: boolean };
+  | { kind: 'purchase'; key: string; name: string; purchaseId: number; productId: number | null; amount: number; currency: string; standalone: boolean; quantity?: number };
 
 /** The cart's commit: the Draft's own (#2496 stage 5), or the standalone cart's checkout (#2949 stage 6). */
 export type CartCommitAction = SetCommitAction | 'cart_checkout';
@@ -99,6 +101,7 @@ function standaloneItems(purchases: MemberStandalonePurchase[] | undefined): Car
     kind: 'purchase', key: `standalone-${p.id}`, name: p.product_name,
     purchaseId: Number(p.id), productId: p.product_id == null ? null : Number(p.product_id),
     amount: Number(p.amount), currency: p.currency ?? 'EUR', standalone: true,
+    quantity: Math.max(1, Number(p.quantity ?? 1)),
   }));
 }
 
@@ -368,4 +371,17 @@ export function pendingCartCancelErrorKey(message: string | null | undefined): s
     case 'payment_unresolved': return 'membership.summary_error_unresolved';
     default: return 'membership.cart_pending_error_generic';
   }
+}
+
+/** #3020 stage 7: the quantity of a one-time purchase in the cart is a whole number from 1 to this (the API's limit). */
+export const CART_PURCHASE_MAX_QUANTITY = 99;
+
+/** The route that changes a standalone cart purchase's quantity (`PUT`, body `{ quantity }`), or null for any other item. */
+export function cartItemQuantityPath(item: CartItem): string | null {
+  return item.kind === 'purchase' && item.standalone ? `/me/cart/purchases/${item.purchaseId}` : null;
+}
+
+/** Whether a quantity may be sent: a whole number from 1 to the limit. */
+export function isValidCartQuantity(n: number): boolean {
+  return Number.isInteger(n) && n >= 1 && n <= CART_PURCHASE_MAX_QUANTITY;
 }
