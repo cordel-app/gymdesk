@@ -7,6 +7,7 @@ import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { isActivityTypeEligibleForMember } from './activity-eligibility';
 import { bookMemberOnSession } from './bookings';
+import { ownerFamilyMemberIds } from './owner-family';
 import {
   BookingResult,
   SlotIdentity,
@@ -503,6 +504,94 @@ memberPersonalTrainingSlotsRouter.post('/book', requireModuleWrite('MEMBERS'), a
       selections: describeSelections(selections, projection.days),
       slots: describeSlotRun(slotReports),
     });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #3090 stage 2: book the same slots for several members of one family.
+ *
+ *   POST /members/:memberId/personal-training-slots/book-family
+ *   body: { member_ids: number[], slots: SlotIdentity[] }
+ *
+ * `:memberId` names whose family it is; every id in `member_ids` must belong to
+ * that family (`ownerFamilyMemberIds()`, the one read plan assignment uses).
+ * Nothing new is decided here: each member is projected through
+ * `loadProjection()` (their own balances and eligibility), the slots are added
+ * to their stored weekly pattern, and every free date goes through
+ * `bookSelectedSlots()` → `bookMemberOnSession()`. A member for whom a slot is
+ * not offered is reported (`slot_not_available`) and nothing is booked for
+ * them; the others are unaffected, since each date is its own transaction.
+ */
+memberPersonalTrainingSlotsRouter.post('/book-family', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = parseMemberId(req);
+  if (memberId === null) return res.status(400).json({ error: 'memberId must be a positive integer' });
+
+  const body = (req.body ?? {}) as { member_ids?: unknown; slots?: unknown };
+  const rawIds = body.member_ids;
+  if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 20
+      || !rawIds.every((v) => Number.isInteger(v) && (v as number) > 0)) {
+    return res.status(400).json({ error: 'member_ids must be a non-empty list of member ids' });
+  }
+  const memberIds = Array.from(new Set(rawIds as number[]));
+  const parsed = parseSlotIdentities(body.slots);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  if (parsed.slots.length === 0) return res.status(400).json({ error: 'slots must not be empty' });
+
+  try {
+    if (!(await findMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
+
+    const family = new Set(await ownerFamilyMemberIds(db, gymId, memberId));
+    const outsider = memberIds.find((id) => !family.has(id));
+    if (outsider !== undefined) {
+      return res.status(400).json({
+        error: 'Member is not part of this family',
+        code: 'member_not_in_family',
+        member_id: outsider,
+      });
+    }
+
+    const actor = resolveRequestActor(getTenantContext(req));
+    const members: Array<Record<string, unknown>> = [];
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const id of memberIds) {
+      const current = await loadSelections(gymId, id);
+      const projection = await loadProjection(gymId, id, current);
+      const offered = new Set<string>();
+      for (const day of projection.days) for (const slot of day.slots) offered.add(slotIdentityKey(slot));
+      const unavailable = parsed.slots.filter((s) => !offered.has(slotIdentityKey(s)));
+      if (unavailable.length > 0) {
+        members.push({
+          member_id: id, created: 0, skipped: 0, failed: 0,
+          error: 'slot_not_available', unavailable_slots: unavailable, slots: [],
+        });
+        continue;
+      }
+
+      const currentKeys = new Set(current.map(slotIdentityKey));
+      const wanted = [...current, ...parsed.slots.filter((s) => !currentKeys.has(slotIdentityKey(s)))];
+      await replaceSelections(gymId, id, wanted, current, actor);
+      const run = await bookSelectedSlots(gymId, id, parsed.slots, projection.days, actor);
+      created += run.created;
+      skipped += run.skipped;
+      failed += run.failed;
+      members.push({
+        member_id: id, created: run.created, skipped: run.skipped, failed: run.failed,
+        slots: describeSlotRun(run.slots),
+      });
+    }
+
+    recordAudit(req, {
+      action: 'book_family_recurring_slots',
+      entityType: 'member',
+      entityId: String(memberId),
+      next: { member_ids: memberIds, created, skipped, failed },
+    });
+
+    res.json({ created, skipped, failed, members });
   } catch (err) { next(err); }
 });
 
