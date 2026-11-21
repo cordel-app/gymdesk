@@ -1,7 +1,7 @@
 import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { recordPlanPromotionApplied, recordPlanPromotionConfirmed } from './plan-promotion-writer';
+import { recordPlanPromotionApplied, recordPlanPromotionConfirmed, recordPlanPromotionGrants } from './plan-promotion-writer';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionMutator, revokePromotionMutator } from './product-set-bridge';
@@ -860,6 +860,7 @@ export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, prod
     }
     await snapshotPromotionGrants(tx, gymId, Number(app.id), Number(app.promotion_id));
     await recordPlanPromotionConfirmed(tx, gymId, Number(app.id), snapshot != null ? JSON.stringify(snapshot) : null);
+    await recordPlanPromotionGrants(tx, gymId, Number(app.id));
   }
   if (rows.length > 0 || discarded > 0) await syncPlanSnapshot(tx, gymId, productSetId);
 }
