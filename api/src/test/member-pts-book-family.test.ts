@@ -84,7 +84,7 @@ describe('POST /members/:memberId/personal-training-slots/book-family', () => {
     center_id: slot.center_id ?? null,
   });
 
-  it('books every family member through the family's shared balance', async () => {
+  it('books every family member through the shared family balance', async () => {
     const res = await post(gymId, a, { member_ids: [a, b, c], slots: [identity()] });
     expect(res.status).toBe(200);
     const byId = new Map<number, any>(res.body.members.map((m: any) => [m.member_id, m]));
