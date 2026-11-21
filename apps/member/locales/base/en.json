@@ -587,6 +587,7 @@
     "cart_paying": "Starting payment…",
     "cart_cancel": "Cancel",
     "cart_item_cancel": "Cancel",
+    "cart_item_quantity": "Quantity",
     "cart_removing": "Removing…",
     "cart_kind_plan": "Plan",
     "cart_kind_product": "Product",

@@ -25,7 +25,10 @@ import {
   cartCommitAction,
   cartCounts,
   cartErrorKey,
+  cartItemQuantityPath,
   cartItemRemovePath,
+  CART_PURCHASE_MAX_QUANTITY,
+  isValidCartQuantity,
   cartItems,
   cartItemsRemovable,
   cartPendingAmount,
@@ -50,6 +53,7 @@ import { formatPaymentAmount } from '@/lib/memberPayments';
 import {
   cartMutedStyle,
   cartSecondaryButtonStyle,
+  inputStyle,
   memberTheme,
   primaryButtonStyle,
   secondaryButtonStyle,
@@ -241,6 +245,21 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
     }
   }
 
+  async function changeQuantity(item: CartItem, quantity: number) {
+    const path = cartItemQuantityPath(item);
+    if (!path || cartBusy !== null || !isValidCartQuantity(quantity)) return;
+    setCartBusy(item.key);
+    setCartError(null);
+    try {
+      await apiFetch(path, { method: 'PUT', body: JSON.stringify({ quantity }) });
+    } catch (err: any) {
+      setCartError(cartErrorKey(err?.message));
+    } finally {
+      await changed();
+      setCartBusy(null);
+    }
+  }
+
   async function cancelPending() {
     if (!view || view.status !== 'pending_payment' || commitBusy) return;
     setCommitBusy(true);
@@ -307,10 +326,25 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
   const itemCancel = (items: CartItem[], allowed: (item: CartItem) => boolean) => (ci: { key: string }) => {
     const item = items.find((x) => x.key === ci.key);
     if (!item || !allowed(item)) return null;
+    const quantityPath = cartItemQuantityPath(item);
     return (
-      <button type="button" style={{ ...cartSecondaryButtonStyle, ...cartItemBtn }} disabled={busy} onClick={() => removeItem(item)}>
-        {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
-      </button>
+      <>
+        {quantityPath && item.kind === 'purchase' && (
+          <select
+            aria-label={t('membership.cart_item_quantity')}
+            data-cart-quantity
+            value={item.quantity ?? 1}
+            disabled={busy}
+            style={{ ...inputStyle, width: 'auto', marginRight: 8 }}
+            onChange={(e) => changeQuantity(item, Number(e.target.value))}
+          >
+            {Array.from({ length: CART_PURCHASE_MAX_QUANTITY }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
+        <button type="button" style={{ ...cartSecondaryButtonStyle, ...cartItemBtn }} disabled={busy} onClick={() => removeItem(item)}>
+          {cartBusy === item.key ? t('membership.cart_removing') : t('membership.cart_item_cancel')}
+        </button>
+      </>
     );
   };
   const payCancel = (onPay: () => void, onCancel: () => void, payEnabled: boolean) => (
