@@ -6,10 +6,10 @@ import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billi
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
 import { lockEditableDraft } from './editable-draft';
-import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
+import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, writeDiscountOnVersion, writeDraftAssignmentDates } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { writeAssignmentReplacement } from './plan-assignment-sync';
+import { lockAssignmentAnchor, writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
@@ -1030,12 +1030,21 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
         [req.params.id, gymId],
       );
       if (current.length === 0) return { kind: 'not_found' } as const;
+      // #2125 M6b-51b: the assignment's anchor snapshot is locked beside the legacy row (after it,
+      // the order every writer has), as the commit, the close and the projection do since M6b-51a.
+      await lockAssignmentAnchor(tx, gymId, Number(req.params.id));
       // #511 §10 — validate any direct status flip against the transition table,
       // same as the dedicated /close, /pause and /reactivate actions.
       if (status && status !== current[0].status
           && !ALLOWED_TRANSITIONS[current[0].status as Status].includes(status as Status)) {
         return { kind: 'invalid_transition', from: current[0].status } as const;
       }
+      // #2125 M6b-51b: a Draft's dates are written on its own plan snapshot and mirrored onto its
+      // version from there; the legacy row below takes the same values until its writes are dropped.
+      await writeDraftAssignmentDates(tx, gymId, Number(req.params.id), {
+        startsAt: starts_at ?? null,
+        endsAt: 'ends_at' in req.body ? { value: ends_at ?? null } : null,
+      });
       await tx.query(
         `UPDATE user_memberships SET
           starts_at            = COALESCE(?, starts_at),
@@ -1068,12 +1077,11 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
         });
       }
       // #1325 PR 3e-3: the negotiated fee's reason and expiry are the version's
-      // (the row no longer carries them); a Draft's dates are mirrored onto it too.
+      // (the row no longer carries them).
       await writeDiscountOnVersion(tx, gymId, Number(req.params.id), {
         reason: 'discount_reason' in req.body ? { value: discount_reason ?? null } : null,
         expires: 'discount_expires_at' in req.body ? { value: discount_expires_at || null } : null,
       });
-      await syncDraftSetFromAssignment(tx, gymId, Number(req.params.id));
       return { kind: 'ok' } as const;
     });
     if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
