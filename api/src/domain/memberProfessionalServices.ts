@@ -68,7 +68,7 @@ import { promotionHolderSql } from '../api/plan-snapshot-lines';
  * snapshot too (`pa`), which carries a closed plan's status and paid-through `ends_at` since the
  * settle run (M6b-6/7).
  */
-const ENTITLED_ASSIGNMENT_SQL = "(pa.status IN ('active', 'to_be_canceled') OR (pa.status IN ('active_cancel_at_period_end', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))";
+const ENTITLED_ASSIGNMENT_SQL = "(pa.status IN ('active', 'to_be_canceled') OR (pa.status IN ('active_cancel_at_period_end', 'to_be_reactivated', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))";
 
 export type ProfessionalServiceGrantKind =
   | 'class_package'

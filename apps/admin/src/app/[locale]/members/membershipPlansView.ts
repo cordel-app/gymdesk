@@ -12,6 +12,8 @@ import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
 const IN_FLIGHT = new Set(['in_cart', 'pending_payment']);
 /** The stored status of a plan cancelling at its period end (`api/src/domain/assignmentStatus.ts`). */
 const CANCELS_AT_PERIOD_END = 'active_cancel_at_period_end';
+/** #3114: the same plan, marked for reactivation in the open In Cart; it still runs to its end date. */
+const PENDING_REACTIVATION = 'to_be_reactivated';
 
 export const isInFlightPlan = (p: Pick<MemberPlanRow, 'status'>): boolean => IN_FLIGHT.has(p.status);
 
@@ -30,7 +32,7 @@ export function visiblePlans(plans: readonly MemberPlanRow[]): VisiblePlans {
   // #2659 stage 3: a plan cancelling at its period end is carried by the Draft (for entitlement
   // only — never billed), so it stays listed beside the in-flight version until its end date.
   // An Active plan is still replaced in the view by the Draft, as #1538 decides.
-  const cancelling = plans.filter((p) => p.status === CANCELS_AT_PERIOD_END && p.is_current && !isInFlightPlan(p));
+  const cancelling = plans.filter((p) => (p.status === CANCELS_AT_PERIOD_END || p.status === PENDING_REACTIVATION) && p.is_current && !isInFlightPlan(p));
   // #2742: a version awaiting its first payment is listed in the Active category (its own
   // `Pending Payment` badge tells it apart); only a Draft takes the view out of it.
   if (inFlight.length > 0) {

@@ -22,9 +22,17 @@ export const CANCELS_AT_PERIOD_END_STATUS = 'active_cancel_at_period_end' as con
  */
 export const PENDING_CANCELLATION_STATUS = 'to_be_canceled' as const;
 
+/**
+ * #3114: a plan cancelling at its period end (`active_cancel_at_period_end`) that staff marked for
+ * reactivation in the owner's open In Cart. It keeps reading and entitling exactly like the cancelling
+ * plan it still is (it is in `CANCELLED_ASSIGNMENT_STATUSES`) until the cart is committed, when it
+ * becomes `active`; discarding the cart puts it back.
+ */
+export const PENDING_REACTIVATION_STATUS = 'to_be_reactivated' as const;
+
 export const ASSIGNMENT_STATUSES = [
   'in_cart', 'pending_payment', 'active', PENDING_CANCELLATION_STATUS, 'paused',
-  CANCELS_AT_PERIOD_END_STATUS, 'cancelled', 'expired', 'superseded',
+  CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, 'cancelled', 'expired', 'superseded',
 ] as const;
 export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];
 
@@ -46,7 +54,7 @@ export function isRunningAssignmentStatus(status: unknown): boolean {
  * running to its end date and the finished one. Every reader that asks "was
  * this plan cancelled" asks this set, never `'cancelled'` alone.
  */
-export const CANCELLED_ASSIGNMENT_STATUSES = [CANCELS_AT_PERIOD_END_STATUS, 'cancelled'] as const;
+export const CANCELLED_ASSIGNMENT_STATUSES = [CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, 'cancelled'] as const;
 
 /** `CANCELLED_ASSIGNMENT_STATUSES` as a SQL list body, for `status IN (…)`. */
 export const CANCELLED_ASSIGNMENT_STATUSES_SQL = CANCELLED_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(', ');
@@ -73,7 +81,7 @@ export function cancellationStatusFor(endsAt: string | null, today: string): 'ac
  * the nightly sweep moving the row to `cancelled`.
  */
 export function entitledAssignmentSql(alias = 'um'): string {
-  return `(${alias}.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) OR (${alias}.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND ${alias}.ends_at >= UTC_DATE()))`;
+  return `(${alias}.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) OR (${alias}.status IN ('${CANCELS_AT_PERIOD_END_STATUS}', '${PENDING_REACTIVATION_STATUS}') AND ${alias}.ends_at >= UTC_DATE()))`;
 }
 
 /**

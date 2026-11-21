@@ -98,7 +98,7 @@ paymentRequestsRouter.post(
          FROM plan_snapshots um
          JOIN members m ON m.id = um.member_id
          WHERE ${assignmentOfLegacyIdSql('?', 'um')} AND um.gym_id = ?
-           AND um.status NOT IN ('active_cancel_at_period_end', 'cancelled', 'superseded')`,
+           AND um.status NOT IN ('active_cancel_at_period_end', 'to_be_reactivated', 'cancelled', 'superseded')`,
         [user_membership_id, gymId],
       );
       if (!umRows[0]) return res.status(404).json({ error: 'Membership not found' });

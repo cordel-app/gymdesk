@@ -52,6 +52,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/plan-assignment-drift.ts': 4,
   'api/plan-assignment-lifecycle.ts': 1,
   'api/plan-pending-cancellation.ts': 1, // #3007: the one dual-write of the to_be_canceled status
+  'api/plan-pending-reactivation.ts': 1, // #3114: the one dual-write of the to_be_reactivated status
   'api/plan-assignment-sync.ts': 2,
   'api/plan-snapshot-sync.ts': 1,
   'api/product-set-cancellation.ts': 1,
