@@ -57,9 +57,14 @@ describe('priceProductPurchase', () => {
     expect(r).toEqual({ ok: false, refusal: 'duplicate_promotion' });
   });
 
-  it('refuses a promotion that would not lower the running price or would make it free', () => {
-    expect(priceProductPurchase({ listPrice: 100, promotions: [promo(1, 'waive', null)] }))
-      .toEqual({ ok: false, refusal: 'promotion_not_lowering_price' });
+  it('prices a waived Product at zero (#3082) and refuses a direct discount on top of it', () => {
+    const r = priceProductPurchase({ listPrice: 100, promotions: [promo(1, 'waive', null)] });
+    expect(r.ok && r.price.final_price).toBe(0);
+    expect(priceProductPurchase({ listPrice: 100, promotions: [promo(1, 'waive', null)], directDiscountPercent: 10 }))
+      .toEqual({ ok: false, refusal: 'final_price_not_positive' });
+  });
+
+  it('refuses a promotion that would not lower the running price', () => {
     expect(priceProductPurchase({ listPrice: 100, promotions: [promo(1, 'fixed_price', 150)] }))
       .toEqual({ ok: false, refusal: 'promotion_not_lowering_price' });
   });

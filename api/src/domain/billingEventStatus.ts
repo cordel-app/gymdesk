@@ -43,6 +43,8 @@ export function statusFromTransaction(txStatus: string | null | undefined): Bill
 export function statusFromEventType(eventType: string): BillingEventStatus {
   switch (eventType) {
     case 'recurring_payment':
+    // #3082: a purchase whose Promotion waived it owes nothing and has no transaction.
+    case 'product_purchase':
     case 'payment_recorded': return 'paid';
     case 'failed_billing':   return 'failed';
     default:                 return 'recorded';

@@ -144,7 +144,8 @@ export async function loadPromotionOffersDetailed(
     //
     //  * **no price at all** — there is no Final price to recalculate, and §5's
     //    whole action is that recalculation;
-    //  * **priced to nothing** — this flow buys a Product by paying for it
+    //  * (**priced to nothing** — #3082 reversed this: a `waive` grant is offered and the purchase
+    //    completes at €0.00 with no payment request. The original reasoning follows for history.) this flow buys a Product by paying for it
     //    (§9, §16: "not considered successfully completed until payment has
     //    been successfully processed"), and there is no path here that grants
     //    one without a payment, so a `waive` grant would mean raising a €0
@@ -166,7 +167,7 @@ export async function loadPromotionOffersDetailed(
     const regular = offer.regular_price_incl_tax;
     const final = offer.final_price_incl_tax;
     if (regular == null || final == null) continue;
-    if (!(final > 0) || !(final < regular)) continue;
+    if (!(final >= 0) || !(final < regular)) continue;
     if (hiddenForNotNew) {
       skipped.set(productId, [...(skipped.get(productId) ?? []), {
         promotion_id: offer.promotion_id, promotion_name: offer.promotion_name, reason: 'new_members_only',
