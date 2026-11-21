@@ -358,6 +358,17 @@ export function MemberExpandedRow({
     }
   }
 
+  // #3114: Reactivate marks a plan cancelling at its period end in the member's open In Cart (nothing
+  // changes, and nothing is charged or audited, until Save & Pay); the same menu item un-marks it.
+  async function handleReactivatePlan(plan: { id: number }, action: 'mark' | 'unmark') {
+    try {
+      await apiFetch(`/user-memberships/${plan.id}/${action}-reactivate`, { method: 'POST', body: JSON.stringify({}) });
+      reloadConfiguration();
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'));
+    }
+  }
+
   function toggleEvent(id: number) {
     setExpandedEventIds((prev) => {
       const next = new Set(prev);
@@ -547,6 +558,7 @@ export function MemberExpandedRow({
               onChanged={reloadConfiguration}
               onAssignNewPlan={setAssigningFor}
               onCancelPlan={setCancelling}
+              onReactivatePlan={handleReactivatePlan}
               assignBusy={assigningFor !== null}
               renderAssignEditor={(m) => (
                 // #628: Assign New Plan stays an explicit supersede action, edited

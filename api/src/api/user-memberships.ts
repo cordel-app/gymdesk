@@ -24,6 +24,7 @@ import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { markPlanForCancellation, unmarkPlanForCancellation } from './plan-pending-cancellation';
+import { markPlanForReactivation, unmarkPlanForReactivation } from './plan-pending-reactivation';
 import { handleDupEntry } from '../infra/db-helpers';
 import { resolveRequestActor } from '../domain/auditActor';
 import { cancelPendingProductSet, reconcileSetPayments } from './product-set-cancellation';
@@ -127,6 +128,7 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
   paused: ['active', 'cancelled'],
   to_be_canceled: [],
   [CANCELS_AT_PERIOD_END_STATUS]: [],
+  to_be_reactivated: [],
   cancelled: [],
   superseded: [],
   expired: [],
@@ -231,6 +233,7 @@ export const LIFECYCLE_STATUS_SQL = `
   CASE
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' THEN 'cancelled'
+    WHEN um.status = 'to_be_reactivated' THEN 'to_be_reactivated'
     WHEN um.status IN ('in_cart', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
@@ -1777,6 +1780,46 @@ userMembershipsRouter.post('/:id/unmark-cancel', requireRole('admin'), async (re
   } catch (err) { next(err); }
 });
 
+/**
+ * #3114: marks a plan cancelling at its period end for reactivation in the member's open In Cart
+ * (`to_be_reactivated`, opening an In Cart when there is none) and un-marks it again. Nothing changes
+ * and nothing is audited until the cart is committed (the payment's confirmation, or a free
+ * activation); discarding the cart puts the plan back. A plan with a cancellation pending
+ * (`to_be_canceled`) just has that cancellation undone. `POST /:id/reactivate` stays the paused plan's.
+ */
+userMembershipsRouter.post('/:id/mark-reactivate', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Membership not found' });
+  try {
+    const out = await db.transaction((tx) => markPlanForReactivation(tx, {
+      gymId, userMembershipId: id, today: new Date().toISOString().slice(0, 10),
+      actor: { name: resolveRequestActor(getTenantContext(req)) },
+    }));
+    if (out.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (out.kind === 'not_reactivatable') return res.status(409).json({ error: 'not_reactivatable', status: out.status });
+    if (out.kind === 'in_flight') return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
+    if (out.kind === 'cancellation_undone') {
+      recordAudit(req, { action: 'unmark_cancel', entityType: 'user_membership', entityId: id, next: { status: 'active' } });
+      return res.json({ status: 'active' });
+    }
+    if (out.kind === 'ok') return res.json({ status: 'to_be_reactivated', product_set_id: out.productSetId });
+    return res.json({ status: 'to_be_reactivated' });
+  } catch (err) { next(err); }
+});
+
+userMembershipsRouter.post('/:id/unmark-reactivate', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Membership not found' });
+  try {
+    const n = await db.transaction((tx) => unmarkPlanForReactivation(tx, {
+      gymId, userMembershipId: id, actor: { name: resolveRequestActor(getTenantContext(req)) },
+    }));
+    if (n === 0) return res.status(409).json({ error: 'not_marked' });
+    return res.json({ status: 'active_cancel_at_period_end' });
+  } catch (err) { next(err); }
+});
 
 userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) => {
   const { gymId, userId, role } = getTenantContext(req);

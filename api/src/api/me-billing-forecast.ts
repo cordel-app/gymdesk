@@ -60,7 +60,7 @@ import { OWNED_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
  */
 export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
   ORDER BY
-    FIELD(um.status, 'active','paused','expired','active_cancel_at_period_end','cancelled','superseded'),
+    FIELD(um.status, 'active','paused','expired','active_cancel_at_period_end','to_be_reactivated','cancelled','superseded'),
     um.starts_at DESC`;
 
 /**
