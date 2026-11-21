@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DateTime } from 'luxon';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestFamily, createTestGym, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestFamily, createTestGym, createTestMembership, request } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -50,6 +50,7 @@ describe('POST /members/:memberId/personal-training-slots/book-family', () => {
 
   beforeAll(async () => {
     gymId = await createTestGym(`PTS Family ${uniq()}`);
+    await createTestMembership(gymId, 'admin');
     await db.query('UPDATE gyms SET timezone = ? WHERE id = ?', ['UTC', gymId]);
     a = await member(gymId); b = await member(gymId); c = await member(gymId); outsider = await member(gymId);
     await createTestFamily(gymId, a, [b, c]);
@@ -113,6 +114,7 @@ describe('POST /members/:memberId/personal-training-slots/book-family', () => {
 
   it('is tenant isolated and requires auth', async () => {
     const other = await createTestGym(`PTS Other ${uniq()}`);
+    await createTestMembership(other, 'admin');
     const res = await post(other, a, { member_ids: [a], slots: [identity()] });
     expect(res.status).toBe(404);
     const anon = await request.post(`/members/${a}/personal-training-slots/book-family`).set('x-gym-id', gymId).send({});
