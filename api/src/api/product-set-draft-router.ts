@@ -11,6 +11,8 @@ import { composeDraftSimulation, toBillingEventLine } from '../domain/draftBilli
 import { commitCharge } from './product-set-checkout';
 import { ProductBenefitCategory } from '../domain/productClassification';
 import { resolveRequestActor } from '../domain/auditActor';
+import { effectivePrice, planAssignabilityError } from './user-memberships';
+import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
 import { loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { mergeBillingEventForecasts } from './me-billing-forecast';
@@ -19,6 +21,7 @@ import { cartPurchasesForCharge } from './cart-checkout';
 import { IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS } from '../domain/memberProductPurchase';
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
+  addStaffPlanToDraft, removeStaffPlanFromDraft,
   removeCoveredMember, removeService, setBillingDuration, setServiceQuantity, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
 } from './product-set-draft';
 
@@ -131,6 +134,48 @@ productSetDraftRouter.post('/members', requireModuleWrite('PAYMENTS'), (req, res
 productSetDraftRouter.delete('/members/:memberId', requireModuleWrite('PAYMENTS'), (req, res, next) =>
   edit(req, res, 'update', (tx, d) => removeCoveredMember(tx, d, Number(req.params.memberId)), next,
     { remove_member: Number(req.params.memberId) }));
+
+/**
+ * #2966 stage 2 — staff adds a Membership Plan to the member's in-cart ProductSet. The plan is a
+ * plan snapshot of the set (addressed by its snapshot id), never a competing version and never a
+ * `user_memberships` row; everything already on the Draft is preserved. Body: `membership_plan_id`,
+ * optional `starts_at` (default the Draft's), `membership_fee_price`, `declined_benefits`,
+ * `owner_is_beneficiary`.
+ */
+productSetDraftRouter.post('/plans', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    const planId = Number(req.body?.membership_plan_id);
+    if (!Number.isInteger(planId) || planId <= 0) return res.status(400).json({ error: 'membership_plan_id must be a positive integer' });
+    if (req.body?.owner_is_beneficiary !== undefined && typeof req.body.owner_is_beneficiary !== 'boolean') {
+      return res.status(400).json({ error: 'owner_is_beneficiary must be a boolean' });
+    }
+    const planError = await planAssignabilityError(gymId, planId);
+    if (planError) return res.status(planError.status).json({ error: planError.error });
+    const { rows } = await db.query<any>('SELECT starts_at FROM product_sets WHERE id = ? AND gym_id = ?', [Number(req.params.id), gymId]);
+    if (!rows[0]) return res.status(404).json({ error: 'not_found' });
+    const draftStart = rows[0].starts_at instanceof Date ? rows[0].starts_at.toISOString().slice(0, 10) : String(rows[0].starts_at).slice(0, 10);
+    const startsAt = req.body?.starts_at ? String(req.body.starts_at).slice(0, 10) : draftStart;
+    const eff = await effectivePrice(planId, gymId, startsAt);
+    if (!eff) return res.status(404).json({ error: 'Plan not found' });
+    const declined = await resolveDeclinedBenefits(gymId, planId, req.body?.declined_benefits);
+    if (declined.error !== undefined) return res.status(400).json({ error: declined.error });
+    const feeGiven = req.body?.membership_fee_price != null && req.body.membership_fee_price !== '';
+    const fee = feeGiven ? Number(req.body.membership_fee_price) : (eff.plan_price_id != null ? eff.price : null);
+    if (feeGiven && (!Number.isFinite(fee) || (fee as number) < 0)) return res.status(400).json({ error: 'membership_fee_price must be a non-negative number' });
+    const actor = resolveRequestActor(getTenantContext(req));
+    return edit(req, res, 'update', (tx, d) => addStaffPlanToDraft(tx, d, {
+      membershipPlanId: planId, membershipFeePrice: fee, startsAt,
+      ownerIsBeneficiary: req.body?.owner_is_beneficiary !== false, declinedBenefits: declined.declined, actor,
+    }), next, { add_plan: planId });
+  } catch (err) { next(err); }
+});
+
+productSetDraftRouter.delete('/plans/:planSnapshotId', requireModuleWrite('PAYMENTS'), (req, res, next) => {
+  const snapshotId = Number(req.params.planSnapshotId);
+  if (!Number.isInteger(snapshotId) || snapshotId <= 0) return res.status(404).json({ error: 'not_found' });
+  return edit(req, res, 'update', (tx, d) => removeStaffPlanFromDraft(tx, d, snapshotId), next, { remove_plan: snapshotId });
+});
 
 productSetDraftRouter.post('/promotions', requireModuleWrite('PAYMENTS'), (req, res, next) => {
   const { gymId, userId } = getTenantContext(req);
