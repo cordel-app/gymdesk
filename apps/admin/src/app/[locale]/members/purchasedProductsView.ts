@@ -291,6 +291,24 @@ export function filterPurchasesByStatus<T extends { status: string }>(items: T[]
   return items.filter((i) => i.status === filter);
 }
 
+/**
+ * #3161 — the table's row order: oldest first (`created_at`, then id), so a Product added inline
+ * (whose draft row is drawn last) is still the last row once it is saved and the list refreshes,
+ * and the other rows keep their order. The API lists newest first (the Members App reads it too),
+ * so the order is the table's own and never re-sorted per section. A row with no `created_at`
+ * sorts first. Stable: equal keys keep the order they came in.
+ */
+export function orderPurchasesForTable<T extends { id: number; created_at: string | null }>(items: T[]): T[] {
+  const time = (v: string | null) => {
+    const ms = v == null ? NaN : Date.parse(v);
+    return Number.isNaN(ms) ? -Infinity : ms;
+  };
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => (time(a.item.created_at) - time(b.item.created_at)) || (a.item.id - b.item.id) || (a.index - b.index))
+    .map(({ item }) => item);
+}
+
 /** #1882 — the status a row shows: a line the Draft removes reads `pending_termination`. */
 export function displayPurchaseStatus(item: { status: string; pending_termination?: boolean }): string {
   return item.status === 'active' && item.pending_termination ? 'pending_termination' : item.status;
