@@ -553,6 +553,8 @@
     "pt_slots_status_full": "Completa",
     "pt_slots_status_already_booked": "Reservada",
     "pt_slots_selected_count": "{count} franjas seleccionadas",
+    "pt_slots_family_also": "Reservar también para familiares",
+    "pt_slots_family_not_available": "No disponible para {name}: la franja no se les ofrece, no se reservó nada.",
     "pt_slots_edit": "Editar",
     "pt_slots_cancel": "Cancelar",
     "pt_slots_save": "Guardar selección",

@@ -554,6 +554,8 @@
     "pt_slots_status_full": "Completa",
     "pt_slots_status_already_booked": "Reservada",
     "pt_slots_selected_count": "{count} franges seleccionades",
+    "pt_slots_family_also": "Reserva també per a familiars",
+    "pt_slots_family_not_available": "No disponible per a {name}: la franja no se'ls ofereix, no s'ha reservat res.",
     "pt_slots_edit": "Editar",
     "pt_slots_cancel": "Cancel·lar",
     "pt_slots_save": "Desar selecció",
