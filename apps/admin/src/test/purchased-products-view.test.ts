@@ -5,6 +5,7 @@ import {
   billingEventPath,
   filterPurchasesByStatus,
   formatAppliedTax,
+  orderPurchasesForTable,
   hasBillingEvent,
   paymentStatusKey,
   purchaseDate,
@@ -123,5 +124,20 @@ describe('expanded product row facts (#3021)', () => {
     expect(sharingTypeKey('shared')).toBe('shared');
     expect(sharingTypeKey('family_x')).toBeNull();
     expect(sharingTypeKey(null)).toBeNull();
+  });
+});
+
+describe('orderPurchasesForTable (#3161)', () => {
+  const row = (id: number, created_at: string | null) => ({ id, created_at });
+  it('lists oldest first, so a Product saved from the bottom draft row stays the last row', () => {
+    const before = [row(3, '2026-11-20T10:00:00Z'), row(1, '2026-11-01T10:00:00Z'), row(7, '2026-11-10T10:00:00Z')];
+    const saved = [row(9, '2026-11-22T00:10:00Z'), ...before]; // the API lists newest first
+    expect(orderPurchasesForTable(before).map((r) => r.id)).toEqual([1, 7, 3]);
+    expect(orderPurchasesForTable(saved).map((r) => r.id)).toEqual([1, 7, 3, 9]);
+  });
+  it('breaks a created_at tie by id and puts a row with no date first, without mutating the input', () => {
+    const input = [row(5, '2026-11-01T10:00:00Z'), row(4, '2026-11-01T10:00:00Z'), row(8, null)];
+    expect(orderPurchasesForTable(input).map((r) => r.id)).toEqual([8, 4, 5]);
+    expect(input.map((r) => r.id)).toEqual([5, 4, 8]);
   });
 });

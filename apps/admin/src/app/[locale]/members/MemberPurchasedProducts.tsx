@@ -61,6 +61,7 @@ import { useDraftLineDelete } from './useDraftLineDelete';
 import {
   billingEventPath,
   filterPurchasesByStatus,
+  orderPurchasesForTable,
   PURCHASE_STATUS_FILTER_DEFAULT,
   PURCHASE_STATUS_FILTER_VALUES,
   formatAppliedTax,
@@ -462,7 +463,7 @@ export function MemberPurchasedProducts({
       </FilterBar>
       <DataTable
           columns={columns}
-          rows={filterPurchasesByStatus(items, statusFilter)}
+          rows={orderPurchasesForTable(filterPurchasesByStatus(items, statusFilter))}
           rowKey={(item) => item.id}
           loadingText=""
           emptyText={t('purchased_products_none')}
