@@ -53,7 +53,7 @@ describe('#916: one shared column declaration', () => {
     // #2657 stage 2: Member sits right after Product, off unless a caller asks (`showMember`).
     expect(keysOf([...PRODUCT_BENEFIT_COLUMNS])).toEqual([
       'item', 'member', 'quantity', 'frequency', 'action', 'direct_discount_percent', 'requirement',
-      'original_price', 'tax', 'promotion', 'promotion_benefit', 'direct_discount', 'final_price', 'mandatory',
+      'original_price', 'tax', 'promotion', 'promotion_benefit', 'final_price', 'mandatory',
     ]);
   });
 
@@ -78,7 +78,7 @@ describe('#916: one shared column declaration', () => {
     const base = { showFrequency: true, showAction: true, showPrices: true };
     expect(keysOf(productBenefitColumns(base))).not.toContain('tax');
     expect(keysOf(productBenefitColumns({ ...base, showBreakdown: true })).slice(-4))
-      .toEqual(['promotion', 'promotion_benefit', 'direct_discount', 'final_price']);
+      .toEqual(['promotion', 'promotion_benefit', 'final_price']);
   });
 
   it('puts the Plan benefit Mandatory flag last, beside Actions, and only when asked (#1184)', () => {
