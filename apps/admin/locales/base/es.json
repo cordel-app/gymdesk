@@ -564,6 +564,7 @@
     "pt_slots_book_summary": "{created} reservadas · {skipped} omitidas · {failed} fallidas",
     "pt_slots_result_failed": "Error ({reason})",
     "pt_slots_unmatched": "{count} franjas seleccionadas ya no están disponibles para este miembro y no se reservarán: {slots}",
+    "pt_slots_over_allowance": "{service}: hay {scheduled} sesiones semanales programadas, pero el plan del miembro incluye {included} por semana. Las sesiones programadas superan la asignación semanal del miembro.",
     "section_membership_plans": "Planes de Membresía",
     "no_active_membership_plans": "Sin planes de membresía activos",
     "membership_plans_active": "Planes activos",

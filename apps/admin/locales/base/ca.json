@@ -565,6 +565,7 @@
     "pt_slots_book_summary": "{created} reservades · {skipped} omeses · {failed} fallides",
     "pt_slots_result_failed": "Error ({reason})",
     "pt_slots_unmatched": "{count} franges seleccionades ja no estan disponibles per a aquest membre i no es reservaran: {slots}",
+    "pt_slots_over_allowance": "{service}: hi ha {scheduled} sessions setmanals programades, però el pla del membre n'inclou {included} per setmana. Les sessions programades superen l'assignació setmanal del membre.",
     "section_membership_plans": "Plans de Membresia",
     "no_active_membership_plans": "Sense plans de membresia actius",
     "membership_plans_active": "Plans actius",
