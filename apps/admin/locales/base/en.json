@@ -553,6 +553,8 @@
     "pt_slots_status_full": "Full",
     "pt_slots_status_already_booked": "Booked",
     "pt_slots_selected_count": "{count} slots selected",
+    "pt_slots_family_also": "Also book for family members",
+    "pt_slots_family_not_available": "Not available for {name}: this slot is not offered to them, nothing was booked.",
     "pt_slots_edit": "Edit",
     "pt_slots_cancel": "Cancel",
     "pt_slots_save": "Save selection",

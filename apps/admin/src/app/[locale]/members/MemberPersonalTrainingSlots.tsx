@@ -39,6 +39,10 @@ import {
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import { SectionEditButton } from '@/components/SectionEditButton';
+import {
+  bookPath, familyBookingMemberIds, familyResultErrorKey, otherFamilyMembers,
+  type FamilyBookMemberResult, type FamilyMember,
+} from './slotFamilyBooking';
 
 type SlotDateStatus = 'available' | 'no_occurrence' | 'not_scheduled' | 'full' | 'already_booked';
 
@@ -100,10 +104,12 @@ interface BookResult {
 }
 
 interface BookReport {
+  members?: FamilyBookMemberResult[];
   created: number;
   skipped: number;
   failed: number;
-  slots: { weekday: number; start_time: string; end_time: string; results: BookResult[] }[];
+  // Absent on a family run, whose per-slot detail is under `members`.
+  slots?: { weekday: number; start_time: string; end_time: string; results: BookResult[] }[];
 }
 
 /**
@@ -161,6 +167,9 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
   // #2604: the grid reads until Edit is pressed (#957 — an expanded card reads,
   // the Edit action writes). Cancel restores the stored selection.
   const [editing, setEditing] = useState(false);
+  // #3090 stage 3: the member's family (read once) and who else Book also reserves for.
+  const [family, setFamily] = useState<FamilyMember[]>([]);
+  const [alsoFor, setAlsoFor] = useState<number[]>([]);
 
   function apply(payload: PersonalTrainingSlots) {
     setData(payload);
@@ -184,6 +193,12 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
       } finally {
         setLoading(false);
       }
+      try {
+        const res = await apiFetch<{ members: FamilyMember[] }>(`/members/${memberId}/product-purchases/assignees`);
+        setFamily(res.members ?? []);
+      } catch {
+        setFamily([]);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -191,6 +206,7 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
   function cancelEdit() {
     if (data) apply(data);
     setReport(null);
+    setAlsoFor([]);
     setEditing(false);
   }
 
@@ -217,9 +233,10 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
         });
         toast(t('pt_slots_saved'), 'success');
       } else {
-        const result = await apiFetch<BookReport>(`/members/${memberId}/personal-training-slots/book`, {
+        const memberIds = familyBookingMemberIds(memberId, alsoFor, family);
+        const result = await apiFetch<BookReport>(bookPath(memberId, memberIds), {
           method: 'POST',
-          body: JSON.stringify({ slots }),
+          body: JSON.stringify(memberIds.length > 1 ? { member_ids: memberIds, slots } : { slots }),
         });
         setReport(result);
         toast(
@@ -350,6 +367,25 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
             ))}
           </div>
 
+          {editing && canWrite && otherFamilyMembers(memberId, family).length > 0 && (
+            <fieldset style={familyBox}>
+              <legend style={dim}>{t('pt_slots_family_also')}</legend>
+              {otherFamilyMembers(memberId, family).map((m) => (
+                <label key={m.member_id} style={familyRow}>
+                  <input
+                    type="checkbox"
+                    checked={alsoFor.includes(m.member_id)}
+                    disabled={saving}
+                    onChange={() => setAlsoFor((prev) => (
+                      prev.includes(m.member_id) ? prev.filter((id) => id !== m.member_id) : [...prev, m.member_id]
+                    ))}
+                  />
+                  <span>{m.name}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+
           {editing && <div style={actions}>
             <span style={dim}>{t('pt_slots_selected_count', { count: pickedCount })}</span>
             <button
@@ -384,7 +420,13 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
               created: report.created, skipped: report.skipped, failed: report.failed,
             })}
           </p>
-          {report.slots.map((s) => {
+          {(report.members ?? []).map((r) => {
+            const key = familyResultErrorKey(r);
+            if (!key) return null;
+            const name = family.find((m) => m.member_id === r.member_id)?.name ?? String(r.member_id);
+            return <p key={r.member_id} style={warn}>{t(key, { name })}</p>;
+          })}
+          {(report.slots ?? []).map((s) => {
             const notBooked = s.results.filter((r) => r.outcome !== 'booked');
             if (notBooked.length === 0) return null;
             return (
@@ -450,6 +492,8 @@ const actions: React.CSSProperties = { ...inlineActionsRowStyle, alignItems: 'ce
 // colours (#912) rather than a green of its own.
 const primaryButton = primaryBtnSmall();
 const secondaryButton = secondaryBtnSmall;
+const familyBox: React.CSSProperties = { border: 'none', padding: 0, margin: '8px 0' };
+const familyRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '2px 0' };
 const reportBox: React.CSSProperties = {
   marginTop: 10, padding: '8px 10px', background: '#fafafa',
   border: '1px solid #eee', borderRadius: 6,
