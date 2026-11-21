@@ -158,12 +158,7 @@ export async function findLiveAssignmentsForMembers(
 export async function supersedeApplications(
   tx: Tx, gymId: string, umId: number, actor: string | null,
 ): Promise<void> {
-  await tx.query(
-    `UPDATE user_membership_promotions
-        SET status = 'superseded', modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE gym_id = ? AND status = 'applied' AND user_membership_id = ?`,
-    [actor, gymId, umId]);
-  // #3026 stage 3c-3: the plan snapshot rows are written here, not derived from the rows above.
+  // #3026: the standing applications are the assignment's plan snapshot rows.
   const { supersedePlanPromotionsOfAssignment } = await import('./plan-promotion-writer');
   await supersedePlanPromotionsOfAssignment(tx, gymId, umId, actor);
 }

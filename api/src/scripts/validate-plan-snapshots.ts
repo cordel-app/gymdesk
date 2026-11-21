@@ -14,13 +14,6 @@ import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 interface Check { name: string; expected: number; actual: number }
 
-// M4b-3: a version's plan is the one its junction links (its first link is the primary); the column is M5's to drop.
-const PLAN_SNAPSHOT_FOR_APPLICATION = `COALESCE(
-  (SELECT j.plan_snapshot_id FROM product_set_plan_snapshots j WHERE j.product_set_id = ump.product_set_id ORDER BY j.id LIMIT 1),
-  (SELECT j2.plan_snapshot_id FROM product_set_plan_snapshots j2 JOIN product_sets p2 ON p2.id = j2.product_set_id
-    WHERE ump.user_membership_id IS NOT NULL AND ${productSetOfLegacyAssignmentSql('ump.user_membership_id', 'p2')}
-    ORDER BY p2.id DESC, j2.id LIMIT 1))`;
-
 async function count(sql: string): Promise<number> {
   const { rows } = await db.query<{ n: number }>(sql);
   return Number(rows[0].n);
@@ -34,27 +27,9 @@ export async function validatePlanSnapshots(): Promise<{ checks: Check[]; gaps: 
   await add('plan_snapshot_beneficiaries (owner of every snapshot)',
     'SELECT COUNT(*) n FROM plan_snapshots',
     'SELECT COUNT(*) n FROM plan_snapshot_beneficiaries WHERE is_owner = 1');
-  await add('plan_promotion_snapshots (Membership Plan applications with a snapshot to hang on)',
-    `SELECT COUNT(*) n FROM user_membership_promotions ump
-       JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
-      WHERE ump.recurrent_snapshot_id IS NULL AND ${PLAN_SNAPSHOT_FOR_APPLICATION} IS NOT NULL`,
-    'SELECT COUNT(*) n FROM plan_promotion_snapshots');
-  for (const [target, source] of [
-    ['plan_promotion_session_product_snapshots', 'user_membership_promotion_session_snapshot'],
-    ['plan_promotion_oneoff_product_snapshots', 'user_membership_promotion_oneoff_snapshot'],
-    ['plan_promotion_periodical_product_snapshots', 'user_membership_promotion_periodical_snapshot'],
-  ]) {
-    await add(`${target} (grants of copied applications)`,
-      `SELECT COUNT(*) n FROM ${source} g JOIN plan_promotion_snapshots pp ON pp.source_id = g.user_membership_promotion_id`,
-      `SELECT COUNT(*) n FROM ${target}`);
-  }
-
-  const { rows: gaps } = await db.query<Record<string, unknown>>(
-    `SELECT ump.id AS user_membership_promotion_id, ump.gym_id, ump.promotion_id, ump.product_set_id,
-            ump.user_membership_id, 'plan application with no plan snapshot' AS reason
-       FROM user_membership_promotions ump
-       JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
-      WHERE ump.recurrent_snapshot_id IS NULL AND ${PLAN_SNAPSHOT_FOR_APPLICATION} IS NULL`);
+  // #3026 stage 3d-2: a Membership Plan Promotion application is the plan snapshot's own row; there
+  // is no legacy record left to compare it with.
+  const gaps: Array<Record<string, unknown>> = [];
   return { checks, gaps };
 }
 

@@ -58,27 +58,6 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
   await stampAssignmentIds(exec, gymId, [planSnapshotId]);
 }
 
-/**
- * #2125 M6b-33 — keeps `user_membership_promotions.assignment_id` (migration 430) in step with
- * `user_membership_id`, the source of truth until M6b-4: an application of a legacy assignment takes
- * that assignment's anchor (the lowest snapshot id naming it, the rule `stampAssignmentIds()` gives
- * the snapshots), and none where no snapshot names it. Asked per assignment, never as a scan. The
- * writer that clears an application's `user_membership_id` (`attachApplications()`) clears this column
- * in the same statement. Nothing reads it yet; `plan-assignments:validate` reports drift
- * (`promotion_assignment_mismatch`).
- */
-export async function syncPromotionAssignmentIds(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<void> {
-  const ids = [...new Set(userMembershipIds)];
-  if (ids.length === 0) return;
-  const anchors = await anchorsOf(exec, gymId, ids);
-  for (const umId of ids) {
-    const anchor = anchors.get(umId) ?? null;
-    await exec.query(
-      `UPDATE user_membership_promotions SET assignment_id = ?
-        WHERE gym_id = ? AND user_membership_id = ? AND NOT (assignment_id <=> ?)`,
-      [anchor, gymId, umId, anchor]);
-  }
-}
 
 /**
  * #2125 M6b-34 — keeps `payment_requests.plan_assignment_id` (migration 431) in step with
@@ -211,7 +190,6 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
   }
   await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
   const umIds = rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number);
-  await syncPromotionAssignmentIds(tx, gymId, umIds);
   await syncPaymentRequestAssignmentIds(tx, gymId, umIds);
   await syncProductSetAssignmentIds(tx, gymId, [productSetId], umIds);
   const replaced = await anchorsOf(tx, gymId, rows.filter((r) => r.replaces != null).map((r) => Number(r.replaces)));

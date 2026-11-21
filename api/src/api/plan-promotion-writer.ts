@@ -14,16 +14,6 @@ import { draftReferencePlanPromotionSql } from '../domain/draftPromotionApplicat
  * Product-target applications are not handled here.
  */
 
-/** A Draft's reference removed: the row goes with the application. */
-export async function deletePlanPromotionReferences(
-  tx: Tx, gymId: string, applicationIds: number[],
-): Promise<void> {
-  if (applicationIds.length === 0) return;
-  await tx.query(
-    `DELETE FROM plan_promotion_snapshots WHERE gym_id = ? AND source_id IN (${applicationIds.map(() => '?').join(',')})`,
-    [gymId, ...applicationIds]);
-}
-
 /**
  * #3026 stage 3c-3 — what a superseded Product Set still had applied is history: the standing
  * applications on the plan snapshots that set alone links become `superseded`. A snapshot the
@@ -59,50 +49,6 @@ export async function supersedePlanPromotionsOfAssignment(
                          WHERE o.plan_snapshot_id = pps.plan_snapshot_id
                            AND ops.status IN ('active', 'in_cart', 'pending_payment'))`,
     [actor, gymId, userMembershipId]);
-}
-
-/** A Draft confirmed: the snapshot the application was agreed with, taken from the Promotion as it stands. */
-export async function recordPlanPromotionConfirmed(
-  tx: Tx, gymId: string, applicationId: number, snapshotJson: string | null,
-): Promise<void> {
-  await tx.query(
-    `UPDATE plan_promotion_snapshots
-        SET snapshot = ?, snapshot_confirmed_at = COALESCE(snapshot_confirmed_at, UTC_TIMESTAMP()), modified_at = UTC_TIMESTAMP()
-      WHERE gym_id = ? AND source_id = ?`,
-    [snapshotJson, gymId, applicationId]);
-}
-
-const GRANT_TABLES: Array<{ target: string; source: string }> = [
-  { target: 'plan_promotion_session_product_snapshots', source: 'user_membership_promotion_session_snapshot' },
-  { target: 'plan_promotion_oneoff_product_snapshots', source: 'user_membership_promotion_oneoff_snapshot' },
-  { target: 'plan_promotion_periodical_product_snapshots', source: 'user_membership_promotion_periodical_snapshot' },
-];
-
-/**
- * #3026 stage 3c-1 — the grant rows an application was agreed with are written under its plan
- * promotion snapshot by the confirming writer, in the transaction that freezes them, instead of
- * waiting for `syncPlanSnapshot()`. A grant row is keyed by the legacy grant id (`source_id`), the
- * key the derivation agrees on, so the later derivation lands on the same rows. An application with
- * no plan promotion snapshot (a Product-target one) writes nothing.
- */
-export async function recordPlanPromotionGrants(tx: Tx, gymId: string, applicationId: number): Promise<void> {
-  for (const { target, source } of GRANT_TABLES) {
-    await tx.query(
-      `INSERT INTO ${target}
-         (gym_id, plan_promotion_snapshot_id, source_id, product_id, product_name, quantity, item_type,
-          item_billing_frequency, unit_price, currency, \`action\`, \`value\`, requirement, created_at)
-       SELECT g.gym_id, pps.id, g.id, g.product_id, g.product_name, g.quantity, g.item_type,
-              g.item_billing_frequency, g.unit_price, g.currency, g.action, g.value, g.requirement, g.created_at
-         FROM ${source} g
-         JOIN plan_promotion_snapshots pps ON pps.source_id = g.user_membership_promotion_id AND pps.gym_id = g.gym_id
-        WHERE g.gym_id = ? AND g.user_membership_promotion_id = ?
-       ON DUPLICATE KEY UPDATE
-         product_id = VALUES(product_id), product_name = VALUES(product_name), quantity = VALUES(quantity),
-         item_type = VALUES(item_type), item_billing_frequency = VALUES(item_billing_frequency),
-         unit_price = VALUES(unit_price), currency = VALUES(currency), \`action\` = VALUES(\`action\`),
-         \`value\` = VALUES(\`value\`), requirement = VALUES(requirement)`,
-      [gymId, applicationId]);
-  }
 }
 
 /* ── #3026 stage 3d-1: the plan snapshot row is the application ─────────────────────────────── */

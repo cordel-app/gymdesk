@@ -22,7 +22,7 @@ import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { deletePlanPromotionReferences, removePlanPromotion } from './plan-promotion-writer';
+import { removePlanPromotion } from './plan-promotion-writer';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -527,8 +527,7 @@ export function revokePromotionMutator(promotionId: number, actor: string | null
     // #3026 stage 3d-1: a Plan application is the plan snapshot's own row, removed there first
     // (a Draft's reference deleted, a confirmed application revoked and kept).
     const onSnapshot = await removePlanPromotion(tx, draft.gym_id, draft.id, promotionId, actor);
-    // Product-target applications (and a Plan application written before stage 3d-1) are
-    // `user_membership_promotions` rows: the same rule, asked of that table.
+    // Product-target applications are `user_membership_promotions` rows: the same rule, asked of that table.
     const { draftReferenceApplicationSql } = await import('../domain/draftPromotionApplication');
     const { rows: standingRef } = await tx.query<{ id: number }>(
       `SELECT ump.id FROM user_membership_promotions ump
@@ -537,12 +536,6 @@ export function revokePromotionMutator(promotionId: number, actor: string | null
         FOR UPDATE`,
       [draft.gym_id, draft.id, promotionId]);
     if (standingRef.length > 0) {
-      const { rows: removed } = await tx.query<{ id: number }>(
-        `SELECT id FROM user_membership_promotions
-          WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ? AND recurrent_snapshot_id IS NULL
-            AND status IN ('applied', 'revoked') AND snapshot_confirmed_at IS NULL`,
-        [draft.gym_id, draft.id, promotionId]);
-      await deletePlanPromotionReferences(tx, draft.gym_id, removed.map((r) => Number(r.id)));
       await tx.query(
         `DELETE ump FROM user_membership_promotions ump
           WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ?

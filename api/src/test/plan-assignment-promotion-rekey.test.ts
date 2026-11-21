@@ -97,10 +97,6 @@ async function keysOf(setId: number) {
     assignment: r.assignment_id == null ? null : Number(r.assignment_id),
   }));
 }
-async function promotionDrift() {
-  const report = await findPlanAssignmentDrift(db as any, gymId);
-  return report.checks.find((c) => c.name === 'promotion_assignment_mismatch')!;
-}
 
 describe('#2125 M6b-33: an application carries its assignment_id beside user_membership_id', () => {
   it('a committed Plan Promotion application takes its assignment\'s anchor', async () => {
@@ -158,6 +154,5 @@ describe('#2125 M6b-33: an application carries its assignment_id beside user_mem
     const { rows } = await db.query<any>(
       'SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?', [gymId, setId]);
     expect(rows).toHaveLength(0);
-    expect((await promotionDrift()).count).toBe(0);
   });
 });
