@@ -802,8 +802,8 @@ export async function removeCoveredMember(
 }
 
 /**
- * #2879 stage 2 — a Draft assignment's *Members per Membership* and its beneficiaries, written
- * together because a new limit is only meaningful with the selection that satisfies it. The
+ * #2879 stage 2 — a Draft assignment's beneficiaries. *Members per Membership* is the Plan's
+ * and read-only on an assignment (#3152): this never writes it. The
  * caller (`PUT /user-memberships/:id/beneficiaries`) has judged the pair with
  * `beneficiarySelectionError()` against the owner's family; this writes it on the plan snapshot
  * the Draft owns (`ownPlanSnapshot()`, so a shared snapshot is never written). The payer stays
@@ -811,7 +811,7 @@ export async function removeCoveredMember(
  */
 export async function setPlanBeneficiaries(
   tx: Tx, draft: LockedDraft, userMembershipId: number,
-  input: { memberLimit: string; beneficiaryIds: readonly number[] },
+  input: { beneficiaryIds: readonly number[] },
 ): Promise<{ ok: true } | DraftRefusal> {
   const snapshotId = await planSnapshotOfAssignment(tx, draft.gym_id, draft.id, userMembershipId);
   if (snapshotId == null) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
@@ -819,8 +819,6 @@ export async function setPlanBeneficiaries(
   const { rows } = await tx.query<{ member_id: number }>(
     'SELECT member_id FROM plan_snapshots WHERE id = ? AND gym_id = ?', [target, draft.gym_id]);
   const ownerId = Number(rows[0]?.member_id);
-  await tx.query('UPDATE plan_snapshots SET member_limit = ? WHERE id = ? AND gym_id = ?',
-    [input.memberLimit, target, draft.gym_id]);
   await setOwnerIsBeneficiary(tx, draft.gym_id, target, input.beneficiaryIds.includes(ownerId));
   const others = input.beneficiaryIds.filter((id) => id !== ownerId);
   await tx.query(

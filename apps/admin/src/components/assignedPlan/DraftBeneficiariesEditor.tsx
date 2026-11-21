@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import {
-  PLAN_MEMBER_LIMITS,
   beneficiaryDraftChanged,
   beneficiarySelectionIssue,
   canSelectBeneficiary,
@@ -51,7 +50,6 @@ export function DraftBeneficiariesEditor({
   const { apiFetch } = useApiClient();
   const [saved, setSaved] = useState<BeneficiaryState | null>(null);
   const [family, setFamily] = useState<FamilyMemberOption[]>([]);
-  const [memberLimit, setMemberLimit] = useState<PlanMemberLimit>('1');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +61,6 @@ export function DraftBeneficiariesEditor({
         const state = await apiFetch<BeneficiaryState>(`/user-memberships/${assignedPlanId}/beneficiaries`);
         if (cancelled) return;
         setSaved(state);
-        setMemberLimit(state.member_limit);
         setSelectedIds(state.beneficiary_member_ids);
         const res = await apiFetch<{ family: { members: FamilyMemberOption[] } | null }>(
           `/members/${state.owner_member_id}/family`).catch(() => null);
@@ -82,9 +79,9 @@ export function DraftBeneficiariesEditor({
 
   const changed = saved != null && beneficiaryDraftChanged(
     { memberLimit: saved.member_limit, ids: saved.beneficiary_member_ids },
-    { memberLimit, ids: selectedIds },
+    { memberLimit: saved.member_limit, ids: selectedIds },
   );
-  const issue = family.length > 0 ? beneficiarySelectionIssue(family, selectedIds, memberLimit) : null;
+  const issue = family.length > 0 ? beneficiarySelectionIssue(family, selectedIds, saved?.member_limit ?? '1') : null;
 
   useEffect(() => {
     onBlockingChange(changed);
@@ -110,10 +107,9 @@ export function DraftBeneficiariesEditor({
     try {
       const state = await apiFetch<BeneficiaryState>(`/user-memberships/${assignedPlanId}/beneficiaries`, {
         method: 'PUT',
-        body: JSON.stringify({ member_limit: memberLimit, beneficiary_member_ids: selectedIds }),
+        body: JSON.stringify({ beneficiary_member_ids: selectedIds }),
       });
       setSaved(state);
-      setMemberLimit(state.member_limit);
       setSelectedIds(state.beneficiary_member_ids);
       onSaved();
     } catch (err) {
@@ -124,7 +120,6 @@ export function DraftBeneficiariesEditor({
   }
 
   function reset() {
-    setMemberLimit(saved!.member_limit);
     setSelectedIds(saved!.beneficiary_member_ids);
     setError(null);
   }
@@ -132,21 +127,18 @@ export function DraftBeneficiariesEditor({
   return (
     <div style={{ marginTop: 12 }}>
       <label style={formFieldLabelStyle} htmlFor={`member-limit-${assignedPlanId}`}>{t('plans.label_member_limit')}</label>
-      <select
+      <p
         id={`member-limit-${assignedPlanId}`}
-        value={memberLimit}
-        disabled={busy || !canWrite}
-        title={canWrite ? undefined : readOnlyTitle}
-        onChange={(e) => setMemberLimit(e.target.value as PlanMemberLimit)}
-        style={{ ...formControlStyle, maxWidth: 220, marginBottom: 10 }}
+        data-testid="member-limit-readonly"
+        style={{ ...formControlStyle, maxWidth: 220, marginBottom: 10, border: '1px solid transparent', padding: '8px 10px' }}
       >
-        {PLAN_MEMBER_LIMITS.map((m) => <option key={m} value={m}>{t(`plans.member_limit_${m}`)}</option>)}
-      </select>
+        {t(`plans.member_limit_${saved.member_limit}`)}
+      </p>
       <p style={{ ...cardHintStyle, margin: '0 0 8px' }}>{t('assigned_plans_page.beneficiaries_draft_hint')}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
         {family.map((m) => {
           const checked = selectedIds.includes(m.member_id);
-          const blocked = !canSelectBeneficiary(selectedIds, m.member_id, memberLimit);
+          const blocked = !canSelectBeneficiary(selectedIds, m.member_id, saved.member_limit);
           return (
             <label
               key={m.member_id}
@@ -157,7 +149,7 @@ export function DraftBeneficiariesEditor({
                 role="switch"
                 checked={checked}
                 disabled={busy || blocked || !canWrite}
-                onChange={() => setSelectedIds((prev) => toggleBeneficiary(prev, m.member_id, memberLimit))}
+                onChange={() => setSelectedIds((prev) => toggleBeneficiary(prev, m.member_id, saved.member_limit))}
               />
               <span style={{ fontWeight: 600 }}>{m.name}</span>
               {m.email && <span style={{ color: '#888' }}>{m.email}</span>}

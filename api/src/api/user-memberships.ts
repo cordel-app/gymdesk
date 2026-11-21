@@ -2225,9 +2225,17 @@ userMembershipsRouter.put('/:id/beneficiaries', requireModuleWrite('PAYMENTS'), 
     }
     const state = await loadAssignmentBeneficiaryState(gymId, Number(um.id));
     if (!state) return res.status(404).json({ error: 'Membership not found' });
+    // #3152 — Members per Membership is the Plan's, frozen on the assignment: a request may
+    // restate it but never change it.
     const parsedLimit = parseMemberLimitInput(req.body?.member_limit);
     if (parsedLimit === null) return res.status(400).json({ error: 'member_limit must be one of: 1, 2, family' });
-    const memberLimit = parsedLimit ?? state.member_limit;
+    if (parsedLimit !== undefined && parsedLimit !== state.member_limit) {
+      return res.status(400).json({
+        error: 'member_limit_read_only',
+        message: 'Members per Membership is defined by the Membership Plan and cannot be changed on an assignment',
+      });
+    }
+    const memberLimit = state.member_limit;
     const parsedIds = parseBeneficiaryIds(req.body?.beneficiary_member_ids);
     if (parsedIds === null || parsedIds === undefined) {
       return res.status(400).json({ error: 'beneficiary_member_ids must be an array of member ids' });
@@ -2238,7 +2246,7 @@ userMembershipsRouter.put('/:id/beneficiaries', requireModuleWrite('PAYMENTS'), 
     if (await redirectEditToProductSet(req, res, {
       userMembershipId: Number(um.id), action: 'update',
       detail: { beneficiaries: { member_limit: memberLimit, beneficiary_member_ids: parsedIds } },
-      mutate: (tx, d) => psSetPlanBeneficiaries(tx, d, Number(um.id), { memberLimit, beneficiaryIds: parsedIds }),
+      mutate: (tx, d) => psSetPlanBeneficiaries(tx, d, Number(um.id), { beneficiaryIds: parsedIds }),
       respond: async () => ({ editable: true, ...(await loadAssignmentBeneficiaryState(gymId, Number(um.id))) }),
     })) return;
     return res.status(409).json({ error: 'not_a_draft', message: 'The beneficiaries are chosen only before the plan is confirmed' });
