@@ -20,6 +20,7 @@ const day = (offset: number) => {
   const d = new Date(); d.setUTCDate(d.getUTCDate() + offset); return d.toISOString().slice(0, 10);
 };
 const TODAY = day(0);
+const midMonth = () => { let n = 10; while (new Date(day(n)).getUTCDate() <= 3) n += 1; return day(n); }; // never the 1st: a grid date is not prorated
 // #2125 M5c — the next 1st: a monthly plan starting there sits on its schedule's grid and is not prorated.
 const NEXT_FIRST = (() => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10); })();
 
@@ -205,7 +206,7 @@ describe('a plan joining a running schedule mid-cycle (#2125 stage 8)', () => {
     const { rows: snap } = await db.query<any>(
       'SELECT s.schedule_id, sch.anchor_date FROM plan_snapshots s JOIN product_set_schedules sch ON sch.id = s.schedule_id WHERE s.id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)',
       [set.id]);
-    const joinStart = day(10);
+    const joinStart = midMonth();
     const { insertId: added } = await db.query(
       `INSERT INTO plan_snapshots
          (gym_id, member_id, membership_plan_id, status, starts_at, schedule_id,
