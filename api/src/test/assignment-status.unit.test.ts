@@ -9,7 +9,7 @@ import { countsAsRecentMembership, wasCancelledWithinGrace } from '../domain/new
 describe('assignment statuses (#2659)', () => {
   it('declares the new value as a stored status and a cancellation', () => {
     expect(ASSIGNMENT_STATUSES).toContain(CANCELS_AT_PERIOD_END_STATUS);
-    expect([...CANCELLED_ASSIGNMENT_STATUSES].sort()).toEqual([CANCELS_AT_PERIOD_END_STATUS, 'cancelled'].sort());
+    expect([...CANCELLED_ASSIGNMENT_STATUSES].sort()).toEqual([CANCELS_AT_PERIOD_END_STATUS, 'to_be_reactivated', 'cancelled'].sort());
     expect(isCancelledAssignmentStatus(CANCELS_AT_PERIOD_END_STATUS)).toBe(true);
     expect(isCancelledAssignmentStatus('cancelled')).toBe(true);
     expect(isCancelledAssignmentStatus('superseded')).toBe(false);

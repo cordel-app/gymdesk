@@ -1,6 +1,7 @@
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { writeEventLines } from './billing-line-origins';
 import { commitPendingCancellations } from './plan-pending-cancellation';
+import { commitPendingReactivations } from './plan-pending-reactivation';
 import { stampAssignmentId } from './plan-assignment-sync';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
@@ -709,6 +710,9 @@ export async function activateWithEvents(tx: Tx, input: {
   // #3007 stage 2(b): the plans the owner marked as pending cancellation are cancelled by this commit,
   // before any obligation is generated for them.
   await commitPendingCancellations(tx, { gymId: input.gymId, productSetId: input.productSetId, today: input.today, actor: input.actor ?? null });
+  // #3114: and the plans it marked for reactivation are reactivated by it (audited here, once the
+  // payment is confirmed), becoming billable in this set before its obligations are generated.
+  await commitPendingReactivations(tx, { gymId: input.gymId, productSetId: input.productSetId, actor: input.actor ?? null });
 
   let replaced = 0;
   if (previousId != null) {

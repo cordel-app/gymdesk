@@ -79,13 +79,15 @@ interface Props {
   onChanged: () => void;
   onAssignNewPlan: (plan: MemberPlanRow) => void;
   onCancelPlan: (plan: MemberPlanRow) => void;
+  /** #3114: mark a cancelling plan for reactivation in the open In Cart, or un-mark it. */
+  onReactivatePlan: (plan: MemberPlanRow, action: 'mark' | 'unmark') => void;
   /** The inline "Assign New Plan" editor for a plan, rendered under the list (#628). */
   renderAssignEditor: (plan: MemberPlanRow) => React.ReactNode;
   assignBusy: boolean;
 }
 
 export function MemberMembershipPlans({
-  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
+  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, onReactivatePlan, renderAssignEditor, assignBusy,
 }: Props) {
   const t = useTranslations('members');
   const locale = useLocale();
@@ -205,6 +207,12 @@ export function MemberMembershipPlans({
           ? [{ label: t('action_delete_draft_plan'), onClick: () => onCancelPlan(plan), danger: true }]
           : plan.status === 'to_be_canceled'
             ? [{ label: t('action_undo_cancel_plan'), onClick: () => onCancelPlan(plan) }]
+          // #3114: a plan cancelling at its period end can be marked for reactivation in the open In
+          // Cart (nothing changes until Save & Pay); a marked one can be un-marked again.
+          : plan.status === 'active_cancel_at_period_end' && plan.is_current
+            ? [{ label: t('action_reactivate_plan'), onClick: () => onReactivatePlan(plan, 'mark') }]
+          : plan.status === 'to_be_reactivated'
+            ? [{ label: t('action_undo_reactivate_plan'), onClick: () => onReactivatePlan(plan, 'unmark') }]
           : plan.status !== 'cancelled' && plan.status !== 'active_cancel_at_period_end'
             ? [{ label: t('action_cancel_live_plan'), onClick: () => onCancelPlan(plan), danger: true }]
             : []),

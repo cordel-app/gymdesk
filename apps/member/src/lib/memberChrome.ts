@@ -264,6 +264,7 @@ export function statusTone(status: string): StatusTone {
     case 'waitlisted':
     case 'cancels_on_end_date':
     case 'active_cancel_at_period_end':
+    case 'to_be_reactivated':
       return 'warning';
     case 'cancelled':
     case 'failed':

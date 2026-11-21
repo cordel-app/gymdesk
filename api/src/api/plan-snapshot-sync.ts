@@ -73,7 +73,7 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
        JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
        LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ?) AND um.gym_id = s.gym_id
         SET s.status = CASE WHEN ps.status = 'active'
-                                 AND um.status IN ('paused','to_be_canceled','active_cancel_at_period_end','cancelled','expired') THEN um.status
+                                 AND um.status IN ('paused','to_be_canceled','active_cancel_at_period_end','to_be_reactivated','cancelled','expired') THEN um.status
                             WHEN ps.status = 'superseded' AND um.status IN ('cancelled','expired') THEN um.status
                             ELSE ps.status END,
             s.closed_at = um.closed_at,

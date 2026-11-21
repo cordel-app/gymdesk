@@ -726,7 +726,14 @@ async function reviewHandler(req: any, res: any, next: any) {
         WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_canceled' AND pa.source_user_membership_id IS NOT NULL
         GROUP BY pa.source_user_membership_id, mp.name`,
       [gymId, Number(set.owner_member_id)]);
+    const { rows: reactivating } = await db.query<any>(
+      `SELECT pa.source_user_membership_id AS user_membership_id, mp.name AS plan_name
+         FROM plan_snapshots pa LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+        WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_reactivated' AND pa.source_user_membership_id IS NOT NULL
+        GROUP BY pa.source_user_membership_id, mp.name`,
+      [gymId, Number(set.owner_member_id)]);
     res.json({
+      plans_to_reactivate: reactivating.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       plans_to_cancel: cancelling.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       initial_payment: initialPaymentBreakdown(lines, amountDue),
       contracted_items: contractedItems({ plans: contractView.plans, lines: contractView.lines, purchases: contractPurchases }, memberNames),

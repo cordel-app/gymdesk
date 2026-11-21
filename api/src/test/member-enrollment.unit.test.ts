@@ -50,7 +50,7 @@ describe('latestEnrollmentStatusSql', () => {
     const sql = flat('m');
     expect(sql).toContain('anc.created_at DESC, pa.assignment_id DESC LIMIT 1');
     // #3113: status priority comes first (Active, then Cancel on End Date, then Cancelled)
-    expect(sql.indexOf("'active_cancel_at_period_end' THEN 2")).toBeGreaterThan(sql.indexOf("'active', 'to_be_canceled') THEN 0"));
+    expect(sql.indexOf("'active_cancel_at_period_end', 'to_be_reactivated') THEN 2")).toBeGreaterThan(sql.indexOf("'active', 'to_be_canceled') THEN 0"));
     expect(sql.indexOf('ORDER BY CASE')).toBeGreaterThan(-1);
     expect(sql.indexOf('ORDER BY CASE')).toBeLessThan(sql.indexOf('anc.created_at DESC'));
   });
