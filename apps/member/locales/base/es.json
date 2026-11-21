@@ -587,6 +587,7 @@
     "cart_paying": "Iniciando el pago…",
     "cart_cancel": "Cancelar",
     "cart_item_cancel": "Cancelar",
+    "cart_item_quantity": "Cantidad",
     "cart_removing": "Quitando…",
     "cart_kind_plan": "Plan",
     "cart_kind_product": "Producto",
