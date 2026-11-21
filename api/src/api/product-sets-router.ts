@@ -14,6 +14,7 @@ import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
 import { loadMemberProductSetView } from './me-product-set-lines';
 import { productSetDraftRouter, edit as editDraft, simulationHandler } from './product-set-draft-router';
+import { judgeMemberBeneficiaries } from './member-plan-beneficiaries';
 import { addMemberPlanToDraft, addService, removeMemberPlanFromDraft, removeService, setServiceQuantity } from './product-set-draft';
 import { judgeMemberPlanChoice, parseIds } from './me-membership-plans';
 import { memberProductCatalogueParams, memberProductCatalogueSql } from '../domain/memberProductCatalogue';
@@ -1035,9 +1036,11 @@ meProductSetsRouter.post('/:id/plans', async (req, res, next) => {
   try {
     const choice = await judgeMemberPlanChoice(gymId, owned.memberId, planId, promotionIds, req.body?.declined_benefits);
     if ('error' in choice) return res.status(choice.status).json(choice.body);
+    const picked = await judgeMemberBeneficiaries(gymId, owned.memberId, planId, req.body?.beneficiary_member_ids);
+    if ('status' in picked) return res.status(picked.status).json(picked.body);
     const actor = actorOf(req)?.name ?? null;
     return editDraft(req, res, 'update', (tx, d) => addMemberPlanToDraft(tx, d, {
-      membershipPlanId: planId,
+      membershipPlanId: planId, beneficiaryIds: picked.ids,
       membershipFeePrice: choice.eff.plan_price_id != null ? choice.eff.price : null,
       declinedBenefits: choice.declinedResult.declined,
       promotionIds, actor,

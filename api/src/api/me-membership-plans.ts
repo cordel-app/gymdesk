@@ -16,6 +16,9 @@ import {
 import { resolveDeclinedBenefits, loadNamedPlanBenefitLines } from './declined-plan-benefits';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
 import { addCoverage, createDraft } from './product-sets';
+import { ownerFamilyMemberIds } from './owner-family';
+import { toPlanMemberLimit } from '../domain/planBeneficiaries';
+import { applyMemberBeneficiaries, judgeMemberBeneficiaries } from './member-plan-beneficiaries';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
 import { initialCharge } from './product-set-checkout';
 import { PENDING_PAYMENT_STATUS } from './assignment-commit';
@@ -57,7 +60,7 @@ export const meMembershipPlansRouter = Router();
 meMembershipPlansRouter.use(requireRole('member'), requireFeatureEnabled('member_web.my_membership'));
 
 interface PlanRow {
-  id: number; name: string; description: string | null;
+  id: number; name: string; description: string | null; member_limit?: string | null;
   image_url: string | null; image_thumbnail_url: string | null;
   tax_rate_id: number | null; tax_behavior: string | null;
   billing_interval: number | null; billing_unit: string | null;
@@ -109,7 +112,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
     const memberId = await resolveMemberId(gymId, ctx);
     const today = new Date().toISOString().slice(0, 10);
     const { rows: plans } = await db.query<PlanRow>(
-      `SELECT mp.id, mp.name, mp.description, mp.image_url, mp.image_thumbnail_url, mp.tax_rate_id, mp.tax_behavior,
+      `SELECT mp.id, mp.name, mp.description, mp.member_limit, mp.image_url, mp.image_thumbnail_url, mp.tax_rate_id, mp.tax_behavior,
               bp.recurring_billing_interval AS billing_interval,
               bp.recurring_billing_unit AS billing_unit
          FROM membership_plans mp
@@ -150,6 +153,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
         id: Number(plan.id),
         name: plan.name,
         description: plan.description,
+        member_limit: toPlanMemberLimit(plan.member_limit),
         image_url: plan.image_thumbnail_url ?? plan.image_url ?? null,
         image_full_url: plan.image_url ?? null,
         price_incl_tax: priceInclTax,
@@ -167,7 +171,16 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
         })),
       });
     }
-    res.json({ plans: items, is_new_member: isNewMember });
+    // #3091: who the contracting member may cover — their own family, themselves first.
+    const familyIds = await ownerFamilyMemberIds(db, gymId, memberId);
+    const { rows: famRows } = familyIds.length > 0
+      ? await db.query<{ id: number; name: string }>(
+        `SELECT id, name FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${familyIds.map(() => '?').join(',')})`,
+        [gymId, ...familyIds])
+      : { rows: [] as Array<{ id: number; name: string }> };
+    const family = famRows.map((m) => ({ member_id: Number(m.id), name: m.name }))
+      .sort((a, b) => (a.member_id === memberId ? -1 : b.member_id === memberId ? 1 : a.name.localeCompare(b.name)));
+    res.json({ plans: items, is_new_member: isNewMember, family_members: family });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
@@ -318,6 +331,9 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     const choice = await judgeMemberPlanChoice(gymId, memberId, planId, promotionIds, req.body?.declined_benefits);
     if ('error' in choice) return res.status(choice.status).json(choice.body);
     const { startsAt, eff, declinedResult } = choice;
+    // #3091: who the plan covers, chosen while contracting (absent = the member alone).
+    const picked = await judgeMemberBeneficiaries(gymId, memberId, planId, req.body?.beneficiary_member_ids);
+    if ('status' in picked) return res.status(picked.status).json(picked.body);
 
     // #1325 PR 3a: the member's plan is a ProductSet version, not an assignment
     // Draft. The Draft is created with its frozen plan, its declined benefits and
@@ -338,6 +354,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       await addCoverage(tx, {
         gymId, productSetId: draft.productSet.id, memberId, isOwner: true,
       });
+      await applyMemberBeneficiaries(tx, gymId, draft.productSet.id, memberId, picked.ids);
       for (const promotionId of promotionIds) {
         await applyPromotionToProductSet(tx, gymId, actor.name, draft.productSet.id, promotionId);
       }

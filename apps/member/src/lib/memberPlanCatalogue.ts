@@ -78,6 +78,8 @@ export interface MemberPlanOffer {
   description: string | null;
   image_url?: string | null;
   image_full_url?: string | null;
+  /** #3091 — *Members per Membership*: how many the plan must cover; absent from an older API. */
+  member_limit?: '1' | '2' | 'family';
   price_incl_tax: number | null;
   tax_included: boolean;
   billing_interval: number | null;
@@ -159,4 +161,40 @@ export function assignErrorKey(message: string | null | undefined): string {
   if (message === 'awaiting_staff_setup') return 'membership.cart_error_awaiting_staff';
   if (message === 'family_owner_only') return 'membership.family_owner_only';
   return 'membership.add_plan_error';
+}
+
+/* ── #3091 — who the plan covers, chosen while contracting ──────────────────
+ * The server (`beneficiarySelectionError()`) is the enforcement; these only
+ * seed the selection, keep the count honest on screen and shape the payload. */
+
+export interface FamilyMemberOption { member_id: number; name: string }
+
+/** How many beneficiaries a plan requires, or `null` for a family plan (any count ≥ 1). */
+export function requiredBeneficiaries(limit: MemberPlanOffer['member_limit']): number | null {
+  if (limit === 'family') return null;
+  return limit === '2' ? 2 : 1;
+}
+
+/** The starting selection: the member first, then the others, up to the plan's count (the whole family for a family plan). */
+export function defaultBeneficiaryIds(limit: MemberPlanOffer['member_limit'], family: readonly FamilyMemberOption[]): number[] {
+  const required = requiredBeneficiaries(limit);
+  const ids = family.map((m) => m.member_id);
+  return required == null ? ids : ids.slice(0, required);
+}
+
+/** A beneficiary ticked or unticked; the member is not locked in. */
+export function toggleBeneficiary(selected: readonly number[], id: number): number[] {
+  return selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+}
+
+/** The locale key of what is wrong with the selection, or `null` when it meets the plan's count. */
+export function beneficiaryCountErrorKey(limit: MemberPlanOffer['member_limit'], selected: readonly number[]): string | null {
+  if (selected.length === 0) return 'membership.beneficiaries_required';
+  const required = requiredBeneficiaries(limit);
+  return required != null && selected.length !== required ? `membership.beneficiaries_count_${required}` : null;
+}
+
+/** The picker is offered only to a member with a family to choose from. */
+export function offersBeneficiaryChoice(family: readonly FamilyMemberOption[] | null | undefined): boolean {
+  return (family?.length ?? 0) > 1;
 }

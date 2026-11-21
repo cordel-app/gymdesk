@@ -51,6 +51,8 @@ export interface MemberPlanCardItem {
   promotions?: MemberPlanCardPromotion[];
   /** #2426 — Billing & Duration, Products, Initial Payment and the collapsed simulation. */
   overview?: PlanOverviewView | null;
+  /** #3091 — who the plan covers (the page's picker), shown with the plan's details. */
+  beneficiaries?: ReactNode;
   /** The card's one action row: *Choose this plan*. */
   action?: ReactNode;
   /** #2798 — *Plan Period: start – end*, one compact line of the collapsed header (*My Plans*). */
@@ -152,6 +154,7 @@ export function MemberPlanCard({ item }: { item: MemberPlanCardItem }) {
           {item.description && <p style={styles.description}>{item.description}</p>}
               {item.details}
               {item.overview && <MemberPlanOverview view={item.overview} />}
+              {item.beneficiaries}
               {(item.promotions ?? []).map((promotion) => (
                 <div key={promotion.key} style={styles.promotion}>
                   <span style={styles.promotionHeading}>{promotion.heading}</span>

@@ -857,6 +857,8 @@ export async function addMemberPlanToDraft(tx: Tx, draft: LockedDraft, input: {
   declinedBenefits: Array<{ section: string; product_id: number }>;
   promotionIds: readonly number[];
   actor: string | null;
+  /** #3091: the beneficiaries the member picked (judged by the caller); absent = the member alone. */
+  beneficiaryIds?: readonly number[];
 }): Promise<{ ok: true; plan_snapshot_id: number } | DraftRefusal> {
   const existing = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
   if (draft.membership_plan_id != null || existing != null) {
@@ -872,6 +874,8 @@ export async function addMemberPlanToDraft(tx: Tx, draft: LockedDraft, input: {
   });
   const { addCoverage } = await import('./product-sets');
   await addCoverage(tx, { gymId: draft.gym_id, productSetId: draft.id, memberId: draft.owner_member_id, isOwner: true });
+  const { applyMemberBeneficiaries } = await import('./member-plan-beneficiaries');
+  await applyMemberBeneficiaries(tx, draft.gym_id, draft.id, draft.owner_member_id, input.beneficiaryIds);
   const { applyPromotionToProductSet } = await import('./membership-promotions');
   for (const promotionId of input.promotionIds) {
     await applyPromotionToProductSet(tx, draft.gym_id, input.actor, draft.id, promotionId);
