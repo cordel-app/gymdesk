@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { recordPlanPromotionApplied, recordPlanPromotionRevoked } from '../api/plan-promotion-writer';
+import { recordPlanPromotionApplied, recordPlanPromotionGrants, recordPlanPromotionRevoked } from '../api/plan-promotion-writer';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
@@ -65,5 +65,42 @@ describe('Plan Promotion snapshot writer (#3026 stage 3a)', () => {
 
     await db.transaction(async (tx) => { await recordPlanPromotionRevoked(tx, gymId, setId, promoId, 'Test'); });
     expect((await rows())[0].status).toBe('revoked');
+  });
+
+  it('confirming writes the grant rows under the plan promotion snapshot, once, keyed by the legacy grant id (#3026 stage 3c-1)', async () => {
+    const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'PPW Grants', `ppw-g-${Date.now()}@test.com`]);
+    const umId = await createTestDraftAssignment(gymId, Number(m.insertId), planId, { config: { base_price: 100 } });
+    const res = await request.post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ promotion_id: promoId });
+    expect(res.status).toBe(201);
+    const { rows: set } = await db.query<any>(
+      `SELECT ps.id FROM product_sets ps WHERE ps.owner_member_id = ? AND ps.status = 'in_cart'`, [Number(m.insertId)]);
+    const setId = Number(set[0].id);
+    const prod = await db.query(
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status) VALUES (?, 'PPW Locker', 'other', 15, 'EUR', 'month', 'active')`, [gymId]);
+
+    const grants = async () => (await db.query<any>(
+      `SELECT g.source_id, g.product_id, g.quantity FROM plan_promotion_oneoff_product_snapshots g
+         JOIN plan_promotion_snapshots pps ON pps.id = g.plan_promotion_snapshot_id
+         JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = pps.plan_snapshot_id
+        WHERE psj.product_set_id = ?`, [setId])).rows;
+    expect(await grants()).toHaveLength(0);
+
+    let legacyId = 0;
+    await db.transaction(async (tx) => {
+      const { rows: ump } = await tx.query<any>('SELECT id FROM user_membership_promotions WHERE product_set_id = ?', [setId]);
+      const ins = await tx.query(
+        `INSERT INTO user_membership_promotion_oneoff_snapshot
+           (gym_id, user_membership_promotion_id, product_id, product_name, quantity, item_type, unit_price, currency)
+         VALUES (?, ?, ?, 'PPW Locker', 2, 'other', 15, 'EUR')`, [gymId, Number(ump[0].id), Number(prod.insertId)]);
+      legacyId = Number(ins.insertId);
+      await recordPlanPromotionGrants(tx, gymId, Number(ump[0].id));
+      await recordPlanPromotionGrants(tx, gymId, Number(ump[0].id)); // idempotent
+      await syncPlanSnapshot(tx, gymId, setId); // the derivation lands on the same row
+    });
+    const rows = await grants();
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].source_id)).toBe(legacyId);
+    expect(Number(rows[0].quantity)).toBe(2);
   });
 });
