@@ -11,7 +11,7 @@
 
 const purchaseArm = (table: string, junction: string, snapshotCol: string, setJunction: string) => `
   SELECT s.source_id AS id, s.gym_id, s.member_id, s.product_id, s.status, s.product_name, s.product_type,
-         s.billing_frequency, s.units, s.unit_price AS amount, s.currency, s.tax_rate_percent, s.purchased_at,
+         s.billing_frequency, s.units, ROUND(s.unit_price * s.quantity, 2) AS amount, s.unit_price AS unit_amount, s.quantity, s.currency, s.tax_rate_percent, s.purchased_at,
          s.valid_until, s.cancelled_on, s.validity_days, s.origin, s.list_price, s.direct_discount_percent,
          s.direct_discount_amount, s.assigned_member_id,
          (SELECT MIN(sj.product_set_id) FROM ${setJunction} sj WHERE sj.${snapshotCol} = s.id) AS product_set_id,

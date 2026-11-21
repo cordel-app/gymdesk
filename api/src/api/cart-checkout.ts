@@ -63,7 +63,10 @@ export interface CartPurchase {
   product_id: number | null;
   product_name: string;
   product_type: string | null;
+  /** The total (unit price x quantity); `unit_amount` is one unit's (#3020 stage 5). */
   amount: number;
+  unit_amount: number;
+  quantity: number;
   list_price: number | null;
   currency: string;
   tax_rate_percent: number | null;
@@ -85,7 +88,7 @@ export class CartCheckoutRefused extends Error {
 export async function loadCartPurchases(exec: Conn, gymId: string, memberId: number): Promise<CartPurchase[]> {
   // #2962: one past its cart expiry is never listed or paid, even before the sweep deleted it.
   const { rows } = await exec.query<any>(
-    `SELECT mp.id, mp.product_id, mp.product_name, mp.product_type, mp.amount, mp.list_price, mp.currency,
+    `SELECT mp.id, mp.product_id, mp.product_name, mp.product_type, mp.amount, mp.unit_amount, mp.quantity, mp.list_price, mp.currency,
             mp.tax_rate_percent, mp.assigned_member_id, mp.created_at
        FROM ${purchaseSnapshotsSql(
          `gym_id = ? AND member_id = ? AND status = ? AND created_at >= UTC_TIMESTAMP() - INTERVAL ${PURCHASE_CART_TTL_MINUTES} MINUTE`,
@@ -117,6 +120,8 @@ function toCartPurchase(r: any): CartPurchase {
     product_name: String(r.product_name),
     product_type: r.product_type ?? null,
     amount: Number(r.amount ?? 0),
+    unit_amount: Number(r.unit_amount ?? r.amount ?? 0),
+    quantity: Number(r.quantity ?? 1),
     list_price: r.list_price == null ? null : Number(r.list_price),
     currency: String(r.currency ?? 'EUR'),
     tax_rate_percent: r.tax_rate_percent == null ? null : Number(r.tax_rate_percent),
@@ -134,7 +139,7 @@ export function purchaseLine(p: CartPurchase): BillingEventLineRow {
 export function cartChargeLine(p: CartPurchase): { simulation: SimulationLine; line: BillingEventLineRow } {
   const simulation: SimulationLine = {
     kind: 'product', label: p.product_name, user_membership_id: 0, plan_name: null,
-    product_id: p.product_id, quantity: 1, unit_price: p.amount, regular_price: p.list_price ?? p.amount,
+    product_id: p.product_id, quantity: p.quantity, unit_price: p.unit_amount, regular_price: p.list_price ?? p.unit_amount,
     benefits: [], actual_charge: p.amount, price_may_change: false, prepaid_periods: null,
   };
   const line = {

@@ -191,6 +191,8 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
       billing_frequency: 'once',
       units: 10,
       amount: 500,
+      unit_amount: 500,
+      quantity: 1,
       currency: 'EUR',
       tax_rate_percent: 21,
     });

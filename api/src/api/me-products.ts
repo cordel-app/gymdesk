@@ -312,6 +312,8 @@ export interface StartPurchaseInput {
    * price after Promotions. Only the staff route ever passes it.
    */
   directDiscountPercent?: number | null;
+  /** #3020 stage 5 — how many (a Sessions Product: packages); absent = 1. The charge is the unit price times it. */
+  quantity?: number;
   /**
    * #1521 — the purchase is being made by staff for this member: the Product is
    * read through the staff catalogue and `actorName` is the creator recorded.
@@ -456,6 +458,7 @@ async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number
     price_incl_tax: price.final_price,
     currency: item.currency,
     tax_rate_percent: taxRate,
+    quantity: input.quantity ?? 1,
   });
 
   return { row, snapshot, price, actorName, assignedMemberId };
@@ -495,7 +498,8 @@ export async function writeDraftPurchase(
     gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: IN_CART_PURCHASE_STATUS,
     productName: snapshot.product_name, productType: snapshot.product_type,
     billingFrequency: snapshot.billing_frequency, units: snapshot.units,
-    amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
+    amount: snapshot.amount, unitAmount: snapshot.unit_amount, quantity: snapshot.quantity,
+          currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
     listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
     directDiscountAmount: price.direct_discount_amount,
     // #1693: the validity agreed now; a staff draft's `/pay` re-resolves it anyway.
@@ -678,7 +682,8 @@ export async function startProductPurchase(
           gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: PENDING_PURCHASE_STATUS,
           productName: snapshot.product_name, productType: snapshot.product_type,
           billingFrequency: snapshot.billing_frequency, units: snapshot.units,
-          amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
+          amount: snapshot.amount, unitAmount: snapshot.unit_amount, quantity: snapshot.quantity,
+          currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
           listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
           directDiscountAmount: price.direct_discount_amount,
           validityDays: row.validity_days == null ? null : Number(row.validity_days),
@@ -784,7 +789,8 @@ export async function startProductPurchase(
         gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: PENDING_PURCHASE_STATUS,
         productName: snapshot.product_name, productType: snapshot.product_type,
         billingFrequency: snapshot.billing_frequency, units: snapshot.units,
-        amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
+        amount: snapshot.amount, unitAmount: snapshot.unit_amount, quantity: snapshot.quantity,
+          currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
         listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
         directDiscountAmount: price.direct_discount_amount,
         // #1693: the validity agreed at purchase time.

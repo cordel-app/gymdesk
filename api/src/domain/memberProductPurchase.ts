@@ -214,9 +214,29 @@ export interface PurchaseSnapshot {
   product_type: string;
   billing_frequency: string | null;
   units: number | null;
+  /** What is charged in total (VAT-inclusive): `unit_amount` x `quantity`, cents-exact (#3020 stage 5). */
   amount: number;
+  /** The final price of one unit (after Promotions and the direct discount). */
+  unit_amount: number;
+  /** How many were bought (a Sessions Product: how many packages). */
+  quantity: number;
   currency: string;
   tax_rate_percent: number | null;
+}
+
+/** #3020 stage 5 — the quantity of a one-time purchase: a positive whole number up to this. */
+export const MAX_PURCHASE_QUANTITY = 99;
+
+/** The quantity a request names: absent = 1, anything but a whole number in 1..MAX is `null` (a 400). */
+export function parsePurchaseQuantity(raw: unknown): number | null {
+  if (raw == null || raw === '') return 1;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= MAX_PURCHASE_QUANTITY ? n : null;
+}
+
+/** A purchase's total: the unit price times the quantity, cents-exact. */
+export function purchaseTotal(unitAmount: number, quantity: number): number {
+  return Math.round(unitAmount * 100) * quantity / 100;
 }
 
 /**
@@ -236,13 +256,18 @@ export function purchaseSnapshot(product: {
   price_incl_tax: number | null;
   currency: string;
   tax_rate_percent: number | null;
+  quantity?: number;
 }): PurchaseSnapshot {
+  const quantity = product.quantity ?? 1;
+  const unit = product.price_incl_tax ?? 0;
   return {
     product_name: product.name,
     product_type: product.type,
     billing_frequency: product.billing_frequency,
     units: product.units,
-    amount: product.price_incl_tax ?? 0,
+    amount: purchaseTotal(unit, quantity),
+    unit_amount: unit,
+    quantity,
     currency: product.currency,
     tax_rate_percent: product.tax_rate_percent,
   };
