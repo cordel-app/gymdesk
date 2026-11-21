@@ -437,7 +437,7 @@ describe('GET /user-memberships/member/:memberId/configuration — a replaced pl
     const res = await getConfiguration(gymId, memberId);
     expect(res.body.promotions).toBeUndefined();
     // Both applications are untouched in the database — only the read changed.
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       `SELECT DISTINCT ${productSetLegacyAssignmentIdSql('ps')} AS user_membership_id, ump.promotion_id
          FROM user_membership_promotions ump JOIN product_sets ps ON ps.id = ump.product_set_id
         WHERE (${productSetOfLegacyAssignmentSql('?', 'ps')} OR ${productSetOfLegacyAssignmentSql('?', 'ps')}) AND ump.status = 'applied'`,

@@ -211,9 +211,13 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     await targetPlan(gymId, promotionId, planId);
     await applyPromotion(gymId, umId, promotionId);
 
-    await expect(legacyChildQuery(
-      `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status)
-       VALUES (?, ?, ?, 'someone', 'applied')`,
+    // #3026 stage 3d-1: the application is the plan snapshot's row, and so is the backstop
+    // (`plan_promotion_snapshots_standing`, UNIQUE since migration 450).
+    await expect(db.query(
+      `INSERT INTO plan_promotion_snapshots (gym_id, plan_snapshot_id, promotion_id, status)
+       SELECT pps.gym_id, pps.plan_snapshot_id, pps.promotion_id, 'applied'
+         FROM plan_promotion_snapshots pps JOIN plan_snapshots s ON s.id = pps.plan_snapshot_id
+        WHERE pps.gym_id = ? AND s.source_user_membership_id = ? AND pps.promotion_id = ?`,
       [gymId, umId, promotionId],
     )).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
   });
@@ -224,9 +228,9 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     // `revoked_at` of the one it replaced. Migration 022 defaulted this column
     // to `CURRENT_TIMESTAMP` (the session time zone); migration 183 moves it to
     // `UTC_TIMESTAMP()`, which is what the revoke path stamps.
-    const { rows } = await db.query<{ column_default: string | null }>(
+    const { rows } = await db.query<any>(
       `SELECT COLUMN_DEFAULT AS column_default FROM information_schema.COLUMNS
-       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_membership_promotions'
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'plan_promotion_snapshots'
          AND COLUMN_NAME = 'applied_at'`,
     );
     expect(rows[0].column_default ?? '').toMatch(/utc_timestamp/i);
@@ -258,7 +262,7 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     expect(await applicationRows(umId, promotionId)).toHaveLength(0);
 
     await confirmDraft(gymId, Number(setId));
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       'SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ?',
       [gymId, setId, promotionId]);
     expect(rows).toHaveLength(0);
@@ -275,19 +279,21 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     const [{ product_set_id: setId }] = await applicationRows(umId, kept);
     // A revoked reference written before removal became a deletion.
     await db.query(
-      `UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP()
-        WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ?`,
+      `UPDATE plan_promotion_snapshots pps
+         JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = pps.plan_snapshot_id
+          SET pps.status = 'revoked', pps.revoked_at = UTC_TIMESTAMP()
+        WHERE pps.gym_id = ? AND j.product_set_id = ? AND pps.promotion_id = ?`,
       [gymId, setId, dropped]);
 
     await confirmDraft(gymId, Number(setId));
-    const { rows } = await db.query<{ promotion_id: number; status: string; confirmed: number }>(
+    const { rows } = await legacyChildQuery(
       `SELECT promotion_id, status, snapshot_confirmed_at IS NOT NULL AS confirmed
          FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ? ORDER BY id`,
       [gymId, setId]);
     expect(rows.map((r) => [Number(r.promotion_id), r.status, Number(r.confirmed)])).toEqual([[kept, 'applied', 1]]);
     // A retried confirmation writes nothing more.
     await confirmDraft(gymId, Number(setId));
-    const again = await db.query('SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?', [gymId, setId]);
+    const again = await legacyChildQuery('SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?', [gymId, setId]);
     expect(again.rows).toHaveLength(1);
   });
 });
@@ -380,7 +386,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
 
     const rows = await applicationRows(umId, promotionId);
     expect(rows).toHaveLength(1);
-    const grantSnapshots = () => db.query<{ user_membership_promotion_id: number; unit_price: string }>(
+    const grantSnapshots = () => legacyChildQuery(
       `SELECT user_membership_promotion_id, unit_price FROM user_membership_promotion_periodical_snapshot
        WHERE user_membership_promotion_id = ? ORDER BY user_membership_promotion_id ASC`,
       [rows[0].id],

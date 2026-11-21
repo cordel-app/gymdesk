@@ -10,7 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, proratedToNextFirst } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, proratedToNextFirst, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -105,7 +105,7 @@ function expectPromotionReflected(body: any, s: Awaited<ReturnType<typeof setup>
 }
 
 async function applicationsOf(umId: number) {
-  const { rows } = await db.query<any>(
+  const { rows } = await legacyChildQuery(
     'SELECT id, promotion_id, status FROM user_membership_promotions WHERE gym_id = ? AND user_membership_id = ?',
     [gymId, umId]);
   return rows;

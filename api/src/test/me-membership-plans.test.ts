@@ -36,7 +36,8 @@ import {
   createTestGym,
   createTestMembership,
   request,
-  TEST_AUTH_HEADER, proratedToNextFirst, activateTestAssignment, createTestDraftAssignment, snapshotTestAssignment } from './helpers';
+  TEST_AUTH_HEADER, proratedToNextFirst, activateTestAssignment, createTestDraftAssignment, snapshotTestAssignment, legacyChildQuery,
+} from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -205,7 +206,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const { rows: snap } = await db.query<any>(
       'SELECT membership_fee_price FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [res.body.id]);
     expect(Number(snap[0].membership_fee_price)).toBe(40);
-    const { rows: apps } = await db.query<any>(
+    const { rows: apps } = await legacyChildQuery(
       "SELECT promotion_id, status, snapshot FROM user_membership_promotions WHERE product_set_id = ? AND status = 'applied'", [res.body.id],
     );
     expect(apps.map((a: any) => a.promotion_id)).toEqual([promoId]);

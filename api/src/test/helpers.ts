@@ -4,7 +4,7 @@ import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
-import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 export const request = supertest(app);
 
@@ -320,6 +320,12 @@ const PRIMARY_SNAPSHOT_OF_VERSION = (versionExpr: string) =>
   `(SELECT j9.plan_snapshot_id FROM product_set_plan_snapshots j9 WHERE j9.product_set_id = ${versionExpr} ORDER BY j9.id LIMIT 1)`;
 
 export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): Promise<any> {
+  // #3026 stage 3d-1: a read of "the applications" (or their grants) written against the legacy
+  // tables reads the plan snapshot rows under the legacy column names.
+  if (/^\s*SELECT\b/i.test(sqlIn) && /\buser_membership_promotion/.test(sqlIn)) {
+    const { rewriteLegacyPromotionSelect } = await import('./planPromotionReads');
+    return db.query(rewriteLegacyPromotionSelect(sqlIn), params as any[]);
+  }
   const queue = [...params];
   // #2125 stage 16: the included Products are the plan snapshot's own lines. A fixture written against
   // `user_membership_session|oneoff|periodical` is re-pointed at `plan_*_snapshots`, keyed by the
@@ -418,9 +424,11 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     (_m, alias) => `${alias}${keyColumn} = ${keyExpr('?')}`);
   out = out.replace(/\b((?:\w+\.)?)user_membership_id\s+IN\s*\(([^)]*)\)/g,
     (_m, alias, list) => `${alias}${keyColumn} IN (${list.split(',').map(() => keyExpr('?')).join(', ')})`);
-  // #3026 stage 3c-2: the readers of a Plan application read `plan_promotion_snapshots`, so a
-  // fixture that edits the legacy application by hand re-derives the plan snapshot rows of the
-  // version(s) it touched.
+  // #3026 stage 3d-1: a Plan application is its plan snapshot's own row. A fixture that edits
+  // "the assignment's applications" by hand (`UPDATE user_membership_promotions … WHERE
+  // user_membership_id = ?`) edits the rows of the assignment's current plan snapshot; the legacy
+  // statement still runs as well, for a fixture that seeded the application in the legacy shape,
+  // whose plan snapshot rows are then re-derived.
   const update = out.match(/^(\s*UPDATE user_membership_promotions\b[\s\S]*?)\bWHERE\b([\s\S]*)$/i);
   if (update) {
     const whereParams = queue.slice((update[1].match(/\?/g) ?? []).length);
@@ -428,6 +436,15 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       `SELECT DISTINCT product_set_id FROM user_membership_promotions WHERE ${update[2]}`, whereParams);
     const written = await db.query(out, queue);
     for (const t of touched) if (t.product_set_id != null) await syncFixtureSnapshot(Number(t.product_set_id));
+    const native = sql.match(/^(\s*UPDATE) user_membership_promotions\b([\s\S]*?\bWHERE\b[\s\S]*)$/i);
+    if (native && /\buser_membership_id\s*=\s*\?/.test(native[2])) {
+      const onSnapshot = `${native[1]} plan_promotion_snapshots${native[2]}`.replace(
+        /\b(?:\w+\.)?user_membership_id\s*=\s*\?/,
+        `plan_snapshot_id = (SELECT x.id FROM (SELECT pa.id FROM plan_snapshots pa
+            WHERE ${assignmentOfLegacyIdSql('?', 'pa')}) x)`);
+      const { rowCount } = await db.query(`${onSnapshot} AND source_id IS NULL`, params);
+      if (rowCount > 0) return { ...written, rowCount: written.rowCount + rowCount };
+    }
     return written;
   }
   return db.query(out, queue);

@@ -22,7 +22,7 @@ import { findScheduleWithIdentity } from '../domain/scheduleConsolidation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { PLAN_SCHEDULE_KEY, allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { loadPromotionApplicationsForSets } from './user-memberships';
-import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
+import { loadPlanPromotionGrantSnapshots, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
 import { projectActiveProductSet } from './product-set-projection';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
@@ -389,7 +389,14 @@ export async function loadProductSetSimulationAssignment(
 
   const applications = ((await loadPromotionApplicationsForSets(gymId, [productSetId], exec)).get(productSetId) ?? [])
     .filter((a) => a.status === 'applied');
-  const grants = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id), exec);
+  // #3026 stage 3d-1: a Plan application's grants are its plan promotion snapshot's rows, a
+  // Product-target one's the legacy application's; the two id spaces are kept apart.
+  const productGrants = await loadPromotionGrantSnapshots(
+    gymId, applications.filter((a) => a.productTarget).map((a) => a.id), exec);
+  const planGrants = await loadPlanPromotionGrantSnapshots(
+    gymId, applications.filter((a) => !a.productTarget).map((a) => a.id), exec);
+  const grantsOf = (a: { id: number; productTarget: boolean }) =>
+    (a.productTarget ? productGrants : planGrants).get(a.id);
 
   const cadence = toPlanDurationCadence(row.cadence_interval, row.cadence_unit);
   const startsAt = toDateOnly(row.starts_at);
@@ -464,7 +471,7 @@ export async function loadProductSetSimulationAssignment(
       payBeforehandMonths: a.payBeforehandMonths,
       bonusMonths: a.bonusMonths,
       membershipFeeBenefits: a.membershipFeeBenefits,
-      grants: grants.get(a.id) ?? [],
+      grants: grantsOf(a) ?? [],
     })),
     services,
     planBenefits,

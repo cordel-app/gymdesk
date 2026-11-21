@@ -26,7 +26,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment, legacyChildQuery } from './helpers';
 import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
 import { legacyProductInsert } from './legacyProductFixture';
 
@@ -513,7 +513,7 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
 
     const ok = await auth(request.post(base(m))).send({ product_id: weekly, promotion_ids: [a] });
     expect(ok.status).toBe(201);
-    const { rows } = await db.query<any>(
+    const { rows } = await legacyChildQuery(
       `SELECT promotion_id FROM user_membership_promotions WHERE product_set_id = ? AND status = 'applied'`,
       [ok.body.product_set_id]);
     expect(rows.map((r: any) => Number(r.promotion_id))).toEqual([a]);

@@ -1,5 +1,6 @@
 import type { Tx } from '../infra/db';
-import { primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { isPlanSnapshotShared, primaryPlanSnapshotId } from './plan-snapshot-lines';
+import { draftReferencePlanPromotionSql } from '../domain/draftPromotionApplication';
 
 /**
  * #3026 stage 3a — a Membership Plan Promotion application is written onto the plan snapshot it
@@ -135,4 +136,114 @@ export async function recordPlanPromotionGrants(tx: Tx, gymId: string, applicati
          \`value\` = VALUES(\`value\`), requirement = VALUES(requirement)`,
       [gymId, applicationId]);
   }
+}
+
+/* ── #3026 stage 3d-1: the plan snapshot row is the application ─────────────────────────────── */
+
+/**
+ * Applies a Membership Plan Promotion to the version's primary plan snapshot as a **reference**
+ * (no snapshot, not confirmed, #2833) and answers the row's id, which is the application's. No
+ * `user_membership_promotions` row is written for a Plan application any more. The caller owns
+ * the snapshot first (`ownPrimaryPlanSnapshot()`).
+ */
+export async function insertPlanPromotionReference(
+  tx: Tx, gymId: string, productSetId: number, promotionId: number, actor: string | null,
+): Promise<number | null> {
+  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  if (snapshotId == null) return null;
+  const { insertId } = await tx.query(
+    `INSERT INTO plan_promotion_snapshots
+       (gym_id, plan_snapshot_id, source_id, promotion_id, status, is_inherited, snapshot,
+        applied_at, created_at, created_by)
+     VALUES (?, ?, NULL, ?, 'applied', 0, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?)`,
+    [gymId, snapshotId, promotionId, actor]);
+  return Number(insertId);
+}
+
+/**
+ * Removes a Promotion from the version's own primary plan snapshot: a Draft's reference is deleted
+ * (with any earlier removed reference of it, #2880), a confirmed application is revoked and kept.
+ * Answers what it did, `none` when the snapshot holds no standing application of that Promotion.
+ */
+export async function removePlanPromotion(
+  tx: Tx, gymId: string, productSetId: number, promotionId: number, actor: string | null,
+): Promise<'deleted' | 'revoked' | 'none'> {
+  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  if (snapshotId == null) return 'none';
+  const { rows: refs } = await tx.query<{ id: number }>(
+    `SELECT pps.id FROM plan_promotion_snapshots pps
+      WHERE pps.gym_id = ? AND pps.plan_snapshot_id = ? AND pps.promotion_id = ? AND pps.status = 'applied'
+        AND ${draftReferencePlanPromotionSql('pps')} FOR UPDATE`,
+    [gymId, snapshotId, promotionId]);
+  if (refs.length > 0) {
+    await tx.query(
+      `DELETE FROM plan_promotion_snapshots
+        WHERE gym_id = ? AND plan_snapshot_id = ? AND promotion_id = ?
+          AND status IN ('applied', 'revoked') AND snapshot_confirmed_at IS NULL`,
+      [gymId, snapshotId, promotionId]);
+    return 'deleted';
+  }
+  const { rowCount } = await tx.query(
+    `UPDATE plan_promotion_snapshots
+        SET status = 'revoked', revoked_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE gym_id = ? AND plan_snapshot_id = ? AND promotion_id = ? AND status = 'applied'`,
+    [actor, gymId, snapshotId, promotionId]);
+  return rowCount > 0 ? 'revoked' : 'none';
+}
+
+const LIVE_GRANTS: Array<{ source: string; target: string }> = [
+  { source: 'promotion_session', target: 'plan_promotion_session_product_snapshots' },
+  { source: 'promotion_oneoff', target: 'plan_promotion_oneoff_product_snapshots' },
+  { source: 'promotion_periodical', target: 'plan_promotion_periodical_product_snapshots' },
+];
+
+/**
+ * Confirms the references the version's own primary plan snapshot holds (rows with no legacy twin):
+ * each standing one takes the snapshot the caller builds from the Promotion as it stands and its
+ * grant rows, frozen from the live benefit tables, and is stamped confirmed; a removed reference is
+ * deleted. A snapshot another Product Set links is that set's contract and is left alone. Answers
+ * how many rows it wrote or deleted.
+ */
+export async function confirmPlanPromotionReferences(
+  tx: Tx, gymId: string, productSetId: number,
+  buildSnapshot: (promotionId: number) => Promise<unknown | null>,
+): Promise<number> {
+  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  if (snapshotId == null) return 0;
+  if (await isPlanSnapshotShared(tx, productSetId, snapshotId)) return 0;
+  const { rowCount: discarded } = await tx.query(
+    `DELETE FROM plan_promotion_snapshots
+      WHERE gym_id = ? AND plan_snapshot_id = ? AND source_id IS NULL
+        AND status = 'revoked' AND snapshot_confirmed_at IS NULL`,
+    [gymId, snapshotId]);
+  const { rows } = await tx.query<{ id: number; promotion_id: number }>(
+    `SELECT id, promotion_id FROM plan_promotion_snapshots
+      WHERE gym_id = ? AND plan_snapshot_id = ? AND source_id IS NULL
+        AND status = 'applied' AND snapshot_confirmed_at IS NULL
+      ORDER BY id FOR UPDATE`,
+    [gymId, snapshotId]);
+  for (const app of rows) {
+    const snapshot = await buildSnapshot(Number(app.promotion_id));
+    await tx.query(
+      `UPDATE plan_promotion_snapshots
+          SET snapshot = ?, snapshot_confirmed_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP()
+        WHERE id = ? AND gym_id = ? AND snapshot_confirmed_at IS NULL`,
+      [snapshot != null ? JSON.stringify(snapshot) : null, app.id, gymId]);
+    for (const { source, target } of LIVE_GRANTS) {
+      await tx.query(`DELETE FROM ${target} WHERE gym_id = ? AND plan_promotion_snapshot_id = ?`, [gymId, app.id]);
+      await tx.query(
+        `INSERT INTO ${target}
+           (gym_id, plan_promotion_snapshot_id, product_id, product_name, quantity, item_type,
+            item_billing_frequency, unit_price, currency, \`action\`, \`value\`, requirement)
+         SELECT ?, ?, b.product_id, COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)), b.quantity,
+                COALESCE(gc.type, 'other'), gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
+                b.\`action\`, b.\`value\`, b.requirement
+           FROM ${source} b
+           JOIN products gc ON gc.id = b.product_id
+           LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+          WHERE b.promotion_id = ? AND b.gym_id = ?`,
+        [gymId, app.id, app.promotion_id, gymId]);
+    }
+  }
+  return rows.length + discarded;
 }

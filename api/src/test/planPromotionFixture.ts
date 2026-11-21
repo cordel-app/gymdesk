@@ -26,7 +26,7 @@ export async function derivePlanPromotionSnapshotsForFixture(gymId: string, prod
   await db.query(
     `DELETE FROM plan_promotion_snapshots
       WHERE plan_snapshot_id = ?
-        AND (source_id IS NULL OR source_id NOT IN (
+        AND (source_id IS NOT NULL AND source_id NOT IN (
               SELECT ump.id FROM user_membership_promotions ump
                 JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
                WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NULL))`,
