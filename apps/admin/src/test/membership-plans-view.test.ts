@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
-const plan = (id: number, status: string, is_live = true) => ({ id, status, is_live } as any);
+const plan = (id: number, status: string, is_live = true, membership_plan_id = id) => ({ id, status, is_live, membership_plan_id } as any);
 
 describe('#1538 visiblePlans — one version of the plan at a time', () => {
   it('shows the Active plan and the in-progress list when nothing is being edited', () => {
@@ -12,14 +12,14 @@ describe('#1538 visiblePlans — one version of the plan at a time', () => {
   });
 
   it('a Draft replaces the Active snapshot in the view, never both', () => {
-    const v = visiblePlans([plan(1, 'active'), plan(2, 'in_cart')]);
+    const v = visiblePlans([plan(1, 'active', true, 7), plan(2, 'in_cart', true, 7)]);
     expect(v.rows.map((r) => r.id)).toEqual([2]);
     expect(v.heading).toBe('draft');
     expect(v.showInFlightList).toBe(false);
   });
 
   it('a Pending Payment version also replaces it, and is not listed twice', () => {
-    const v = visiblePlans([plan(1, 'active'), plan(3, 'pending_payment')]);
+    const v = visiblePlans([plan(1, 'active', true, 7), plan(3, 'pending_payment', true, 7)]);
     expect(v.rows.map((r) => r.id)).toEqual([3]);
     expect(v.showInFlightList).toBe(false);
     // #2742: awaiting payment is listed in the Active category, labelled by its badge.
@@ -39,6 +39,14 @@ describe('#1538 visiblePlans — one version of the plan at a time', () => {
   it('past plans never enter the first table', () => {
     const v = visiblePlans([plan(1, 'cancelled', false)]);
     expect(v.rows).toEqual([]);
+  });
+});
+
+describe('#3119 an In Cart plan is listed beside the running plans', () => {
+  it('keeps a running plan of another Membership Plan, replaces only its own re-frozen version', () => {
+    const v = visiblePlans([plan(1, 'active', true, 7), plan(2, 'active', true, 8), plan(3, 'in_cart', true, 9), plan(4, 'in_cart', true, 7)]);
+    expect(v.rows.map((r: any) => r.id)).toEqual([2, 3, 4]);
+    expect(v.heading).toBe('draft');
   });
 });
 
@@ -72,8 +80,8 @@ describe('#2659 stage 3: a Draft lists the plans cancelling at their period end 
   it('keeps a Cancels-on-End-Date plan, replaces the Active one, never lists a finished one', () => {
     const cancelling = { id: 1, status: 'active_cancel_at_period_end', is_live: false, is_current: true } as any;
     const finished = { id: 2, status: 'cancelled', is_live: false, is_current: false } as any;
-    const v = visiblePlans([plan(3, 'active'), cancelling, finished, plan(4, 'in_cart')]);
-    expect(v.rows.map((r: any) => r.id)).toEqual([4, 1]);
+    const v = visiblePlans([plan(3, 'active', true, 5), cancelling, finished, plan(4, 'in_cart', true, 5)]);
+    expect(v.rows.map((r: any) => r.id)).toEqual([1, 4]);
     expect(v.heading).toBe('draft');
   });
 });

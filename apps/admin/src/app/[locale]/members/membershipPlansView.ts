@@ -35,7 +35,15 @@ export function visiblePlans(plans: readonly MemberPlanRow[]): VisiblePlans {
   // `Pending Payment` badge tells it apart); only a Draft takes the view out of it.
   if (inFlight.length > 0) {
     const heading = inFlight.some((p) => p.status === 'in_cart') ? 'draft' : 'active';
-    return { rows: [...inFlight, ...cancelling], heading, showInFlightList: false };
+    // #3119: an In Cart plan is listed beside the running plans, never instead of them. Only the
+    // running plan an in-flight version re-freezes (same Membership Plan: the ⋮ → Edit Draft of
+    // #1538) is replaced in the view; every other live plan keeps its row.
+    const replacedPlanIds = new Set(inFlight.map((p) => p.membership_plan_id).filter((id) => id != null));
+    const kept = plans.filter((p) => !isInFlightPlan(p)
+      && (p.is_live || p.is_current)
+      && !(p.is_live && p.membership_plan_id != null && replacedPlanIds.has(p.membership_plan_id)));
+    const rows = plans.filter((p) => isInFlightPlan(p) && p.is_live || kept.includes(p));
+    return { rows: rows.length ? rows : [...inFlight, ...cancelling], heading, showInFlightList: false };
   }
   // #2549: a cancelled plan stays in Active until its end date passes (status badge unchanged).
   return { rows: plans.filter((p) => p.is_live || p.is_current), heading: 'active', showInFlightList: true };
