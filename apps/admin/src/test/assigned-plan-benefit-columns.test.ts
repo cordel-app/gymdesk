@@ -68,7 +68,7 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
       productBenefitColumns({ showFrequency: true, showAction: true, showPrices: true })
         .map((c) => c.key),
     ).toEqual(
-      PRODUCT_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => !['requirement', 'mandatory', 'tax', 'promotion', 'direct_discount'].includes(k)),
+      PRODUCT_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => !['requirement', 'mandatory', 'tax', 'promotion'].includes(k)),
     );
   });
 
