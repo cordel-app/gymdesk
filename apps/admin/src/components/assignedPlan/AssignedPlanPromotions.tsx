@@ -39,7 +39,7 @@ import {
 } from '@/components/ProductBenefits';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import {
-  assignablePromotionsPath, draftPromotionToggle, selectedDraftPromotionIds, toPickerPromotion,
+  appliedOutsideOffer, assignablePromotionsPath, draftPromotionToggle, selectedDraftPromotionIds, toPickerPromotion,
   type AssignablePromotion,
 } from '@/lib/assignablePromotions';
 import { promotionGrants, thumbnailSrc } from './promotionPlacement';
@@ -492,13 +492,15 @@ const subLabelSt = cardSubLabelStyle;
  * snapshot is still taken at Save & Pay. The card re-reads after each change, so
  * the fee, the product lines and both simulations are the engine's.
  */
-export function DraftPromotionPicker({ assignedPlanId, membershipPlanId, ownerMemberId, applied, canWrite, onChanged }: {
+export function DraftPromotionPicker({ assignedPlanId, membershipPlanId, ownerMemberId, applied, canWrite, onChanged, onOpenPromotion }: {
   assignedPlanId: number;
   membershipPlanId: number;
   ownerMemberId: number;
   applied: AppliedPromotion[];
   canWrite: boolean;
   onChanged: () => void;
+  /** Opens an applied Promotion's detail modal (the rows the offer no longer holds). */
+  onOpenPromotion?: (p: AppliedPromotion) => void;
 }) {
   const t = useTranslations('assigned_plans_page');
   const tRoot = useTranslations();
@@ -542,20 +544,42 @@ export function DraftPromotionPicker({ assignedPlanId, membershipPlanId, ownerMe
     }
   }
 
+  // #3169 — the one Promotions list of the Draft: every offered Promotion once, checked when applied;
+  // an applied one the offer no longer holds is its own checked row below, never a second copy.
+  const leftovers = appliedOutsideOffer(applied, offered ? offered.map((p) => p.id) : null);
   return (
-    <div data-draft-promotion-picker style={{ marginTop: 12 }}>
-      <p style={{ ...cardSubLabelStyle, margin: '0 0 8px' }}>{t('draft_available_promotions')}</p>
+    <div data-draft-promotion-picker>
       {offered === null ? (
         <p style={cardMutedTextStyle}>{t('draft_available_promotions_loading')}</p>
       ) : (
-        <PromotionPicker
-          promotions={offered.map((p) => toPickerPromotion(p, tRoot as any))}
-          selectedIds={selectedIds}
-          onToggle={(id) => { void toggle(id); }}
-          disabled={busy || !canWrite}
-          emptyText={t('draft_available_promotions_none')}
-          showThumbnails
-        />
+        <>
+          {(offered.length > 0 || leftovers.length === 0) && (
+            <PromotionPicker
+              promotions={offered.map((p) => toPickerPromotion(p, tRoot as any))}
+              selectedIds={selectedIds}
+              onToggle={(id) => { void toggle(id); }}
+              disabled={busy || !canWrite}
+              emptyText={t('draft_available_promotions_none')}
+              showThumbnails
+            />
+          )}
+          {leftovers.map((p) => (
+            <PlanPromotionRow
+              key={p.id}
+              promotion={p}
+              checkbox={(
+                <input
+                  type="checkbox"
+                  checked
+                  disabled={busy || !canWrite}
+                  aria-label={p.promotion_name}
+                  onChange={() => { void toggle(Number(p.promotion_id)); }}
+                />
+              )}
+              onOpen={() => onOpenPromotion?.(p)}
+            />
+          ))}
+        </>
       )}
     </div>
   );
