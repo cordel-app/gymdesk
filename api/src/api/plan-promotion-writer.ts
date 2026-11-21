@@ -14,22 +14,6 @@ import { draftReferencePlanPromotionSql } from '../domain/draftPromotionApplicat
  * Product-target applications are not handled here.
  */
 
-/** Records an application on the version's primary plan snapshot (idempotent per `source_id`). */
-export async function recordPlanPromotionApplied(
-  tx: Tx, gymId: string, productSetId: number,
-  application: { id: number; promotionId: number; actor: string | null },
-): Promise<void> {
-  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
-  if (snapshotId == null) return;
-  await tx.query(
-    `INSERT INTO plan_promotion_snapshots
-       (gym_id, plan_snapshot_id, source_id, promotion_id, status, is_inherited, snapshot,
-        applied_at, created_at, created_by)
-     VALUES (?, ?, ?, ?, 'applied', 0, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?)
-     ON DUPLICATE KEY UPDATE status = VALUES(status)`,
-    [gymId, snapshotId, application.id, application.promotionId, application.actor]);
-}
-
 /** A Draft's reference removed: the row goes with the application. */
 export async function deletePlanPromotionReferences(
   tx: Tx, gymId: string, applicationIds: number[],
@@ -38,23 +22,6 @@ export async function deletePlanPromotionReferences(
   await tx.query(
     `DELETE FROM plan_promotion_snapshots WHERE gym_id = ? AND source_id IN (${applicationIds.map(() => '?').join(',')})`,
     [gymId, ...applicationIds]);
-}
-
-/**
- * A confirmed application revoked: kept, with the moment. #3026 stage 3c-3: found on the version's
- * own primary plan snapshot by its Promotion (the caller owns that snapshot first), never through
- * the legacy application, so a copy made with the snapshot (no legacy twin) is revoked too.
- */
-export async function recordPlanPromotionRevoked(
-  tx: Tx, gymId: string, productSetId: number, promotionId: number, actor: string | null,
-): Promise<void> {
-  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
-  if (snapshotId == null) return;
-  await tx.query(
-    `UPDATE plan_promotion_snapshots
-        SET status = 'revoked', revoked_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE gym_id = ? AND plan_snapshot_id = ? AND promotion_id = ? AND status = 'applied'`,
-    [actor, gymId, snapshotId, promotionId]);
 }
 
 /**
