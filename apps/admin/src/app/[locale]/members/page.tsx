@@ -109,7 +109,7 @@ const LIST_COLUMNS: ListColumn[] = [
   { key: 'email', labelKey: 'col_email', width: 200, mobile: 'secondary' },
   { key: 'document', labelKey: 'col_document', width: 150, mobile: 'secondary' },
   { key: 'payment_status', labelKey: 'col_payment_status', width: 110, mobile: 'secondary' },
-  // #2803: wide enough for the longest plan status ("Cancels on End Date" and
+  // #2803: wide enough for the longest plan status ("Cancels at End Date" and
   // its translations), which a 110px track pushed into the next column.
   { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 220, mobile: 'keep' },
   // #2550: the Member's access rights, a column rather than a chip by the name.
