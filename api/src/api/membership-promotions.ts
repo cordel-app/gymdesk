@@ -25,7 +25,7 @@ import { ProductBenefitCategory } from '../domain/productClassification';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
 import { toProductBenefit } from '../domain/productBenefitActions';
 import { productBenefitPrices } from './product-benefit-pricing';
-import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
+import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPlanPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
 import { assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import {
@@ -60,16 +60,24 @@ import {
 // kept separately. `ump.*` also carries migration 183's generated column, which
 // `fetchAppliedPromotions()` (the only consumer) strips before responding — a
 // second consumer would have to do the same.
+// #3026 stage 3c-2: the card's applications are the assignment's current plan snapshot's own rows
+// (`plan_promotion_snapshots`, through its holder), never `user_membership_promotions`. The row's
+// `id` is the plan promotion snapshot's; `user_membership_id` is the assignment asked for.
 const SELECT = `
-  SELECT ump.*, p.name AS promotion_name, p.description AS promotion_description,
+  SELECT pps.id, pps.gym_id, pps.promotion_id, pps.applied_by, pps.applied_at, pps.consumed_at,
+         pps.status, pps.snapshot, pps.revoked_at, pps.modified_at, pps.modified_by, pps.created_by,
+         pps.snapshot_confirmed_at, pa.source_user_membership_id AS user_membership_id,
+         p.name AS promotion_name, p.description AS promotion_description,
          p.stackable, p.starts_at, p.ends_at,
          p.free_months, p.paid_months, p.bonus_months,
          p.lifecycle_status AS promotion_lifecycle_status,
          p.starts_at AS promotion_live_starts_at, p.ends_at AS promotion_live_ends_at,
          p.image_url AS promotion_image_url,
          COALESCE(p.image_thumbnail_url, p.image_url) AS promotion_image_thumbnail_url
-  FROM user_membership_promotions ump
-  JOIN promotions p ON p.id = ump.promotion_id
+  FROM plan_snapshots pa
+  JOIN plan_promotion_snapshots pps
+    ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
+  JOIN promotions p ON p.id = pps.promotion_id
 `;
 
 export const membershipPromotionsRouter = Router({ mergeParams: true });
@@ -336,7 +344,7 @@ async function effectiveDurations(
     pairs.map(() => `
       SELECT ? AS application_id, ? AS months,
              (applied_at + INTERVAL ? MONTH > NOW()) AS in_effect
-      FROM user_membership_promotions WHERE id = ?`).join(' UNION ALL '),
+      FROM plan_promotion_snapshots WHERE id = ?`).join(' UNION ALL '),
     pairs.flatMap((p) => [p.applicationId, p.months, p.months, p.applicationId]),
   );
   return new Set(
@@ -361,13 +369,16 @@ async function loadStandingApplicationsForPricing(
   tx: Tx, gymId: string, userMembershipId: number,
 ): Promise<AppliedPromotionForBilling[]> {
   const { rows } = await tx.query(
-    `SELECT ump.id, ump.promotion_id, ump.snapshot, ump.applied_at, ump.revoked_at,
+    // #3026 stage 3c-2: the standing applications are the current plan snapshot's own rows.
+    `SELECT pps.id, pps.promotion_id, pps.snapshot, pps.applied_at, pps.revoked_at,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months,
             p.pay_beforehand_months
-     FROM user_membership_promotions ump
-     LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ump.user_membership_id = ? AND ump.gym_id = ? AND ump.status = 'applied'
-     ORDER BY ump.applied_at ASC, ump.id ASC`,
+     FROM plan_snapshots pa
+     JOIN plan_promotion_snapshots pps
+       ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
+     LEFT JOIN promotions p ON p.id = pps.promotion_id
+     WHERE ${assignmentOfLegacyIdSql('?', 'pa')} AND pa.gym_id = ? AND pps.status = 'applied'
+     ORDER BY pps.applied_at ASC, pps.id ASC`,
     [userMembershipId, gymId],
   );
   return Promise.all(rows.map(async (row: any) => {
@@ -998,7 +1009,7 @@ async function loadAppliedPromotionGrants(
   const byApplication = new Map<number, AppliedPromotionGrants>();
   if (applications.length === 0) return byApplication;
 
-  const snapshots = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
+  const snapshots = await loadPlanPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
   // One lookup for every grant of every application on this card, rather than
   // one per line.
   const taxes = await loadGrantTaxTreatments(
@@ -1101,7 +1112,7 @@ export async function assignmentPromotionEditability(
 
 export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
   const { rows } = await db.query(
-    `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
+    `${SELECT} WHERE ${assignmentOfLegacyIdSql('?', 'pa')} AND pa.gym_id = ? ORDER BY pps.applied_at DESC, pps.id DESC`,
     [umId, gymId],
   );
   const merged = await Promise.all(rows.map(withSnapshot));

@@ -1,5 +1,5 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
-import { draftReferenceApplicationSql } from '../domain/draftPromotionApplication';
+import { draftReferenceApplicationSql, draftReferencePlanPromotionSql } from '../domain/draftPromotionApplication';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentConfigSnapshotId } from './assignment-config';
 import { GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import { db, Tx } from '../infra/db';
@@ -621,6 +621,68 @@ export async function loadPromotionGrantSnapshots(
     byApplication.set(row.user_membership_promotion_id, list);
   }
 
+  const live = await loadLivePromotionGrants(
+    gymId, [...new Set(unconfirmed.map((a) => Number(a.promotion_id)))], exec);
+  for (const app of unconfirmed) {
+    byApplication.set(Number(app.id), live.get(Number(app.promotion_id)) ?? []);
+  }
+  return byApplication;
+}
+
+const PLAN_PROMOTION_GRANT_TABLE: Record<ProductBenefitCategory, string> = {
+  session: 'plan_promotion_session_product_snapshots',
+  oneoff: 'plan_promotion_oneoff_product_snapshots',
+  periodical: 'plan_promotion_periodical_product_snapshots',
+};
+
+/**
+ * #3026 stage 3c-2 — what each **Membership Plan** Promotion application granted, keyed by its
+ * `plan_promotion_snapshots.id`, read from the plan snapshot's own grant rows.
+ *
+ * The same three answers as `loadPromotionGrantSnapshots()` (which stays for Product-target
+ * applications): a confirmed application reads its own rows, a Draft's reference
+ * (`draftReferencePlanPromotionSql()`) reads the Promotion as it stands now and is always in the
+ * map, and a confirmed application with no rows is absent, the caller's signal to read the
+ * Promotion live (an application that predates the snapshot flow).
+ */
+export async function loadPlanPromotionGrantSnapshots(
+  gymId: string, planPromotionSnapshotIds: number[],
+  exec: { query: Tx['query'] } = db,
+): Promise<Map<number, SimulationGrant[]>> {
+  const byApplication = new Map<number, SimulationGrant[]>();
+  const ids = [...new Set(planPromotionSnapshotIds.map(Number))];
+  if (ids.length === 0) return byApplication;
+  const marks = ids.map(() => '?').join(',');
+  const { rows: apps } = await exec.query(
+    `SELECT pps.id, pps.promotion_id, ${draftReferencePlanPromotionSql('pps')} AS unconfirmed
+       FROM plan_promotion_snapshots pps WHERE pps.gym_id = ? AND pps.id IN (${marks})`,
+    [gymId, ...ids],
+  );
+  const unconfirmed = (apps as any[]).filter((a) => Number(a.unconfirmed) === 1);
+  const unconfirmedIds = new Set(unconfirmed.map((a) => Number(a.id)));
+  const { rows } = await exec.query(
+    CATEGORIES.map((category) => `
+      SELECT '${category}' AS category, plan_promotion_snapshot_id, product_id,
+             product_name, quantity, item_billing_frequency, unit_price, \`action\`, \`value\`
+        FROM ${PLAN_PROMOTION_GRANT_TABLE[category]}
+       WHERE gym_id = ? AND plan_promotion_snapshot_id IN (${marks})`).join(' UNION ALL '),
+    CATEGORIES.flatMap(() => [gymId, ...ids]),
+  );
+  for (const row of rows as any[]) {
+    const id = Number(row.plan_promotion_snapshot_id);
+    if (unconfirmedIds.has(id)) continue;
+    const list = byApplication.get(id) ?? [];
+    list.push({
+      productId: row.product_id ?? 0,
+      name: row.product_name ?? 'Product',
+      category: row.category as ProductBenefitCategory,
+      billingFrequency: toFrequency(row.item_billing_frequency),
+      unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
+      quantity: positiveQuantity(row.quantity),
+      benefit: toProductBenefit('promotion', row.action, row.value),
+    });
+    byApplication.set(id, list);
+  }
   const live = await loadLivePromotionGrants(
     gymId, [...new Set(unconfirmed.map((a) => Number(a.promotion_id)))], exec);
   for (const app of unconfirmed) {

@@ -131,15 +131,17 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
   await tx.query(
     `INSERT INTO plan_promotion_snapshots
        (gym_id, plan_snapshot_id, source_id, promotion_id, status, is_inherited, snapshot, applied_at, applied_by,
-        consumed_at, revoked_at, created_at, created_by, modified_at, modified_by)
+        consumed_at, revoked_at, created_at, created_by, modified_at, modified_by, snapshot_confirmed_at)
      SELECT ump.gym_id, ?, ump.id, ump.promotion_id, ump.status, 0, ump.snapshot, ump.applied_at, ump.applied_by,
-            ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at, ump.modified_by
+            ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at, ump.modified_by,
+            ump.snapshot_confirmed_at
        FROM user_membership_promotions ump
        JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'membership_plan'
       WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NULL
      ON DUPLICATE KEY UPDATE
-       status = VALUES(status), snapshot = VALUES(snapshot), consumed_at = VALUES(consumed_at),
-       revoked_at = VALUES(revoked_at), modified_at = VALUES(modified_at), modified_by = VALUES(modified_by)`,
+       status = VALUES(status), snapshot = VALUES(snapshot), applied_at = VALUES(applied_at), consumed_at = VALUES(consumed_at),
+       revoked_at = VALUES(revoked_at), modified_at = VALUES(modified_at), modified_by = VALUES(modified_by),
+       snapshot_confirmed_at = VALUES(snapshot_confirmed_at)`,
     [snapshotId, gymId, productSetId]);
 
   for (const { target, source } of PROMOTION_PRODUCTS) {

@@ -184,8 +184,9 @@ export async function copyPlanSnapshotToVersion(
     const { insertId: promoId } = await tx.query(
       `INSERT INTO plan_promotion_snapshots
          (gym_id, plan_snapshot_id, promotion_id, status, is_inherited, snapshot, applied_at, applied_by,
-          consumed_at, revoked_at, created_by)
-       SELECT gym_id, ?, promotion_id, status, 1, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_by
+          consumed_at, revoked_at, created_by, snapshot_confirmed_at)
+       SELECT gym_id, ?, promotion_id, status, 1, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_by,
+              snapshot_confirmed_at
          FROM plan_promotion_snapshots WHERE id = ?`, [insertId, promo.id]);
     for (const table of [
       'plan_promotion_session_product_snapshots', 'plan_promotion_oneoff_product_snapshots',

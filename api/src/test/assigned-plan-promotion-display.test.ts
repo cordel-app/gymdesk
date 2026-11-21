@@ -170,6 +170,14 @@ describe('Assigned Plan card display data (#2478)', () => {
         WHERE id = ? AND gym_id = ?`,
       [apps[0].id, gymId],
     );
+    // #3026 stage 3c-2: the card reads the plan snapshot's own row, so the fixture writes it too.
+    await db.query(
+      `UPDATE plan_promotion_snapshots pps
+         JOIN user_membership_promotions ump ON ump.id = pps.source_id
+          SET pps.snapshot = ump.snapshot, pps.snapshot_confirmed_at = ump.snapshot_confirmed_at
+        WHERE ump.id = ? AND ump.gym_id = ?`,
+      [apps[0].id, gymId],
+    );
     const res = await getDetail(umId);
     const application = res.body.promotions.find((p: any) => p.promotion_id === promotionId);
     expect(application).toMatchObject({

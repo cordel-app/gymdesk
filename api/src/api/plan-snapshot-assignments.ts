@@ -1,5 +1,5 @@
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
-import { draftReferenceApplicationSql } from '../domain/draftPromotionApplication';
+import { draftReferencePlanPromotionSql } from '../domain/draftPromotionApplication';
 import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { db } from '../infra/db';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -80,11 +80,10 @@ async function loadPlanBenefits(exec: Exec, gymId: string, planSnapshotId: numbe
 async function loadPlanPromotions(exec: Exec, gymId: string, planSnapshotId: number): Promise<SimulationPromotion[]> {
   const { rows } = await exec.query(
     `SELECT pps.id, pps.promotion_id, pps.applied_at, pps.revoked_at, pps.snapshot,
-            (ump.id IS NOT NULL AND ${draftReferenceApplicationSql('ump')}) AS unconfirmed,
+            ${draftReferencePlanPromotionSql('pps')} AS unconfirmed,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
        FROM plan_promotion_snapshots pps
        LEFT JOIN promotions p ON p.id = pps.promotion_id
-       LEFT JOIN user_membership_promotions ump ON ump.id = pps.source_id AND ump.gym_id = pps.gym_id
       WHERE pps.gym_id = ? AND pps.plan_snapshot_id = ${promotionHolderSql('?')} AND pps.status = 'applied'
       ORDER BY pps.id`,
     [gymId, planSnapshotId],
