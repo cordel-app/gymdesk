@@ -942,7 +942,8 @@
     "draft_line_delete": "Eliminar",
     "draft_line_delete_confirm": "¿Eliminar {product} del borrador? Se quita de este Product Set; no se ha cobrado nada por él.",
     "draft_line_delete_error": "No se ha podido eliminar el producto del borrador.",
-    "add_product_error_promotion_requires_products": "Esta promoción requiere otros productos. Añádelos primero y después aplica la promoción."
+    "add_product_error_promotion_requires_products": "Esta promoción requiere otros productos. Añádelos primero y después aplica la promoción.",
+    "added_plan_remove": "Quitar"
   },
   "member_payments": {
     "title": "Pagos del miembro",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addedCartPlans, pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
+import { addedCartPlans, addedPlanRemovePath, pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, status: string, is_live = true, membership_plan_id = id) => ({ id, status, is_live, membership_plan_id } as any);
 
@@ -109,5 +109,14 @@ describe('#2966 stage 4 addedCartPlans', () => {
   });
   it('lists nothing for a set that is not in flight or has no added plan', () => {
     expect(addedCartPlans([set('active', [a]), set('in_cart', [])])).toEqual([]);
+  });
+});
+
+describe('#2966 stage 5 addedPlanRemovePath', () => {
+  it('addresses the staff remove route by the set and the plan snapshot', () => {
+    expect(addedPlanRemovePath({ id: 12 * 1_000_000 + 345, status: 'in_cart' })).toBe('/product-sets/12/plans/345');
+  });
+  it('offers nothing for a version past the Draft', () => {
+    expect(addedPlanRemovePath({ id: 12 * 1_000_000 + 345, status: 'pending_payment' })).toBeNull();
   });
 });

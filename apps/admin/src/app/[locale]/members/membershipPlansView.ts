@@ -98,6 +98,18 @@ export function addedCartPlans(productSets: readonly ProductSetRow[]): Array<Pro
     })));
 }
 
+/**
+ * #2966 stage 5 — an added plan's row id is `setId * 1_000_000 + planSnapshotId` (it has no
+ * assignment id), so the staff remove route (`DELETE /product-sets/:setId/plans/:snapshotId`)
+ * is addressed by taking that id apart. Only a Draft (`in_cart`) row may be removed.
+ */
+export function addedPlanRemovePath(row: { id: number; status?: string | null }): string | null {
+  if (row.status !== 'in_cart') return null;
+  const setId = Math.floor(row.id / 1_000_000);
+  const snapshotId = row.id % 1_000_000;
+  return setId > 0 && snapshotId > 0 ? `/product-sets/${setId}/plans/${snapshotId}` : null;
+}
+
 const uniqueById = <T extends { id: number }>(rows: readonly T[]): T[] => {
   const seen = new Set<number>();
   return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
