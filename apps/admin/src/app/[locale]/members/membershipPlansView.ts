@@ -79,6 +79,25 @@ export function pendingPaymentPlanSets(productSets: readonly ProductSetRow[]): P
     && ps.membership_plan_id != null);
 }
 
+/**
+ * #2966 stage 4 — the plans staff added to a member's in-flight cart as plan snapshots only. They
+ * have no assignment row, so the Member card lists them from the version's own `added_plans`,
+ * labelled with the version's stored status (a Draft reads `In Cart`).
+ */
+export function addedCartPlans(productSets: readonly ProductSetRow[]): Array<ProductSetRow & { id: number }> {
+  return productSets.flatMap((ps) => (ps.status === 'in_cart' || ps.status === 'pending_payment' ? ps.added_plans ?? [] : [])
+    .map((a) => ({
+      id: ps.id * 1_000_000 + a.plan_snapshot_id,
+      status: ps.status,
+      plan_name: a.plan_name,
+      membership_plan_id: a.membership_plan_id,
+      starts_at: a.starts_at,
+      amount_due: null,
+      expired: ps.expired,
+      created_by: ps.created_by,
+    })));
+}
+
 const uniqueById = <T extends { id: number }>(rows: readonly T[]): T[] => {
   const seen = new Set<number>();
   return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));

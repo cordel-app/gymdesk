@@ -10,6 +10,7 @@ import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
+import { primaryPlanSnapshotSql } from './plan-snapshot-lines';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
@@ -148,6 +149,38 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     [gymId, memberId],
   );
 
+  // #2966 stage 4 — the further plans an in-flight version holds only as plan snapshots (staff
+  // added them to the cart through `POST /product-sets/:id/plans`): no `user_memberships` row
+  // represents them, so the Member card lists them from the version's own snapshots. The set's
+  // primary plan is the version's own plan row, and a snapshot an assignment names is already
+  // one of `plans`.
+  const inFlightIds = (inFlight as any[]).map((r) => Number(r.id));
+  const addedBySet = new Map<number, any[]>();
+  if (inFlightIds.length > 0) {
+    const { rows: addedRows } = await db.query<any>(
+      `SELECT pp.product_set_id, s.id AS plan_snapshot_id, s.membership_plan_id, s.starts_at, mp.name AS plan_name
+         FROM product_set_plan_snapshots pp
+         JOIN plan_snapshots s ON s.id = pp.plan_snapshot_id AND s.gym_id = ?
+         LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
+        WHERE pp.product_set_id IN (${inFlightIds.map(() => '?').join(',')})
+          AND pp.entitlement_only = 0
+          AND s.source_user_membership_id IS NULL
+          AND s.id <> COALESCE(${primaryPlanSnapshotSql('pp.product_set_id', '?')}, 0)
+        ORDER BY pp.id`,
+      [gymId, ...inFlightIds, gymId],
+    );
+    for (const r of addedRows) {
+      const list = addedBySet.get(Number(r.product_set_id)) ?? [];
+      list.push({
+        plan_snapshot_id: Number(r.plan_snapshot_id),
+        membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,
+        plan_name: r.plan_name ?? null,
+        starts_at: toDateOnly(r.starts_at),
+      });
+      addedBySet.set(Number(r.product_set_id), list);
+    }
+  }
+
   // #2747 stage 2 — a plan chosen and then cancelled while it awaited its first
   // payment: the Product Set is kept as `cancelled` and, having never been linked
   // to an assignment, is not one of `plans`. The Member card lists it under Past.
@@ -221,6 +254,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       expired: Number(r.expired) === 1,
       expires_in_seconds: draftExpiresInSeconds(r.expires_in_seconds),
       created_by: r.created_by ?? null,
+      // #2966 stage 4: the further plans this version holds as plan snapshots only.
+      added_plans: addedBySet.get(Number(r.id)) ?? [],
     })),
     cancelled_product_sets: cancelledSets.map((r: any) => ({
       id: Number(r.id),

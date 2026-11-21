@@ -94,6 +94,15 @@ export interface ProductSetRow {
   /** #2747 stage 2 — when a cancelled version was cancelled (date only), and by whom. */
   cancelled_at?: string | null;
   cancelled_by?: string | null;
+  /** #2966 stage 4 — further plans the version holds as plan snapshots only (no assignment row). */
+  added_plans?: AddedPlanRow[];
+}
+
+export interface AddedPlanRow {
+  plan_snapshot_id: number;
+  membership_plan_id: number | null;
+  plan_name: string | null;
+  starts_at: string | null;
 }
 
 /**

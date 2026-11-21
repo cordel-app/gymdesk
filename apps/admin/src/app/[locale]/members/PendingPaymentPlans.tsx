@@ -24,7 +24,7 @@ import type { ProductSetRow } from './membershipConfiguration';
 export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment' }: {
   sets: ProductSetRow[];
   spaced: boolean;
-  status?: 'pending_payment' | 'cancelled';
+  status?: 'pending_payment' | 'cancelled' | 'in_cart';
 }) {
   const t = useTranslations('members');
   const tStatus = useTranslations('status');
@@ -33,7 +33,7 @@ export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment' }
   return (
     <div
       style={{ ...listSurfaceStyle, marginBottom: spaced ? 8 : 0 }}
-      {...(status === 'cancelled' ? { 'data-cancelled-plan-sets': true } : { 'data-pending-payment-plans': true })}
+      {...(status === 'cancelled' ? { 'data-cancelled-plan-sets': true } : status === 'in_cart' ? { 'data-added-cart-plans': true } : { 'data-pending-payment-plans': true })}
     >
       {sets.map((ps, i) => (
         <div
