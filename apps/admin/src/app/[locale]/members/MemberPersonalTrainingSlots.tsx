@@ -43,6 +43,7 @@ import {
   bookPath, familyBookingMemberIds, familyResultErrorKey, otherFamilyMembers,
   type FamilyBookMemberResult, type FamilyMember,
 } from './slotFamilyBooking';
+import { overWeeklyAllowance } from './slotWeeklyAllowance';
 
 type SlotDateStatus = 'available' | 'no_occurrence' | 'not_scheduled' | 'full' | 'already_booked';
 
@@ -82,6 +83,8 @@ interface MemberProfessionalService {
   professional_service_id: number;
   name: string;
   sessions: number;
+  /** #3090 stage 4: sessions per week the member's plans include; null = no weekly allowance. */
+  included_per_week: number | null;
 }
 
 interface StoredSelection extends SlotIdentity {
@@ -268,6 +271,8 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
   const hasAnySlot = data.days.some((d) => d.slots.length > 0);
   const unmatched = data.selections.filter((s) => !s.matched);
   const pickedCount = Object.keys(picked).length;
+  // #3090 stage 4: a warning only. Saving and booking stay allowed.
+  const overAllowance = overWeeklyAllowance(Object.values(picked), data.professional_services);
 
   return (
     <div>
@@ -293,6 +298,12 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
           })}
         </p>
       )}
+
+      {overAllowance.map((o) => (
+        <p key={o.professional_service_id} style={warn} role="status" data-testid="pt-slots-over-allowance">
+          {t('pt_slots_over_allowance', { service: o.name, scheduled: o.scheduled, included: o.included })}
+        </p>
+      ))}
 
       {!hasAnySlot ? (
         <p style={dim}>{t('pt_slots_none')}</p>

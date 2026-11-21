@@ -564,6 +564,7 @@
     "pt_slots_book_summary": "{created} booked · {skipped} skipped · {failed} failed",
     "pt_slots_result_failed": "Failed ({reason})",
     "pt_slots_unmatched": "{count} selected slots are no longer available for this member and will not be booked: {slots}",
+    "pt_slots_over_allowance": "{service}: {scheduled} weekly sessions are scheduled, but the member's plan includes {included} per week. The scheduled sessions exceed the member's weekly allowance.",
     "section_membership_plans": "Membership Plans",
     "no_active_membership_plans": "No active membership plans",
     "membership_plans_active": "Active plans",

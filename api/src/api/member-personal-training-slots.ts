@@ -4,7 +4,8 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
-import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
+import { loadPlanSessionAllowanceLines, resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
+import { weeklyAllowanceByService } from '../domain/weeklySlotAllowance';
 import { isActivityTypeEligibleForMember } from './activity-eligibility';
 import { bookMemberOnSession } from './bookings';
 import { ownerFamilyMemberIds } from './owner-family';
@@ -48,6 +49,11 @@ import {
  * The grouping and the per-date reasons live in
  * `domain/personalTrainingSlots.ts`; this file loads rows, stores selections
  * and drives the booking path.
+ *
+ * #3090 stage 4: the GET also reports, per Professional Service, the sessions per
+ * week the member's own plans include (`included_per_week`,
+ * `domain/weeklySlotAllowance.ts`). It is information for a warning; no write
+ * route reads it.
  */
 export const memberPersonalTrainingSlotsRouter = Router({ mergeParams: true });
 
@@ -239,6 +245,9 @@ memberPersonalTrainingSlotsRouter.get('/', async (req, res, next) => {
 
     const selections = await loadSelections(gymId, memberId);
     const { timezone, window, services, days } = await loadProjection(gymId, memberId, selections);
+    // #3090 stage 4: what the member's own plans include per week, per service. The
+    // grid warns when the selected weekly slots exceed it; nothing is refused.
+    const includedPerWeek = weeklyAllowanceByService(await loadPlanSessionAllowanceLines(gymId, memberId));
 
     res.json({
       timezone,
@@ -249,6 +258,8 @@ memberPersonalTrainingSlotsRouter.get('/', async (req, res, next) => {
         professional_service_id: s.professional_service_id,
         name: s.name,
         sessions: s.sessions,
+        // `null`: no renewing plan allowance for this service, so nothing to compare against.
+        included_per_week: includedPerWeek.get(s.professional_service_id) ?? null,
       })),
       selections: describeSelections(selections, days),
       days,

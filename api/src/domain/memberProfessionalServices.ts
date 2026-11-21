@@ -170,6 +170,58 @@ export function aggregateProfessionalServiceGrants(
 }
 
 /**
+ * The Session Benefit lines of the live plans the named members are beneficiaries of, one row
+ * per (line, beneficiary, linked Professional Service). One spelling, read by the wallet's
+ * `plan_session` grants and by the weekly allowance of the Professional Services Schedule
+ * (#3090 stage 4), so the two cannot disagree about which lines a member holds.
+ * Params: the member ids, then the gym id.
+ */
+function planSessionLinesFromSql(memberIn: string): string {
+  return `FROM plan_snapshots pa
+     JOIN plan_snapshot_beneficiaries umm
+       ON umm.plan_snapshot_id = pa.id AND umm.gym_id = pa.gym_id AND umm.member_id IN ${memberIn}
+     JOIN plan_session_snapshots umss
+       ON umss.plan_snapshot_id = pa.id AND umss.gym_id = pa.gym_id
+     JOIN products gc ON gc.id = umss.product_id
+     JOIN product_professional_services sips
+       ON sips.product_id = gc.id AND sips.gym_id = pa.gym_id
+     JOIN professional_services ps
+       ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
+     JOIN gym_professional_services gps
+       ON gps.professional_service_id = ps.id AND gps.gym_id = pa.gym_id AND gps.status = 'active'
+     WHERE pa.gym_id = ? AND ${entitlingAssignmentSql('pa')}
+       AND pa.starts_at <= UTC_DATE()
+       AND (pa.ends_at IS NULL OR pa.ends_at >= UTC_DATE())`;
+}
+
+/** One plan Session Benefit line a member holds, per Professional Service it grants. */
+export interface PlanSessionAllowanceLine {
+  professional_service_id: number;
+  quantity: number;
+  frequency: string | null;
+}
+
+/**
+ * #3090 stage 4: the plan Session Benefit lines this one member holds (their own, not the
+ * family's), with each line's quantity and renewal Frequency (#918).
+ */
+export async function loadPlanSessionAllowanceLines(
+  gymId: string,
+  memberId: number,
+): Promise<PlanSessionAllowanceLine[]> {
+  const { rows } = await db.query<PlanSessionAllowanceLine>(
+    `SELECT ps.id AS professional_service_id, umss.quantity, umss.frequency
+     ${planSessionLinesFromSql('(?)')}`,
+    [memberId, gymId],
+  );
+  return rows.map((r) => ({
+    professional_service_id: Number(r.professional_service_id),
+    quantity: Number(r.quantity),
+    frequency: r.frequency ?? null,
+  }));
+}
+
+/**
  * Every session-type Product the Member currently holds, expanded to
  * the Professional Services that deliver it.
  *
@@ -297,21 +349,7 @@ export async function loadMemberProfessionalServiceGrants(
             umss.quantity + COALESCE((SELECT SUM(par.quantity) FROM plan_allowance_renewals par
                                       WHERE par.plan_session_snapshot_id = umss.id), 0) AS sessions,
             umm.member_id     AS holder_member_id
-     FROM plan_snapshots pa
-     JOIN plan_snapshot_beneficiaries umm
-       ON umm.plan_snapshot_id = pa.id AND umm.gym_id = pa.gym_id AND umm.member_id IN ${IN}
-     JOIN plan_session_snapshots umss
-       ON umss.plan_snapshot_id = pa.id AND umss.gym_id = pa.gym_id
-     JOIN products gc ON gc.id = umss.product_id
-     JOIN product_professional_services sips
-       ON sips.product_id = gc.id AND sips.gym_id = pa.gym_id
-     JOIN professional_services ps
-       ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
-     JOIN gym_professional_services gps
-       ON gps.professional_service_id = ps.id AND gps.gym_id = pa.gym_id AND gps.status = 'active'
-     WHERE pa.gym_id = ? AND ${entitlingAssignmentSql('pa')}
-       AND pa.starts_at <= UTC_DATE()
-       AND (pa.ends_at IS NULL OR pa.ends_at >= UTC_DATE())`,
+     ${planSessionLinesFromSql(IN)}`,
     [...ids, gymId],
   );
 
