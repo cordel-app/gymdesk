@@ -42,6 +42,9 @@ export interface PurchaseValues {
   units: number | null;
   /** What is charged, VAT-inclusive (the record's `amount`, the snapshot's `unit_price`). */
   amount: number;
+  /** The price of one unit; defaults to `amount` (quantity 1). `amount` is the total, `unitAmount` x `quantity`. */
+  unitAmount?: number;
+  quantity?: number;
   currency: string;
   taxRatePercent: number | null;
   listPrice: number | null;
@@ -80,10 +83,10 @@ export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<numbe
         billing_frequency, units, quantity, currency, unit_price, list_price, direct_discount_percent,
         direct_discount_amount, tax_rate_percent, origin, member_product_id, validity_days,
         created_at, created_by, assigned_member_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       v.gymId, v.memberId, v.productId, purchaseId, v.status, v.productName, v.productType,
-      v.billingFrequency, v.units, v.currency, money(v.amount), money(v.listPrice), money(v.directDiscountPercent),
+      v.billingFrequency, v.units, v.quantity ?? 1, v.currency, money(v.unitAmount ?? v.amount), money(v.listPrice), money(v.directDiscountPercent),
       money(v.directDiscountAmount), v.taxRatePercent, v.origin, purchaseId, v.validityDays,
       now, v.createdBy, v.assignedMemberId,
     ],

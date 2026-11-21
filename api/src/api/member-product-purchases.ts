@@ -45,7 +45,7 @@ import {
   pricingRefusalResponse,
   vatPortion,
 } from '../domain/productPurchasePricing';
-import { purchaseBlockResponse } from '../domain/memberProductPurchase';
+import { purchaseBlockResponse, parsePurchaseQuantity } from '../domain/memberProductPurchase';
 import { editRecurringPurchaseLine, startRecurringPurchaseDraft, BillingFrequencyDiffers } from './recurring-purchase-draft';
 import { isRefusal, lockDraft, removeService } from './product-set-draft';
 import { DateTime } from 'luxon';
@@ -233,6 +233,9 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     if (!discount) return;
     const promotionIds = promotionIdsFrom(req, res);
     if (!promotionIds) return;
+    // #3020 stage 5: a one-time Product's quantity (a Sessions Product: packages). A recurring
+    // Product reads `quantity` further down, as a line's quantity, so it is only judged here for one-time.
+    const oneTimeQuantity = parsePurchaseQuantity((req.body ?? {}).quantity);
 
     // #2374 — a Promotion's missing *mandatory* Products are added with it, after the
     // staff member confirmed; optional ones are never added. Everything is validated
@@ -274,6 +277,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     if (!productRows[0]) return res.status(404).json({ error: 'Product not found' });
 
     if (!isRecurringFrequency(productRows[0].billing_frequency)) {
+      if (oneTimeQuantity == null) return res.status(400).json({ error: 'quantity must be a whole number from 1 to 99' });
       // #1657 stage 2 — Save: the purchase persists as a `draft`, unpaid.
       if ((req.body ?? {}).draft === true) {
         const saved = await saveProductPurchaseDraft({
@@ -286,6 +290,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
           directDiscountPercent: discount.percent,
           staff: { actorName },
           assignedMemberInput,
+          quantity: oneTimeQuantity,
         });
         recordAudit(req, {
           action: 'create', entityType: 'member', entityId: memberId,
@@ -303,6 +308,7 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
         directDiscountPercent: discount.percent,
         staff: { actorName },
         assignedMemberInput,
+        quantity: oneTimeQuantity,
       });
       recordAudit(req, {
         action: 'create', entityType: 'member', entityId: memberId,
@@ -625,11 +631,11 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     }
     const { rows } = await db.query<any>(
       // #2126 stage 3c: the saved draft is read from the Product snapshot tables (`source_id` is the purchase id).
-      `SELECT id, product_id, direct_discount_percent, assigned_member_id FROM (
-         SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, gym_id, member_id, status
+      `SELECT id, product_id, direct_discount_percent, assigned_member_id, quantity FROM (
+         SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, quantity, gym_id, member_id, status
            FROM product_session_snapshots
          UNION ALL
-         SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, gym_id, member_id, status
+         SELECT source_id AS id, product_id, direct_discount_percent, assigned_member_id, quantity, gym_id, member_id, status
            FROM product_oneoff_snapshots
        ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'in_cart'`,
       [purchaseId, gymId, memberId],
@@ -647,6 +653,8 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
       directDiscountPercent: draft.direct_discount_percent == null ? null : Number(draft.direct_discount_percent),
       staff: { actorName: resolveRequestActor(tenantCtx) ?? member.name },
       fromDraftId: purchaseId,
+      // #3020 stage 5: the draft's quantity carries over to the paid purchase.
+      quantity: Number(draft.quantity ?? 1),
       // #2609: the draft's assignee carries over to the paid purchase.
       assignedMemberInput: draft.assigned_member_id ?? null,
     });
@@ -696,16 +704,19 @@ memberProductPurchasesRouter.put('/:purchaseId', requireModuleWrite('MEMBERS'), 
       return res.status(410).json({ error: 'purchase_expired', message: 'This product was in the cart for more than two hours and has expired' });
     }
     const { rows } = await db.query<any>(
-      `SELECT id, product_id, assigned_member_id FROM (
-         SELECT source_id AS id, product_id, assigned_member_id, gym_id, member_id, status FROM product_session_snapshots
+      `SELECT id, product_id, assigned_member_id, quantity FROM (
+         SELECT source_id AS id, product_id, assigned_member_id, quantity, gym_id, member_id, status FROM product_session_snapshots
          UNION ALL
-         SELECT source_id AS id, product_id, assigned_member_id, gym_id, member_id, status FROM product_oneoff_snapshots
+         SELECT source_id AS id, product_id, assigned_member_id, quantity, gym_id, member_id, status FROM product_oneoff_snapshots
        ) p WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'in_cart'`,
       [purchaseId, gymId, memberId],
     );
     const draft = rows[0];
     if (!draft) return res.status(404).json({ error: 'Draft not found' });
     const body = req.body ?? {};
+    // #3020 stage 5: the quantity may be edited while the purchase is in the cart; absent keeps it.
+    const quantity = body.quantity === undefined ? Number(draft.quantity ?? 1) : parsePurchaseQuantity(body.quantity);
+    if (quantity == null) return res.status(400).json({ error: 'quantity must be a whole number from 1 to 99' });
     const saved = await replacePurchaseDraft({
       gymId,
       memberId,
@@ -716,12 +727,13 @@ memberProductPurchasesRouter.put('/:purchaseId', requireModuleWrite('MEMBERS'), 
       directDiscountPercent: discount.percent,
       staff: { actorName: resolveRequestActor(tenantCtx) ?? member.name },
       assignedMemberInput: body.assigned_member_id !== undefined ? body.assigned_member_id : (draft.assigned_member_id ?? null),
+      quantity,
     }, purchaseId);
     if (!saved) return res.status(404).json({ error: 'Draft not found' });
     recordAudit(req, {
       action: 'update', entityType: 'member', entityId: memberId,
       previous: { product_purchase_draft: purchaseId },
-      next: { product_purchase_draft: saved.purchaseId, product_id: Number(draft.product_id), direct_discount_percent: discount.percent },
+      next: { product_purchase_draft: saved.purchaseId, product_id: Number(draft.product_id), direct_discount_percent: discount.percent, quantity },
     });
     res.json({ kind: 'one_time_draft', ...saved });
   } catch (err: any) {

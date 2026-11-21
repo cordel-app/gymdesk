@@ -51,7 +51,11 @@ export interface SetPurchase {
   product_type: string | null;
   units: number | null;
   status: string;
+  /** The total charged (unit price x quantity). */
   amount: number;
+  /** The price of one unit and how many were bought (#3020 stage 5). */
+  unit_amount: number;
+  quantity: number;
   list_price: number | null;
   currency: string | null;
   tax_rate_percent: number | null;
@@ -69,7 +73,7 @@ export async function loadSetPurchases(exec: Conn, gymId: string, productSetId: 
   for (const arm of ARMS) {
     const { rows } = await exec.query<any>(
       `SELECT s.source_id AS id, s.id AS snapshot_id, s.member_id, s.product_id, s.product_name, s.product_type,
-              s.units, s.status, s.unit_price AS amount, s.list_price, s.currency, s.tax_rate_percent,
+              s.units, s.status, ROUND(s.unit_price * s.quantity, 2) AS amount, s.unit_price AS unit_amount, s.quantity, s.list_price, s.currency, s.tax_rate_percent,
               s.assigned_member_id, s.validity_days, s.billing_frequency, s.created_at,
               p.description, p.image_url, p.image_thumbnail_url
          FROM ${arm.setJunction} j
@@ -84,7 +88,7 @@ export async function loadSetPurchases(exec: Conn, gymId: string, productSetId: 
         product_id: r.product_id == null ? null : Number(r.product_id),
         product_name: String(r.product_name), product_type: r.product_type ?? null,
         units: r.units == null ? null : Number(r.units), status: String(r.status),
-        amount: Number(r.amount ?? 0), list_price: r.list_price == null ? null : Number(r.list_price),
+        amount: Number(r.amount ?? 0), unit_amount: Number(r.unit_amount ?? 0), quantity: Number(r.quantity ?? 1), list_price: r.list_price == null ? null : Number(r.list_price),
         currency: r.currency ?? null, tax_rate_percent: r.tax_rate_percent == null ? null : Number(r.tax_rate_percent),
         assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
         validity_days: r.validity_days == null ? null : Number(r.validity_days),
@@ -188,10 +192,10 @@ export async function linkSetPurchasesToEvent(tx: Conn, gymId: string, productSe
  * The regular price is the purchase's list price, and the treatment says a discount was applied.
  */
 export function purchaseChargeLine(p: SetPurchase): { simulation: SimulationLine; line: BillingEventLineRow } {
-  const regular = p.list_price ?? p.amount;
+  const regular = p.list_price ?? p.unit_amount;
   const simulation: SimulationLine = {
     kind: 'product', label: p.product_name, user_membership_id: 0, plan_name: null,
-    product_id: p.product_id, quantity: 1, unit_price: p.amount, regular_price: regular,
+    product_id: p.product_id, quantity: p.quantity, unit_price: p.unit_amount, regular_price: regular,
     benefits: [], actual_charge: p.amount, price_may_change: false, prepaid_periods: null,
   };
   const line = {

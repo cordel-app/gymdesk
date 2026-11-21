@@ -45,7 +45,7 @@ import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-pu
 import { cartPurchasesForCharge } from './cart-checkout';
 import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartCounts } from '../domain/shoppingCart';
 import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
-import { isDraftAddable, purchaseBlockResponse } from '../domain/memberProductPurchase';
+import { isDraftAddable, parsePurchaseQuantity, purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase, writeDraftPurchase } from './me-products';
 import { AssigneeRefused } from './product-assignee';
@@ -1078,6 +1078,9 @@ meProductSetsRouter.post('/:id/purchases', async (req, res, next) => {
   }
   const promotionIds = body.promotion_ids == null ? [] : parseIds(body.promotion_ids);
   if (promotionIds === null) return res.status(400).json({ error: 'promotion_ids must be an array of positive integers' });
+  // #3020 stage 5: how many (a Sessions Product: packages), 1 when absent.
+  const quantity = parsePurchaseQuantity(body.quantity);
+  if (quantity == null) return res.status(400).json({ error: 'quantity must be a whole number from 1 to 99' });
   try {
     const { rows: m } = await db.query<{ name: string; email: string; billing_frequency: string | null }>(
       `SELECT m.name, m.email, p.billing_frequency FROM members m
@@ -1093,7 +1096,7 @@ meProductSetsRouter.post('/:id/purchases', async (req, res, next) => {
     }
     const input = {
       gymId, memberId: owned.memberId, memberName: m[0].name, memberEmail: m[0].email, productId,
-      promotionIds, assignedMemberInput: body.assigned_member_id,
+      promotionIds, assignedMemberInput: body.assigned_member_id, quantity,
     };
     const resolved = await resolveDraftPurchase(input);
     return editDraft(req, res, 'update', async (tx, d) => {

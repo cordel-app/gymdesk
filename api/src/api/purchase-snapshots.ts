@@ -17,7 +17,7 @@
  */
 const PURCHASE_SNAPSHOT_COLUMNS = `
   source_id AS id, gym_id, member_id, product_id, status, product_name, product_type,
-  billing_frequency, units, unit_price AS amount, currency, purchased_at, created_at, created_by,
+  billing_frequency, units, ROUND(unit_price * quantity, 2) AS amount, unit_price AS unit_amount, quantity, currency, purchased_at, created_at, created_by,
   origin, validity_days, valid_until, cancelled_on, tax_rate_percent, list_price, direct_discount_percent,
   direct_discount_amount, assigned_member_id, member_product_id`;
 

@@ -20,7 +20,7 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { getRequestLocale } from '../infra/locale';
 import {
-  IN_CART_PURCHASE_STATUS, PURCHASE_CART_TTL_MINUTES, isDraftAddable, purchaseBlockResponse,
+  IN_CART_PURCHASE_STATUS, PURCHASE_CART_TTL_MINUTES, isDraftAddable, purchaseBlockResponse, parsePurchaseQuantity,
 } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { resolveMemberId } from './me';
@@ -29,8 +29,9 @@ import { resolvePayerFor } from './payer-resolution';
 import { AssigneeRefused } from './product-assignee';
 import {
   PricingRefused, PromotionRefused, PurchaseRefused,
-  expireStandalonePurchaseDrafts, resolveDraftPurchase, writeDraftPurchase,
+  expireStandalonePurchaseDrafts, replacePurchaseDraft, resolveDraftPurchase, writeDraftPurchase,
 } from './me-products';
+import { loadAppliedPromotionLists } from './member-product-promotions';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { lockPurchase, deletePurchase } from './purchase-writer';
 import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
@@ -107,8 +108,8 @@ meCartRouter.get('/summary', async (req: Request, res: Response, next: NextFunct
       product_set_id: 0,
       status: 'in_cart',
       summary_items: cart.map((p) => ({
-        state: 'draft', type: 'product', name: p.product_name, quantity: null, billing_frequency: null,
-        regular_price: p.list_price ?? p.amount, promotions: [], initial_amount: p.amount, final_price: null,
+        state: 'draft', type: 'product', name: p.product_name, quantity: p.quantity, billing_frequency: null,
+        regular_price: p.list_price ?? p.unit_amount, promotions: [], initial_amount: p.amount, final_price: null,
       })),
       immediate_lines: lines,
       amount_due: amountDue,
@@ -136,6 +137,9 @@ meCartRouter.post('/purchases', async (req: Request, res: Response, next: NextFu
   }
   const promotionIds = body.promotion_ids == null ? [] : parseIds(body.promotion_ids);
   if (promotionIds === null) return res.status(400).json({ error: 'promotion_ids must be an array of positive integers' });
+  // #3020 stage 5: how many (a Sessions Product: packages), 1 when absent.
+  const quantity = parsePurchaseQuantity(body.quantity);
+  if (quantity == null) return res.status(400).json({ error: 'quantity must be a whole number from 1 to 99' });
   try {
     const { gymId, memberId } = await memberOf(req);
     if (await refuseUnlessMayAdd(res, gymId, memberId)) return;
@@ -157,7 +161,7 @@ meCartRouter.post('/purchases', async (req: Request, res: Response, next: NextFu
 
     const input = {
       gymId, memberId, memberName: m[0].name, memberEmail: m[0].email, productId,
-      promotionIds, assignedMemberInput: body.assigned_member_id,
+      promotionIds, assignedMemberInput: body.assigned_member_id, quantity,
     };
     const resolved = await resolveDraftPurchase(input);
     const purchaseId = await db.transaction((tx) => writeDraftPurchase(tx, input, resolved));
@@ -174,6 +178,53 @@ meCartRouter.post('/purchases', async (req: Request, res: Response, next: NextFu
     }
     if (err instanceof PromotionRefused) {
       return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is no longer available for this product' });
+    }
+    if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
+    if (err?.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * #3020 stage 5 — the member changes the quantity of a standalone In Cart purchase. The offer is
+ * re-resolved and re-priced (`replacePurchaseDraft()`, its Promotions carried over) and the purchase
+ * replaced atomically, so the charge is always the unit price times the new quantity. A purchase
+ * past the cart (pending or active) is not reachable: only `in_cart` rows of this member are.
+ */
+meCartRouter.put('/purchases/:id', async (req: Request, res: Response, next: NextFunction) => {
+  const purchaseId = Number(req.params.id);
+  if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'not_found' });
+  const quantity = parsePurchaseQuantity((req.body ?? {}).quantity);
+  if (quantity == null) return res.status(400).json({ error: 'quantity must be a whole number from 1 to 99' });
+  try {
+    const { gymId, memberId } = await memberOf(req);
+    if (await refuseUnlessMayAdd(res, gymId, memberId)) return;
+    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    const cart = await loadCartPurchases(db, gymId, memberId);
+    const current = cart.find((p) => p.id === purchaseId);
+    if (!current || current.product_id == null) return res.status(404).json({ error: 'not_found' });
+    const { rows: m } = await db.query<{ name: string; email: string }>(
+      'SELECT name, email FROM members WHERE gym_id = ? AND id = ?', [gymId, memberId]);
+    if (!m[0]) return res.status(404).json({ error: 'Member profile not found' });
+    const applied = (await loadAppliedPromotionLists(gymId, [purchaseId])).get(purchaseId) ?? [];
+    const saved = await replacePurchaseDraft({
+      gymId, memberId, memberName: m[0].name, memberEmail: m[0].email, productId: current.product_id,
+      promotionIds: applied.map((a) => a.promotion_id), assignedMemberInput: current.assigned_member_id, quantity,
+    }, purchaseId);
+    if (!saved) return res.status(404).json({ error: 'not_found' });
+    req.log?.info({ memberId, purchaseId, quantity }, 'Member cart purchase quantity changed');
+    res.json({ purchase_id: saved.purchaseId, amount: saved.amount, currency: saved.currency, quantity });
+  } catch (err: any) {
+    if (err instanceof PricingRefused) {
+      const { status, ...out } = pricingRefusalResponse(err.refusal);
+      return res.status(status).json(out);
+    }
+    if (err instanceof PromotionRefused) {
+      return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is no longer available for this product' });
+    }
+    if (err instanceof PurchaseRefused) {
+      const { status, ...out } = purchaseBlockResponse(err.block);
+      return res.status(status).json(out);
     }
     if (err instanceof AssigneeRefused) return res.status(400).json({ error: err.code, message: err.message });
     if (err?.status) return res.status(err.status).json({ error: err.message });
