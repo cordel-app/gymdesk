@@ -5,7 +5,9 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { overlayStyle, modalStyle, btnStyle, primaryBtnSmall } from '@/components/ui';
-import { secondaryBtnSmall, cardMutedTextStyle } from '@/components/formChrome';
+import { secondaryBtnSmall, cardMutedTextStyle, formControlStyle, dashedAddBtnStyle } from '@/components/formChrome';
+import { MemberSearchInput, type MemberResult } from '@/app/[locale]/calendar/MemberSearchInput';
+import { addAttendeeBody, classifyAddRefusal, isClassFull, type ServiceOption } from '@/lib/bookingAdd';
 
 // #1877 — the attendee list behind Today's classes. One dialog, two modes: `view`
 // only reads, `celebrate` also records attendance (the calendar panel's own
@@ -14,6 +16,8 @@ import { secondaryBtnSmall, cardMutedTextStyle } from '@/components/formChrome';
 
 interface Attendee {
   id: number;
+  member_id: number;
+  effective_capacity?: number | string | null;
   member_name: string;
   status: string;
   attendance_status: 'pending' | 'present' | 'absent';
@@ -23,7 +27,7 @@ interface Attendee {
 
 export type AttendeesMode = 'view' | 'celebrate';
 
-export function HomeClassAttendees({ sessionId, sessionName, mode, hasService, onClose, onCompleted }: {
+export function HomeClassAttendees({ sessionId, sessionName, mode, hasService, onClose, onCompleted, onChanged }: {
   sessionId: number;
   sessionName: string;
   mode: AttendeesMode;
@@ -31,6 +35,8 @@ export function HomeClassAttendees({ sessionId, sessionName, mode, hasService, o
   hasService?: boolean;
   onClose: () => void;
   onCompleted: () => void;
+  /** #3096: an attendee was added, so the card behind the dialog is out of date. */
+  onChanged?: () => void;
 }) {
   const t = useTranslations('home');
   const tc = useTranslations('calendar');
@@ -135,11 +141,107 @@ export function HomeClassAttendees({ sessionId, sessionName, mode, hasService, o
           ))}
         </div>
 
+        {celebrate && rows && (
+          <AddAttendee sessionId={sessionId} rows={rows} onAdded={async () => { await load(); onChanged?.(); }} />
+        )}
+
         {celebrate && rows && pending > 0 && <p style={{ ...cardMutedTextStyle, marginTop: 10 }}>{t('celebrate_pending', { count: pending })}</p>}
         <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onClose} style={btnStyle('#aaa')}>{t('close')}</button>
           {celebrate && <button type="button" onClick={complete} disabled={completing} style={primaryBtnSmall()} data-testid="home-complete-class">{completing ? t('celebrate_completing') : t('celebrate_complete')}</button>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// #3096: adding an attendee from Start. It is the calendar panel's own
+// `POST /bookings` with the same three confirmations (class full, which
+// Professional Service, eligibility override); `lib/bookingAdd.ts` reads the
+// API's refusals for both.
+function AddAttendee({ sessionId, rows, onAdded }: {
+  sessionId: number;
+  rows: Attendee[];
+  onAdded: () => Promise<void> | void;
+}) {
+  const t = useTranslations('home');
+  const { apiFetch } = useApiClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [member, setMember] = useState<MemberResult | null>(null);
+  const [services, setServices] = useState<ServiceOption[]>([]);
+  const [serviceId, setServiceId] = useState<number | null>(null);
+  const [override, setOverride] = useState<string | null>(null);
+  const [needsOverride, setNeedsOverride] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  function reset(keepOpen: boolean) {
+    setMember(null); setServices([]); setServiceId(null); setOverride(null); setNeedsOverride(false); setOpen(keepOpen);
+  }
+
+  if (!open) {
+    return <button type="button" style={{ ...dashedAddBtnStyle, marginTop: 10 }} onClick={() => setOpen(true)} data-testid="home-add-attendee">{t('add_attendee')}</button>;
+  }
+
+  const already = member != null && rows.some((r) => Number(r.member_id) === member.id);
+  const full = isClassFull(rows);
+
+  async function submit() {
+    if (!member || busy) return;
+    setBusy(true);
+    try {
+      const result = await apiFetch<{ status?: string }>('/bookings', {
+        method: 'POST',
+        body: JSON.stringify(addAttendeeBody({ memberId: member.id, sessionId, force: full, serviceId, override: needsOverride })),
+      });
+      if (result?.status === 'waitlisted') toast(t('add_attendee_waitlisted', { name: member.name }));
+      reset(false);
+      await onAdded();
+    } catch (err: any) {
+      const refusal = classifyAddRefusal(err);
+      if (refusal.kind === 'choose_service') {
+        setServices(refusal.services); setServiceId(null);
+      } else if (refusal.kind === 'override') {
+        setNeedsOverride(true);
+        setOverride(refusal.message ?? t('add_attendee_not_eligible'));
+        setServices(refusal.services);
+        setServiceId(refusal.services.length === 1 ? refusal.services[0].id : null);
+      } else {
+        toast(refusal.message ?? t('class_error'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const mustChoose = services.length > 1 && serviceId == null;
+
+  return (
+    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }} data-testid="home-add-attendee-form">
+      <MemberSearchInput placeholder={t('add_attendee_search')} disabled={busy}
+        onSelect={(m) => { reset(true); setMember(m); }} />
+      {member && already && <p style={{ ...cardMutedTextStyle, margin: 0 }}>{t('add_attendee_already', { name: member.name })}</p>}
+      {member && !already && (
+        <>
+          <p style={{ margin: 0, fontSize: 13 }}>
+            {override ?? (full ? t('add_attendee_full', { name: member.name, booked: rows.length }) : t('add_attendee_confirm', { name: member.name }))}
+          </p>
+          {services.length > 1 && (
+            <select value={serviceId ?? ''} aria-label={t('add_attendee_service')} style={{ ...formControlStyle, width: '100%' }}
+              onChange={(e) => setServiceId(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">{t('add_attendee_service')}</option>
+              {services.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          )}
+        </>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {member && !already && (
+          <button type="button" style={{ ...primaryBtnSmall(), opacity: busy || mustChoose ? 0.6 : 1 }} disabled={busy || mustChoose} onClick={submit} data-testid="home-add-attendee-confirm">
+            {busy ? t('add_attendee_adding') : needsOverride || full ? t('add_attendee_anyway') : t('add_attendee_add')}
+          </button>
+        )}
+        <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => reset(false)}>{t('add_attendee_cancel')}</button>
       </div>
     </div>
   );
