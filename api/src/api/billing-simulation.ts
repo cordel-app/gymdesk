@@ -22,7 +22,7 @@ import {
   ASSIGNMENT_CADENCE,
   loadPlanBenefitsForSimulation,
   loadLivePromotionGrants,
-  loadPromotionGrantSnapshots,
+  loadPlanPromotionGrantSnapshots,
 } from './assigned-plan-snapshot';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
 import { membershipFeeUnitsSql } from '../domain/membershipFeeScope';
@@ -218,7 +218,8 @@ export async function loadSimulationAssignments(
   const applications = applicationsPerAssignment.flat();
   // §16 — what the Promotion granted when it was applied. Only applications
   // with no snapshot at all fall back to the Promotion's live benefits.
-  const grantsByApplication = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
+  // #3026 stage 3c-2: an assignment's applications are plan snapshot rows, and so are their grants.
+  const grantsByApplication = await loadPlanPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
   const grantsByPromotion = await loadLivePromotionGrants(
     gymId,
     [...new Set(applications.filter((a) => !grantsByApplication.has(a.id)).map((a) => a.promotionId))],

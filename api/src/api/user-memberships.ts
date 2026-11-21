@@ -1,4 +1,4 @@
-import { primaryPlanSnapshotId, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { primaryPlanSnapshotId, promotionHolderSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { generatePaidRepresentations } from './billing-invoices';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
@@ -8,7 +8,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
-import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
@@ -448,19 +448,32 @@ async function loadApplicationsKeyedBy(
   // #1995 stage 3: a Membership Plan application belongs to the assignment
   // (`user_membership_id`); `product_set_id` keys only a version read directly
   // (a Draft not yet projected, a Product-target application).
-  const owner = 'FROM user_membership_promotions ump';
-  const ownerKey = `ump.${column}`;
-  const filter = `ump.${column}`;
-  const { rows } = await exec.query(
-    `SELECT ump.id, ${ownerKey} AS owner_key, ump.promotion_id, ump.status,
-            ump.applied_at, ump.revoked_at, ump.snapshot,
-            p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
-            p.applies_to
-     ${owner}
-     LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ${filter} IN (${ids.map(() => '?').join(',')}) AND ump.gym_id = ?`,
-    [...ids, gymId],
-  );
+  // #3026 stage 3c-2: an assignment's applications are its current plan snapshot's own rows
+  // (`plan_promotion_snapshots`, through its holder), and the application's id is that row's.
+  // A version read directly still reads `user_membership_promotions` (its Product-target ones live there).
+  const marks = ids.map(() => '?').join(',');
+  const { rows } = column === 'user_membership_id'
+    ? await exec.query(
+      `SELECT pps.id, pa.source_user_membership_id AS owner_key, pps.promotion_id, pps.status,
+              pps.applied_at, pps.revoked_at, pps.snapshot,
+              p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
+              p.applies_to
+         FROM plan_snapshots pa
+         JOIN plan_promotion_snapshots pps
+           ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
+         LEFT JOIN promotions p ON p.id = pps.promotion_id
+        WHERE pa.source_user_membership_id IN (${marks}) AND pa.gym_id = ?
+          AND ${isCurrentAssignmentSnapshotSql('pa')}`,
+      [...ids, gymId])
+    : await exec.query(
+      `SELECT ump.id, ump.product_set_id AS owner_key, ump.promotion_id, ump.status,
+              ump.applied_at, ump.revoked_at, ump.snapshot,
+              p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
+              p.applies_to
+         FROM user_membership_promotions ump
+         LEFT JOIN promotions p ON p.id = ump.promotion_id
+        WHERE ump.product_set_id IN (${marks}) AND ump.gym_id = ?`,
+      [...ids, gymId]);
   const shaped = await Promise.all(rows.map(async (row: any) => {
     const snap = row.snapshot as {
       name?: string; free_months?: number | null; paid_months?: number | null; bonus_months?: number | null;

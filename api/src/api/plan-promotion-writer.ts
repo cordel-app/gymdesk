@@ -58,7 +58,8 @@ export async function recordPlanPromotionConfirmed(
   tx: Tx, gymId: string, applicationId: number, snapshotJson: string | null,
 ): Promise<void> {
   await tx.query(
-    `UPDATE plan_promotion_snapshots SET snapshot = ?, modified_at = UTC_TIMESTAMP()
+    `UPDATE plan_promotion_snapshots
+        SET snapshot = ?, snapshot_confirmed_at = COALESCE(snapshot_confirmed_at, UTC_TIMESTAMP()), modified_at = UTC_TIMESTAMP()
       WHERE gym_id = ? AND source_id = ?`,
     [snapshotJson, gymId, applicationId]);
 }

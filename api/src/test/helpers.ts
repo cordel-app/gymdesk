@@ -407,6 +407,18 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     (_m, alias) => `${alias}${keyColumn} = ${keyExpr('?')}`);
   out = out.replace(/\b((?:\w+\.)?)user_membership_id\s+IN\s*\(([^)]*)\)/g,
     (_m, alias, list) => `${alias}${keyColumn} IN (${list.split(',').map(() => keyExpr('?')).join(', ')})`);
+  // #3026 stage 3c-2: the readers of a Plan application read `plan_promotion_snapshots`, so a
+  // fixture that edits the legacy application by hand re-derives the plan snapshot rows of the
+  // version(s) it touched.
+  const update = out.match(/^(\s*UPDATE user_membership_promotions\b[\s\S]*?)\bWHERE\b([\s\S]*)$/i);
+  if (update) {
+    const whereParams = queue.slice((update[1].match(/\?/g) ?? []).length);
+    const { rows: touched } = await db.query<{ product_set_id: number }>(
+      `SELECT DISTINCT product_set_id FROM user_membership_promotions WHERE ${update[2]}`, whereParams);
+    const written = await db.query(out, queue);
+    for (const t of touched) if (t.product_set_id != null) await syncFixtureSnapshot(Number(t.product_set_id));
+    return written;
+  }
   return db.query(out, queue);
 }
 

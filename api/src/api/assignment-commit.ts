@@ -1,4 +1,4 @@
-import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { assertPlanOnePerMember } from './one-per-member';
 import { Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
@@ -8,7 +8,7 @@ import { importAssignmentAsProductSet } from './product-set-bridge';
 import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { assignmentReplacementOf, writeAssignmentReplacement } from './plan-assignment-sync';
-import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
+import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1108 — the one place an assignment is **committed**.
@@ -270,9 +270,12 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   // revalidates each standing application against it. The snapshot (written when
   // the Promotion was applied) is the agreement, not the current eligibility.
   const { rows: ineligible } = await tx.query<any>(
-    `SELECT p.name FROM user_membership_promotions ump
-       JOIN promotions p ON p.id = ump.promotion_id
-      WHERE ump.user_membership_id = ? AND ump.gym_id = ? AND ump.status = 'applied'
+    // #3026 stage 3c-2: the standing applications are the assignment's current plan snapshot's own rows.
+    `SELECT p.name FROM plan_snapshots pa
+       JOIN plan_promotion_snapshots pps
+         ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
+       JOIN promotions p ON p.id = pps.promotion_id
+      WHERE ${assignmentOfLegacyIdSql('?', 'pa')} AND pa.gym_id = ? AND pps.status = 'applied'
         AND (p.lifecycle_status <> 'active'
              OR (p.starts_at IS NOT NULL AND p.starts_at > UTC_TIMESTAMP())
              OR (p.ends_at IS NOT NULL AND p.ends_at < UTC_TIMESTAMP()))`,
