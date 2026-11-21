@@ -1,10 +1,10 @@
-// #2879 stage 2 — a Draft assignment's Members per Membership and beneficiaries.
+// #2879 stage 2 / #3152 — a Draft assignment's beneficiaries.
 //
-// While the assignment is a Draft, staff change its own `member_limit` (frozen on the plan
-// snapshot from the Plan) and its beneficiaries together through
-// `PUT /user-memberships/:id/beneficiaries`; the pair is judged against the owner's family
-// with the rule the assignment was created with. The Plan is never touched, and a confirmed
-// assignment refuses the edit.
+// While the assignment is a Draft, staff change its beneficiaries through
+// `PUT /user-memberships/:id/beneficiaries`, judged against the owner's family and the
+// Plan's Members per Membership (`member_limit`, frozen on the plan snapshot and read-only
+// on an assignment: a request naming another value is refused). The Plan is never touched,
+// and a confirmed assignment refuses the edit.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -90,14 +90,14 @@ describe('Draft beneficiaries (#2879 stage 2)', () => {
     expect(res.body).toMatchObject({ editable: true, owner_member_id: parent, member_limit: '1', beneficiary_member_ids: [kid] });
   });
 
-  it('raises Members per Membership and adds a beneficiary on the Draft, leaving the Plan alone', async () => {
+  it('swaps the beneficiaries within the Plan\'s count, leaving the Plan and its limit alone', async () => {
     const parent = await createMember('Parent');
     const kidA = await createMember('Kid A');
     const kidB = await createMember('Kid B');
     await createTestFamily(gymId, parent, [kidA, kidB]);
-    const { planId, assignmentId } = await draftFor('1', parent, [parent]);
+    const { planId, assignmentId } = await draftFor('2', parent, [parent, kidA]);
 
-    const res = await put(assignmentId, { member_limit: '2', beneficiary_member_ids: [kidA, kidB] });
+    const res = await put(assignmentId, { beneficiary_member_ids: [kidA, kidB] });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ member_limit: '2' });
     expect(sorted(res.body.beneficiary_member_ids)).toEqual(sorted([kidA, kidB]));
@@ -106,35 +106,40 @@ describe('Draft beneficiaries (#2879 stage 2)', () => {
     const { rows: um } = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [assignmentId]);
     expect(Number(um[0].member_id)).toBe(parent);
     const { rows: plan } = await db.query('SELECT member_limit FROM membership_plans WHERE id = ?', [planId]);
-    expect(plan[0].member_limit).toBe('1');
-    // The coverage route reads the Draft's own limit now.
+    expect(plan[0].member_limit).toBe('2');
     const members = await request.get(`/user-memberships/${assignmentId}/members`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     expect(members.body.member_limit).toBe('2');
   });
 
-  it('refuses a selection that does not match the new count, changing nothing', async () => {
+  it('refuses a selection that does not match the Plan\'s count, changing nothing', async () => {
     const parent = await createMember('Parent');
     const kid = await createMember('Kid');
     await createTestFamily(gymId, parent, [kid]);
-    const { assignmentId } = await draftFor('2', parent, [parent, kid]);
+    const { assignmentId } = await draftFor('1', parent, [parent]);
 
-    const res = await put(assignmentId, { member_limit: '1', beneficiary_member_ids: [parent, kid] });
+    const res = await put(assignmentId, { beneficiary_member_ids: [parent, kid] });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('beneficiary_count');
-    expect(await beneficiariesOf(assignmentId)).toEqual(sorted([parent, kid]));
-    expect((await get(assignmentId)).body.member_limit).toBe('2');
+    expect(await beneficiariesOf(assignmentId)).toEqual([parent]);
+    expect((await get(assignmentId)).body.member_limit).toBe('1');
   });
 
-  it('lowers the count when the selection matches it', async () => {
+  it('refuses a request that tries to change Members per Membership, changing nothing', async () => {
     const parent = await createMember('Parent');
-    const kid = await createMember('Kid');
-    await createTestFamily(gymId, parent, [kid]);
-    const { assignmentId } = await draftFor('2', parent, [parent, kid]);
+    const kidA = await createMember('Kid A');
+    const kidB = await createMember('Kid B');
+    await createTestFamily(gymId, parent, [kidA, kidB]);
+    const { assignmentId } = await draftFor('1', parent, [parent]);
 
-    const res = await put(assignmentId, { member_limit: '1', beneficiary_member_ids: [kid] });
-    expect(res.status).toBe(200);
-    expect(await beneficiariesOf(assignmentId)).toEqual([kid]);
+    const res = await put(assignmentId, { member_limit: '2', beneficiary_member_ids: [kidA, kidB] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('member_limit_read_only');
+    expect(await beneficiariesOf(assignmentId)).toEqual([parent]);
+    expect((await get(assignmentId)).body.member_limit).toBe('1');
+    // Restating the plan's own value is harmless.
+    const same = await put(assignmentId, { member_limit: '1', beneficiary_member_ids: [kidA] });
+    expect(same.status).toBe(200);
   });
 
   it('keeps the stored limit when the request names none', async () => {
@@ -155,9 +160,9 @@ describe('Draft beneficiaries (#2879 stage 2)', () => {
     const kidA = await createMember('Kid A');
     const kidB = await createMember('Kid B');
     await createTestFamily(gymId, parent, [kidA, kidB]);
-    const { assignmentId } = await draftFor('1', parent, [parent]);
+    const { assignmentId } = await draftFor('family', parent, [parent]);
 
-    const res = await put(assignmentId, { member_limit: 'family', beneficiary_member_ids: [parent, kidA, kidB] });
+    const res = await put(assignmentId, { beneficiary_member_ids: [parent, kidA, kidB] });
     expect(res.status).toBe(200);
     expect(await beneficiariesOf(assignmentId)).toEqual(sorted([parent, kidA, kidB]));
     const empty = await put(assignmentId, { beneficiary_member_ids: [] });
