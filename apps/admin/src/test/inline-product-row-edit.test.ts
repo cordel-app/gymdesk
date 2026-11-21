@@ -49,7 +49,10 @@ describe('#3020 inline product row editing', () => {
     expect(src).toContain('setImageOf(item)');
     expect(src).toContain('<ProfessionalServiceImageModal');
     expect(src).toContain('data-product-frequency');
-    expect(src).toContain("t('purchase_exp_tax')");
+    expect(src).toContain("<CardDetailRow label={t('purchase_exp_tax')} value={appliedTax ?? dash} />");
+    // #3160 — the price says VAT included instead of repeating the tax beside it.
+    expect(src).toContain("appliedTax ? t('purchase_exp_vat_included') : null");
+    expect(src).not.toContain("`${t('purchase_exp_tax')} ${");
     expect(src).not.toContain("key: 'tax'");
     expect(src).toContain('data-product-facts');
   });
