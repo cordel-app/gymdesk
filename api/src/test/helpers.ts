@@ -201,11 +201,22 @@ export async function deleteUnlinkedPlanSnapshots(): Promise<void> {
   await db.query(`DELETE FROM plan_snapshots WHERE id IN (${marks})`, ids);
 }
 
+/**
+ * #3026 stage 3c-3: a fixture that wrote legacy Promotion rows by hand (an application's grant
+ * snapshot rows, say) re-derives the assignment's plan snapshot rows the readers read.
+ */
+export async function resyncTestAssignmentPromotions(umId: number): Promise<void> {
+  await syncFixtureSnapshot(await versionOfAssignment(umId));
+}
+
 /** #2125 stage 5: readers use `plan_snapshots`, so a fixture writing the legacy row re-derives it as the routes do. */
 async function syncFixtureSnapshot(setId: number): Promise<void> {
   const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM product_sets WHERE id = ?', [setId]);
   if (!rows[0]) return;
   await syncPlanSnapshot(db as any, rows[0].gym_id, setId);
+  // #3026 stage 3c-3: production no longer derives the Plan Promotion rows; a legacy-shaped fixture does.
+  const { derivePlanPromotionSnapshotsForFixture } = await import('./planPromotionFixture');
+  await derivePlanPromotionSnapshotsForFixture(rows[0].gym_id, setId);
 }
 
 /** The configuration an assignment has — its latest linked version's plan snapshot — as the row used to carry it. */

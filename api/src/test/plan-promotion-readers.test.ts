@@ -113,4 +113,24 @@ describe('Plan Promotion readers on the plan snapshot (#3026 stage 3c-2)', () =>
       await db.query(`UPDATE promotions SET lifecycle_status = 'active' WHERE id = ?`, [promoId]);
     }
   });
+
+  it('revoking on a running plan revokes the copy made with the plan snapshot, with no derivation (#3026 stage 3c-3)', async () => {
+    const { umId, memberId } = await draftWithPromotion();
+    await activateTestAssignment(gymId, umId);
+    expect(Number((await detail(umId)).body.membership_fee)).toBe(90);
+
+    const res = await request.delete(`/user-memberships/${umId}/promotions/${promoId}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(res.status).toBeLessThan(300);
+
+    // The owner's running assignment (the same one, or its successor) no longer carries it.
+    const { rows: live } = await db.query<any>(
+      `SELECT id FROM user_memberships WHERE gym_id = ? AND member_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`,
+      [gymId, memberId]);
+    const after = await detail(Number(live[0].id));
+    expect(Number(after.body.membership_fee)).toBe(100);
+    const standing = after.body.promotions.filter((p: any) => p.promotion_id === promoId && p.status === 'applied');
+    expect(standing).toHaveLength(0);
+    expect(after.body.promotions.some((p: any) => p.promotion_id === promoId && p.status === 'revoked')).toBe(true);
+  });
 });

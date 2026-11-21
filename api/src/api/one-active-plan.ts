@@ -163,6 +163,9 @@ export async function supersedeApplications(
         SET status = 'superseded', modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE gym_id = ? AND status = 'applied' AND user_membership_id = ?`,
     [actor, gymId, umId]);
+  // #3026 stage 3c-3: the plan snapshot rows are written here, not derived from the rows above.
+  const { supersedePlanPromotionsOfAssignment } = await import('./plan-promotion-writer');
+  await supersedePlanPromotionsOfAssignment(tx, gymId, umId, actor);
 }
 
 export async function supersedeLiveAssignments(

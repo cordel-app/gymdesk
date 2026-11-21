@@ -7,10 +7,10 @@ import { primaryPlanSnapshotId } from './plan-snapshot-lines';
  * same transaction, instead of waiting for `syncPlanSnapshot()` to derive the row from
  * `user_membership_promotions`.
  *
- * Until stage 3c moves the clone and the projection onto plan snapshots, those writers still rely on
- * the derivation, and `source_id` (the legacy application id) is the key both paths agree on, so a
- * row written here and the same row derived later are one row. Product-target applications and
- * grant snapshot rows are not handled here.
+ * Since stage 3c-3 nothing derives these rows: `syncPlanSnapshot()` no longer reads the legacy table,
+ * so the writers here are the only ones, with the snapshot copy (`copyPlanSnapshotToVersion()`).
+ * `source_id` is the legacy application's id where one was written beside the row; a copy has none.
+ * Product-target applications are not handled here.
  */
 
 /** Records an application on the version's primary plan snapshot (idempotent per `source_id`). */
@@ -39,18 +39,58 @@ export async function deletePlanPromotionReferences(
     [gymId, ...applicationIds]);
 }
 
-/** A confirmed application revoked: kept, with the moment. */
+/**
+ * A confirmed application revoked: kept, with the moment. #3026 stage 3c-3: found on the version's
+ * own primary plan snapshot by its Promotion (the caller owns that snapshot first), never through
+ * the legacy application, so a copy made with the snapshot (no legacy twin) is revoked too.
+ */
 export async function recordPlanPromotionRevoked(
   tx: Tx, gymId: string, productSetId: number, promotionId: number, actor: string | null,
 ): Promise<void> {
+  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  if (snapshotId == null) return;
+  await tx.query(
+    `UPDATE plan_promotion_snapshots
+        SET status = 'revoked', revoked_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE gym_id = ? AND plan_snapshot_id = ? AND promotion_id = ? AND status = 'applied'`,
+    [actor, gymId, snapshotId, promotionId]);
+}
+
+/**
+ * #3026 stage 3c-3 — what a superseded Product Set still had applied is history: the standing
+ * applications on the plan snapshots that set alone links become `superseded`. A snapshot the
+ * successor links too is its contract as well and is left as it is.
+ */
+export async function supersedePlanPromotionsOfSet(
+  tx: Tx, gymId: string, productSetId: number, actor: string | null,
+): Promise<void> {
   await tx.query(
     `UPDATE plan_promotion_snapshots pps
-       JOIN user_membership_promotions ump ON ump.id = pps.source_id AND ump.gym_id = pps.gym_id
-        SET pps.status = 'revoked', pps.revoked_at = UTC_TIMESTAMP(),
-            pps.modified_at = UTC_TIMESTAMP(), pps.modified_by = ?
-      WHERE pps.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ?
-        AND ump.recurrent_snapshot_id IS NULL AND pps.status = 'applied'`,
-    [actor, gymId, productSetId, promotionId]);
+       JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = pps.plan_snapshot_id AND j.product_set_id = ?
+        SET pps.status = 'superseded', pps.modified_at = UTC_TIMESTAMP(), pps.modified_by = ?
+      WHERE pps.gym_id = ? AND pps.status = 'applied'
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots o
+                         WHERE o.plan_snapshot_id = pps.plan_snapshot_id AND o.product_set_id <> j.product_set_id)`,
+    [productSetId, actor, gymId]);
+}
+
+/**
+ * #3026 stage 3c-3 — the same for an assignment that was superseded: its standing applications on
+ * the snapshots no running or in-flight Product Set links.
+ */
+export async function supersedePlanPromotionsOfAssignment(
+  tx: Tx, gymId: string, userMembershipId: number, actor: string | null,
+): Promise<void> {
+  await tx.query(
+    `UPDATE plan_promotion_snapshots pps
+       JOIN plan_snapshots s ON s.id = pps.plan_snapshot_id AND s.gym_id = pps.gym_id
+        SET pps.status = 'superseded', pps.modified_at = UTC_TIMESTAMP(), pps.modified_by = ?
+      WHERE pps.gym_id = ? AND s.source_user_membership_id = ? AND pps.status = 'applied'
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots o
+                          JOIN product_sets ops ON ops.id = o.product_set_id
+                         WHERE o.plan_snapshot_id = pps.plan_snapshot_id
+                           AND ops.status IN ('active', 'in_cart', 'pending_payment'))`,
+    [actor, gymId, userMembershipId]);
 }
 
 /** A Draft confirmed: the snapshot the application was agreed with, taken from the Promotion as it stands. */

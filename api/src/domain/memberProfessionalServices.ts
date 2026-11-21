@@ -280,7 +280,7 @@ export async function loadMemberProfessionalServiceGrants(
     `SELECT ps.id               AS professional_service_id,
             ps.name             AS professional_service_name,
             'promotion_session' AS kind,
-            pps.source_id       AS reference_id,
+            COALESCE(pps.source_id, pps.id) AS reference_id,
             gc.id               AS product_id,
             gc.name             AS product_name,
             psn.quantity        AS sessions,
@@ -288,7 +288,7 @@ export async function loadMemberProfessionalServiceGrants(
      FROM plan_snapshots pa
      JOIN plan_promotion_snapshots pps
        ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
-      AND pps.status IN ('applied', 'superseded') AND pps.source_id IS NOT NULL
+      AND pps.status IN ('applied', 'superseded')
      JOIN promotion_session psn
        ON psn.promotion_id = pps.promotion_id AND psn.gym_id = pa.gym_id
      JOIN products gc ON gc.id = psn.product_id

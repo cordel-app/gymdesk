@@ -17,6 +17,7 @@ import {
   legacyAssignmentQuery,
   legacyChildQuery,
   request,
+  resyncTestAssignmentPromotions,
 } from './helpers';
 
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -129,6 +130,7 @@ describe('GET /me/membership — past plan details (#2779)', () => {
        VALUES (?, ?, NULL, 'Personal Training', 2, 'sessions', 'once', 40, 'EUR', 'waive', NULL, 'mandatory')`,
       [gymId, appId],
     );
+    await resyncTestAssignmentPromotions(pastUm);
 
     // A past plan with no lines and no Promotion.
     ({ insertId: plainUm } = await legacyAssignmentQuery(

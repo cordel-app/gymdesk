@@ -19,7 +19,7 @@ import {
   type PastPlanPromotionRow,
 } from '../domain/pastPlanDetails';
 import { assignmentPlanSnapshotId } from './assignment-config';
-import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
+import { loadPlanPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { membershipFeeBenefitsFromSnapshot } from './membership-promotions';
 import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, promotionHolderSql } from './plan-snapshot-lines';
 
@@ -96,17 +96,17 @@ export async function attachPastPlanDetails(
   }
 
   // 4. The Promotion applications are the plan snapshot's own `plan_promotion_snapshots` rows
-  //    (#3026 stage 3b), read through the snapshot that holds them. `id` stays the legacy
-  //    application id (`source_id`), which the grant snapshot rows are keyed by.
+  //    (#3026 stage 3b), read through the snapshot that holds them. Since stage 3c-3 `id` is the
+  //    row's own, which its grant rows are keyed by.
   const appsBySnapshot = new Map<number, PastPlanPromotionRow[]>();
   if (snapshotIds.length > 0) {
     const { rows: apps } = await db.query<any>(
-      `SELECT pa.id AS plan_snapshot_id, pps.source_id AS id, pps.status, pps.snapshot,
+      `SELECT pa.id AS plan_snapshot_id, pps.id AS id, pps.status, pps.snapshot,
               pps.applied_at, pps.revoked_at
          FROM plan_snapshots pa
          JOIN plan_promotion_snapshots pps
            ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
-        WHERE pa.gym_id = ? AND pa.id IN (${marks(snapshotIds.length)}) AND pps.source_id IS NOT NULL
+        WHERE pa.gym_id = ? AND pa.id IN (${marks(snapshotIds.length)})
         ORDER BY pps.applied_at, pps.id`,
       [gymId, ...snapshotIds],
     );
@@ -119,7 +119,7 @@ export async function attachPastPlanDetails(
   const allApps = [...appsBySnapshot.values()].flat();
 
   // 5. What each application granted, from its own grant snapshot rows.
-  const grants = await loadPromotionGrantSnapshots(gymId, allApps.map((a: any) => Number(a.id)));
+  const grants = await loadPlanPromotionGrantSnapshots(gymId, allApps.map((a: any) => Number(a.id)));
 
   return past.map((plan) => {
     const isSet = plan.product_set_id != null;

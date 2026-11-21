@@ -206,6 +206,9 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
       'DELETE FROM user_membership_promotions WHERE id = ? AND gym_id = ? AND product_set_id = ?',
       [Number(req.params.applicationId), draft.gym_id, draft.id]);
     if (rowCount === 0) return { kind: 'not_found' as const };
+    // #3026 stage 3c-3: the plan snapshot's row goes with it (nothing derives it away any more).
+    const { deletePlanPromotionReferences } = await import('./plan-promotion-writer');
+    await deletePlanPromotionReferences(tx, draft.gym_id, [Number(req.params.applicationId)]);
     await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [draft.id]);
     return { ok: true as const };
   }, next, { remove_promotion: Number(req.params.applicationId) }));
