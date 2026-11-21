@@ -61,7 +61,7 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { addedCartPlans, canEditLivePlan, pastPlans, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
+import { addedCartPlans, addedPlanRemovePath, canEditLivePlan, pastPlans, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
 import { PendingPaymentPlans } from './PendingPaymentPlans';
 
 
@@ -155,6 +155,18 @@ export function MemberMembershipPlans({
   // configuration (#2091 — not re-frozen from the catalogue Plan), which replaces the
   // Active row in the view and is opened in Edit mode. Cancel on the Draft
   // deletes it and the Active plan is back; Save & Pay commits it.
+  // #2966 stage 5: removing a plan staff added to the in-cart Draft. Nothing was charged, so there
+  // is no confirmation; the server refuses anything that is not that Draft's own added plan.
+  async function removeAddedPlan(row: { id: number; status?: string | null }) {
+    const path = addedPlanRemovePath(row);
+    if (!path) return;
+    try {
+      await apiFetch(path, { method: 'DELETE' });
+    } finally {
+      onChanged();
+    }
+  }
+
   async function editPlan(plan: MemberPlanRow) {
     if (plan.membership_plan_id == null) return;
     setCreating(true);
@@ -238,7 +250,7 @@ export function MemberMembershipPlans({
       {/* #1703: an in-flight (Draft) plan carries no sub-label; the status badge says it. */}
       {visible.heading !== 'draft' && <div style={subLabel}>{t('membership_plans_active')}</div>}
       <PendingPaymentPlans sets={pendingSets} spaced={visible.rows.length > 0 || addedSets.length > 0} />
-      <PendingPaymentPlans sets={addedSets} spaced={visible.rows.length > 0} status="in_cart" />
+      <PendingPaymentPlans sets={addedSets} spaced={visible.rows.length > 0} status="in_cart" onRemove={canWrite ? removeAddedPlan : undefined} />
       {(visible.rows.length > 0 || (pendingSets.length === 0 && addedSets.length === 0)) && (
         <AssignedPlansTable
           rows={visible.rows}
