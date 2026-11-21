@@ -127,20 +127,6 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
              OR ${differs('um.modified_by', assignmentModifierSql('modified_by'))})${scope('um')}
       ORDER BY um.id`);
 
-  // #2125 M6b-33: an applied Promotion's re-keyed assignment (migration 430) must be the anchor of
-  // the user_memberships row it still names (none when it names none, or no snapshot names it).
-  await add('promotion_assignment_mismatch',
-    'A Promotion application whose assignment_id is not the anchor of its user_membership_id.',
-    `SELECT ump.id AS application_id, ump.gym_id, ump.user_membership_id, ump.assignment_id,
-            a.anchor_id AS expected_assignment_id
-       FROM user_membership_promotions ump
-       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
-                    FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
-                   GROUP BY gym_id, source_user_membership_id) a
-              ON a.gym_id = ump.gym_id AND a.um_id = ump.user_membership_id
-      WHERE NOT (ump.assignment_id <=> a.anchor_id)${scope('ump')}
-      ORDER BY ump.id`);
-
   // #2125 M6b-34: a payment request's re-keyed assignment (migration 431), by the same rule.
   await add('payment_request_assignment_mismatch',
     'A payment request whose plan_assignment_id is not the anchor of its user_membership_id.',

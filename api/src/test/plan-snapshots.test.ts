@@ -1,12 +1,12 @@
 // #2125 stage 1: the plan snapshot tables and their repeatable backfill, against real MySQL
 // (since stage 17 the snapshots are written by the real writers; the backfill only has promotions left to copy).
-import { derivePlanPromotionSnapshotsForFixture } from './planPromotionFixture';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
-import { cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership } from './helpers';
+import { cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, legacyChildQuery,
+} from './helpers';
 
 const require = createRequire(import.meta.url);
 const migration = require('../infra/migrations/347_plan_snapshots.js');
@@ -70,11 +70,13 @@ beforeAll(async () => {
        only_applicable_for_new_members, free_months, paid_months, bonus_months)
      VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 1, 0, 0, 6, 0)`, [gymId, `PS-Promo-${uniq()}`]);
   promotionId = promo;
+  // #3026 stage 3d-2: the application is the plan snapshot's own row.
   const { insertId: ump } = await db.query(
-    `INSERT INTO user_membership_promotions (gym_id, promotion_id, status, snapshot, product_set_id, user_membership_id, revoked_at)
-     VALUES (?, ?, 'revoked', JSON_OBJECT('name', 'Frozen name'), ?, ?, '2026-02-01 10:00:00')`,
-    [gymId, promotionId, setA, umA]);
-  await db.query(
+    `INSERT INTO plan_promotion_snapshots (gym_id, promotion_id, status, snapshot, plan_snapshot_id, revoked_at)
+     SELECT ?, ?, 'revoked', JSON_OBJECT('name', 'Frozen name'), MIN(plan_snapshot_id), '2026-02-01 10:00:00'
+       FROM product_set_plan_snapshots WHERE product_set_id = ?`,
+    [gymId, promotionId, setA]);
+  await legacyChildQuery(
     `INSERT INTO user_membership_promotion_session_snapshot (gym_id, user_membership_promotion_id, product_id, product_name, quantity, action, value)
      VALUES (?, ?, ?, 'Frozen grant', 3, 'fixed_price', 5.00)`, [gymId, ump, productId]);
   // The snapshots exist from creation (the legacy table the stage 1 backfill copied from is gone,
@@ -83,8 +85,6 @@ beforeAll(async () => {
     await syncPlanSnapshot(tx, gymId, setA);
     await syncPlanSnapshot(tx, gymId, setB);
   });
-  // #3026 stage 3c-3: the Plan Promotion rows of a legacy-shaped fixture are derived by the fixture.
-  await derivePlanPromotionSnapshotsForFixture(gymId, setA);
 });
 
 describe('plan snapshots (#2125)', () => {

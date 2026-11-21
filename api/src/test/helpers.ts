@@ -214,9 +214,6 @@ async function syncFixtureSnapshot(setId: number): Promise<void> {
   const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM product_sets WHERE id = ?', [setId]);
   if (!rows[0]) return;
   await syncPlanSnapshot(db as any, rows[0].gym_id, setId);
-  // #3026 stage 3c-3: production no longer derives the Plan Promotion rows; a legacy-shaped fixture does.
-  const { derivePlanPromotionSnapshotsForFixture } = await import('./planPromotionFixture');
-  await derivePlanPromotionSnapshotsForFixture(rows[0].gym_id, setId);
 }
 
 /** The configuration an assignment has — its latest linked version's plan snapshot — as the row used to carry it. */
@@ -326,6 +323,14 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     const { rewriteLegacyPromotionSelect } = await import('./planPromotionReads');
     return db.query(rewriteLegacyPromotionSelect(sqlIn), params as any[]);
   }
+  // #3026 stage 3d-2: and a fixture's grant snapshot row of such an application is the plan
+  // promotion snapshot's own grant row.
+  const grantInsert = sqlIn.match(/^(\s*INSERT INTO )user_membership_promotion_(session|oneoff|periodical)_snapshot\b([\s\S]*)$/i);
+  if (grantInsert) {
+    return db.query(
+      `${grantInsert[1]}plan_promotion_${grantInsert[2]}_product_snapshots${grantInsert[3].replace(/\buser_membership_promotion_id\b/, 'plan_promotion_snapshot_id')}`,
+      params as any[]);
+  }
   const queue = [...params];
   // #2125 stage 16: the included Products are the plan snapshot's own lines. A fixture written against
   // `user_membership_session|oneoff|periodical` is re-pointed at `plan_*_snapshots`, keyed by the
@@ -389,7 +394,11 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     if (tokens[at].trim() !== '?') throw new Error('legacy child fixture: user_membership_id must be a placeholder');
     const assignmentId = Number(queue[placeholders]);
     const versionId = await versionOfAssignment(assignmentId);
-    if (isLineTable) {
+    // #3026 stage 3d-2: a Membership Plan Promotion application is its plan snapshot's own row, so a
+    // fixture written as `INSERT INTO user_membership_promotions (… user_membership_id …)` inserts
+    // that row (same column names) on the assignment's primary plan snapshot.
+    const isPlanPromotion = /^\s*INSERT INTO user_membership_promotions\b/i.test(insert[1]);
+    if (isLineTable || isPlanPromotion) {
       await syncFixtureSnapshot(versionId);
       const { rows: snap } = await db.query<{ id: number }>(
         'SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j WHERE j.product_set_id = ? AND j.entitlement_only = 0 ORDER BY j.id LIMIT 1', [versionId]);
@@ -400,13 +409,10 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       queue[placeholders] = versionId;
       columns[at] = 'product_set_id';
     }
-    // A Membership Plan application is the assignment's too (#1995 stage 3).
-    if (/^\s*INSERT INTO user_membership_promotions\b/i.test(insert[1])) {
-      columns.push('user_membership_id');
-      tokens.push('?');
-      queue.push(assignmentId);
-    }
-    const rewritten = `${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`;
+    const head = isPlanPromotion
+      ? insert[1].replace(/user_membership_promotions/i, 'plan_promotion_snapshots') : insert[1];
+    const rewritten = `${head}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`;
+    if (isPlanPromotion) return db.query(rewritten, queue);
     // #2126 stage 5d-6: the legacy recurring line table is dropped; the line is its Product snapshot.
     const written = /^\s*INSERT INTO member_products_recurrent_snapshot\b/i.test(insert[1])
       ? await legacyProductInsert(rewritten, queue)

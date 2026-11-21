@@ -902,10 +902,6 @@ export async function removeMemberPlanFromDraft(tx: Tx, draft: LockedDraft, plan
   if (Number(rows[0].shared) === 1) {
     return { kind: 'conflict', error: 'plan_not_removable', message: 'To change your plan, please contact your gym.' };
   }
-  await tx.query(
-    `DELETE ump FROM user_membership_promotions ump JOIN promotions p ON p.id = ump.promotion_id
-      WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NULL
-        AND p.applies_to = 'membership_plan'`, [draft.gym_id, draft.id]);
   await tx.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?',
     [draft.id, planSnapshotId]);
   await deleteUnlinkedPlanSnapshots(tx, draft.gym_id, [planSnapshotId]);
