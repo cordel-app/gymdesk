@@ -15,6 +15,8 @@ let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}`;
 const day = (offset: number) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + offset); return d.toISOString().slice(0, 10); };
 const TODAY = day(0);
+const midMonth = () => { let n = 10; while (new Date(day(n)).getUTCDate() <= 3) n += 1; return day(n); }; // never the 1st: a grid date is not prorated
+const JOIN_START = midMonth();
 const actor = { name: 'T', type: 'staff' };
 
 async function member(): Promise<number> {
@@ -69,7 +71,7 @@ describe('adding a second Membership Plan to an active version', () => {
       if (out.kind !== 'ok') throw new Error(out.kind);
       await addPlanSnapshotToVersion(tx, {
         gymId, productSetId: out.productSetId, memberId: owner, membershipPlanId: second,
-        membershipFeePrice: 30, startsAt: day(10),
+        membershipFeePrice: 30, startsAt: JOIN_START,
       });
       const act = await activateWithEvents(tx, { gymId, productSetId: out.productSetId, today: TODAY });
       if (act.kind !== 'ok') throw new Error(act.kind);
@@ -95,7 +97,7 @@ describe('adding a second Membership Plan to an active version', () => {
     // The second one bills too: a prorated first stretch on its start, then the shared schedule.
     const secondLines = after.filter((l) => l.price === 30);
     expect(secondLines.length).toBeGreaterThan(0);
-    expect(secondLines[0].date).toBe(day(10));
+    expect(secondLines[0].date).toBe(JOIN_START);
     expect(secondLines[0].prorated).toBeTruthy();
   });
 

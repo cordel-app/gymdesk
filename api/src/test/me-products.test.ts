@@ -744,8 +744,7 @@ describe('which Promotions the catalogue offers (#1118 §4, the thread’s Q4)',
     // Changes nothing.
     const neutral = await createPromotion(gid, { name: 'Neutral' });
     await grantProduct(gid, neutral, productId, 'oneoff', { action: 'no_benefit', value: null });
-    // Prices it to nothing: there is no payment to make, and this flow has no
-    // path that grants a Product for free (§9/§16).
+    // Prices it to nothing (#3082): it IS offered, and buying it completes with no payment.
     const free = await createPromotion(gid, { name: 'Free' });
     await grantProduct(gid, free, productId, 'oneoff', { action: 'waive', value: null });
     // Prices it *higher*: a configuration the vocabulary permits and a
@@ -754,11 +753,17 @@ describe('which Promotions the catalogue offers (#1118 §4, the thread’s Q4)',
     await grantProduct(gid, dearer, productId, 'oneoff', { action: 'fixed_price', value: 250 });
 
     const res = await asMember(gid, clerk);
-    expect(res.body.items[0].promotions).toEqual([]);
-    // And none of the three can be forced through the purchase either.
-    for (const id of [neutral, free, dearer]) {
+    expect(res.body.items[0].promotions.map((p: any) => p.promotion_id)).toEqual([free]);
+    // The neutral and the price-raising grants cannot be forced through the purchase.
+    for (const id of [neutral, dearer]) {
       expect((await buyWithPromotion(gid, clerk, productId, id)).status).toBe(409);
     }
+    // The waiving one completes at once: no hosted page, no payment request.
+    const bought = await buyWithPromotion(gid, clerk, productId, free);
+    expect(bought.status).toBe(201);
+    expect(bought.body.completed).toBe(true);
+    expect(bought.body.checkoutUrl).toBeNull();
+    expect(bought.body.amount).toBe(0);
   });
 
   it('reads a Sessions package’s offers from the session section (#550)', async () => {

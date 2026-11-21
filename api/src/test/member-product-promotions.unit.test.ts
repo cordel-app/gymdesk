@@ -136,11 +136,11 @@ describe('which Promotions are about a Product (§4, the thread\'s Q4)', () => {
     expect(isOfferableBenefit('nonsense', 5)).toBe(false);
   });
 
-  it('offers only what prices the Product lower than its own price, above nothing', () => {
-    // A €0 charge is not a purchase (§9/§16), and a `fixed_price` above the
-    // Product's price is not a promotion — the one screen where presenting a
-    // price increase as a benefit is never acceptable.
-    expect(ioSrc).toContain('if (!(final > 0) || !(final < regular)) continue;');
+  it('offers only what prices the Product lower than its own price (#3082: a €0 result is offered)', () => {
+    // A `fixed_price` above the Product's price is not a promotion — the one screen
+    // where presenting a price increase as a benefit is never acceptable. Since #3082 a
+    // waive (€0.00) is offered and completes without payment.
+    expect(ioSrc).toContain('if (!(final >= 0) || !(final < regular)) continue;');
   });
 });
 
