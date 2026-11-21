@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
+import { addedCartPlans, pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, status: string, is_live = true, membership_plan_id = id) => ({ id, status, is_live, membership_plan_id } as any);
 
@@ -96,5 +96,18 @@ describe('#2742 pendingPaymentPlanSets', () => {
     expect(pendingPaymentPlanSets([
       set(1, 'pending_payment', 42), set(2, 'draft', null), set(3, 'pending_payment', null, null),
     ])).toEqual([]);
+  });
+});
+
+describe('#2966 stage 4 addedCartPlans', () => {
+  const set = (status: string, added: any[]): any => ({ id: 5, status, plan_name: 'Gold', starts_at: null, amount_due: null, expired: false, created_by: 'Ana', added_plans: added });
+  const a = { plan_snapshot_id: 9, membership_plan_id: 3, plan_name: 'Duo', starts_at: '2026-11-21' };
+  it('lists the plans an in-flight version holds only as snapshots, with the version status', () => {
+    const rows = addedCartPlans([set('in_cart', [a])]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'in_cart', plan_name: 'Duo', membership_plan_id: 3 });
+  });
+  it('lists nothing for a set that is not in flight or has no added plan', () => {
+    expect(addedCartPlans([set('active', [a]), set('in_cart', [])])).toEqual([]);
   });
 });

@@ -61,7 +61,7 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { canEditLivePlan, pastPlans, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
+import { addedCartPlans, canEditLivePlan, pastPlans, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
 import { PendingPaymentPlans } from './PendingPaymentPlans';
 
 
@@ -144,6 +144,7 @@ export function MemberMembershipPlans({
   // assignment row until the payment activates it; it is listed in Active from its
   // ProductSet version, labelled by that version's own `pending_payment` status.
   const pendingSets = pendingPaymentPlanSets(productSets);
+  const addedSets = addedCartPlans(productSets);
   // #2125: a Member may hold several plans — the same plan twice included — so the picker offers
   // every assignable Plan; whether the new one is added beside the live ones or replaces them is
   // the Add-or-Replace dialog's question.
@@ -236,8 +237,9 @@ export function MemberMembershipPlans({
       {/* ACTIVE — the ticket's §4 split, over the Assigned Plans page's table. */}
       {/* #1703: an in-flight (Draft) plan carries no sub-label; the status badge says it. */}
       {visible.heading !== 'draft' && <div style={subLabel}>{t('membership_plans_active')}</div>}
-      <PendingPaymentPlans sets={pendingSets} spaced={visible.rows.length > 0} />
-      {(visible.rows.length > 0 || pendingSets.length === 0) && (
+      <PendingPaymentPlans sets={pendingSets} spaced={visible.rows.length > 0 || addedSets.length > 0} />
+      <PendingPaymentPlans sets={addedSets} spaced={visible.rows.length > 0} status="in_cart" />
+      {(visible.rows.length > 0 || (pendingSets.length === 0 && addedSets.length === 0)) && (
         <AssignedPlansTable
           rows={visible.rows}
           loadingText={t('add_membership_plan_loading')}
