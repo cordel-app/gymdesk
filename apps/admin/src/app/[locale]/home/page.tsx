@@ -379,7 +379,7 @@ export default function HomePage() {
       )}
       {attendeesFor && (
         <HomeClassAttendees sessionId={attendeesFor.id} sessionName={attendeesFor.name} mode={attendeesFor.mode} hasService={attendeesFor.hasService}
-          onClose={() => setAttendeesFor(null)} onCompleted={load} />
+          onClose={() => setAttendeesFor(null)} onCompleted={load} onChanged={load} />
       )}
       {cancelFor && (
         <HomeClassCancel sessionId={cancelFor.id} sessionName={cancelFor.name} hasEnded={cancelFor.hasEnded}

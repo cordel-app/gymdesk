@@ -17,6 +17,7 @@ import { formatGymDate, formatGymTime, formatGymDateTime, type GymFormatSettings
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { WAITLIST_MODES, waitlistModeClosesQueue, type WaitlistMode } from '@/lib/waitlistModes';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
+import { SERVICE_SELECTION_CODE, OVERRIDABLE_ACCESS_CODES, serviceOptionsFrom, type ServiceOption } from '@/lib/bookingAdd';
 import { EventImageControl } from './EventImageControl';
 import { listNameBadgeStyle } from '@/components/listChrome';
 import { eventPanelSurfaceStyle } from './EventPanelChrome';
@@ -149,23 +150,6 @@ const btnBase: React.CSSProperties = {
 // eligibility and center coverage. Since #973 stage 1 eligibility is about the
 // Professional Services an activity names (`professional_service_required`),
 // not a Membership Plan list.
-// #1986: the booking API names the services to choose between with this code.
-const SERVICE_SELECTION_CODE = 'professional_service_selection_required';
-
-interface ServiceOption { id: number; name: string }
-
-function serviceOptionsFrom(err: any): ServiceOption[] {
-  const list = err?.body?.professional_services;
-  if (!Array.isArray(list)) return [];
-  const out: ServiceOption[] = [];
-  for (const e of list) {
-    const id = Number(e?.id);
-    const name = String(e?.name ?? '').trim();
-    if (Number.isInteger(id) && id > 0 && name && !out.some((o) => o.id === id)) out.push({ id, name });
-  }
-  return out;
-}
-
 /** Inline (not a modal) choice of the Professional Service a booking is charged to. */
 function ServiceChoice({ options, selected, onSelect, hint }: {
   options: ServiceOption[]; selected: number | null; onSelect: (id: number | null) => void; hint: string;
@@ -187,7 +171,6 @@ function ServiceChoice({ options, selected, onSelect, hint }: {
   );
 }
 
-const OVERRIDABLE_ACCESS_CODES = ['professional_service_required', 'plan_required', 'center_not_covered'];
 
 // #979: the 409 codes the API answers when the trainer or space a cancellation
 // freed has been taken by another session since. All four mean one thing to
