@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { navigationGroups, filterNavGroups } from '@/config/navigationGroups';
-import { nextHalfHour, quickActionHref, startClassHref, canStartClass, taskHref, orderedTasks, memberHref, TASK_ORDER, TASK_ACTION_KEY } from '@/lib/homeDashboard';
+import { nextHalfHour, quickActionHref, startClassHref, editClassHref, canStartClass, taskHref, orderedTasks, memberHref, TASK_ORDER, TASK_ACTION_KEY } from '@/lib/homeDashboard';
 
 const LOCALES = ['en', 'es', 'ca'].map((l) => JSON.parse(readFileSync(join(__dirname, '..', '..', 'locales', 'base', `${l}.json`), 'utf-8')));
 
@@ -32,6 +32,7 @@ describe('quick actions', () => {
   });
   it('Start opens that class and only a scheduled one', () => {
     expect(startClassHref(42, 'en')).toBe('/en/calendar?session=42');
+    expect(editClassHref(42, 'en')).toBe('/en/calendar?session=42&edit=1');
     expect(canStartClass('scheduled')).toBe(true);
     for (const s of ['cancelled', 'completed', 'draft']) expect(canStartClass(s)).toBe(false);
   });
@@ -114,7 +115,9 @@ describe('Home class actions (#1877)', () => {
   });
   it('actions are icon buttons with accessible labels', () => {
     const src = readFileSync(join(__dirname, '..', 'app', '[locale]', 'home', 'page.tsx'), 'utf-8');
-    for (const k of ['celebrate', 'attendees', 'cancel']) expect(src).toContain(`home-class-${k}-`);
-    expect(src).toContain("aria-label={t('class_celebrate')}");
+    for (const k of ['start', 'calendar', 'attendees', 'cancel']) expect(src).toContain(`home-class-${k}-`);
+    // #3096: Celebrate is replaced by the calendar icon, which opens the event in edit mode.
+    expect(src).not.toContain("t('class_celebrate')");
+    expect(src).toContain('editClassHref(k.id, locale)');
   });
 });

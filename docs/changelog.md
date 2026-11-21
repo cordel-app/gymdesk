@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## November 2026
 
+- **Done**: #3096 (Admin Home → Today's classes: each class shows its Professional Service, trainer, center/space and read-only attendees with thumbnail and last attended date; **Start** opens the attendance dialog with a refund option for an absence on a Professional Service class; the Celebrate button is replaced by the calendar icon, which opens the occurrence in Edit details via `/calendar?session=<id>&edit=1`. Not included: adding attendees from that dialog.)
 - **Done**: #2966 stage 3 (the Admin Assign flow, when the owner already has an in-cart Draft, adds the plan to it through `POST /product-sets/:id/plans` instead of showing `in_flight`; `POST /membership-plans/:id/assign` now reports `code: in_flight` and `product_set_id`. Beneficiaries beyond the owner, Promotions on an added plan and the Assigned Plan / Member card listings from set snapshots remain.)
 - **Done**: #3119 (In Cart Membership Plans stay visible in the Member card's Active Plans: `visiblePlans()` now lists an in-cart or pending-payment plan beside the running plans and hides only the running plan of the same Membership Plan that the Draft re-freezes; admin view logic only, no API change)
 

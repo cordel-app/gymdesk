@@ -404,7 +404,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
     if (access.classes) {
       const { rows: classes } = await db.query<any>(
         `SELECT ce.id, ce.starts_at, ce.ends_at, ce.status, at.name AS name,
-                gmt.name AS trainer_name, sp.name AS space_name,
+                gmt.name AS trainer_name, sp.name AS space_name, ps.name AS service_name, ce.professional_service_id AS service_id, cn.name AS center_name,
                 COALESCE(ce.capacity, at.max_capacity) AS capacity,
                 (SELECT COUNT(*) FROM calendar_event_bookings b WHERE b.calendar_event_id = ce.id AND b.status = 'booked') AS booked_count,
                 (SELECT COUNT(*) FROM calendar_event_bookings b WHERE b.calendar_event_id = ce.id AND b.status = 'waitlisted') AS waitlist_count
@@ -412,15 +412,45 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
            JOIN activity_types at ON at.id = ce.activity_type_id
            LEFT JOIN gym_memberships gmt ON gmt.id = ce.trainer_membership_id
            LEFT JOIN spaces sp ON sp.id = ce.space_id
+           LEFT JOIN professional_services ps ON ps.id = ce.professional_service_id
+           LEFT JOIN centers cn ON cn.id = ce.center_id
           WHERE ${LIVE_SESSION} AND ce.starts_at >= ? AND ce.starts_at < ?
             AND EXISTS (SELECT 1 FROM calendar_event_bookings eb
                          WHERE eb.calendar_event_id = ce.id AND eb.status = 'booked')
           ORDER BY ce.starts_at ASC, ce.id ASC`,
         [gymId, day.from, day.to],
       );
+      // #3096: who is booked (read-only), each with the day they last attended.
+      const ids = classes.map((c: any) => Number(c.id));
+      const attendeesByEvent = new Map<number, any[]>();
+      if (ids.length > 0) {
+        const ph = ids.map(() => '?').join(',');
+        const { rows: att } = await db.query<any>(
+          `SELECT b.calendar_event_id AS event_id, m.id AS member_id, m.name,
+                  COALESCE(m.image_thumbnail_url, m.image_url) AS image_url,
+                  (SELECT MAX(pe.starts_at)
+                     FROM calendar_event_bookings pb
+                     JOIN calendar_events pe ON pe.id = pb.calendar_event_id
+                    WHERE pb.member_id = m.id AND pb.gym_id = b.gym_id AND pb.status = 'booked'
+                      AND pb.attendance_status <> 'absent' AND pe.starts_at < ?
+                      AND pe.id <> b.calendar_event_id) AS last_attended
+             FROM calendar_event_bookings b
+             JOIN members m ON m.id = b.member_id
+            WHERE b.gym_id = ? AND b.status = 'booked' AND b.calendar_event_id IN (${ph})
+            ORDER BY m.name ASC`,
+          [now, gymId, ...ids],
+        );
+        for (const r of att) {
+          const arr = attendeesByEvent.get(Number(r.event_id)) ?? [];
+          arr.push({ member_id: Number(r.member_id), name: r.name, image_url: r.image_url ?? null, last_attended: r.last_attended ? iso(r.last_attended) : null });
+          attendeesByEvent.set(Number(r.event_id), arr);
+        }
+      }
       const list = classes.map((c: any) => ({
         id: Number(c.id), name: c.name, starts_at: iso(c.starts_at), ends_at: iso(c.ends_at), status: c.status,
         trainer_name: c.trainer_name ?? null, space_name: c.space_name ?? null,
+        service_name: c.service_name ?? null, center_name: c.center_name ?? null, has_service: c.service_id != null,
+        attendees: attendeesByEvent.get(Number(c.id)) ?? [],
         capacity: c.capacity == null ? null : Number(c.capacity),
         booked_count: Number(c.booked_count), waitlist_count: Number(c.waitlist_count),
       }));

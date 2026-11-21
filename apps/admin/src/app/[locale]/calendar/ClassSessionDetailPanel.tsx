@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { serviceOccupancyLabel, serviceNameWithCapacity, type ServiceCapacityRow } from '@/lib/serviceCapacity';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
@@ -102,6 +102,8 @@ interface ProfessionalServiceOption { id: number; name: string; status: 'active'
 
 interface Props {
   sessionId: number;
+  /** #3096: open straight in Edit details (Home's calendar icon). */
+  startInEdit?: boolean;
   onClose: () => void;
   onMutated: () => void; // refetch calendar after cancel / time change
   canWrite: boolean;
@@ -214,7 +216,7 @@ function fmtBookedOn(iso: string, s: GymFormatSettings) {
 }
 
 export function ClassSessionDetailPanel({
-  sessionId, onClose, onMutated, canWrite, spaces, trainers, professionalServices,
+  sessionId, onClose, onMutated, canWrite, spaces, trainers, professionalServices, startInEdit,
 }: Props) {
   const t = useTranslations('calendar');
   const tAt = useTranslations('activity_types');
@@ -527,6 +529,14 @@ export function ClassSessionDetailPanel({
     setConfirmDisableWaitlist(false);
     setEditingDetails(true);
   }
+
+  // #3096: Home's calendar icon opens the occurrence straight in edit mode, once.
+  const startedInEditRef = useRef(false);
+  useEffect(() => {
+    if (!startInEdit || startedInEditRef.current || !session || !canWrite) return;
+    startedInEditRef.current = true;
+    openEditDetails();
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   function cancelEditDetails() {
     setEditingDetails(false);
