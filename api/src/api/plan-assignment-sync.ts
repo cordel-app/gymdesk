@@ -158,6 +158,21 @@ export async function nameAssignmentSnapshot(
     [userMembershipId, productSetId, gymId]);
 }
 
+/**
+ * #2125 M6b-51a — locks the assignment's anchor snapshot (`FOR UPDATE`), the row the assignment's
+ * identity lives on. It is taken **after** the legacy row's own lock, the order every writer already
+ * has (a legacy write, then the snapshot sync), so the two cannot deadlock; while `user_memberships`
+ * is still the source of truth the legacy lock stays and this one is added beside it, so no writer
+ * that locks only one of them stops excluding the others. Answers the anchor id, or null when no
+ * snapshot names the assignment yet (nothing to lock).
+ */
+export async function lockAssignmentAnchor(exec: Exec, gymId: string, userMembershipId: number): Promise<number | null> {
+  const anchor = await planAssignmentIdOf(exec, gymId, userMembershipId);
+  if (anchor == null) return null;
+  await exec.query('SELECT id FROM plan_snapshots WHERE id = ? AND gym_id = ? FOR UPDATE', [anchor, gymId]);
+  return anchor;
+}
+
 /** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
 export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembershipId: number | null): Promise<number | null> {
   if (userMembershipId == null) return null;

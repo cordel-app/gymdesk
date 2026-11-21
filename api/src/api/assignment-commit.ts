@@ -7,7 +7,7 @@ import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-a
 import { importAssignmentAsProductSet } from './product-set-bridge';
 import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
-import { assignmentReplacementOf, writeAssignmentReplacement } from './plan-assignment-sync';
+import { assignmentReplacementOf, lockAssignmentAnchor, writeAssignmentReplacement } from './plan-assignment-sync';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 /**
@@ -78,6 +78,7 @@ async function lockAssignment(tx: Tx, gymId: string, id: number | string) {
   );
   const row = rows[0];
   if (!row) return null;
+  await lockAssignmentAnchor(tx, gymId, Number(row.id));
   // #2125 M6b-35: the replacement (whether and which plan) is the assignment's plan snapshot's,
   // read after the legacy row is locked so it is the one this transaction's writers left.
   const replacement = await assignmentReplacementOf(tx, gymId, Number(row.id));

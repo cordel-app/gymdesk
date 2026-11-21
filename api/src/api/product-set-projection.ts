@@ -1,6 +1,6 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import { lockAssignmentAnchor, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
@@ -72,6 +72,7 @@ export async function closeAssignment(
       WHERE id = ? AND gym_id = ? AND status IN ('active','to_be_canceled','paused','pending_payment','in_cart') FOR UPDATE`,
     [id, gymId]);
   if (!before[0]) return null;
+  await lockAssignmentAnchor(tx, gymId, id);
   // #2659 stage 2: a member's cancellation keeps the plan running to its last
   // paid day (`ends_at`) as `active_cancel_at_period_end` when that day is today
   // or later; the end-of-period sweep moves it to `cancelled` afterwards.
@@ -160,6 +161,7 @@ export async function projectActiveProductSet(
   if (previousUmId != null) {
     const { rows: um } = await tx.query<{ membership_plan_id: number | null }>(
       'SELECT membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE', [previousUmId, gymId]);
+    if (um[0]) await lockAssignmentAnchor(tx, gymId, previousUmId);
     previousPlanId = um[0]?.membership_plan_id != null ? Number(um[0].membership_plan_id) : null;
   }
   const startsAt = dateOnly(set.starts_at) as string;
