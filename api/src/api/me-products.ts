@@ -335,10 +335,12 @@ export interface StartPurchaseInput {
 export interface StartPurchaseResult {
   /** The `member_products_oneoff_snapshot` row created, pending its payment. */
   purchaseId: number;
-  /** The hosted page the member types their card on. */
-  checkoutUrl: string;
+  /** The hosted page the member types their card on; `null` when nothing is owed (`completed`). */
+  checkoutUrl: string | null;
   amount: number;
   currency: string;
+  /** #3082: a €0.00 purchase (a waived Product) is complete at once — no payment, no hosted page. */
+  completed?: boolean;
 }
 
 /** Thrown for a Product this member may not buy; the route answers its body. */
@@ -654,6 +656,60 @@ export async function startProductPurchase(
   input: StartPurchaseInput,
 ): Promise<StartPurchaseResult> {
   const { row, snapshot, price, actorName, assignedMemberId } = await resolvePurchase(input, input.fromDraftId);
+
+  // #3082: a Promotion that waives the Product leaves nothing to pay. The purchase completes in
+  // this transaction: a paid Billing Event and no payment request, so no provider is called.
+  if (!(snapshot.amount > 0)) {
+    const payer = await resolvePayerFor(db, input.gymId, input.memberId);
+    try {
+      const purchaseId = await db.transaction(async (tx) => {
+        if (input.fromDraftId != null) {
+          await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: IN_CART_PURCHASE_STATUS });
+        }
+        const eventName = await productPurchaseEventNameFor(
+          tx, input.gymId, snapshot.product_name, new Date().toISOString().slice(0, 10));
+        const { insertId: billingEventId } = await tx.query(
+          `INSERT INTO billing_events
+             (gym_id, member_id, payer_member_id, event_type, name, amount, charge_type_id, source, created_by)
+           VALUES (?, ?, ?, 'product_purchase', ?, ?, ?, 'provider', ?)`,
+          [input.gymId, input.memberId, payer.payerMemberId, eventName, '0.00', row.charge_type_id ?? null, actorName],
+        );
+        const id = await insertPurchase(tx, {
+          gymId: input.gymId, memberId: input.memberId, productId: input.productId, status: PENDING_PURCHASE_STATUS,
+          productName: snapshot.product_name, productType: snapshot.product_type,
+          billingFrequency: snapshot.billing_frequency, units: snapshot.units,
+          amount: snapshot.amount, currency: snapshot.currency, taxRatePercent: snapshot.tax_rate_percent,
+          listPrice: price.list_price, directDiscountPercent: price.direct_discount_percent,
+          directDiscountAmount: price.direct_discount_amount,
+          validityDays: row.validity_days == null ? null : Number(row.validity_days),
+          origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
+          paymentRequestId: null, billingEventId: Number(billingEventId),
+        });
+        for (const step of price.promotions) {
+          await insertPurchasePromotion(tx, input.gymId, id, snapshot.product_type, step);
+        }
+        const { rows: gym } = await tx.query<any>('SELECT time_zone FROM gyms WHERE id = ?', [input.gymId]);
+        const purchasedOn = DateTime.now().setZone(resolveTimeZone(gym[0]?.time_zone)).toISODate()!;
+        await updatePurchase(
+          tx, input.gymId, id,
+          {
+            status: 'active', purchasedAt: new Date(),
+            validUntil: computeValidUntil({
+              purchasedOn,
+              validityDays: row.validity_days == null ? null : Number(row.validity_days),
+              billingFrequency: snapshot.billing_frequency ?? null,
+            }),
+          },
+          SYSTEM_ACTOR, { fromStatus: PENDING_PURCHASE_STATUS },
+        );
+        return id;
+      });
+      return { purchaseId, checkoutUrl: null, amount: 0, currency: snapshot.currency, completed: true };
+    } catch (err: any) {
+      if (err?.errno === ER_DUP_ENTRY) throw new PurchaseRefused('purchase_pending');
+      throw err;
+    }
+  }
 
   const orderId = crypto.randomUUID();
   const pageToken = crypto.randomUUID();
