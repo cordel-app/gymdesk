@@ -1,12 +1,8 @@
 /**
- * #2125 M6b-51d-1 — also the one place a `user_memberships` row is created (`insertAssignment()`),
- * under an id allocated by the `plan_assignment_ids` registry rather than by the table itself, so the
- * assignment's public id survives the table.
- *
  * #2125 M6b-51c-3 — the one writer of an assignment's lifecycle (status, `closed_at`, `ends_at`, the
- * modifier). Callers describe the change and this module spells the statement. Since M6b-51d-7b it
- * writes the anchor snapshot only; the `user_memberships` row is created (`insertAssignment()`) and
- * deleted (`deleteDraftAssignments()`) here and never updated. Nothing here decides a transition: each
+ * modifier). Callers describe the change and this module spells the statement, on the anchor snapshot
+ * (M6b-51d-7b). M6b-51d-1 — and the one allocator of an assignment's id (`allocateAssignmentId()`).
+ * Since M6b-51d-7c-1 nothing writes `user_memberships`. Nothing here decides a transition: each
  * caller keeps its own guard (the `from` statuses below), its audit row and its snapshot sync.
  */
 import type { Tx } from '../infra/db';
@@ -101,66 +97,17 @@ export function anchorPasses(
   return true;
 }
 
-/** What a new assignment is created with; everything else starts NULL or at its column default. */
-export interface NewAssignment {
-  gymId: string;
-  memberId: number;
-  membershipPlanId: number;
-  startsAt: string | Date;
-  endsAt?: string | Date | null;
-  status: string;
-  /** The plan a Replace cancels (`assign-new-plan`, #2125 stage 20). */
-  replacesUserMembershipId?: number | null;
-  purchasedAt?: string | Date | null;
-  createdBy: string | null;
-}
-
 /**
  * Allocates an assignment id (M6b-51d-1, migration 455): one row of `plan_assignment_ids` per id ever
- * handed out, so `user_memberships` allocates nothing and its retirement keeps every id unique.
+ * handed out. Since M6b-51d-7c-1 this is the whole of creating an assignment: no `user_memberships`
+ * row is written, and the assignment is its plan snapshots, named with this id
+ * (`nameAssignmentSnapshot()` / `createDraftSetForAssignment()`), whose anchor carries its identity
+ * and lifecycle. A Draft discarded with its version leaves only its registry row behind, so an id is
+ * never handed out twice.
  */
 export async function allocateAssignmentId(exec: Exec, gymId: string): Promise<number> {
   const { insertId } = await exec.query('INSERT INTO plan_assignment_ids (gym_id) VALUES (?)', [gymId]);
   const id = Number(insertId);
   if (!Number.isSafeInteger(id) || id < 1) throw new Error('Assignment id allocation returned no id');
   return id;
-}
-
-/** Creates an assignment under a registry id and answers that id. Decides nothing about the row. */
-export async function insertAssignment(exec: Exec, a: NewAssignment): Promise<number> {
-  const id = await allocateAssignmentId(exec, a.gymId);
-  await exec.query(
-    `INSERT INTO user_memberships
-       (id, gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
-        replaces_user_membership_id, purchased_at, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, a.gymId, a.memberId, a.membershipPlanId, a.startsAt, a.endsAt ?? null, a.status,
-      a.replacesUserMembershipId ?? null, a.purchasedAt ?? null, a.createdBy]);
-  return id;
-}
-
-/**
- * #2125 M6b-51d-3 — the one place a `user_memberships` row is deleted: a Draft (`in_cart`) assignment
- * discarded with its version, which billed nothing. Any other status is left alone, so a caller that
- * names a committed assignment by mistake deletes nothing. Decides nothing about the assignment: the
- * callers lock it (its anchor snapshot) and delete its version themselves. Answers the rows deleted.
- */
-export async function deleteDraftAssignments(exec: Exec, gymId: string, ids: readonly number[]): Promise<number> {
-  const keep = ids.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0);
-  if (keep.length === 0) return 0;
-  // M6b-51d-7b: the row's own status is the one it was created with; the anchor says whether it is
-  // still a Draft. A caller that discarded the Draft's version first has deleted the anchor with it,
-  // and then only a row created in the cart may go.
-  const { rowCount } = await exec.query(
-    `DELETE FROM user_memberships
-      WHERE gym_id = ? AND id IN (${keep.map(() => '?').join(',')})
-        AND IF(EXISTS (SELECT 1 FROM plan_snapshots a
-                        WHERE a.gym_id = user_memberships.gym_id AND a.source_user_membership_id = user_memberships.id
-                          AND a.assignment_id = a.id),
-               EXISTS (SELECT 1 FROM plan_snapshots a
-                        WHERE a.gym_id = user_memberships.gym_id AND a.source_user_membership_id = user_memberships.id
-                          AND a.assignment_id = a.id AND a.assignment_status = 'in_cart'),
-               status = 'in_cart')`,
-    [gymId, ...keep]);
-  return Number(rowCount ?? 0);
 }

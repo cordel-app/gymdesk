@@ -1,6 +1,5 @@
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, nameAssignmentSnapshot } from './plan-assignment-sync';
-import { deleteDraftAssignments } from './assignment-lifecycle-writer';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { staffProductDraftSql } from './editable-draft';
@@ -70,7 +69,6 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   );
   for (const old of stale) {
     await discardDraftSet(tx, input.gymId, Number(old.id));
-    await deleteDraftAssignments(tx, input.gymId, [Number(old.user_membership_id)]);
   }
   // #2966: the owner's live plain Draft with no Membership Plan yet (their cart of recurring
   // Products) is the cart this plan joins — adopted, never a competing version. Its lines, quantities

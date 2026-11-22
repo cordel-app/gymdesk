@@ -18,7 +18,7 @@ describe('DELETE /user-memberships/:id/draft (#1240)', () => {
   it('only deletes a locked Draft row and answers 409 otherwise', () => {
     expect(block).toContain('lockAssignmentRecord('); // #2125 M6b-51d-2: the lock is the anchor snapshot's
     expect(block).toContain('ASSIGNMENT_CREATION_STATUS');
-    expect(block).toContain('deleteDraftAssignments(tx, gymId'); // #2125 M6b-51d-3: the writer deletes `in_cart` rows only
+    expect(block).toContain('deleteLinkedDraftSet(tx, gymId'); // #2125 M6b-51d-7c-1: the Draft is its version's plan snapshot
     expect(block).toContain('409');
   });
 });
