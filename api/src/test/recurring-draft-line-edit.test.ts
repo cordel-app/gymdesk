@@ -135,7 +135,7 @@ afterAll(async () => {
 
 const line = (m: number, id: number) => `${base(m)}/recurring/${id}`;
 const applications = async (setId: number) => (await legacyChildQuery(
-  `SELECT promotion_id, recurrent_snapshot_id, snapshot, snapshot_confirmed_at FROM user_membership_promotions
+  `SELECT id, promotion_id, recurrent_snapshot_id, snapshot, snapshot_confirmed_at FROM user_membership_promotions
     WHERE product_set_id = ? AND status = 'applied' ORDER BY id`, [setId])).rows;
 const setsOf = async (m: number) => Number((await db.query<any>(
   'SELECT COUNT(*) AS n FROM product_sets WHERE owner_member_id = ?', [m])).rows[0].n);
@@ -186,6 +186,15 @@ describe('editing a Draft line (#2856)', () => {
     const again = await auth(request.put(line(m, after.id))).send({ promotion_ids: [b] });
     expect(again.status).toBe(200);
 
+    // #3026 stage 3d-3a: the line's Product snapshot copy states the reference's confirmation too.
+    const confirmationOnSnapshot = async () => (await db.query<any>(
+      `SELECT pp.snapshot_confirmed_at, pp.source_application_id FROM product_promotion_snapshots pp
+         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = pp.product_periodical_snapshot_id
+        WHERE lnk.product_set_id = ?`, [draftId])).rows;
+    const referenced = await confirmationOnSnapshot();
+    expect(referenced).toHaveLength(1);
+    expect(referenced[0].snapshot_confirmed_at).toBeNull();
+
     const sp = await auth(request.post(`${mset(draftId)}/save-and-pay`)).send({});
     expect(sp.status).toBe(201);
     apps = await applications(draftId);
@@ -198,6 +207,11 @@ describe('editing a Draft line (#2856)', () => {
          JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = pp.product_periodical_snapshot_id
         WHERE lnk.product_set_id = ?`, [draftId]);
     expect(Number(frozen[0].n)).toBe(1);
+    const confirmed = await confirmationOnSnapshot();
+    expect(Number(confirmed[0].source_application_id)).toBe(Number(apps[0].id));
+    expect(confirmed[0].snapshot_confirmed_at).not.toBeNull();
+    expect(new Date(confirmed[0].snapshot_confirmed_at).getTime())
+      .toBe(new Date(apps[0].snapshot_confirmed_at).getTime());
 
     // A version past Draft is no longer editable here.
     expect((await auth(request.put(line(m, after.id))).send({ quantity: 3 })).status).toBe(404);
