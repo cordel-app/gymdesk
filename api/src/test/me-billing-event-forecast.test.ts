@@ -148,8 +148,9 @@ describe('GET /me/billing-event-forecast', () => {
     // #2964: a start between billing-calendar dates is prorated up to the next one (the 1st).
     expect(fee).toMatchObject({ actual_charge: proratedToNextFirst(70), regular_price: 70, product_id: null });
 
-    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
+    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row;
+    // M6b-51d-3: and its anchor's lifecycle, which the one-plan check reads.
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled', assignment_status = IF(assignment_id = id, 'cancelled', assignment_status) WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
     await db.query('DELETE FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
   });
 
@@ -166,8 +167,9 @@ describe('GET /me/billing-event-forecast', () => {
     expect(staff.status).toBe(200);
     expect(mine.body).toEqual(staff.body);
 
-    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
+    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row;
+    // M6b-51d-3: and its anchor's lifecycle, which the one-plan check reads.
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled', assignment_status = IF(assignment_id = id, 'cancelled', assignment_status) WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
     await db.query('DELETE FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
   });
 
@@ -192,8 +194,9 @@ describe('GET /me/billing-event-forecast', () => {
     expect(today.total).toBe(Math.round((proratedToNextFirst(70) + proratedToNextFirst(20)) * 100) / 100);
     expect(today.lines.map((l: any) => l.kind).sort()).toEqual(['membership_fee', 'product']);
 
-    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row.
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
+    // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row;
+    // M6b-51d-3: and its anchor's lifecycle, which the one-plan check reads.
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled', assignment_status = IF(assignment_id = id, 'cancelled', assignment_status) WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
     await db.query('DELETE FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
   });
 
@@ -209,13 +212,13 @@ describe('GET /me/billing-event-forecast', () => {
   it('answers available: false when the only plan is cancelled', async () => {
     const umId = await assignPlan(gymId, memberId, await createPlan(gymId, 70));
     await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [umId]);
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled', assignment_status = IF(assignment_id = id, 'cancelled', assignment_status) WHERE source_user_membership_id = ?", [umId]);
 
     const res = await asMember();
     expect(res.status).toBe(200);
     expect(res.body.available).toBe(false);
 
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled', assignment_status = IF(assignment_id = id, 'cancelled', assignment_status) WHERE source_user_membership_id = ?", [umId]);
     await db.query('DELETE FROM user_memberships WHERE id = ?', [umId]);
   });
 
@@ -270,7 +273,7 @@ describe('GET /me/billing-events', () => {
     expect(byId[changedId].status).toBe('recorded');
 
     await db.query('DELETE FROM billing_events WHERE id IN (?, ?)', [paidId, changedId]);
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled', assignment_status = IF(assignment_id = id, 'cancelled', assignment_status) WHERE source_user_membership_id = ?", [umId]);
     await db.query('DELETE FROM user_memberships WHERE id = ?', [umId]);
   });
 });
