@@ -18,6 +18,10 @@
  * A row with no plan snapshot and no payment request (an abandoned Draft from before the Draft was a
  * Product Set version) carries nothing any reader shows; it goes with the table.
  *
+ * Deploy order: ship this only in a release after the one carrying migration 457 and its code is
+ * live. The API that still writes `user_memberships` (before 457) would fail every request touching
+ * it once the table is gone, and its open transactions would hold the drop's metadata lock.
+ *
  * One-way: `down` refuses. The table's data is the history of a model the code no longer has.
  */
 
@@ -40,8 +44,25 @@ exports.up = async (knex) => {
       `migration 458: payment requests name assignment(s) no plan snapshot names: ${orphans.map((r) => `${r.gym_id}/${r.id}`).join(', ')}`);
   }
 
+  // Nothing else may still point at the table: a foreign key would fail the drop (error 3730), a view
+  // would silently become invalid. Report either rather than find out later.
+  const [refs] = await knex.raw(`
+    SELECT TABLE_NAME AS name, CONSTRAINT_NAME AS ref FROM information_schema.KEY_COLUMN_USAGE
+     WHERE REFERENCED_TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = 'user_memberships'
+       AND TABLE_NAME <> 'user_memberships'
+    UNION ALL
+    SELECT TABLE_NAME, 'view' FROM information_schema.VIEWS
+     WHERE TABLE_SCHEMA = DATABASE() AND VIEW_DEFINITION REGEXP '(^|[^a-z_])user_memberships([^a-z_]|$)'`);
+  if (refs.length > 0) {
+    throw new Error(`migration 458: user_memberships is still referenced: ${refs.map((r) => `${r.name}/${r.ref}`).join(', ')}`);
+  }
+
   await knex.raw('SET SESSION lock_wait_timeout = 30');
-  await knex.raw('DROP TABLE user_memberships');
+  try {
+    await knex.raw('DROP TABLE user_memberships');
+  } finally {
+    await knex.raw('SET SESSION lock_wait_timeout = DEFAULT');
+  }
 };
 
 exports.down = async () => {
