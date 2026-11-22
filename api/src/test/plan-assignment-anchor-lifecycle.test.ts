@@ -8,6 +8,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
+import { testAssignmentWrite } from './assignmentFixture';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const migration = require('../infra/migrations/453_plan_snapshot_assignment_lifecycle.js');
@@ -98,6 +99,17 @@ describe('the anchor carries the assignment lifecycle', () => {
     const res = await auth(request.post(`/user-memberships/${um}/pause`)).send({});
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(await both(um)).toEqual(before);
+  });
+
+  it('M6b-51d-6: a guard the anchor refuses writes neither record, even when the legacy row would pass it', async () => {
+    const um = await createTestDraftAssignment(gymId, await member(), await plan());
+    // The legacy row alone says the Draft runs; the anchor says it is in the cart.
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'active' WHERE id = ?", [um], { mirror: false });
+    const { writeAssignmentLifecycle } = await import('../api/assignment-lifecycle-writer');
+    const written = await db.transaction((tx) =>
+      writeAssignmentLifecycle(tx, gymId, um, { status: 'paused', from: 'active', actor: 'Test' }));
+    expect(written).toBe(0);
+    expect((await both(um)).anchor.status).toBe('in_cart');
   });
 
   it('the migration backfill repairs an anchor that is out of step', async () => {

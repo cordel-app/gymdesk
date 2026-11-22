@@ -82,6 +82,9 @@ function setList(
  * M6b-51c-4: a change that passed its guards is mirrored onto the assignment's anchor snapshot
  * (`assignment_status`, `assignment_closed_at`, `assignment_ends_at`, `assignment_modified_*`),
  * with the same clock value, so the two records agree to the second.
+ * M6b-51d-6: the guards (`from`, `notFrom`, `onlyIfEndsAtNull`) are asked of the anchor, the record
+ * that survives `user_memberships`; the legacy row is then written by id, unguarded. Only an
+ * assignment no anchor states yet (its first snapshot not stamped) is still judged on the legacy row.
  */
 export async function writeAssignmentLifecycle(
   exec: Exec, gymId: string, userMembershipId: number, change: AssignmentLifecycleChange,
@@ -91,21 +94,46 @@ export async function writeAssignmentLifecycle(
   const clock = { now: String(clockRows[0].now), today: String(clockRows[0].today) };
   const legacy = setList(change, LEGACY, clock, true);
   if (legacy.sets.length === 0) return 0;
+  const from = change.from == null ? [] : (typeof change.from === 'string' ? [change.from] : [...change.from]);
+
+  const { rows: anchors } = await exec.query<{ status: string | null; ends_at: unknown }>(
+    `SELECT assignment_status AS status, assignment_ends_at AS ends_at FROM plan_snapshots
+      WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id = id`,
+    [gymId, userMembershipId]);
+  const anchor = anchors[0];
+  const judgedOnAnchor = anchor != null && anchor.status != null;
+  if (judgedOnAnchor && !anchorPasses(String(anchor.status), anchor.ends_at, change, from)) return 0;
 
   const where: string[] = ['id = ?', 'gym_id = ?'];
   const params: unknown[] = [...legacy.params, userMembershipId, gymId];
-  const from = change.from == null ? [] : (typeof change.from === 'string' ? [change.from] : [...change.from]);
-  if (from.length > 0) { where.push(`status IN (${from.map(() => '?').join(',')})`); params.push(...from); }
-  if (change.notFrom && change.notFrom.length > 0) {
-    where.push(`status NOT IN (${change.notFrom.map(() => '?').join(',')})`);
-    params.push(...change.notFrom);
+  if (!judgedOnAnchor) {
+    if (from.length > 0) { where.push(`status IN (${from.map(() => '?').join(',')})`); params.push(...from); }
+    if (change.notFrom && change.notFrom.length > 0) {
+      where.push(`status NOT IN (${change.notFrom.map(() => '?').join(',')})`);
+      params.push(...change.notFrom);
+    }
+    if (change.onlyIfEndsAtNull) where.push('ends_at IS NULL');
   }
-  if (change.onlyIfEndsAtNull) where.push('ends_at IS NULL');
 
   const { rowCount } = await exec.query(
     `UPDATE user_memberships SET ${legacy.sets.join(', ')} WHERE ${where.join(' AND ')}`, params);
+  if (judgedOnAnchor) {
+    await writeAnchorLifecycle(exec, gymId, userMembershipId, change, clock);
+    return Math.max(rowCount, 1);
+  }
   if (rowCount > 0) await writeAnchorLifecycle(exec, gymId, userMembershipId, change, clock);
   return rowCount;
+}
+
+/** The change's guards, judged on the anchor's lifecycle (pure). */
+export function anchorPasses(
+  status: string, endsAt: unknown, change: Pick<AssignmentLifecycleChange, 'notFrom' | 'onlyIfEndsAtNull'>,
+  from: readonly string[],
+): boolean {
+  if (from.length > 0 && !from.includes(status)) return false;
+  if (change.notFrom && change.notFrom.includes(status)) return false;
+  if (change.onlyIfEndsAtNull && endsAt != null) return false;
+  return true;
 }
 
 async function writeAnchorLifecycle(
