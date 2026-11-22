@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assignablePromotionsPath, draftPromotionToggle, selectedDraftPromotionIds, toPickerPromotion,
+  appliedOutsideOffer, assignablePromotionsPath, draftPromotionToggle, selectedDraftPromotionIds, toPickerPromotion,
 } from '@/lib/assignablePromotions';
 
 // #2853 — the Draft assigned plan's available-Promotions picker: which catalogue
@@ -53,3 +53,18 @@ describe('toPickerPromotion', () => {
     expect(row.description).toContain('members.promo_desc_percent');
   });
 });
+
+// #3169 — the In Cart plan's one Promotions list: an applied Promotion is the checked entry of
+// the offer, and only one the offer does not hold gets its own row, so none is drawn twice.
+describe('appliedOutsideOffer (#3169)', () => {
+  const app = (id: number, promotion_id: number, status = 'applied') => ({ id, promotion_id, status });
+  it('keeps only applied Promotions the offer does not hold, once each', () => {
+    const applied = [app(1, 10), app(2, 20), app(3, 30, 'revoked'), app(4, 40), app(5, 40)];
+    expect(appliedOutsideOffer(applied, [10, 99]).map((a) => a.promotion_id)).toEqual([20, 40]);
+  });
+  it('draws nothing extra until the offer is known, and nothing when it holds every applied one', () => {
+    expect(appliedOutsideOffer([app(1, 10)], null)).toEqual([]);
+    expect(appliedOutsideOffer([app(1, 10)], [10])).toEqual([]);
+  });
+});
+

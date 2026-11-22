@@ -5244,7 +5244,6 @@
     "add_period_benefit": "+ Añadir Beneficio Periódico",
     "promo_created_at": "Aplicada el {at}",
     "promo_created_by": "por {by}",
-    "draft_available_promotions": "Promociones disponibles",
     "draft_available_promotions_loading": "Cargando promociones…",
     "draft_available_promotions_none": "Ninguna promoción se aplica hoy a este plan.",
     "promo_toggle_label": "Promoción {promotion} aplicada",

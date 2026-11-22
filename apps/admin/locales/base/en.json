@@ -5258,7 +5258,6 @@
     "add_period_benefit": "+ Add Period Benefit",
     "promo_created_at": "Applied {at}",
     "promo_created_by": "by {by}",
-    "draft_available_promotions": "Available promotions",
     "draft_available_promotions_loading": "Loading promotions…",
     "draft_available_promotions_none": "No promotion targets this plan today.",
     "promo_toggle_label": "Promotion {promotion} applied",
