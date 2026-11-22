@@ -6,7 +6,8 @@
 // /members/:memberId/personal-training-slots/entries; this file formats and
 // builds requests (`scheduleEntriesView.ts`). Like the grid below it, the list
 // reads until the section's Edit is pressed (#957): the `+ Add`, `Edit` and `✕`
-// controls exist only in Edit mode.
+// controls exist only in Edit mode. Since stage 6 that Edit button sits beside
+// this list's title and is offered whether or not any slot exists.
 
 import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -26,9 +27,10 @@ import {
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { cardSectionHeaderStyle } from '@/components/CardSectionHeader';
 import type { FamilyMember } from './slotFamilyBooking';
 import {
-  createEntryBody, deleteEntryBody, entryErrorKey, entrySlotKey, entrySlotOptions,
+  canAddScheduleEntry, createEntryBody, deleteEntryBody, entryErrorKey, entrySlotKey, entrySlotOptions,
   initialEntryMembers, toggleEntryMember, updateEntryBody,
   type OfferedSlot, type ScheduleEntry,
 } from './scheduleEntriesView';
@@ -41,13 +43,15 @@ interface Draft {
 }
 
 export function MemberScheduleEntries({
-  memberId, days, family, editing, canWrite, onChanged,
+  memberId, days, family, editing, canWrite, headerAction, onChanged,
 }: {
   memberId: number;
   days: { slots: OfferedSlot[] }[];
   family: FamilyMember[];
   editing: boolean;
   canWrite: boolean;
+  /** #3090 stage 6: the section's Edit button, drawn beside the entries' title. */
+  headerAction?: React.ReactNode;
   /** Re-reads the grid after a write, since a write books dates and changes the pattern. */
   onChanged: () => Promise<void> | void;
 }) {
@@ -153,6 +157,9 @@ export function MemberScheduleEntries({
 
   if (entries === null) return null;
 
+  // An entry is one of the slots the grid offers; with none there is nothing to add.
+  const canAdd = canAddScheduleEntry(days);
+
   const form = (current: ScheduleEntry | null) => draft && (
     <div style={formBox}>
       <label style={formFieldLabelStyle}>
@@ -197,7 +204,10 @@ export function MemberScheduleEntries({
 
   return (
     <div style={section}>
-      <div style={cardSubLabelStyle}>{t('pt_entries_title')}</div>
+      <div style={cardSectionHeaderStyle}>
+        <div style={{ ...cardSubLabelStyle, margin: 0 }}>{t('pt_entries_title')}</div>
+        {headerAction}
+      </div>
       {entries.length === 0 && !draft && <p style={dim}>{t('pt_entries_none')}</p>}
       {entries.map((entry) => {
         const key = entrySlotKey(entry);
@@ -233,9 +243,13 @@ export function MemberScheduleEntries({
       })}
       {draft && draft.entry === null && <div style={row}>{form(null)}</div>}
       {editing && canWrite && !draft && (
-        <button type="button" style={dashedAddBtnStyle} onClick={startAdd} disabled={saving}>
-          {t('pt_entries_add')}
-        </button>
+        <>
+          <button type="button" style={dashedAddBtnStyle} onClick={startAdd} disabled={saving || !canAdd}>
+            {t('pt_entries_add')}
+          </button>
+          {/* #3090 stage 6: say why nothing can be added rather than hide the action. */}
+          {!canAdd && <p style={dim}>{t('pt_entries_no_slots')}</p>}
+        </>
       )}
       <ConfirmDialog
         open={deleting !== null}
