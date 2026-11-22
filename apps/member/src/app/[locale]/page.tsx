@@ -366,8 +366,15 @@ export default function HomePage() {
               </div>
             </MembersSectionCard>
           ) : (
-            <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={goToBookings}>
-              <p style={styles.hint}>{t('home.no_upcoming_booking')}</p>
+            <MembersSectionCard slot="next_bookings" style={styles.nextBookingCard}>
+              {/* #3245 — icon, message and Book now on one row, padded off the card's edge; it wraps on a narrow screen. */}
+              <div style={styles.emptyBookingRow}>
+                <span aria-hidden="true" style={styles.emptyBookingIcon}>🗓️</span>
+                <p style={styles.emptyBookingText}>{t('home.no_upcoming_booking')}</p>
+                <button type="button" style={styles.emptyBookingButton} onClick={goToBookings}>
+                  {t('home.book_now')}
+                </button>
+              </div>
             </MembersSectionCard>
           )}
         </section>
@@ -536,6 +543,10 @@ const styles: Record<string, React.CSSProperties> = {
   planName:        { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
   pillWait:        statusPillStyle('warning'),
   hint:            { color: memberTheme.textMuted, fontSize: 14, margin: '4px 0 12px' },
+  emptyBookingRow:    { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '16px 20px' },
+  emptyBookingIcon:   { fontSize: 24, lineHeight: 1, flexShrink: 0 },
+  emptyBookingText:   { color: memberTheme.textMuted, fontSize: 14, margin: 0, flex: '1 1 140px', minWidth: 0 },
+  emptyBookingButton: { ...primaryButtonStyle, marginLeft: 'auto', flexShrink: 0 },
   btnPrimary:      { ...primaryButtonStyle, display: 'block', width: '100%', padding: '14px 0', fontSize: 16, fontWeight: 600, marginBottom: 16 },
   btnSecondary:    { ...secondaryButtonStyle, marginTop: 8, padding: '10px 18px', fontSize: 14, fontWeight: 600 },
   alertCard:       { ...noticeStyle('warning'), borderRadius: 12, padding: '14px 18px', cursor: 'pointer' },
