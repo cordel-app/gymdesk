@@ -65,6 +65,22 @@ export function canEditLivePlan(
 }
 
 /**
+ * #3114 — the reactivation item a plan row's `⋮` offers: `mark` on the Member's own plan that is
+ * cancelling at its period end and still current (it is put in the open In Cart as
+ * `to_be_reactivated`), `unmark` on one already marked, nothing otherwise. Such a plan is not live
+ * (`is_live` is false for both statuses), so this answer must not sit behind the live plan's
+ * lifecycle actions — it did, and the item was never shown. A Linked plan is read-only (#1191).
+ */
+export function planReactivationAction(
+  p: Pick<MemberPlanRow, 'status' | 'assignment_relationship'> & { is_current?: boolean },
+): 'mark' | 'unmark' | null {
+  if (p.assignment_relationship === 'linked') return null;
+  if (p.status === CANCELS_AT_PERIOD_END && p.is_current) return 'mark';
+  if (p.status === PENDING_REACTIVATION) return 'unmark';
+  return null;
+}
+
+/**
  * #2742 — the Membership Plans awaiting their first payment that no assignment row
  * represents yet: a plan a member chose in the Members App is a ProductSet version in
  * `pending_payment`, and its assignment is projected only when the payment activates it.
