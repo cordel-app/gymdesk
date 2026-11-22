@@ -44,6 +44,36 @@ export interface ReviewSummary {
   /** #2860 — what the Draft contracts, for whom and how often; no amounts. */
   contracted_items?: ContractedItemLike[];
   amount_due: number | null;
+  /**
+   * #3114 stage 3 — the owner's plans this commit reactivates (`to_be_reactivated`) or cancels
+   * (`to_be_canceled`). They change no line of the diff and may owe nothing today, yet they are
+   * what the cart commits, so they count as changes (`pendingPlanChangeCount()`).
+   */
+  plans_to_reactivate?: Array<{ user_membership_id: number; plan_name: string | null }>;
+  plans_to_cancel?: Array<{ user_membership_id: number; plan_name: string | null }>;
+}
+
+/** #3114 stage 3 — how many plans the cart reactivates or cancels. */
+export function pendingPlanChangeCount(review: Pick<ReviewSummary, 'plans_to_reactivate' | 'plans_to_cancel'> | null): number {
+  return (review?.plans_to_reactivate?.length ?? 0) + (review?.plans_to_cancel?.length ?? 0);
+}
+
+/** Whether the Draft's review lists anything to commit: a diff line or a plan reactivated or cancelled. */
+function reviewHasChanges(review: ReviewSummary | null): boolean {
+  return (review?.changes.length ?? 0) > 0 || pendingPlanChangeCount(review) > 0;
+}
+
+/**
+ * #3114 stage 3 — the in-flight set's title in the Summary: its own plan, else the plans the cart
+ * reactivates (a cart that only reactivates a plan carries no plan of its own, and is not
+ * "Products only"). `null` falls back to the Products-only wording.
+ */
+export function inFlightSetTitle(
+  set: { plan_name: string | null }, review: Pick<ReviewSummary, 'plans_to_reactivate'> | null,
+): string | null {
+  if (set.plan_name) return set.plan_name;
+  const names = (review?.plans_to_reactivate ?? []).map((p) => p.plan_name).filter((n): n is string => !!n);
+  return names.length > 0 ? names.join(', ') : null;
 }
 
 /** #2860 — `initial_payment` of the review (`initialPaymentBreakdown()`), every figure the server's. */
@@ -81,6 +111,8 @@ export interface ContractedItemLike {
   quantity: number | null;
   /** #3007 stage 4 — the Draft ends this item; shown as deleted with this effective end date. */
   pending_deletion?: { ends_on: string | null } | null;
+  /** #3114 stage 3 — the cart reactivates this plan (the same assignment); open-ended once committed. */
+  pending_reactivation?: boolean;
   members: ContractedMemberLike[];
   included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: ContractedMemberLike[] }>;
 }
@@ -171,7 +203,7 @@ export function billingMode(input: WorkflowInput): BillingMode {
   if (input.pendingOneOffs > 0) return 'simulation';
   const status = input.current?.status;
   if (status === 'pending_payment') return 'simulation';
-  if (status === 'in_cart' && !input.current?.expired && (input.review?.changes.length ?? 0) > 0) return 'simulation';
+  if (status === 'in_cart' && !input.current?.expired && reviewHasChanges(input.review)) return 'simulation';
   return 'events';
 }
 
@@ -191,7 +223,7 @@ export function saveAndPayTarget(input: WorkflowInput): 'review' | 'cart' | 'pur
   const status = input.current?.status;
   if (status === 'pending_payment') return 'review';
   // #2965 — a Draft's Save & Pay pays the standalone cart purchases too, so they alone are a reason to open it.
-  if (liveDraft(input) && ((input.review?.changes.length ?? 0) > 0 || (input.cartPurchases ?? 0) > 0)) return 'review';
+  if (liveDraft(input) && (reviewHasChanges(input.review) || (input.cartPurchases ?? 0) > 0)) return 'review';
   if (cartAlone(input)) return 'cart';
   return input.pendingOneOffs > 0 ? 'purchases' : null;
 }

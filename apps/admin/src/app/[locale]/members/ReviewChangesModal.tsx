@@ -117,6 +117,13 @@ export function ReviewChangesModal({
         return;
       }
       try {
+        // #3114 stage 3: nothing is owed (a cart that only reactivates a plan), so there is no method
+        // to pick — the picker is not shown — and the cart is committed through the free activation.
+        if (next.key !== 'review_confirm_pay') {
+          await apiFetch(`/product-sets/${productSetId}/activate`, { method: 'POST', body: JSON.stringify({}) });
+          onCommitted({ activated: true, checkoutUrl: null });
+          return;
+        }
         if (!chosen) { setError(t('pay_error_method_required')); return; }
         const res = await apiFetch<{ checkout_url?: string | null; outcome?: string }>(`/product-sets/${productSetId}/pay`, {
           method: 'POST', body: JSON.stringify({ method: chosen.code }),

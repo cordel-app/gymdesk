@@ -182,3 +182,46 @@ describe('a plan with a cancellation pending (#3114)', () => {
     expect(Number(reactivation[0].n)).toBe(0);
   });
 });
+
+describe('the pending In Cart view of a reactivation (#3114 stage 3)', () => {
+  it('lists the plan as contracted and open-ended, forecasts it after its paid periods, and commits with nothing due', async () => {
+    const { memberId, umId } = await cancellingPlan();
+    const paidThrough = (await snap(umId)).ends_at as string;
+    const mark = await authed(request.post(`/user-memberships/${umId}/mark-reactivate`));
+    const setId = mark.body.product_set_id;
+
+    const review = await authed(request.get(`/product-sets/${setId}/review`));
+    expect(review.status).toBe(200);
+    // A line for the reactivated plan, even though nothing is owed today.
+    expect(review.body.contracted_items).toEqual([
+      expect.objectContaining({ kind: 'plan', pending_reactivation: true, pending_deletion: null }),
+    ]);
+    expect(review.body.amount_due).toBe(0);
+
+    // The Billing Event Simulation bills the plan again, from the period after the one already paid.
+    const sim = await authed(request.get(`/product-sets/${setId}/billing-event-simulation`));
+    expect(sim.status).toBe(200);
+    expect(sim.body.dates.length).toBeGreaterThan(0);
+    for (const d of sim.body.dates) expect(d.date > paidThrough).toBe(true);
+    expect(sim.body.total).toBeGreaterThan(0);
+
+    // Viewing it changed nothing persisted.
+    expect((await snap(umId)).ends_at).toBe(paidThrough);
+    expect(await futureScheduled(memberId)).toBe(0);
+
+    // Nothing is due, so the cart is committed through the free activation.
+    const commit = await authed(request.post(`/product-sets/${setId}/activate`));
+    expect(commit.status).toBeLessThan(300);
+    expect(await legacy(umId)).toEqual(expect.objectContaining({ status: 'active', ends_at: null }));
+    expect(await futureScheduled(memberId)).toBe(2);
+  });
+
+  it('a cart that is not reactivating anything forecasts no reactivated plan', async () => {
+    const { umId } = await cancellingPlan();
+    const mark = await authed(request.post(`/user-memberships/${umId}/mark-reactivate`));
+    await authed(request.post(`/user-memberships/${umId}/unmark-reactivate`));
+    const review = await authed(request.get(`/product-sets/${mark.body.product_set_id}/review`));
+    expect(review.body.plans_to_reactivate).toEqual([]);
+    expect(review.body.contracted_items).toEqual([]);
+  });
+});

@@ -14,7 +14,7 @@ import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
-import type { ReviewSummary } from './productsWorkflowView';
+import { inFlightSetTitle, type ReviewSummary } from './productsWorkflowView';
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
 
 interface Props {
@@ -58,7 +58,7 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
       {inFlight.map((ps) => (
         <div key={ps.id} style={row} data-product-set-id={ps.id}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <strong>{ps.plan_name ?? t('product_set_no_plan')}</strong>
+            <strong>{inFlightSetTitle(ps, ps.status === 'in_cart' ? review : null) ?? t('product_set_no_plan')}</strong>
             <span style={cardHintStyle}>
               {' · '}
               {ps.expired

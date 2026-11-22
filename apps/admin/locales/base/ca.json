@@ -728,6 +728,7 @@
     "checkout_one_off": "Pagament únic",
     "checkout_members_family": "Tota la família",
     "checkout_deleted": "Eliminat",
+    "checkout_reactivated": "Reactivat",
     "checkout_ends_on": "Acaba el {date}",
     "checkout_contracted_none": "No es contracta res.",
     "pay_direct_discount": "Descompte directe",

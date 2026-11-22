@@ -160,16 +160,7 @@ export async function loadProductSetSimulationAssignments(
   if (!version) return [];
 
   const { rows } = await exec.query(
-    `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_at, s.membership_fee_price,
-            s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
-            s.personal_fee_benefit_action, s.personal_fee_benefit_value,
-            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
-            ${membershipFeeUnitsSql('s')} AS membership_fee_units,
-            ${feeMemberDiscountsSql('s')} AS fee_member_discounts
-       FROM product_set_plan_snapshots psj
-       JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-       LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
-       LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id
+    `${PLAN_ROW_SELECT}
       WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0
       ORDER BY psj.id`,
     [gymId, productSetId],
@@ -179,36 +170,86 @@ export async function loadProductSetSimulationAssignments(
   const productTarget = version.promotions.filter((p) => p.productTarget);
   const out: SimulationAssignment[] = [];
   for (const [index, row] of (rows as any[]).entries()) {
-    const cadence = toPlanDurationCadence(row.cadence_interval, row.cadence_unit);
-    const planPromotions = await loadPlanPromotions(exec, gymId, Number(row.id));
+    out.push(await planRowAssignment(exec, gymId, row, index, version, productTarget));
+  }
+  return out;
+}
+
+const PLAN_ROW_SELECT = `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_at, s.previous_end_date, s.membership_fee_price,
+            s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
+            s.personal_fee_benefit_action, s.personal_fee_benefit_value,
+            mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
+            ${membershipFeeUnitsSql('s')} AS membership_fee_units,
+            ${feeMemberDiscountsSql('s')} AS fee_member_discounts
+       FROM product_set_plan_snapshots psj
+       JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+       LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
+       LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id`;
+
+/** One plan snapshot row as the engine's assignment; the first carries the version's own parts. */
+async function planRowAssignment(
+  exec: Exec, gymId: string, row: any, index: number,
+  version: SimulationAssignment | null, productTarget: SimulationPromotion[],
+): Promise<SimulationAssignment> {
+  const cadence = toPlanDurationCadence(row.cadence_interval, row.cadence_unit);
+  const planPromotions = await loadPlanPromotions(exec, gymId, Number(row.id));
+  return {
+    // The engine's label for the contract; a plan snapshot has no assignment, so the
+    // version's id stands in for the first plan and the snapshot's for any other.
+    userMembershipId: index === 0 ? version!.userMembershipId : Number(row.id),
+    planName: row.plan_name ?? null,
+    startsAt: toDateOnly(row.starts_at),
+    endsAt: row.ends_at != null ? toDateOnly(row.ends_at) : null,
+    membershipFeePrice: row.membership_fee_price != null ? Number(row.membership_fee_price) : null,
+    recurringInterval: row.cadence_interval != null ? Number(row.cadence_interval) : null,
+    recurringUnit: (row.cadence_unit ?? null) as BillingUnit | null,
+    promotions: index === 0 ? [...planPromotions, ...productTarget] : planPromotions,
+    services: index === 0 ? version!.services : [],
+    planBenefits: await loadPlanBenefits(exec, gymId, Number(row.id)),
+    planDuration: toPlanDuration(
+      row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods,
+      cadence, row.auto_renew,
+    ),
+    personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
+    // #2834 — the snapshot's own scope over its own beneficiaries.
+    membershipFeeUnits: Number(row.membership_fee_units ?? 1),
+    membershipFeeMemberDiscounts: parseFeeMemberDiscounts(row.fee_member_discounts),
+    // A plan whose start falls between two dates of its schedule (a plan added to a schedule
+    // that was already running, or — since #2125 M5c — any plan starting off its cadence's
+    // calendar grid) pays a prorated first stretch and then bills on the schedule's dates. An
+    // inherited plan aligns too, so a later version keeps billing on the grid its schedule is
+    // anchored on; its prorated stretch is in the past and is never materialised again.
+    ...(row.anchor_date != null && toDateOnly(row.anchor_date) < toDateOnly(row.starts_at)
+      ? { alignTo: toDateOnly(row.anchor_date) } : {}),
+  };
+}
+
+/**
+ * #3114 stage 3 — the plans the owner marked `to_be_reactivated` that this uncommitted version
+ * carries (an entitlement-only link: a plan running to its end date), as the engine will bill them
+ * once the reactivation is committed: open-ended (the commit clears `ends_at`). `paidThrough` is the
+ * end date the plan had when it was marked (`previous_end_date`): the periods up to it are already
+ * paid and are never generated again, so a forecast drops them. Only the Draft's forecast reads
+ * this; the initial charge never does (Option A: no extra charge for a period already paid).
+ */
+export async function loadPendingReactivationAssignments(
+  gymId: string, productSetId: number, exec: Exec = db,
+): Promise<Array<{ assignment: SimulationAssignment; paidThrough: string | null }>> {
+  const { rows } = await exec.query(
+    `${PLAN_ROW_SELECT}
+       JOIN product_sets ps ON ps.id = psj.product_set_id
+      WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 1
+        AND s.status = 'to_be_reactivated' AND ps.status IN ('in_cart', 'pending_payment')
+      ORDER BY psj.id`,
+    [gymId, productSetId],
+  );
+  const out: Array<{ assignment: SimulationAssignment; paidThrough: string | null }> = [];
+  for (const row of rows as any[]) {
+    const assignment = await planRowAssignment(exec, gymId, row, 1, null, []);
     out.push({
-      // The engine's label for the contract; a plan snapshot has no assignment, so the
-      // version's id stands in for the first plan and the snapshot's for any other.
-      userMembershipId: index === 0 ? version.userMembershipId : Number(row.id),
-      planName: row.plan_name ?? null,
-      startsAt: toDateOnly(row.starts_at),
-      endsAt: row.ends_at != null ? toDateOnly(row.ends_at) : null,
-      membershipFeePrice: row.membership_fee_price != null ? Number(row.membership_fee_price) : null,
-      recurringInterval: row.cadence_interval != null ? Number(row.cadence_interval) : null,
-      recurringUnit: (row.cadence_unit ?? null) as BillingUnit | null,
-      promotions: index === 0 ? [...planPromotions, ...productTarget] : planPromotions,
-      services: index === 0 ? version.services : [],
-      planBenefits: await loadPlanBenefits(exec, gymId, Number(row.id)),
-      planDuration: toPlanDuration(
-        row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods,
-        cadence, row.auto_renew,
-      ),
-      personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
-      // #2834 — the snapshot's own scope over its own beneficiaries.
-      membershipFeeUnits: Number(row.membership_fee_units ?? 1),
-      membershipFeeMemberDiscounts: parseFeeMemberDiscounts(row.fee_member_discounts),
-      // A plan whose start falls between two dates of its schedule (a plan added to a schedule
-      // that was already running, or — since #2125 M5c — any plan starting off its cadence's
-      // calendar grid) pays a prorated first stretch and then bills on the schedule's dates. An
-      // inherited plan aligns too, so a later version keeps billing on the grid its schedule is
-      // anchored on; its prorated stretch is in the past and is never materialised again.
-      ...(row.anchor_date != null && toDateOnly(row.anchor_date) < toDateOnly(row.starts_at)
-        ? { alignTo: toDateOnly(row.anchor_date) } : {}),
+      assignment: { ...assignment, endsAt: null },
+      paidThrough: row.previous_end_date != null ? toDateOnly(row.previous_end_date)
+        : row.ends_at != null ? toDateOnly(row.ends_at) : null,
     });
   }
   return out;
