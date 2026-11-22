@@ -75,6 +75,10 @@ interface PastBooking {
   /** #2326 — the event's own image, else the Activity's. */
   class_type_image_url?: string | null;
   class_type_description?: string | null;
+  /** #3180 — the other Family members who attended, by name; null when the Family has nobody else. */
+  family_attendees?: Array<{ member_id: number; name: string }> | null;
+  /** #3180 — attendees outside the Family: a count only, never names. */
+  other_attendees_count?: number;
 }
 
 interface FilterOption { id: number; name: string }
@@ -587,7 +591,7 @@ export default function MemberSchedulePage() {
                 )}
                 <div style={{ ...styles.cardBody, padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={styles.time}>{dayLabel(item.starts_at)} · {timeOnly(item.starts_at)}</span>
+                  <span style={styles.time}>{dayLabel(item.starts_at)} · {timeOnly(item.starts_at)} – {timeOnly(item.ends_at)}</span>
                   <span style={item.booking_status === 'cancelled' ? styles.pillFull : styles.pillBooked}>
                     {pastStatusLabel(item)}
                   </span>
@@ -595,7 +599,14 @@ export default function MemberSchedulePage() {
                 <div style={styles.name}>{item.title}</div>
                 {isExpanded && (
                   <div style={styles.details}>
-                    <div style={styles.sub}>{timeOnly(item.starts_at)} – {timeOnly(item.ends_at)}</div>
+                    {item.family_attendees && (
+                      <div style={styles.sub}>
+                        {item.family_attendees.length > 0
+                          ? t('member_schedule.past_family_attendees', { names: item.family_attendees.map((a) => a.name).join(', ') })
+                          : t('member_schedule.past_family_attendees_none')}
+                      </div>
+                    )}
+                    <div style={styles.sub}>{t('member_schedule.past_other_attendees', { count: item.other_attendees_count ?? 0 })}</div>
                     {item.cancelled_at && (
                       <div style={styles.sub}>{t('member_schedule.cancelled_at_detail', { date: dayLabel(item.cancelled_at) })}</div>
                     )}

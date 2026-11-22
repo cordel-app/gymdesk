@@ -1,4 +1,6 @@
 import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
+import { splitPastBookingAttendees, type PastBookingAttendees } from '../domain/pastBookingAttendees';
+import { familyWalletOf } from './family-wallet';
 import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { PRIVATE_EVENT_CODE, memberCanSeeOccurrenceSql, privateOccurrenceSql } from '../domain/privateEventVisibility';
 import { memberMayAddPlansAndProducts, memberMayViewPayments, refuseUnlessMayAdd, refuseUnlessMayViewPayments } from './family-add-rights';
@@ -3064,7 +3066,28 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
       params,
     );
 
-    const items = sessionRows.slice(offset, offset + limit);
+    const page = sessionRows.slice(offset, offset + limit);
+    // #3180: who else attended each event, split by splitPastBookingAttendees() —
+    // the caller's Family by name, everybody else as a count only.
+    const eventIds = [...new Set(page.map((r: any) => Number(r.entity_id)))];
+    let attendees = new Map<number, PastBookingAttendees>();
+    if (eventIds.length > 0) {
+      const family = await familyWalletOf(db, gymId, memberId);
+      const { rows: attendeeRows } = await db.query<any>(
+        `SELECT ab.calendar_event_id, ab.member_id,
+                am.name
+           FROM calendar_event_bookings ab
+           JOIN members am ON am.id = ab.member_id AND am.gym_id = ab.gym_id
+          WHERE ab.gym_id = ? AND ab.status = 'booked' AND ab.attendance_status = 'present'
+            AND ab.calendar_event_id IN (${eventIds.map(() => '?').join(', ')})`,
+        [gymId, ...eventIds],
+      );
+      attendees = splitPastBookingAttendees(eventIds, attendeeRows, memberId, family.memberIds);
+    }
+    const items = page.map((r: any) => ({
+      ...r,
+      ...(attendees.get(Number(r.entity_id)) ?? { family_attendees: null, other_attendees_count: 0 }),
+    }));
     res.json({ items, limit, offset });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
