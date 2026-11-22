@@ -561,6 +561,7 @@
     "pt_slots_over_allowance": "{service}: hi ha {scheduled} sessions setmanals programades, però el pla del membre n'inclou {included} per setmana. Les sessions programades superen l'assignació setmanal del membre.",
     "pt_entries_title": "Entrades de l'horari",
     "pt_entries_none": "Encara no hi ha entrades a l'horari.",
+    "pt_entries_no_slots": "No es pot afegir cap franja: cap Activitat ofereix els Serveis Professionals d'aquest membre en els propers 2 mesos. Afegeix una regla d'horari a una Activitat que ofereixi el servei (Calendari → Activitats) i després afegeix aquí l'entrada.",
     "pt_entries_add": "+ Afegeix una entrada a l'horari",
     "pt_entries_edit": "Edita",
     "pt_entries_save": "Desa l'entrada",

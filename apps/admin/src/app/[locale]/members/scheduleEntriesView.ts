@@ -53,6 +53,14 @@ export function entrySlotOptions(days: { slots: OfferedSlot[] }[], current?: Off
     || a.professional_service_name.localeCompare(b.professional_service_name));
 }
 
+/**
+ * #3090 stage 6: whether `+ Add schedule entry` can do anything — an entry is one
+ * of the slots the grid offers, so with none it is disabled and explained.
+ */
+export function canAddScheduleEntry(days: { slots: OfferedSlot[] }[]): boolean {
+  return entrySlotOptions(days).length > 0;
+}
+
 /** The members a new entry starts with: the card's member. */
 export function initialEntryMembers(memberId: number): number[] {
   return [memberId];
