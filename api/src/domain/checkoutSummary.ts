@@ -185,6 +185,8 @@ export interface ContractedItem {
   members: ContractedMember[];
   /** #3007 stage 4 — the Draft ends this item; `ends_on` is its effective end date. Not yet cancelled. */
   pending_deletion: { ends_on: string | null } | null;
+  /** #3114 stage 3 — a plan this cart reactivates (no new assignment); open-ended once committed. */
+  pending_reactivation: boolean;
   /** A plan's included Products, in the plan's own frozen lines. */
   included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: ContractedMember[] }>;
 }
@@ -197,6 +199,8 @@ export interface ContractPlanLike {
   beneficiaries: Array<{ member_id: number; name: string | null }>;
   benefits: Array<{ name: string; quantity: number; billing_frequency: string | null; assigned_member_id: number | null; member_name: string | null }>;
   pending_deletion?: boolean;
+  /** #3114 stage 3 — the cart reactivates this (entitlement-only) plan, so it is contracted again. */
+  pending_reactivation?: boolean;
   ends_at?: string | null;
 }
 
@@ -233,13 +237,14 @@ export function contractedItems(
     id == null ? [] : [{ member_id: id, name: names.get(id) ?? null }];
   const out: ContractedItem[] = [];
   for (const p of input.plans) {
-    if (p.entitlement_only) continue;
+    if (p.entitlement_only && !p.pending_reactivation) continue;
     out.push({
       kind: 'plan', name: p.plan_name ?? '', period: 'recurring',
       billing_frequency: null,
       cadence: p.billing_interval != null && p.billing_unit ? { interval: Number(p.billing_interval), unit: p.billing_unit } : null,
       quantity: null,
       pending_deletion: p.pending_deletion ? { ends_on: p.ends_at ?? null } : null,
+      pending_reactivation: p.pending_reactivation === true,
       members: p.beneficiaries.map((b) => ({ member_id: b.member_id, name: b.name })),
       included: p.benefits.map((b) => ({
         name: b.name, billing_frequency: b.billing_frequency, quantity: b.quantity,
@@ -253,6 +258,7 @@ export function contractedItems(
       period: isRecurring(l.billing_frequency) ? 'recurring' : 'one_off',
       billing_frequency: l.billing_frequency, cadence: null, quantity: l.quantity,
       pending_deletion: l.pending_deletion ? { ends_on: l.ends_at ?? null } : null,
+      pending_reactivation: false,
       members: member(l.assigned_member_id), included: [],
     });
   }
@@ -261,6 +267,7 @@ export function contractedItems(
       kind: 'product', name: p.product_name, period: 'one_off',
       billing_frequency: p.billing_frequency, cadence: null, quantity: null,
       pending_deletion: null,
+      pending_reactivation: false,
       members: member(p.assigned_member_id ?? p.member_id), included: [],
     });
   }

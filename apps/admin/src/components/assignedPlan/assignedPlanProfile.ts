@@ -69,3 +69,12 @@ export const ASSIGNED_PLAN_CONFIGURATION_SECTIONS = [
 
 export type AssignedPlanConfigurationSectionKey =
   (typeof ASSIGNED_PLAN_CONFIGURATION_SECTIONS)[number];
+
+/**
+ * #3114 stage 3 — the End Date the plan lists show: a plan marked `to_be_reactivated` reads
+ * open-ended (`null`), which is what Save & Pay will leave it, while its stored `ends_at` stays as
+ * it is until the cart is committed. Every other row shows its own `ends_at`.
+ */
+export function displayedEndsAt(row: { ends_at: string | null; lifecycle_status: string }): string | null {
+  return row.lifecycle_status === 'to_be_reactivated' ? null : row.ends_at;
+}
