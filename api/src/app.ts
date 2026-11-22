@@ -26,6 +26,7 @@ import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-ru
 import { professionalServicesRouter } from './api/professional-services';
 import { memberProfessionalServicesRouter } from './api/member-professional-services';
 import { memberPersonalTrainingSlotsRouter } from './api/member-personal-training-slots';
+import { memberScheduleEntriesRouter } from './api/member-schedule-entries';
 import { classSessionsRouter } from './api/calendar-events';
 // Side-effect import: registers the booking access hook for activity-type eligibility
 // (public_event / activity_type_eligible_professional_services, #973 stage 1 — there is
@@ -377,6 +378,7 @@ app.use('/members/:memberId/professional-services', requireAuth(), tenantContext
 // #647 stage 2: the weekly Personal Training availability projection. Same
 // gating as stage 1 — it is a read of one Member's slots, and it has nothing
 // to project when Professional Services are switched off.
+app.use('/members/:memberId/personal-training-slots/entries', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('organization.professional_services'), memberScheduleEntriesRouter);
 app.use('/members/:memberId/personal-training-slots', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('organization.professional_services'), memberPersonalTrainingSlotsRouter);
 // #2720: the Member card's Bookings tab — the /bookings router's own gates.
 app.use('/members/:memberId/bookings', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), memberBookingsRouter);
