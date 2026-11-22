@@ -262,7 +262,8 @@
     "cancel_unavailable_generic": "Las reservas no se pueden cancelar con menos de 24 horas de antelación al inicio del evento.",
     "buy": "Comprar",
     "show_booking_options": "Mostrar opciones de reserva",
-    "hide_booking_options": "Ocultar opciones de reserva"
+    "hide_booking_options": "Ocultar opciones de reserva",
+    "view_options": "Ver opciones"
   },
   "member_calendar": {
     "filter_all": "Todos",

@@ -262,7 +262,8 @@
     "cancel_unavailable_generic": "Bookings cannot be cancelled less than 24 hours before the event starts.",
     "buy": "Buy",
     "show_booking_options": "Show booking options",
-    "hide_booking_options": "Hide booking options"
+    "hide_booking_options": "Hide booking options",
+    "view_options": "View Options"
   },
   "member_calendar": {
     "filter_all": "All",
