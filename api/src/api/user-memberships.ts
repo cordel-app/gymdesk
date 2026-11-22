@@ -451,7 +451,11 @@ async function loadApplicationsKeyedBy(
   // (a Draft not yet projected, a Product-target application).
   // #3026 stage 3c-2: an assignment's applications are its current plan snapshot's own rows
   // (`plan_promotion_snapshots`, through its holder), and the application's id is that row's.
-  // A version read directly still reads `user_membership_promotions` (its Product-target ones live there).
+  // #3026 stage 3d-3b: a version read directly takes its line-owned Product-target applications from
+  // their Product snapshot rows (`product_promotion_snapshots`, owned by the set through
+  // `product_set_id`, migration 454), reported under `COALESCE(source_application_id, id)` so the
+  // routes and the Professional Service ledger keep their ids. Only an application owned by no line
+  // (none written since #1865) still reads `user_membership_promotions`, until stage 3d-3d.
   const marks = ids.map(() => '?').join(',');
   const { rows } = column === 'user_membership_id'
     ? await exec.query(
@@ -467,7 +471,7 @@ async function loadApplicationsKeyedBy(
           AND ${isCurrentAssignmentSnapshotSql('pa')}`,
       [...ids, gymId])
     // #3026 stage 3d-1: a version read directly takes its Plan applications from its primary plan
-    // snapshot's own rows too; only its Product-target applications are `user_membership_promotions`.
+    // snapshot's own rows too.
     : await exec.query(
       `SELECT pps.id, psj.product_set_id AS owner_key, pps.promotion_id, pps.status,
               pps.applied_at, pps.revoked_at, pps.snapshot,
@@ -481,14 +485,22 @@ async function loadApplicationsKeyedBy(
           AND psj.id = (SELECT MIN(f.id) FROM product_set_plan_snapshots f
                          WHERE f.product_set_id = psj.product_set_id AND f.entitlement_only = 0)
        UNION ALL
+       SELECT COALESCE(pp.source_application_id, pp.id) AS id, pp.product_set_id AS owner_key, pp.promotion_id,
+              pp.status, pp.applied_at, pp.revoked_at, pp.snapshot,
+              p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
+              p.applies_to
+         FROM product_promotion_snapshots pp
+         JOIN promotions p ON p.id = pp.promotion_id AND p.applies_to = 'product'
+        WHERE pp.product_set_id IN (${marks}) AND pp.gym_id = ? AND pp.product_periodical_snapshot_id IS NOT NULL
+       UNION ALL
        SELECT ump.id, ump.product_set_id AS owner_key, ump.promotion_id, ump.status,
               ump.applied_at, ump.revoked_at, ump.snapshot,
               p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
               p.applies_to
          FROM user_membership_promotions ump
          JOIN promotions p ON p.id = ump.promotion_id AND p.applies_to = 'product'
-        WHERE ump.product_set_id IN (${marks}) AND ump.gym_id = ?`,
-      [...ids, gymId, ...ids, gymId]);
+        WHERE ump.product_set_id IN (${marks}) AND ump.gym_id = ? AND ump.recurrent_snapshot_id IS NULL`,
+      [...ids, gymId, ...ids, gymId, ...ids, gymId]);
   const shaped = await Promise.all(rows.map(async (row: any) => {
     const snap = row.snapshot as {
       name?: string; free_months?: number | null; paid_months?: number | null; bonus_months?: number | null;

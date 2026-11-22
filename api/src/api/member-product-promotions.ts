@@ -499,7 +499,7 @@ export async function withProductConfiguration(
 
 /**
  * #2576 — the Promotions applied to recurring lines, keyed by line id, priced
- * from each application's own frozen grant (`user_membership_promotion_*_snapshot`),
+ * from each application's own frozen grant (`product_promotion_grant_snapshots` since #3026 stage 3d-3b),
  * never the live Promotion. Each step's `regular_amount` is the running price it
  * was applied to, as for a one-time purchase; the direct discount comes last.
  *
@@ -515,17 +515,21 @@ export async function loadRecurringLinePromotions(
   const out = new Map<number, { promotions: AppliedPromotion[]; final: number | null }>();
   if (lines.length === 0) return out;
   const ids = lines.map((l) => l.id);
+  // #3026 stage 3d-3b: the applications are their Product snapshot rows (`product_promotion_snapshots`),
+  // each naming the line it is on (by the line's snapshot) and the set that owns it (`product_set_id`,
+  // migration 454); `COALESCE(source_application_id, id)` is the id routes and grants are keyed on.
   const { rows: allRows } = await db.query<any>(
-    `SELECT ump.id, ump.promotion_id, ump.recurrent_snapshot_id, ump.product_set_id, ump.applied_at, ump.snapshot,
+    `SELECT COALESCE(pps.source_application_id, pps.id) AS id, pps.promotion_id,
+            par.source_id AS recurrent_snapshot_id, pps.product_set_id, pps.applied_at, pps.snapshot,
             pr.name AS promotion_name,
             pps.promotion_image_url AS frozen_image_url, pps.promotion_image_thumbnail_url AS frozen_thumbnail_url,
             pr.image_url AS live_image_url, pr.image_thumbnail_url AS live_thumbnail_url
-       FROM user_membership_promotions ump
-       LEFT JOIN promotions pr ON pr.id = ump.promotion_id
-       LEFT JOIN product_promotion_snapshots pps ON pps.source_application_id = ump.id AND pps.gym_id = ump.gym_id
-      WHERE ump.gym_id = ? AND ump.status = 'applied'
-        AND ump.recurrent_snapshot_id IN (${ids.map(() => '?').join(',')})
-      ORDER BY ump.id ASC`,
+       FROM product_promotion_snapshots pps
+       JOIN product_periodical_snapshots par ON par.id = pps.product_periodical_snapshot_id AND par.gym_id = pps.gym_id
+       LEFT JOIN promotions pr ON pr.id = pps.promotion_id
+      WHERE pps.gym_id = ? AND pps.status = 'applied' AND pps.product_set_id IS NOT NULL
+        AND par.source_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY COALESCE(pps.source_application_id, pps.id) ASC`,
     [gymId, ...ids],
   );
   const lineById = new Map(lines.map((l) => [l.id, l]));

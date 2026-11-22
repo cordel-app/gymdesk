@@ -12,6 +12,7 @@
  * id (`source_id = id`); migration 412 put the snapshot's AUTO_INCREMENT above every legacy id, so a new
  * id can never meet a historical one. A line written before stage 5d-2 keeps its legacy id.
  */
+import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import type { Tx } from '../infra/db';
 import { isRecurringLineIdShared, recurringLineSharedSql, SharedRecurringLineError } from './recurring-line-sharing';
 
@@ -195,6 +196,9 @@ export async function ownRecurringLine(
     `UPDATE user_membership_promotions SET recurrent_snapshot_id = ?
       WHERE gym_id = ? AND product_set_id = ? AND recurrent_snapshot_id = ?`,
     [copyId, gymId, productSetId, lineId]);
+  // #3026 stage 3d-3b: the moved applications' Product snapshot rows follow the copy now, since the
+  // readers take them from there.
+  await syncProductSnapshotsOfVersion(tx, gymId, productSetId);
   return copyId;
 }
 

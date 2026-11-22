@@ -54,20 +54,20 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
   const owned = `SELECT ump.id FROM user_membership_promotions ump
                    JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
                   WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NOT NULL`;
+  // #3026 stage 3d-3b: each row names the set that owns the application (`product_set_id`, migration
+  // 454), so only this set's applications are refreshed — a line it shares with another set carries that
+  // set's applications too, and they are never this set's to delete.
   await tx.query(
-    `DELETE pp FROM product_promotion_snapshots pp
-       JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
-       JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = par.id
-      WHERE par.gym_id = ? AND lnk.product_set_id = ?
-        AND NOT ${recurringLineSharedSql('par.id', 'lnk.product_set_id')}
-        AND (pp.source_application_id IS NULL OR pp.source_application_id NOT IN (${owned}))`,
+    `DELETE FROM product_promotion_snapshots
+      WHERE gym_id = ? AND product_set_id = ? AND product_periodical_snapshot_id IS NOT NULL
+        AND source_application_id IS NOT NULL AND source_application_id NOT IN (${owned})`,
     [gymId, productSetId, gymId, productSetId]);
   await tx.query(
     `INSERT INTO product_promotion_snapshots
-       (gym_id, member_id, product_periodical_snapshot_id, source_application_id, promotion_id, promotion_name,
+       (gym_id, member_id, product_set_id, product_periodical_snapshot_id, source_application_id, promotion_id, promotion_name,
         status, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_at, created_by,
         modified_at, modified_by, promotion_image_url, promotion_image_thumbnail_url, snapshot_confirmed_at)
-     SELECT ump.gym_id, par.member_id, par.id, ump.id, ump.promotion_id,
+     SELECT ump.gym_id, par.member_id, ump.product_set_id, par.id, ump.id, ump.promotion_id,
             COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), pr.name), ump.status, ump.snapshot, ump.applied_at,
             ump.applied_by, ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at,
             ump.modified_by,
@@ -79,7 +79,9 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
        JOIN product_periodical_snapshots par ON par.source_id = ump.recurrent_snapshot_id AND par.gym_id = ump.gym_id
       WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NOT NULL
      ON DUPLICATE KEY UPDATE
-       member_id = VALUES(member_id), promotion_name = VALUES(promotion_name), status = VALUES(status),
+       member_id = VALUES(member_id), product_set_id = VALUES(product_set_id),
+       product_periodical_snapshot_id = VALUES(product_periodical_snapshot_id),
+       promotion_name = VALUES(promotion_name), status = VALUES(status),
        snapshot = VALUES(snapshot),
        promotion_image_url = COALESCE(promotion_image_url, VALUES(promotion_image_url)),
        promotion_image_thumbnail_url = COALESCE(promotion_image_thumbnail_url, VALUES(promotion_image_thumbnail_url)),
@@ -92,9 +94,8 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
     await tx.query(
       `DELETE g FROM product_promotion_grant_snapshots g
          JOIN product_promotion_snapshots pp ON pp.id = g.product_promotion_snapshot_id
-         JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
-         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = par.id
-        WHERE g.grant_kind = '${kind}' AND par.gym_id = ? AND lnk.product_set_id = ?
+        WHERE g.grant_kind = '${kind}' AND pp.gym_id = ? AND pp.product_set_id = ?
+          AND pp.product_periodical_snapshot_id IS NOT NULL
           AND (g.source_id IS NULL OR g.source_id NOT IN
                 (SELECT x.id FROM ${source} x WHERE x.gym_id = ? AND x.user_membership_promotion_id = pp.source_application_id))`,
       [gymId, productSetId, gymId]);
@@ -107,9 +108,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
          FROM ${source} g
          JOIN product_promotion_snapshots pp
            ON pp.source_application_id = g.user_membership_promotion_id AND pp.gym_id = g.gym_id
-         JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
-         JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = par.id
-        WHERE par.gym_id = ? AND lnk.product_set_id = ?
+        WHERE pp.gym_id = ? AND pp.product_set_id = ? AND pp.product_periodical_snapshot_id IS NOT NULL
        ON DUPLICATE KEY UPDATE
          product_id = VALUES(product_id), product_name = VALUES(product_name), quantity = VALUES(quantity),
          item_type = VALUES(item_type), item_billing_frequency = VALUES(item_billing_frequency),

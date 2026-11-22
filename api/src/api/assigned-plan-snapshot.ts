@@ -580,35 +580,15 @@ export async function loadPromotionGrantSnapshots(
   const byApplication = new Map<number, SimulationGrant[]>();
   if (applicationIds.length === 0) return byApplication;
 
-  const marks = applicationIds.map(() => '?').join(',');
-  const { rows: apps } = await exec.query(
-    `SELECT ump.id, ump.promotion_id, ${draftReferenceApplicationSql('ump')} AS unconfirmed
-       FROM user_membership_promotions ump WHERE ump.gym_id = ? AND ump.id IN (${marks})`,
-    [gymId, ...applicationIds],
-  );
-  const unconfirmed = (apps as any[]).filter((a) => Number(a.unconfirmed) === 1);
-  const unconfirmedIds = new Set(unconfirmed.map((a) => Number(a.id)));
-
-  const { rows } = await exec.query(
-    CATEGORIES.map((category) => `
-      SELECT '${category}' AS category, user_membership_promotion_id, product_id,
-             product_name, quantity, item_billing_frequency, unit_price,
-             \`action\`, \`value\`
-      FROM ${PROMOTION_GRANT_SNAPSHOT_TABLE[category]}
-      WHERE gym_id = ? AND user_membership_promotion_id IN (${marks})`).join(' UNION ALL '),
-    CATEGORIES.flatMap(() => [gymId, ...applicationIds]),
-  );
-  for (const row of rows as any[]) {
-    // A working copy written before #2833 is never read: the Draft is priced live.
-    if (unconfirmedIds.has(Number(row.user_membership_promotion_id))) continue;
-    const list = byApplication.get(row.user_membership_promotion_id) ?? [];
+  const push = (appId: number, row: any, category: string) => {
+    const list = byApplication.get(appId) ?? [];
     list.push({
       // The snapshot keeps the item's identity even after it is deleted
       // (`product_id` is ON DELETE SET NULL there); 0 groups those under a
       // line that no longer points at a catalogue row.
       productId: row.product_id ?? 0,
       name: row.product_name ?? 'Product',
-      category: row.category as ProductBenefitCategory,
+      category: category as ProductBenefitCategory,
       billingFrequency: toFrequency(row.item_billing_frequency),
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
       quantity: positiveQuantity(row.quantity),
@@ -618,7 +598,71 @@ export async function loadPromotionGrantSnapshots(
       // grant meant when the column did not exist.
       benefit: toProductBenefit('promotion', row.action, row.value),
     });
-    byApplication.set(row.user_membership_promotion_id, list);
+    byApplication.set(appId, list);
+  };
+
+  // #3026 stage 3d-3b: a line-owned application is read from its Product snapshot row
+  // (`product_promotion_snapshots`, identified as `COALESCE(source_application_id, id)`) and the
+  // grants it froze (`product_promotion_grant_snapshots`). Whether it is still a Draft's reference is
+  // asked of that row (its own `snapshot_confirmed_at` and owning set, migrations 452/454).
+  const marks = applicationIds.map(() => '?').join(',');
+  const { rows: snapRows } = await exec.query(
+    `SELECT pp.id AS snapshot_id, COALESCE(pp.source_application_id, pp.id) AS app_id, pp.promotion_id,
+            ${draftReferenceApplicationSql('pp')} AS unconfirmed
+       FROM product_promotion_snapshots pp
+      WHERE pp.gym_id = ? AND pp.product_periodical_snapshot_id IS NOT NULL AND pp.product_set_id IS NOT NULL
+        AND (pp.source_application_id IN (${marks}) OR (pp.source_application_id IS NULL AND pp.id IN (${marks})))`,
+    [gymId, ...applicationIds, ...applicationIds],
+  );
+  const unconfirmed: Array<{ id: number; promotion_id: number }> = [];
+  const confirmedBySnapshot = new Map<number, number>();
+  for (const r of snapRows as any[]) {
+    if (Number(r.unconfirmed) === 1) unconfirmed.push({ id: Number(r.app_id), promotion_id: Number(r.promotion_id) });
+    else confirmedBySnapshot.set(Number(r.snapshot_id), Number(r.app_id));
+  }
+  if (confirmedBySnapshot.size > 0) {
+    const snapMarks = [...confirmedBySnapshot.keys()].map(() => '?').join(',');
+    const { rows } = await exec.query(
+      `SELECT product_promotion_snapshot_id, grant_kind, product_id, product_name, quantity,
+              item_billing_frequency, unit_price, \`action\`, \`value\`
+         FROM product_promotion_grant_snapshots
+        WHERE gym_id = ? AND product_promotion_snapshot_id IN (${snapMarks})
+        ORDER BY FIELD(grant_kind, 'session', 'oneoff', 'periodical'), id`,
+      [gymId, ...confirmedBySnapshot.keys()],
+    );
+    for (const row of rows as any[]) {
+      push(confirmedBySnapshot.get(Number(row.product_promotion_snapshot_id))!, row, row.grant_kind);
+    }
+  }
+
+  // An application owned by no line (none written since #1865) has no Product snapshot row and is
+  // still read from `user_membership_promotions` until stage 3d-3d moves or drops it.
+  const found = new Set((snapRows as any[]).map((r) => Number(r.app_id)));
+  const legacyIds = applicationIds.filter((id) => !found.has(Number(id)));
+  if (legacyIds.length > 0) {
+    const legacyMarks = legacyIds.map(() => '?').join(',');
+    const { rows: apps } = await exec.query(
+      `SELECT ump.id, ump.promotion_id, ${draftReferenceApplicationSql('ump')} AS unconfirmed
+         FROM user_membership_promotions ump WHERE ump.gym_id = ? AND ump.id IN (${legacyMarks})`,
+      [gymId, ...legacyIds],
+    );
+    const legacyUnconfirmed = (apps as any[]).filter((a) => Number(a.unconfirmed) === 1);
+    const unconfirmedIds = new Set(legacyUnconfirmed.map((a) => Number(a.id)));
+    unconfirmed.push(...legacyUnconfirmed.map((a) => ({ id: Number(a.id), promotion_id: Number(a.promotion_id) })));
+    const { rows } = await exec.query(
+      CATEGORIES.map((category) => `
+        SELECT '${category}' AS category, user_membership_promotion_id, product_id,
+               product_name, quantity, item_billing_frequency, unit_price,
+               \`action\`, \`value\`
+        FROM ${PROMOTION_GRANT_SNAPSHOT_TABLE[category]}
+        WHERE gym_id = ? AND user_membership_promotion_id IN (${legacyMarks})`).join(' UNION ALL '),
+      CATEGORIES.flatMap(() => [gymId, ...legacyIds]),
+    );
+    for (const row of rows as any[]) {
+      // A working copy written before #2833 is never read: the Draft is priced live.
+      if (unconfirmedIds.has(Number(row.user_membership_promotion_id))) continue;
+      push(Number(row.user_membership_promotion_id), row, row.category);
+    }
   }
 
   const live = await loadLivePromotionGrants(
