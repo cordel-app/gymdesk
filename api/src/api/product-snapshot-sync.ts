@@ -22,16 +22,9 @@ import { recurringLineSharedSql } from './recurring-line-sharing';
 
 type Conn = Pick<Tx, 'query'>;
 
-const GRANT_SOURCES: Array<{ kind: string; source: string }> = [
-  { kind: 'session', source: 'user_membership_promotion_session_snapshot' },
-  { kind: 'oneoff', source: 'user_membership_promotion_oneoff_snapshot' },
-  { kind: 'periodical', source: 'user_membership_promotion_periodical_snapshot' },
-];
-
 /**
  * Keeps the recurring Product snapshots of one ProductSet version in step with the version: each
- * line's status and owner follow the set, and the Product-target Promotions a line owns (with the
- * Products they froze) are re-derived from their applications.
+ * line's status and owner follow the set.
  */
 export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, productSetId: number): Promise<void> {
   // #2126 stage 5c: the lines themselves are written by their one writer (`recurring-line-writer.ts`),
@@ -48,72 +41,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
         AND (par.status <> ps.status OR par.member_id <> ps.owner_member_id)`,
     [gymId, productSetId]);
 
-  // Product-target applications owned by a line of this version. #3026 stage 3d-3a: the copy carries
-  // the application's confirmation (`snapshot_confirmed_at`, migration 453) so a reader can later
-  // tell a Draft's reference from a confirmed application on the snapshot row alone.
-  const owned = `SELECT ump.id FROM user_membership_promotions ump
-                   JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
-                  WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NOT NULL`;
-  // #3026 stage 3d-3b: each row names the set that owns the application (`product_set_id`, migration
-  // 454), so only this set's applications are refreshed — a line it shares with another set carries that
-  // set's applications too, and they are never this set's to delete.
-  await tx.query(
-    `DELETE FROM product_promotion_snapshots
-      WHERE gym_id = ? AND product_set_id = ? AND product_periodical_snapshot_id IS NOT NULL
-        AND source_application_id IS NOT NULL AND source_application_id NOT IN (${owned})`,
-    [gymId, productSetId, gymId, productSetId]);
-  await tx.query(
-    `INSERT INTO product_promotion_snapshots
-       (gym_id, member_id, product_set_id, product_periodical_snapshot_id, source_application_id, promotion_id, promotion_name,
-        status, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_at, created_by,
-        modified_at, modified_by, promotion_image_url, promotion_image_thumbnail_url, snapshot_confirmed_at)
-     SELECT ump.gym_id, par.member_id, ump.product_set_id, par.id, ump.id, ump.promotion_id,
-            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), pr.name), ump.status, ump.snapshot, ump.applied_at,
-            ump.applied_by, ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at,
-            ump.modified_by,
-            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.image_url')), pr.image_url),
-            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.image_thumbnail_url')), pr.image_thumbnail_url),
-            ump.snapshot_confirmed_at
-       FROM user_membership_promotions ump
-       JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
-       JOIN product_periodical_snapshots par ON par.source_id = ump.recurrent_snapshot_id AND par.gym_id = ump.gym_id
-      WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NOT NULL
-     ON DUPLICATE KEY UPDATE
-       member_id = VALUES(member_id), product_set_id = VALUES(product_set_id),
-       product_periodical_snapshot_id = VALUES(product_periodical_snapshot_id),
-       promotion_name = VALUES(promotion_name), status = VALUES(status),
-       snapshot = VALUES(snapshot),
-       promotion_image_url = COALESCE(promotion_image_url, VALUES(promotion_image_url)),
-       promotion_image_thumbnail_url = COALESCE(promotion_image_thumbnail_url, VALUES(promotion_image_thumbnail_url)),
-       consumed_at = VALUES(consumed_at), revoked_at = VALUES(revoked_at),
-       snapshot_confirmed_at = VALUES(snapshot_confirmed_at),
-       modified_at = VALUES(modified_at), modified_by = VALUES(modified_by)`,
-    [gymId, productSetId]);
-
-  for (const { kind, source } of GRANT_SOURCES) {
-    await tx.query(
-      `DELETE g FROM product_promotion_grant_snapshots g
-         JOIN product_promotion_snapshots pp ON pp.id = g.product_promotion_snapshot_id
-        WHERE g.grant_kind = '${kind}' AND pp.gym_id = ? AND pp.product_set_id = ?
-          AND pp.product_periodical_snapshot_id IS NOT NULL
-          AND (g.source_id IS NULL OR g.source_id NOT IN
-                (SELECT x.id FROM ${source} x WHERE x.gym_id = ? AND x.user_membership_promotion_id = pp.source_application_id))`,
-      [gymId, productSetId, gymId]);
-    await tx.query(
-      `INSERT INTO product_promotion_grant_snapshots
-         (gym_id, product_promotion_snapshot_id, grant_kind, source_id, product_id, product_name, quantity,
-          item_type, item_billing_frequency, unit_price, currency, action, value, requirement, created_at)
-       SELECT g.gym_id, pp.id, '${kind}', g.id, g.product_id, g.product_name, g.quantity, g.item_type,
-              g.item_billing_frequency, g.unit_price, g.currency, g.action, g.value, g.requirement, g.created_at
-         FROM ${source} g
-         JOIN product_promotion_snapshots pp
-           ON pp.source_application_id = g.user_membership_promotion_id AND pp.gym_id = g.gym_id
-        WHERE pp.gym_id = ? AND pp.product_set_id = ? AND pp.product_periodical_snapshot_id IS NOT NULL
-       ON DUPLICATE KEY UPDATE
-         product_id = VALUES(product_id), product_name = VALUES(product_name), quantity = VALUES(quantity),
-         item_type = VALUES(item_type), item_billing_frequency = VALUES(item_billing_frequency),
-         unit_price = VALUES(unit_price), currency = VALUES(currency), action = VALUES(action),
-         value = VALUES(value), requirement = VALUES(requirement)`,
-      [gymId, productSetId]);
-  }
+  // #3026 stage 3d-3c: the Product-target applications a line owns (and the Products each froze) are
+  // written onto their Product snapshot rows by their writers (`product-promotion-writer.ts`) and no
+  // longer derived from `user_membership_promotions`.
 }
