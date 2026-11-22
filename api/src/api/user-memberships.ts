@@ -88,7 +88,7 @@ import {
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { loadPlanAccessEntries } from './plan-center-access';
-import { allocateAssignmentId, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -918,19 +918,13 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     // Ledger row (P1.6): membership creation is a NULL -> draft transition,
     // written in the same transaction as the insert.
     const outcome = await db.transaction(async (tx) => {
-      const insertId = await allocateAssignmentId(tx, gymId);
-      await recordStatusChange(tx, {
-        gymId, userMembershipId: insertId, memberId: Number(member_id),
-        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
-        source: sourceForRole(role), actorUserId: userId,
-      });
       // The paying Member is the owner and the first covered Member of the version's chain (#374),
       // written with the version below (`createDraftSetForAssignment()`).
       // #635 stage 2 — freeze the Plan's commercial configuration onto the
       // assignment, in the same transaction so it can never commit without one.
       // #1325 PR 3e: the Draft is a ProductSet Draft from birth; edits go to it.
-      const createdSetId = await createDraftSetForAssignment(tx, {
-        gymId, userMembershipId: insertId, ownerMemberId: Number(member_id),
+      const { setId: createdSetId, assignmentId: insertId } = await createDraftSetForAssignment(tx, {
+        gymId, ownerMemberId: Number(member_id),
         membershipPlanId: Number(membership_plan_id),
         startsAt: String(starts_at).slice(0, 10), endsAt: ends_at ? String(ends_at).slice(0, 10) : null,
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
@@ -939,6 +933,11 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         discountExpiresAt: discount_expires_at || null,
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
+      });
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: insertId, memberId: Number(member_id),
+        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
+        source: sourceForRole(role), actorUserId: userId,
       });
       if (!ownerIsBeneficiary) {
         const planSnapshotId = await primaryPlanSnapshotId(tx, gymId, createdSetId);
@@ -1519,12 +1518,6 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       // live assignment covering this member, answers the 409 or supersedes
       // them. That moved #956's whole enforcement, including this route's
       // `confirm`, onto one transition instead of four insert paths.
-      const insertId = await allocateAssignmentId(tx, gymId);
-      await recordStatusChange(tx, {
-        gymId, userMembershipId: insertId, memberId: prev.member_id,
-        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
-        source: sourceForRole(role), actorUserId: userId,
-      });
       // #635 stage 2 — the superseding assignment gets its own snapshot; the
       // superseded row keeps the one it was created with, untouched.
       //
@@ -1538,8 +1531,8 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       // on it through `PUT /:id/fee-benefit` if that is what was agreed.
       // #1325 PR 3e: the successor is a ProductSet Draft from birth, beside the
       // Active version it will replace.
-      await createDraftSetForAssignment(tx, {
-        gymId, userMembershipId: insertId, ownerMemberId: Number(prev.member_id),
+      const { assignmentId: insertId } = await createDraftSetForAssignment(tx, {
+        gymId, ownerMemberId: Number(prev.member_id),
         membershipPlanId: Number(membership_plan_id),
         startsAt: String(starts_at).slice(0, 10), endsAt: ends_at ? String(ends_at).slice(0, 10) : null,
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
@@ -1548,6 +1541,11 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         discountExpiresAt: discount_expires_at || null,
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
+      });
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: insertId, memberId: prev.member_id,
+        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
+        source: sourceForRole(role), actorUserId: userId,
       });
       // #2125 M6b-35: the replace target is written on the Draft's own plan snapshot, which is what
       // the commit reads (`assignmentReplacementOf()`); the legacy column above is the dual-write.
@@ -1614,24 +1612,21 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
       const adopt = plain && plain.user_membership_id == null && plain.previous_product_set_id === active.id
         ? plain.id : null;
       const dateOnly = (v: any) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
-      const insertId = await allocateAssignmentId(tx, gymId);
+      const { assignmentId: insertId } = adopt != null
+        ? await adoptDraftForEdit(tx, {
+          gymId, draftSetId: adopt,
+          activeSetId: active.id, editedUserMembershipId: Number(um.id),
+        })
+        : await createDraftSetFromActive(tx, {
+          gymId, ownerMemberId: Number(um.member_id), activeSetId: active.id,
+          editedUserMembershipId: Number(um.id), membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
+          actor: { name: actorText },
+        });
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: um.member_id,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
-      if (adopt != null) {
-        await adoptDraftForEdit(tx, {
-          gymId, userMembershipId: Number(insertId), draftSetId: adopt,
-          activeSetId: active.id, editedUserMembershipId: Number(um.id),
-        });
-      } else {
-        await createDraftSetFromActive(tx, {
-          gymId, userMembershipId: insertId, ownerMemberId: Number(um.member_id), activeSetId: active.id,
-          editedUserMembershipId: Number(um.id), membershipPlanId: active.membership_plan_id, startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
-          actor: { name: actorText },
-        });
-      }
       return { kind: 'created' as const, id: Number(insertId), reused: false };
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });

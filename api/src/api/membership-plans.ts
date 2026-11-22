@@ -37,7 +37,6 @@ import {
 import { ProductFrequency } from '../domain/billingSimulation';
 import { BillingDateUnit } from '../domain/billingDate';
 import { DEFAULT_PLAN_DURATION_CADENCE, toPlanDuration } from '../domain/planDuration';
-import { allocateAssignmentId } from './assignment-lifecycle-writer';
 import {
   describeAcceptedPlanCadences,
   isAcceptedPlanCadence,
@@ -953,12 +952,6 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   // selected member, and that one assignment is committed, or not, as a whole.
   try {
     const outcome = await db.transaction(async (tx) => {
-      const insertId = await allocateAssignmentId(tx, gymId);
-      await recordStatusChange(tx, {
-        gymId, userMembershipId: insertId, memberId: ownerId,
-        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
-        source: sourceForRole(role), actorUserId: userId,
-      });
       // #635 stage 2 — the commercial configuration (Billing & Duration,
       // cadence, regular fee, and the three benefit sections) is frozen onto
       // the assignment here, so every assignment entry point captures the same
@@ -966,8 +959,8 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       // used to sit next to: Charge Benefits no longer exist.
       // #1325 PR 3e: a ProductSet Draft from birth, owned by the paying member
       // and covering the rest through the chain.
-      const setId = await createDraftSetForAssignment(tx, {
-        gymId, userMembershipId: insertId, ownerMemberId: ownerId,
+      const { setId, assignmentId: insertId } = await createDraftSetForAssignment(tx, {
+        gymId, ownerMemberId: ownerId,
         membershipPlanId: Number(req.params.id),
         startsAt: String(starts_at).slice(0, 10), endsAt: null,
         membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
@@ -975,6 +968,11 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
         discountReason: null, discountExpiresAt: null,
         declinedBenefits: declinedResult.declined,
         actor: { name: actorText },
+      });
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: insertId, memberId: ownerId,
+        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
+        source: sourceForRole(role), actorUserId: userId,
       });
       if (!ownerIsBeneficiary) {
         const planSnapshotId = await primaryPlanSnapshotId(tx, gymId, setId);

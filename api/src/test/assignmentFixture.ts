@@ -235,8 +235,20 @@ export async function testAssignmentWrite<T = any>(
 }
 
 /**
+ * #2125 N1: production opens an assignment on its own plan snapshot, whose id is the assignment's;
+ * a hand-written fixture row has no snapshot yet when it is inserted, so it takes an id from a range
+ * no plan snapshot reaches (above 3e9; the column is INT UNSIGNED), one counter per test process with
+ * a random start, so a hand id never names another assignment's snapshot of the same gym.
+ */
+let handAssignmentId = 3_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
+function nextHandAssignmentId(): number {
+  handAssignmentId += 1;
+  return handAssignmentId;
+}
+
+/**
  * Keeps an `INSERT INTO user_memberships (…) VALUES (…)` as a hand row under an id from the
- * `plan_assignment_ids` registry (production allocates there; an id the statement names is registered).
+ * hand-assignment id range (`nextHandAssignmentId()`), since production derives an id from a snapshot.
  */
 async function insertHandRow<T>(exec: Exec, sql: string, params: unknown[], mirror: boolean): Promise<QueryResult<T>> {
   const ins = sql.match(/^\s*INSERT\s+(?:IGNORE\s+)?INTO\s+user_memberships\s*\(([^)]*)\)\s*VALUES\s*\(([\s\S]*)\)\s*$/i);
@@ -251,14 +263,7 @@ async function insertHandRow<T>(exec: Exec, sql: string, params: unknown[], mirr
     if ((COLUMNS as readonly string[]).includes(c)) values[c as Column] = stored(c as Column, evaluated[0][`c${i}`]);
   });
   if (values.gym_id == null) throw new Error('testAssignmentWrite: an INSERT names its gym_id');
-  let id: number;
-  if (values.id != null) {
-    id = Number(values.id);
-    await exec.query('INSERT IGNORE INTO plan_assignment_ids (id, gym_id) VALUES (?, ?)', [id, values.gym_id]);
-  } else {
-    const { insertId } = await exec.query('INSERT INTO plan_assignment_ids (gym_id) VALUES (?)', [values.gym_id]);
-    id = Number(insertId);
-  }
+  const id = values.id != null ? Number(values.id) : nextHandAssignmentId();
   const { rows: clock } = await exec.query<{ now: string }>(
     "SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%d %H:%i:%s') AS now");
   handRows.set(id, {

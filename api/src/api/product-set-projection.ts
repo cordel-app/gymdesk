@@ -1,7 +1,7 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import {
-  lockAssignmentRecord, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, writeAssignmentPurchasedAt,
+  lockAssignmentRecord, openAssignmentOnSet, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, writeAssignmentPurchasedAt,
 } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -9,7 +9,7 @@ import { supersedeApplications } from './one-active-plan';
 import { CANCELS_AT_PERIOD_END_STATUS, cancellationStatusFor } from '../domain/assignmentStatus';
 import { linkCancellingPlan } from './entitlement-plan-links';
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { allocateAssignmentId, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -227,13 +227,10 @@ export async function projectActiveProductSet(
                        WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}), UTC_TIMESTAMP()) AS purchased_at`,
     [gymId, previousUmId]);
   const purchasedAt = bought[0].purchased_at;
-  const umId = await allocateAssignmentId(tx, gymId);
-
   // #3026 stage 3d-2: the plan's Promotion applications are its plan snapshot's own rows, which the
   // assignment reads through that snapshot; there is nothing to attach.
-  await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
-  // #2125 M6b-44: the assignment just opened is named on the set's plan snapshot now, so it has an anchor.
-  await nameAssignmentSnapshot(tx, gymId, productSetId, umId);
+  // #2125 N1: the assignment is opened on the set's plan snapshot; its id is that snapshot's.
+  const umId = await openAssignmentOnSet(tx, gymId, productSetId);
   await writeAssignmentPurchasedAt(tx, gymId, umId, purchasedAt);
   return umId;
 }

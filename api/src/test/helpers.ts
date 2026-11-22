@@ -848,21 +848,14 @@ export async function createTestDraftAssignment(
   const { createDraftSetForAssignment } = await import('../api/assignment-draft-set');
   const startsAt = opts.startsAt ?? new Date().toISOString().slice(0, 10);
   const umId = await db.transaction(async (tx) => {
-    const { insertId } = await testAssignmentWrite(
-      `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
-       VALUES (?, ?, ?, ?, ?, 'in_cart', ?)`,
-      [memberId, gymId, planId, startsAt, opts.endsAt ?? null, 'Test fixture'],
-      { exec: tx },
-    );
-    await createDraftSetForAssignment(tx, {
-      gymId, userMembershipId: Number(insertId), ownerMemberId: memberId, membershipPlanId: planId,
+    // #2125 N1: the assignment is opened on the Draft's plan snapshot, as the routes do.
+    const { assignmentId } = await createDraftSetForAssignment(tx, {
+      gymId, ownerMemberId: memberId, membershipPlanId: planId,
       startsAt, endsAt: opts.endsAt ?? null,
       membershipFeePrice: null, basePrice: null, planPriceId: null,
       discountReason: null, discountExpiresAt: null, actor: { name: 'Test fixture' },
     });
-    // The Draft's anchor now exists and was seeded by the real writer; nothing is left to mirror.
-    await mirrorLegacyLifecycle(tx, [Number(insertId)]);
-    return Number(insertId);
+    return assignmentId;
   });
   if (opts.config) await setAssignmentConfig(umId, opts.config);
   return umId;

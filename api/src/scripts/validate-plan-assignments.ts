@@ -5,7 +5,7 @@
  *   npm run plan-assignments:validate -- <gymId> one gym
  *
  * Writes nothing. An assignment is its plan snapshots (migration 458 dropped `user_memberships`);
- * this lists snapshots whose identity (`assignment_id`, the `plan_assignment_ids` registry) or
+ * this lists snapshots whose identity (`assignment_id`, which is the assignment's id since #2125 N1) or
  * re-keyed links are inconsistent. Exit code 1 while any check has rows. Against a deployed database it runs from the VPS as the compiled
  * `node dist/scripts/validate-plan-assignments.js`.
  */
