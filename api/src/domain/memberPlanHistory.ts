@@ -31,6 +31,8 @@
 //    assignment would mean resolving a fee per row (`resolveMembershipFee()`)
 //    for a figure nobody will be charged.
 
+import { isRunningAssignmentStatus } from './assignmentStatus';
+
 /** How many of a member's assignments the history query reads at most. */
 export const MEMBER_PLAN_HISTORY_LIMIT = 50;
 
@@ -96,6 +98,21 @@ export function toMemberPastPlan(row: MemberPlanHistoryRow): MemberPastPlan {
 }
 
 /**
+ * Whether one of the member's assignments is a plan they hold now, rather than
+ * history: a running one (`RUNNING_ASSIGNMENT_STATUSES`, so a plan whose
+ * cancellation is pending in the owner's Draft, `to_be_canceled`, is still the
+ * member's plan — #3007 stage 2a, #2125 Q3), a paused one, or a cancelled one
+ * still running to its last paid day (`cancels_on_end_date`, #2660).
+ *
+ * The one answer `splitMemberPlanHistory()` and the member's Billing Event
+ * Forecast (`memberBillingEventForecast()`) both ask, so My Plans and the
+ * Payments card describe the same plans.
+ */
+export function isLiveMemberPlan(r: { status: string; lifecycle_status?: string | null }): boolean {
+  return isRunningAssignmentStatus(r.status) || r.status === 'paused' || r.lifecycle_status === 'cancels_on_end_date';
+}
+
+/**
  * Split the member's assignments — already ordered by
  * `MEMBER_CURRENT_ASSIGNMENT_ORDER` — into the one their page is about and the
  * history underneath it.
@@ -119,8 +136,7 @@ export function splitMemberPlanHistory<T extends MemberPlanHistoryRow>(
   // here too — it is the member's plan until that day, not history. The
   // ordering groups by stored status, so the first live row is looked for
   // rather than assumed to be first.
-  const isLive = (r: T) =>
-    r.status === 'active' || r.status === 'paused' || r.lifecycle_status === 'cancels_on_end_date';
+  const isLive = isLiveMemberPlan;
   const currentIndex = Math.max(0, rows.findIndex(isLive));
   const current = rows[currentIndex];
   const rest = rows.filter((_, i) => i !== currentIndex);

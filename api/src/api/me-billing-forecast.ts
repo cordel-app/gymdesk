@@ -38,6 +38,8 @@ import type { AssignmentBillingEventSimulationResult } from '../domain/assignmen
 import { emptyBillingEventSimulation } from '../domain/billingEventSimulation';
 import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
 import { OWNED_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { isLiveMemberPlan } from '../domain/memberPlanHistory';
+import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 
 /**
  * Which of a Member's `user_memberships` rows is *the* one their own pages are
@@ -60,7 +62,7 @@ import { OWNED_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
  */
 export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
   ORDER BY
-    FIELD(um.status, 'active','paused','expired','active_cancel_at_period_end','to_be_reactivated','cancelled','superseded'),
+    FIELD(um.status, 'active','to_be_canceled','paused','expired','active_cancel_at_period_end','to_be_reactivated','cancelled','superseded'),
     um.starts_at DESC`;
 
 /**
@@ -140,8 +142,8 @@ export function mergeBillingEventForecasts(
 export async function memberBillingEventForecast(
   gymId: string, memberId: number,
 ): Promise<AssignmentBillingEventSimulationResult> {
-  const { rows } = await db.query<{ id: number; status: string }>(
-    `SELECT um.id, um.status
+  const { rows } = await db.query<{ id: number; status: string; lifecycle_status: string | null }>(
+    `SELECT um.id, um.status, ${LIFECYCLE_STATUS_SQL} AS lifecycle_status
        FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um
       WHERE TRUE
       ${MEMBER_CURRENT_ASSIGNMENT_FILTER}
@@ -149,7 +151,9 @@ export async function memberBillingEventForecast(
     [gymId, memberId],
   );
   if (rows.length === 0) return emptyBillingEventSimulation(NO_ASSIGNMENT_REASON);
-  const live = rows.filter((r) => r.status === 'active' || r.status === 'paused');
+  // #2125 Q3: the same live set My Plans lists (`isLiveMemberPlan()`), so a plan
+  // whose cancellation is pending (`to_be_canceled`) is still forecast.
+  const live = rows.filter(isLiveMemberPlan);
   const chosen = live.length > 0 ? live : [rows[0]];
   return mergeBillingEventForecasts(
     await Promise.all(chosen.map((r) => assignedPlanBillingForecast(gymId, r.id))),
