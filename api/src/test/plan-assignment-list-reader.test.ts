@@ -137,7 +137,7 @@ describe('LIST_SELECT reads plan_snapshots', () => {
     expect(Number(audits[0].n)).toBe(1);
 
     const report = await findPlanAssignmentDrift(db as any, gymId);
-    for (const name of ['assignment_without_snapshot', 'lifecycle_mismatch']) {
+    for (const name of ['assignment_without_snapshot']) {
       const check = report.checks.find((c) => c.name === name)!;
       expect(check.sample.some((r: any) => Number(r.user_membership_id) === um)).toBe(false);
     }

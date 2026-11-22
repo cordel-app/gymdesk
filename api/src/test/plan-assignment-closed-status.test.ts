@@ -5,7 +5,6 @@
 import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
@@ -250,8 +249,6 @@ describe('the repair of plans that ended before this stage', () => {
   it('a plan a changed plan took over is stated as superseded', async () => {
     const { um, active, original } = await endedBeforeThisStage();
     await testAssignmentWrite("UPDATE user_memberships SET status = 'superseded' WHERE id = ?", [um]);
-    // The history this stands for is on the anchor too, as migration 453's backfill put it (M6b-51c-5).
-    await repairAnchorLifecycles(db, gymId);
     expect(await unsettled()).toContain(active);
 
     await settlePlanAssignmentLifecycles({ gymId, execute: true });

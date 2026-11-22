@@ -2,7 +2,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
-import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import {
@@ -94,7 +93,6 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
     });
     expect((await snapshots(setId))[0].status).toBe('paused');
     await testAssignmentWrite("UPDATE user_memberships SET status = 'active' WHERE id = ?", [umId]);
-    await repairAnchorLifecycles(db, gymId);
     const { syncPlanSnapshot } = await import('../api/plan-snapshot-sync');
     await db.transaction((tx) => syncPlanSnapshot(tx, gymId, setId));
     expect((await snapshots(setId))[0].status).toBe('active');

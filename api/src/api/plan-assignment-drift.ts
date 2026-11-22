@@ -7,14 +7,9 @@
  * two sides disagree. `npm run plan-assignments:validate` prints it and exits 1 while any check has
  * rows; dropping `user_memberships` (M6b-4) requires it to be clean.
  *
- * `lifecycle_mismatch` reports `shared = 1` when the snapshot is linked by more than one Product
- * Set. Such a snapshot is immutable to the sync, so a status or date that moved on the assignment
- * has not reached it. Since M6b-2 the Active set gets a copy for such a change
- * (`settleSharedPlanLifecycle()`), so what is left under `shared = 1` is history (a superseded set's
- * snapshot) or a change made before that stage (`npm run plan-assignments:settle`).
+ * Since M6b-51d-7b it compares only identity and the re-keyed links; the lifecycle has no second
+ * record to compare with.
  */
-import { assignmentPlanSnapshotId } from './assignment-config';
-import { assignmentModifierSql } from '../domain/planAssignments';
 
 type Exec = { query: <T = any>(sql: string, params?: any[]) => Promise<{ rows: T[] }> };
 
@@ -32,24 +27,6 @@ const SAMPLE_SIZE = 20;
 
 /** `a` and `b` name the two sides; NULL-safe, and a DATETIME is compared to the second. */
 const differs = (a: string, b: string) => `NOT (${a} <=> ${b})`;
-
-const LIFECYCLE_FIELDS: Array<{ field: string; um: string; snap: string }> = [
-  { field: 'status', um: 'um.status', snap: 'cfg.status' },
-  { field: 'member_id', um: 'um.member_id', snap: 'cfg.member_id' },
-  { field: 'membership_plan_id', um: 'um.membership_plan_id', snap: 'cfg.membership_plan_id' },
-  { field: 'starts_at', um: 'um.starts_at', snap: 'cfg.starts_at' },
-  { field: 'ends_at', um: 'um.ends_at', snap: 'cfg.ends_at' },
-  { field: 'closed_at', um: 'um.closed_at', snap: 'cfg.closed_at' },
-  { field: 'purchased_at', um: 'um.purchased_at', snap: 'cfg.purchased_at' },
-  { field: 'replace_on_activation', um: 'um.replace_on_activation', snap: 'cfg.replace_on_activation' },
-  { field: 'deleted_at', um: 'um.deleted_at', snap: 'cfg.deleted_at' },
-  {
-    field: 'replaces_assignment_id',
-    um: `(SELECT MIN(r.id) FROM plan_snapshots r
-           WHERE r.gym_id = um.gym_id AND r.source_user_membership_id = um.replaces_user_membership_id)`,
-    snap: 'cfg.replaces_assignment_id',
-  },
-];
 
 export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promise<DriftReport> {
   const scope = (alias: string) => (gymId ? ` AND ${alias}.gym_id = ?` : '');
@@ -100,45 +77,10 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
                          WHERE um.id = s.source_user_membership_id AND um.gym_id = s.gym_id)
       ORDER BY s.id`);
 
-  const anyDiffers = LIFECYCLE_FIELDS.map((f) => differs(f.um, f.snap)).join(' OR ');
-  const fieldList = `CONCAT_WS(',', ${LIFECYCLE_FIELDS.map((f) => `IF(${differs(f.um, f.snap)}, '${f.field}', NULL)`).join(', ')})`;
-  await add('lifecycle_mismatch',
-    'An assignment whose current plan snapshot holds a different lifecycle value (fields lists which).',
-    `SELECT um.id AS user_membership_id, um.gym_id, cfg.id AS plan_snapshot_id, cfg.assignment_id,
-            ${fieldList} AS fields, um.status AS assignment_status, cfg.status AS snapshot_status,
-            ((SELECT COUNT(DISTINCT sh.product_set_id) FROM product_set_plan_snapshots sh
-               WHERE sh.plan_snapshot_id = cfg.id) > 1) AS shared
-       FROM user_memberships um
-       JOIN plan_snapshots cfg ON cfg.id = ${assignmentPlanSnapshotId('um.id', 'um.gym_id')}
-      WHERE (${anyDiffers})${scope('um')}
-      ORDER BY um.id`);
-
-  // #2125 M6b-31: the Member card's plan history reports the latest modifier across the
-  // assignment's snapshots (`assignmentModifierSql()`), so that is what is compared, never one
-  // snapshot's own pair (a shared snapshot keeps the modifier it was written with).
-  await add('modifier_mismatch',
-    'An assignment whose latest snapshot modifier differs from the user_memberships row.',
-    `SELECT um.id AS user_membership_id, um.gym_id, pa.assignment_id,
-            um.modified_by AS assignment_modified_by, ${assignmentModifierSql('modified_by')} AS snapshot_modified_by
-       FROM user_memberships um
-       JOIN plan_snapshots pa ON pa.id = (SELECT MIN(x.id) FROM plan_snapshots x
-                                           WHERE x.source_user_membership_id = um.id AND x.gym_id = um.gym_id)
-      WHERE (${differs('um.modified_at', assignmentModifierSql('modified_at'))}
-             OR ${differs('um.modified_by', assignmentModifierSql('modified_by'))})${scope('um')}
-      ORDER BY um.id`);
-
-  // #2125 M6b-51c-4: the assignment's lifecycle on its anchor snapshot (migration 453).
-  await add('assignment_lifecycle_mismatch',
-    'An assignment whose anchor snapshot holds a different status, closed time, end date or modifier.',
-    `SELECT um.id AS user_membership_id, um.gym_id, a.id AS anchor_id,
-            um.status AS assignment_status, a.assignment_status AS anchor_status
-       FROM user_memberships um
-       JOIN plan_snapshots a ON a.id = (SELECT MIN(x.id) FROM plan_snapshots x
-                                         WHERE x.source_user_membership_id = um.id AND x.gym_id = um.gym_id)
-      WHERE (${differs('um.status', 'a.assignment_status')} OR ${differs('um.closed_at', 'a.assignment_closed_at')}
-             OR ${differs('um.ends_at', 'a.assignment_ends_at')} OR ${differs('um.modified_at', 'a.assignment_modified_at')}
-             OR ${differs('um.modified_by', 'a.assignment_modified_by')})${scope('um')}
-      ORDER BY um.id`);
+  // #2125 M6b-51d-7b: the lifecycle, start date, purchase time, replacement and modifier are no longer
+  // written on `user_memberships` (the anchor and the plan snapshots are their only record), so the
+  // three checks that compared them with the legacy row (`lifecycle_mismatch`, `modifier_mismatch`,
+  // `assignment_lifecycle_mismatch`) are retired.
 
   // #2125 M6b-34: a payment request's re-keyed assignment (migration 431), by the same rule.
   await add('payment_request_assignment_mismatch',

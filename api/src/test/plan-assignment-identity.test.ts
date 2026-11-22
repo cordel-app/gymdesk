@@ -9,7 +9,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
-import { deleteUnlinkedPlanSnapshots, repairAnchorLifecycles } from '../api/plan-assignment-sync';
+import { deleteUnlinkedPlanSnapshots } from '../api/plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from '../api/plan-snapshot-add';
 import { discardDraftSet, ownPlanSnapshot } from '../api/plan-snapshot-ownership';
 import { createDraft } from '../api/product-sets';
@@ -225,8 +225,6 @@ describe('the drift check', () => {
     const [snap] = await snapshotsOf(um);
     // The assignment's own stored value, written the way the sweep and the cancel write it.
     await testAssignmentWrite('UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() WHERE id = ?', [CANCELS_AT_PERIOD_END_STATUS, um]);
-    // The history this stands for is on the anchor too, as migration 453's backfill put it (M6b-51c-5).
-    await repairAnchorLifecycles(db, gymId);
     const { syncPlanSnapshotsForAssignment } = await import('../api/plan-snapshot-sync');
     await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, gymId, um));
     expect((await snapshotsOf(um))[0]).toMatchObject({ id: snap.id, status: CANCELS_AT_PERIOD_END_STATUS });
@@ -236,32 +234,8 @@ describe('the drift check', () => {
     const um = await createTestDraftAssignment(gymId, await member(), await plan());
     await activate(um);
     expect((await auth(request.delete(`/user-memberships/${um}`))).status).toBe(204);
-    expect((await check('lifecycle_mismatch')).sample.find((r) => Number(r.user_membership_id) === um)).toBeUndefined();
     const snaps = await snapshotsOf(um);
     expect(snaps.at(-1)).toMatchObject({ assignmentId: snaps[0].id, status: CANCELS_AT_PERIOD_END_STATUS });
-  });
-
-  it('reports a lifecycle change that never reached the shared snapshot, marked shared', async () => {
-    const um = await createTestDraftAssignment(gymId, await member(), await plan());
-    await activate(um);
-    expect((await auth(request.delete(`/user-memberships/${um}`))).status).toBe(204);
-    // What the sweep's change looks like when nothing re-syncs the set that carries the plan.
-    const { rows: carried } = await db.query<any>(
-      `SELECT j.product_set_id AS set_id, j.plan_snapshot_id AS id FROM product_set_plan_snapshots j
-         JOIN plan_snapshots s ON s.id = j.plan_snapshot_id WHERE s.source_user_membership_id = ? AND j.entitlement_only = 1`, [um]);
-    // #3007: the cancelled version already links the same snapshot (no copy), so pick a set that does not.
-    const { rows: other } = await db.query<any>(
-      `SELECT id FROM product_sets WHERE gym_id = ? AND id NOT IN
-         (SELECT product_set_id FROM product_set_plan_snapshots WHERE plan_snapshot_id = ?) ORDER BY id DESC LIMIT 1`,
-      [gymId, carried[0].id]);
-    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, entitlement_only) VALUES (?, ?, 1)', [other[0].id, carried[0].id]);
-    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
-    const row = (await check('lifecycle_mismatch')).sample.find((r) => Number(r.user_membership_id) === um);
-    expect(row).toBeDefined();
-    expect(String(row!.fields)).toContain('status');
-    expect(Number(row!.shared)).toBe(1);
-    expect((await findPlanAssignmentDrift(db, gymId)).clean).toBe(false);
-    await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND plan_snapshot_id = ?', [other[0].id, carried[0].id]);
   });
 
   it('reports a snapshot with no identity and one that names the wrong anchor, and the backfill repairs both', async () => {

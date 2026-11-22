@@ -77,6 +77,7 @@ Tick items off in the PR that completes them.
 - [x] `NODE_ENV=production` in the API container — `deploy.yml` already sets it
       (`APP_NODE_ENV`), keep it when adding the production target.
 - [ ] **After deploying #2125 M6b-51c-4 (migration 453), run `npm run plan-assignments:settle -- --execute` once on each environment** (from the VPS, as the compiled script). The migration fills every assignment anchor's `assignment_*` lifecycle columns, but an assignment changed by the previous release between the migration and the new code going live keeps stale values; the settle run repairs them (`repairAnchorLifecycles()`), and `plan-assignments:validate` must then report no `assignment_lifecycle_mismatch` before the stage that makes those columns the source.
+- [ ] **Before deploying #2125 M6b-51d-7b, run `npm run plan-assignments:settle -- --execute` (the step above) on the release before it, on each environment.** From 51d-7b the anchor snapshot is the only record of an assignment's lifecycle and that release no longer carries the repair from `user_memberships`, so an anchor left out of step by a deploy gap is fixed only by running the step first. `plan-assignments:validate` no longer reports lifecycle drift (its lifecycle checks are retired).
 - [ ] A production MySQL database, migrated with `npm run db:migrate`. **Do not run
       `npm run db:seed` against it** (see §3).
 - [ ] **Confirm the HeatWave schema's default collation matches dev** (`utf8mb4_0900_ai_ci`).
