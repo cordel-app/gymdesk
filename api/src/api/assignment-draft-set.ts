@@ -285,7 +285,7 @@ export async function createDraftSetFromActive(tx: Tx, input: {
     [input.endsAt, input.userMembershipId, setId, input.gymId]);
   await cloneConfiguration(tx, input.gymId, input.activeSetId, setId);
   // #2125 M4b-3: the clone links the running plan's snapshot, which is the running assignment's
-  // contract; this Draft is a **new** assignment (its own `user_memberships` row, which replaces the
+  // contract; this Draft is a **new** assignment (its own assignment id, which replaces the
   // running one when it commits), so its plan is a proposed change by construction and is copied
   // now — the sync below then names the Draft assignment on the copy. Any other plan stays shared.
   await ownPrimaryPlanSnapshot(tx, input.gymId, setId);

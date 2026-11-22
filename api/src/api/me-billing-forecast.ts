@@ -1,6 +1,6 @@
 // #1123 — the member-facing **Billing Event Forecast**: what `GET
 // /me/billing-event-forecast` answers, and the one place that says which
-// `user_memberships` row is "the member's current plan".
+// assignment is "the member's current plan".
 //
 // There is deliberately almost nothing here, for #924 stage 4's reason one app
 // over: the projection an assignment's forecast needs already exists in one
@@ -42,7 +42,7 @@ import { isLiveMemberPlan } from '../domain/memberPlanHistory';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 
 /**
- * Which of a Member's `user_memberships` rows is *the* one their own pages are
+ * Which of a Member's assignments (`OWNED_ASSIGNMENT_ROWS_SQL`) is *the* one their own pages are
  * about, as an `ORDER BY` fragment for a query already scoped to
  * `um.gym_id = ? AND um.member_id = ?` and taking `LIMIT 1`.
  *

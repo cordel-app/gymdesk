@@ -102,8 +102,8 @@ async function pauseAfterFailedDays(tx: Tx, event: DueEvent): Promise<boolean> {
   if (Number(days[0]?.n ?? 0) < MAX_FAILED_DAYS) return false;
 
   // #2125 M6b-47: the assignment the set projects is read off the set's anchor
-  // (`assignmentOfAnchorSql()`), never from `user_memberships`; the legacy row is still
-  // dual-written, by an UPDATE guarded on `active`, which is what serialises two pauses.
+  // (`assignmentOfAnchorSql()`), never from `user_memberships`; the pause is written on the
+  // anchor (`writeAssignmentLifecycle()`), guarded on `active`, which serialises two pauses.
   const { rows } = await tx.query<{ id: number; member_id: number; status: string }>(
     `SELECT pa.source_user_membership_id AS id, pa.member_id, pa.status
        FROM product_sets ps JOIN plan_snapshots pa ON ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')} AND pa.gym_id = ps.gym_id

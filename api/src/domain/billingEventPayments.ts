@@ -364,8 +364,8 @@ export async function retryBillingEventPayment(
     // writes (`recordStatusChange`), so the pause is explicable from the ledger.
     await db.transaction(async (tx) => {
       // #2125 M6b-47: the assignment's status is read off its current snapshot
-      // (`assignmentOfLegacyIdSql()`), never from `user_memberships`; the legacy row is still
-      // dual-written, by an UPDATE guarded on `active`, which is what serialises two pauses.
+      // (`assignmentOfLegacyIdSql()`), never from `user_memberships`; the pause is written on the
+      // anchor (`writeAssignmentLifecycle()`), guarded on `active`, which serialises two pauses.
       const { rows: current } = await tx.query<{ id: number; member_id: number; status: string }>(
         `SELECT pa.source_user_membership_id AS id, pa.member_id, pa.status FROM plan_snapshots pa
           WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,

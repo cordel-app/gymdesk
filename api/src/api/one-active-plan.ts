@@ -11,7 +11,7 @@ import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #956 — the one enforcement point for "a member holds at most one Membership
- * Plan", shared by every path that creates a `user_memberships` row:
+ * Plan", shared by every path that creates an assignment:
  * `POST /user-memberships`, `POST /user-memberships/:id/assign-new-plan` and
  * `POST /membership-plans/:id/assign`. The rules themselves live in
  * `domain/oneActivePlan.ts`; this module is the SQL half — the lock, the read
@@ -26,7 +26,7 @@ import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 /**
  * Every live assignment *covering* any of `memberIds`, locked for update.
  *
- * "Covering" is the coverage (`ASSIGNMENT_BENEFICIARIES`), not `user_memberships.member_id`
+ * "Covering" is the coverage (`ASSIGNMENT_BENEFICIARIES`), not the owner's `member_id`
  * (#956 Q4): a family plan carries one row owned by one member and a covered-member
  * row per member, so a co-member of someone else's family plan already has a
  * plan. The owner's own `member_id` is read as well, because it is the column

@@ -18,14 +18,14 @@
  * #2125 M6b-38 — the link is read through the set's anchor
  * (`product_sets.plan_assignment_id`, M6b-36: the id of the assignment's first
  * plan snapshot), never through `product_sets.user_membership_id`, the column the
- * re-key drops. Both directions still speak the legacy `user_memberships` id at
+ * re-key drops. Both directions still speak the assignment id (`user_membership_id`) at
  * their edge (the scalar answers it, the predicate binds it), read off the anchor
  * snapshot's `source_user_membership_id`, because every caller still names an
  * assignment by it.
  */
 
 /**
- * Scalar subquery: the `user_memberships.id` of the owner of `<alias>.product_set_id`, or NULL (a purchase, a verification with no set, a chain whose
+ * Scalar subquery: the assignment id (`source_user_membership_id`) of the owner of `<alias>.product_set_id`, or NULL (a purchase, a verification with no set, a chain whose
  * versions are all plan-less). Usable in a SELECT list or a JOIN condition.
  */
 export function eventAssignmentSql(alias = 'be'): string {

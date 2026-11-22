@@ -22,8 +22,8 @@
  *     begins whatever date the admin picked. A *scheduled* transition would need
  *     a nightly sweep to flip the status on the day, which this ticket does not
  *     introduce.
- *   - **Q4: a family plan's co-members are covered too.** `user_memberships`
- *     carries one row for the owner and a the coverage (`ASSIGNMENT_BENEFICIARIES`) row per
+ *   - **Q4: a family plan's co-members are covered too.** An assignment
+ *     has one owner and a coverage (`ASSIGNMENT_BENEFICIARIES`) row per
  *     covered member, so the conflict query asks "does any live assignment
  *     *cover* this member", not "does this member own one". The restored UNIQUE
  *     index (migration 213) is keyed on the owner's `member_id` through
@@ -102,7 +102,7 @@ export function addPlanUnsupportedBody() {
 
 /** One live assignment standing in the way of a new one. */
 export interface LiveAssignment {
-  /** `user_memberships.id` — what a replacement supersedes. */
+  /** The assignment id (`user_membership_id`) — what a replacement supersedes. */
   id: number;
   /** The owning member. Not necessarily the member being assigned (a family plan). */
   owner_member_id: number;

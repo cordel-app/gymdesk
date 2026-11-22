@@ -974,7 +974,7 @@ export async function removeMemberPlanFromDraft(tx: Tx, draft: LockedDraft, plan
 
 /**
  * Adds a further Membership Plan to a Draft that is the member's cart, as a **plan snapshot of its
- * own** (`addPlanSnapshotToVersion()`), with no `user_memberships` row (the owner's #2125 decision:
+ * own** (`addPlanSnapshotToVersion()`), with no assignment id of its own (the owner's #2125 decision:
  * a set holds several plans, each addressed by its snapshot id). Every plan, product, beneficiary
  * and Promotion already on the Draft is left exactly as it is; nothing is priced or charged here.
  * The caller has judged the plan (`planAssignabilityError()`), its price and the declined benefits.
