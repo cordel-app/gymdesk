@@ -25,6 +25,9 @@ export interface SettleReport { found: number; settled: number; remaining: numbe
 export async function settlePlanAssignmentLifecycles(
   opts: { gymId?: string; execute: boolean },
 ): Promise<SettleReport> {
+  // M6b-51c-4: every anchor whose lifecycle is out of step with its assignment's legacy row is
+  // repaired first, since the sync reads the lifecycle off the anchor (M6b-51c-5).
+  if (opts.execute) await repairAnchorLifecycles(db, opts.gymId);
   const sets = await findUnsettledActiveSets(db, opts.gymId);
   if (!opts.execute) return { found: sets.length, settled: 0, remaining: sets.length };
   for (const set of sets) {
