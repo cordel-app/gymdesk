@@ -89,7 +89,7 @@ describe('assignmentLineVersionId() reads the assignment\'s status from plan_sna
   it('an active snapshot on a superseded version reads no lines, even when the legacy row says cancelled', async () => {
     const { um } = await runningWithService();
     await supersedeVersion(um);
-    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um], { mirror: false });
     expect(await services(um)).toHaveLength(0);
   });
 

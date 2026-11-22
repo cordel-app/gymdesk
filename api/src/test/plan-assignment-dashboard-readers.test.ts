@@ -204,7 +204,7 @@ describe('the card-removal check reads the plan\'s status from plan_snapshots', 
     expect(blocked.member_can_remove).toBe(false);
     expect(blocked.removal_blocked_reason).toBe('billable_membership');
 
-    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um], { mirror: false });
     expect(must(await card(m), 'card').body.member_can_remove).toBe(false);
   });
 

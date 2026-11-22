@@ -73,7 +73,7 @@ describe('the Member card plan history reads plan_snapshots', () => {
     const { owner, um } = await activePlan();
     await testAssignmentWrite(
       `UPDATE user_memberships SET status = 'cancelled', starts_at = '2001-01-01', modified_by = 'Legacy Only'
-        WHERE id = ?`, [um]);
+        WHERE id = ?`, [um], { mirror: false });
     const row = await historyRow(owner, um);
     expect(row.status).toBe('active');
     expect(row.is_live).toBe(true);

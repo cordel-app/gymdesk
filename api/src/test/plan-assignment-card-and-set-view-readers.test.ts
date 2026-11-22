@@ -99,7 +99,7 @@ describe('a card replacement is recorded against the assignment plan_snapshots s
     const other = await run(m, await plan());
     // The snapshot says the second plan was cancelled; its legacy row still says active.
     await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [other]);
-    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [running]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [running], { mirror: false });
     expect(await cardRequestAssignment(m)).toBe(running);
   });
 

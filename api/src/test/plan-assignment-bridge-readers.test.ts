@@ -38,7 +38,7 @@ async function running(): Promise<number> {
 }
 
 const setLegacy = (um: number, column: string, value: string) =>
-  testAssignmentWrite(`UPDATE user_memberships SET ${column} = ? WHERE id = ?`, [value, um]);
+  testAssignmentWrite(`UPDATE user_memberships SET ${column} = ? WHERE id = ?`, [value, um], { mirror: false });
 const setSnapshots = (um: number, column: string, value: string) =>
   db.query(`UPDATE plan_snapshots SET ${column} = ? WHERE gym_id = ? AND source_user_membership_id = ?`, [value, gymId, um]);
 /** The version the assignment is linked to (a new version takes the link over from its predecessor). */

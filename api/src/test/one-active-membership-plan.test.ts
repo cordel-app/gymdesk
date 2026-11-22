@@ -670,7 +670,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(draftSnap.map((r: any) => Number(r.r))).toEqual([Number(anchorB[0].id)]);
 
     // The legacy column no longer decides: with it cleared, the commit still names B alone.
-    await testAssignmentWrite('UPDATE user_memberships SET replaces_user_membership_id = NULL WHERE id = ?', [created.body.id]);
+    await testAssignmentWrite('UPDATE user_memberships SET replaces_user_membership_id = NULL WHERE id = ?', [created.body.id], { mirror: false });
     const asked = await commit(created.body.id);
     expect(asked.status).toBe(409);
     expect(asked.body.conflicts.map((x: any) => x.id)).toEqual([umB]);

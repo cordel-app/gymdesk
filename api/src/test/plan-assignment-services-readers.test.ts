@@ -95,13 +95,13 @@ describe('the wallet\'s Additional Services leg follows the assignment\'s curren
   it('a paused snapshot grants nothing, whatever the legacy row says', async () => {
     const { m, um } = await runningWithService();
     await db.query("UPDATE plan_snapshots SET status = 'paused' WHERE id = ?", [await currentSnapshotId(um)]);
-    await testAssignmentWrite("UPDATE user_memberships SET status = 'active' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'active' WHERE id = ?", [um], { mirror: false });
     expect(await serviceGrants(m)).toHaveLength(0);
   });
 
   it('a running snapshot grants, even when the legacy row says cancelled and ended', async () => {
     const { m, um } = await runningWithService();
-    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled', ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled', ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?", [um], { mirror: false });
     expect(await serviceGrants(m)).toHaveLength(1);
   });
 

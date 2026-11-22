@@ -64,7 +64,7 @@ describe('assignment ids come from plan_assignment_ids (#2125 M6b-51d-1)', () =>
     const m = await member();
     const { insertId: legacyId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, status)
-       VALUES (?, ?, ?, '2026-06-01', 'cancelled')`, [m, gymId, await plan()]);
+       VALUES (?, ?, ?, '2026-06-01', 'cancelled')`, [m, gymId, await plan()], { mirror: false });
     expect(await registered(legacyId)).toEqual({ gym_id: gymId });
     const res = await assign(await member());
     expect(res.status).toBe(201);

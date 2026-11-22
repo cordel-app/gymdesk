@@ -340,7 +340,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     // The fixture machinery still reads the hand-written rows it translates; migration 297's test
     // checks what that migration did to the table itself; the source gates name it in assertions.
     const ALLOWED = new Set([
-      'helpers.ts', 'assignmentIdFixture.ts', 'cancelled-assignment-cleanup.test.ts',
+      'helpers.ts', 'assignmentIdFixture.ts', 'assignmentFixture.ts', 'cancelled-assignment-cleanup.test.ts',
       'plan-assignment-legacy-readers.unit.test.ts', 'member-enrollment.unit.test.ts',
       'draft-assignment-status.unit.test.ts',
     ]);
@@ -350,5 +350,23 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       .filter((f) => f.endsWith('.ts') && !ALLOWED.has(f))
       .filter((f) => (code(readFileSync(join(testDir, f), 'utf8')).match(READ) ?? []).length > 0);
     expect(readers).toEqual([]);
+  });
+
+  it('M6b-51d-5: a test writes an assignment only through the fixture door', () => {
+    // Every `INSERT INTO` / `UPDATE` / `DELETE FROM user_memberships` a test spells is handed to
+    // `testAssignmentWrite()` (or `legacyAssignmentQuery()`, which goes through it), so dropping the
+    // table changes `assignmentFixture.ts` and no test file. A statement passed straight to
+    // `db.query` / `tx.query` fails the build.
+    const DOORS = new Set(['testAssignmentWrite', 'legacyAssignmentQuery']);
+    const OWN = new Set(['assignmentFixture.ts', 'assignmentIdFixture.ts']);
+    const CALL = /([\w.]+)\s*(?:<[^>()]*>)?\(\s*['"`]\s*(?:INSERT\s+(?:IGNORE\s+)?INTO|UPDATE|DELETE\s+FROM)\s+user_memberships\b/g;
+    const testDir = join(API_SRC, 'test');
+    const offenders: string[] = [];
+    for (const f of readdirSync(testDir).filter((n) => n.endsWith('.ts') && !OWN.has(n))) {
+      for (const m of code(readFileSync(join(testDir, f), 'utf8')).matchAll(CALL)) {
+        if (!DOORS.has(m[1])) offenders.push(`${f}: ${m[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

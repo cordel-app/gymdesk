@@ -181,7 +181,7 @@ describe('PUT /user-memberships/:id dates on a Draft (#2125 M6b-51b)', () => {
     const created = await api('post', '/user-memberships')
       .send({ member_id: await member(), membership_plan_id: await plan('D3'), starts_at: '2026-06-01' });
     // A legacy row that disagrees with the snapshot must not reach the version.
-    await testAssignmentWrite(`UPDATE user_memberships SET starts_at = '2020-01-01' WHERE id = ?`, [created.body.id]);
+    await testAssignmentWrite(`UPDATE user_memberships SET starts_at = '2020-01-01' WHERE id = ?`, [created.body.id], { mirror: false });
     expect((await api('put', `/user-memberships/${created.body.id}`).send({ ends_at: '2026-12-31' })).status).toBe(200);
     const after = await datesOf(created.body.id);
     expect(after.set).toEqual(['2026-06-01', '2026-12-31']);

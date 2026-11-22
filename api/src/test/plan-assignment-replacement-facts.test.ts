@@ -80,7 +80,7 @@ describe('an assignment\'s replacement is its plan snapshot\'s', () => {
     // The legacy row disagrees on every fact; nothing reads it any more.
     await testAssignmentWrite(
       `UPDATE user_memberships SET replace_on_activation = 1, replaces_user_membership_id = NULL,
-              deleted_at = UTC_TIMESTAMP(), deleted_by = 'Legacy' WHERE id = ?`, [replacement]);
+              deleted_at = UTC_TIMESTAMP(), deleted_by = 'Legacy' WHERE id = ?`, [replacement], { mirror: false });
     const set = await setOf(replacement);
     await db.transaction((tx) => syncPlanSnapshot(tx, gymId, set));
 

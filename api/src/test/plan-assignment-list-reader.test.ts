@@ -76,7 +76,7 @@ describe('LIST_SELECT reads plan_snapshots', () => {
     await testAssignmentWrite(
       `UPDATE user_memberships SET status = 'cancelled', starts_at = '2001-01-01', modified_by = 'Legacy Only',
               purchased_at = '2001-01-01 00:00:00'
-        WHERE id = ?`, [um]);
+        WHERE id = ?`, [um], { mirror: false });
 
     const list = await auth(request.get(`/user-memberships?member_id=${owner}`));
     expect(list.status).toBe(200);
