@@ -1,3 +1,4 @@
+import { insertRecurringLine } from '../api/recurring-line-writer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -166,7 +167,7 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     const owner = await member();
     const { insertId: productId } = await db.query(
       `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
-       VALUES (?, ?, 'fee', 10, 'EUR', 'once', 'active', 'available', 0)`, [gymId, `P-${uniq()}`]);
+       VALUES (?, ?, 'service', 10, 'EUR', 'month', 'active', 'available', 0)`, [gymId, `P-${uniq()}`]);
     const productPromo = await promotion('product', Number(productId));
     const planPromo = await promotion();
     const setId = await db.transaction(async (tx) => {
@@ -174,7 +175,10 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
       if (d.kind !== 'created') throw new Error(d.kind);
       await snapshotProductSetFromPlan(tx, { gymId, productSetId: d.productSet.id, membershipPlanId: planId, membershipFeePrice: 30, startsAt: TODAY });
       await applyPromotionToProductSet(tx, gymId, 'T', d.productSet.id, planPromo);
-      await applyPromotionToProductSet(tx, gymId, 'T', d.productSet.id, productPromo, { productTarget: true });
+      const lineId = await insertRecurringLine(tx, {
+        gymId, productSetId: d.productSet.id, productId: Number(productId), quantity: 1, startsAt: TODAY, origin: 'admin', assignedMemberId: owner,
+      });
+      await applyPromotionToProductSet(tx, gymId, 'T', d.productSet.id, productPromo, { productTarget: true, lineId: lineId! });
       await addCoverage(tx, { gymId, productSetId: d.productSet.id, memberId: owner, isOwner: true });
       const out = await activateWithEvents(tx, { gymId, productSetId: d.productSet.id, today: TODAY });
       if (out.kind !== 'ok') throw new Error(out.kind);

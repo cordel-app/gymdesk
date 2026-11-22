@@ -1,7 +1,6 @@
 // #2125 stage 2: the plan snapshot tables follow every ProductSet write, in the same transaction.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
-import { createRequire } from 'node:module';
 import { db } from '../infra/db';
 import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
@@ -11,12 +10,8 @@ import {
   createTestMembership, request,
 } from './helpers';
 
-const require = createRequire(import.meta.url);
-const migration = require('../infra/migrations/347_plan_snapshots.js');
-const knex = require('knex')({ client: 'mysql2', connection: process.env.DATABASE_URL });
 
 afterAll(async () => {
-  await knex.destroy();
   await cleanupTestGyms();
   await db.end();
 });
@@ -83,11 +78,11 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
     expect(after.map((b) => b.member_id)).toEqual([owner]);
   });
 
-  it('committing makes the snapshot active; the dual-written rows equal what the backfill would write', async () => {
+  // #3026 stage 3d-3d: migration 347's backfill reads `user_membership_promotions`, which is dropped,
+  // so it can no longer be re-run against the live schema for the comparison it used to make.
+  it('committing makes the snapshot active', async () => {
     await activateTestAssignment(gymId, umId);
     expect((await snapshots(setId))[0].status).toBe('active');
-    const counts = await migration.backfillPlanSnapshots(knex);
-    expect(Object.values(counts).every((n) => n === 0)).toBe(true);
   });
 
   it('a pause of the assignment is reflected without a product_sets join', async () => {

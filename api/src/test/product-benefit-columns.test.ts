@@ -34,9 +34,6 @@ const PROMOTION_TABLES = [
   'promotion_session',
   'promotion_oneoff',
   'promotion_periodical',
-  'user_membership_promotion_session_snapshot',
-  'user_membership_promotion_oneoff_snapshot',
-  'user_membership_promotion_periodical_snapshot',
 ];
 
 const PLAN_TABLES = [

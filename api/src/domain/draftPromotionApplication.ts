@@ -7,7 +7,8 @@
  * Anything else reads its own snapshot: a confirmed application, and one on a version that is not
  * a Draft (migration 406 confirmed every such application; the set's status is asked as well so a
  * row written without the stamp is never re-read live). The one SQL spelling of the rule, taking
- * the alias of a `user_membership_promotions` row.
+ * the alias of a `product_promotion_snapshots` row (a line-owned Product application, which names
+ * its owning set since migration 454).
  */
 export function draftReferenceApplicationSql(alias: string): string {
   return `(${alias}.snapshot_confirmed_at IS NULL AND EXISTS (

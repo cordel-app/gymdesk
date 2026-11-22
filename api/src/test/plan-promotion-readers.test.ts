@@ -60,15 +60,10 @@ beforeAll(async () => {
 });
 
 describe('Plan Promotion readers on the plan snapshot (#3026 stage 3c-2)', () => {
-  it('the card and the fee report the plan snapshot row, whatever the legacy row says', async () => {
+  it('the card and the fee report the plan snapshot row', async () => {
     const { umId } = await draftWithPromotion();
     const rows = await snapshotRows(umId);
     expect(rows).toHaveLength(1);
-
-    // The legacy row is taken out of the picture by hand: nothing the readers show may move.
-    await db.query(
-      `UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP()
-        WHERE gym_id = ? AND user_membership_id = ? AND promotion_id = ?`, [gymId, umId, promoId]);
 
     const res = await detail(umId);
     expect(res.status).toBe(200);

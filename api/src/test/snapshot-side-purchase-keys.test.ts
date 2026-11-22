@@ -4,10 +4,10 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
+import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
-import { deleteRecurringLine, insertRecurringLine } from '../api/recurring-line-writer';
+import { insertRecurringLine } from '../api/recurring-line-writer';
 import { insertPurchase, type PurchaseValues } from '../api/purchase-writer';
 
 let gymId: string;
@@ -64,30 +64,6 @@ describe('migration 411 (#2126 stage 5d-1)', () => {
     const { rows } = await db.query<any>(
       `SELECT TABLE_NAME AS t, CONSTRAINT_NAME AS c FROM information_schema.KEY_COLUMN_USAGE
         WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IN (?, ?, ?)`, legacy);
-    expect(rows).toEqual([]);
-  });
-
-  it('a line-owned Promotion application references the line snapshot and goes with it', async () => {
-    const owner = await member();
-    const setId = await draftSet(owner);
-    const productId = await product('service', 'month');
-    const lineId = await db.transaction((tx) => insertRecurringLine(tx, {
-      gymId, productSetId: setId, productId, quantity: 1, startsAt: TODAY, origin: 'admin', assignedMemberId: owner,
-    }));
-    const { insertId: promotionId } = await db.query(
-      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, applies_to)
-       VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 'product')`, [gymId, `P-${uniq()}`]);
-    const { insertId: appId } = await db.query(
-      `INSERT INTO user_membership_promotions (gym_id, product_set_id, promotion_id, status, recurrent_snapshot_id)
-       VALUES (?, ?, ?, 'applied', ?)`, [gymId, setId, promotionId, lineId]);
-
-    // A line id no snapshot carries is refused.
-    await expect(db.query(
-      `INSERT INTO user_membership_promotions (gym_id, product_set_id, promotion_id, status, recurrent_snapshot_id)
-       VALUES (?, ?, ?, 'revoked', ?)`, [gymId, setId, promotionId, 999999999])).rejects.toThrow(/foreign key/i);
-
-    await db.transaction((tx) => deleteRecurringLine(tx, gymId, lineId!));
-    const { rows } = await legacyChildQuery('SELECT id FROM user_membership_promotions WHERE id = ?', [appId]);
     expect(rows).toEqual([]);
   });
 

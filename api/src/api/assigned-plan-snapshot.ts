@@ -499,12 +499,6 @@ export async function loadPlanBenefitsForSimulation(
   return byAssignment;
 }
 
-const PROMOTION_GRANT_SNAPSHOT_TABLE: Record<ProductBenefitCategory, string> = {
-  session: 'user_membership_promotion_session_snapshot',
-  oneoff: 'user_membership_promotion_oneoff_snapshot',
-  periodical: 'user_membership_promotion_periodical_snapshot',
-};
-
 /**
  * Products granted by the given Promotions **as they stand now**, from the three
  * #550 benefit tables, joined live to their catalogue row — the same columns and
@@ -557,7 +551,8 @@ const LIVE_PROMOTION_GRANT_TABLE: Record<ProductBenefitCategory, string> = {
 };
 
 /**
- * What each Promotion application granted, keyed by `user_membership_promotions.id`.
+ * What each Product-target Promotion application granted, keyed by its application id
+ * (`COALESCE(product_promotion_snapshots.source_application_id, id)`).
  *
  * A **confirmed** application reads its own snapshot (`snapshotPromotionGrants()`
  * in `membership-promotions.ts`, taken when its Draft was confirmed), so editing
@@ -632,36 +627,6 @@ export async function loadPromotionGrantSnapshots(
     );
     for (const row of rows as any[]) {
       push(confirmedBySnapshot.get(Number(row.product_promotion_snapshot_id))!, row, row.grant_kind);
-    }
-  }
-
-  // An application owned by no line (none written since #1865) has no Product snapshot row and is
-  // still read from `user_membership_promotions` until stage 3d-3d moves or drops it.
-  const found = new Set((snapRows as any[]).map((r) => Number(r.app_id)));
-  const legacyIds = applicationIds.filter((id) => !found.has(Number(id)));
-  if (legacyIds.length > 0) {
-    const legacyMarks = legacyIds.map(() => '?').join(',');
-    const { rows: apps } = await exec.query(
-      `SELECT ump.id, ump.promotion_id, ${draftReferenceApplicationSql('ump')} AS unconfirmed
-         FROM user_membership_promotions ump WHERE ump.gym_id = ? AND ump.id IN (${legacyMarks})`,
-      [gymId, ...legacyIds],
-    );
-    const legacyUnconfirmed = (apps as any[]).filter((a) => Number(a.unconfirmed) === 1);
-    const unconfirmedIds = new Set(legacyUnconfirmed.map((a) => Number(a.id)));
-    unconfirmed.push(...legacyUnconfirmed.map((a) => ({ id: Number(a.id), promotion_id: Number(a.promotion_id) })));
-    const { rows } = await exec.query(
-      CATEGORIES.map((category) => `
-        SELECT '${category}' AS category, user_membership_promotion_id, product_id,
-               product_name, quantity, item_billing_frequency, unit_price,
-               \`action\`, \`value\`
-        FROM ${PROMOTION_GRANT_SNAPSHOT_TABLE[category]}
-        WHERE gym_id = ? AND user_membership_promotion_id IN (${legacyMarks})`).join(' UNION ALL '),
-      CATEGORIES.flatMap(() => [gymId, ...legacyIds]),
-    );
-    for (const row of rows as any[]) {
-      // A working copy written before #2833 is never read: the Draft is priced live.
-      if (unconfirmedIds.has(Number(row.user_membership_promotion_id))) continue;
-      push(Number(row.user_membership_promotion_id), row, row.category);
     }
   }
 
