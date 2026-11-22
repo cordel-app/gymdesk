@@ -33,7 +33,8 @@ describe('shared cart renderer', () => {
     expect(cart).not.toContain('add_product');
     expect(card).toContain('data-cart-beneficiary');
     expect(page).toContain('renderCartAddButtons');
-    expect(page.indexOf('<MemberCart')).toBeLessThan(page.indexOf('{renderCartAddButtons(phase'));
+    expect(page.indexOf('<MemberCart')).toBeLessThan(page.indexOf('renderCartAddButtons()}'));
+    expect(page.indexOf('renderCartAddButtons()}')).toBeGreaterThan(-1);
   });
 
   it('#3154: the preparing-change card says one thing, lists plans and Products, and shows the Initial Payment', () => {
@@ -50,6 +51,27 @@ describe('shared cart renderer', () => {
       expect(msgs.membership.cart_staff_hint).toBeUndefined();
       expect(msgs.home.cart_open).toBeUndefined();
     }
+  });
+});
+
+// #2973 stage 7 — a cart the gym is preparing shows its message and its full
+// Summary, and offers the member no action at all.
+describe('gym-managed cart (#2973 stage 7)', () => {
+  it('the preparing card carries the full Summary and no button but its detail thumbnails', () => {
+    const cart = read('src/components/MemberCart.tsx');
+    const card = read('src/components/PreparingCartCard.tsx');
+    const staffBranch = cart.slice(cart.indexOf("phase === 'awaiting_staff'"), cart.indexOf("phase === 'pending_payment'"));
+    expect(staffBranch).toContain('<CartSummary review={cartSummary} />');
+    expect(staffBranch).not.toMatch(/payCancel|itemCancel|actions=/);
+    expect(card).toContain('data-preparing-summary');
+    expect(card).toContain('cart_staff_purchasing_disabled');
+    for (const k of ['cart_pay', 'cart_cancel', 'cart_item_cancel', 'add_plan', 'add_product']) expect(card).not.toContain(k);
+  });
+
+  it('My Products draws no Add Plan / Add Product while the gym prepares the cart', () => {
+    const page = read('src/app/[locale]/membership/page.tsx');
+    expect(page).toContain("phase !== 'awaiting_staff' && renderCartAddButtons()");
+    expect(page).not.toContain("renderCartAddButtons(phase === 'awaiting_staff'");
   });
 });
 

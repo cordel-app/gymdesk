@@ -132,7 +132,8 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
     if (v && v.status === 'in_cart' && !v.awaiting_staff_setup) {
       r = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
     } else if (v && v.status === 'in_cart' && v.awaiting_staff_setup) {
-      // #3154: the preparing card shows the set's Initial Payment — the review's own figure.
+      // #3154: the preparing card shows the set's Initial Payment — the review's own figure;
+      // #2973 stage 7: and the full Summary drawn from that same review, read-only.
       summary = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
     } else if (v && v.status === 'pending_payment') {
       summary = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
@@ -398,6 +399,7 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
         key="staff"
         content={preparingCartContent(view, gymFmt)}
         initialPayment={due == null ? '—' : formatPaymentAmount(due, cartSummary?.currency ?? 'EUR', gymFmt) ?? '—'}
+        summary={cartSummary ? <CartSummary review={cartSummary} /> : undefined}
       />
     );
   } else if (phase === 'pending_payment') {

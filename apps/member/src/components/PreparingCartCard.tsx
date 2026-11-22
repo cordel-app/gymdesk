@@ -4,9 +4,13 @@
 // one thing (in-app purchasing is paused while the gym prepares the change),
 // lists the plans by name and the Products as bullets, each with its
 // thumbnail and its applied Promotions, and shows the Product Set's Initial
-// Payment large at the top right. No item price appears on the card or in its
-// modals. Every value arrives decided (`lib/preparingCart.ts`) and formatted
-// by the caller; every colour is `memberChrome.ts`'s.
+// Payment large at the top right. Since #2973 stage 7 it also carries the
+// cart's Summary (the same `CartSummary` every other cart phase shows, with
+// its item and Initial Payment breakdown), so the member sees the pending
+// changes and their amounts. It holds no action of any kind: no Pay, no
+// Cancel, no per-item Cancel. Every value arrives decided
+// (`lib/preparingCart.ts`) and formatted by the caller; every colour is
+// `memberChrome.ts`'s.
 import React, { useId, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { MemberDialog } from './MemberDialog';
@@ -128,10 +132,12 @@ function ItemRow({ item }: { item: PreparingItem }) {
   );
 }
 
-export function PreparingCartCard({ content, initialPayment }: {
+export function PreparingCartCard({ content, initialPayment, summary }: {
   content: PreparingCartContent;
   /** The Product Set's Initial Payment, formatted; `—` when the server could not establish it. */
   initialPayment: string;
+  /** #2973 stage 7: the cart's Summary (`CartSummary` over the server's review), read-only. */
+  summary?: React.ReactNode;
 }) {
   const t = useTranslations();
   return (
@@ -156,6 +162,7 @@ export function PreparingCartCard({ content, initialPayment }: {
           {content.products.map((p) => <li key={p.key}><ItemRow item={p} /></li>)}
         </ul>
       )}
+      {summary && <div style={{ marginTop: 10 }} data-preparing-summary>{summary}</div>}
     </div>
   );
 }
