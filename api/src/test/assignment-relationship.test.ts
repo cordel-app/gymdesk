@@ -1,5 +1,6 @@
 // #1191 — a multi-member Membership is one contract seen as Primary by its owner
 // and Linked by every other covered Member.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -145,7 +146,7 @@ describe('Linked context is read-only', () => {
     const pause = await request.post(`/user-memberships/${duoId}/pause?as_member_id=${jane}`).set(h(gymId));
     expect(pause.status).toBe(403);
     expect(pause.body.error).toBe('linked_member_read_only');
-    const row = await db.query('SELECT status FROM user_memberships WHERE id = ?', [duoId]);
+    const row = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [duoId]);
     expect(row.rows[0].status).toBe('active');
   });
 

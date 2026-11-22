@@ -1,3 +1,4 @@
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -140,7 +141,7 @@ describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
     expect(await rowsHeldBy(v1)).toEqual(heldByV1);
     expect(await names(umV1)).toEqual([promo]);
     const { rows: stray } = await db.query<any>(
-      `SELECT id FROM user_memberships WHERE gym_id = ? AND member_id = ? AND status IN ('in_cart', 'pending_payment')`, [gymId, owner]);
+      `SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ? AND status IN ('in_cart', 'pending_payment')`, [gymId, owner]);
     expect(stray).toHaveLength(0);
   });
 

@@ -1,6 +1,7 @@
 // #3007 stage 2(b) — a running plan is marked `to_be_canceled` in the owner's open Draft; discarding
 // the Draft restores it exactly, committing the Draft cancels it with no charge.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -28,7 +29,7 @@ const status = async (umId: number) => (await db.query<any>(
   'SELECT status FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1',
   [gymId, umId])).rows[0]?.status;
 const legacy = async (umId: number) => (await db.query<any>(
-  'SELECT status FROM user_memberships WHERE id = ?', [umId])).rows[0]?.status;
+  `SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId])).rows[0]?.status;
 
 beforeAll(async () => {
   gymId = await createTestGym('Pending Cancel Gym');

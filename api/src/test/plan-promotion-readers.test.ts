@@ -3,6 +3,7 @@
 // snapshot's own `plan_promotion_snapshots` rows. The legacy `user_membership_promotions` row is
 // no longer what decides what they report, and the row states its own confirmation.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -120,7 +121,7 @@ describe('Plan Promotion readers on the plan snapshot (#3026 stage 3c-2)', () =>
 
     // The owner's running assignment (the same one, or its successor) no longer carries it.
     const { rows: live } = await db.query<any>(
-      `SELECT id FROM user_memberships WHERE gym_id = ? AND member_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`,
+      `SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`,
       [gymId, memberId]);
     const after = await detail(Number(live[0].id));
     expect(Number(after.body.membership_fee)).toBe(100);

@@ -1,5 +1,6 @@
 // #2125 M6b-51d-1 — an assignment's id comes from the `plan_assignment_ids` registry, never from
 // `user_memberships`' own counter, so the id survives the table's retirement.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { allocateAssignmentId } from '../api/assignment-lifecycle-writer';
@@ -54,7 +55,7 @@ describe('assignment ids come from plan_assignment_ids (#2125 M6b-51d-1)', () =>
     const taken = await allocateAssignmentId(db, gymId);
     const third = await assign(await member());
     expect(third.body.id).toBeGreaterThan(taken);
-    const { rows } = await db.query<any>('SELECT id FROM user_memberships WHERE id = ?', [taken]);
+    const { rows } = await db.query<any>(`SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [taken]);
     expect(rows).toHaveLength(0);
   });
 

@@ -3,6 +3,7 @@
 // becomes the member's, a Replace does not count the plan it supersedes, and a member holding the
 // Product through a plan is refused a purchase of it.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { violatesOnePerMember } from '../api/one-per-member';
@@ -31,7 +32,7 @@ async function draftFor(memberId: number): Promise<number> {
 }
 
 async function status(umId: number): Promise<string> {
-  const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+  const { rows } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
   return rows[0].status;
 }
 
