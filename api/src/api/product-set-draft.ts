@@ -102,6 +102,43 @@ async function touch(tx: Tx, draft: LockedDraft) {
 const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id))";
 const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
 
+/**
+ * #2966 stage 9 — the plan snapshot a configuration writer edits when the request names one
+ * (`/product-sets/:id/plans/:planSnapshotId/…`): a billable plan the Draft holds as its own, never
+ * one shared with, or inherited from, another version (a running plan is changed through its
+ * assignment's own editor, which takes the copy-on-write). The primary plan qualifies too, so the
+ * nested routes edit any plan of the cart by its snapshot id. `null` = the request named none: the
+ * writer keeps its primary-plan behaviour.
+ */
+export async function namedPlanTarget(tx: Tx, draft: LockedDraft, planSnapshotId: number | undefined)
+  : Promise<number | null | DraftRefusal> {
+  if (planSnapshotId === undefined) return null;
+  if (!Number.isInteger(planSnapshotId) || planSnapshotId <= 0) return { kind: 'not_found' };
+  const { rows } = await tx.query<{ id: number; shared: number }>(
+    `SELECT s.id, (${planSnapshotSharedSql('s.id', '?')} OR ${planSnapshotInheritedSql('s', 'j.product_set_id')}) AS shared
+       FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+      WHERE j.product_set_id = ? AND j.entitlement_only = 0 AND s.id = ? AND s.gym_id = ?`,
+    [draft.id, draft.id, planSnapshotId, draft.gym_id]);
+  if (!rows[0]) return { kind: 'not_found' };
+  if (Number(rows[0].shared) === 1) {
+    return { kind: 'conflict', error: 'plan_not_editable', message: 'This plan belongs to a running version; edit it through its assignment.' };
+  }
+  return Number(rows[0].id);
+}
+
+/** Options of the configuration writers: the plan snapshot the request named (#2966 stage 9). */
+export interface PlanTargetOpts { planSnapshotId?: number }
+
+/** The id a writer edits: the named plan (already judged its own), else the Draft's own primary copy. */
+async function writeTarget(tx: Tx, draft: LockedDraft, opts: PlanTargetOpts | undefined)
+  : Promise<number | null | DraftRefusal> {
+  const named = await namedPlanTarget(tx, draft, opts?.planSnapshotId);
+  if (named !== null) return named;
+  return ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+}
+
+const isDraftRefusal = (v: unknown): v is DraftRefusal => typeof v === 'object' && v != null && 'kind' in v;
+
 /* ── Benefit sections ────────────────────────────────────────────────────── */
 
 /**
@@ -125,8 +162,20 @@ export function mandatoryLineRefusal(
   return null;
 }
 
-export async function loadBenefitSection(gymId: string, productSetId: number, category: ProductBenefitCategory) {
-  const snapshotId = await primaryPlanSnapshotId(db, gymId, productSetId);
+export async function loadBenefitSection(gymId: string, productSetId: number, category: ProductBenefitCategory,
+  planSnapshotId?: number): Promise<any[] | null> {
+  let snapshotId: number | null;
+  if (planSnapshotId !== undefined) {
+    // #2966 stage 9: a plan of the set named by its snapshot id; one the set does not hold is a 404.
+    const { rows: linked } = await db.query<{ id: number }>(
+      `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? AND j.entitlement_only = 0 AND s.id = ? AND s.gym_id = ?`,
+      [productSetId, planSnapshotId, gymId]);
+    if (!linked[0]) return null;
+    snapshotId = Number(linked[0].id);
+  } else {
+    snapshotId = await primaryPlanSnapshotId(db, gymId, productSetId);
+  }
   if (snapshotId == null) return [];
   const { rows } = await db.query<any>(
     `SELECT product_id, assigned_member_id, quantity, item_name, item_type, item_billing_frequency, unit_price, currency,
@@ -144,7 +193,7 @@ export async function loadBenefitSection(gymId: string, productSetId: number, ca
  * its present name, type, price and frequency; a removed one is deleted.
  */
 export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: ProductBenefitCategory,
-  items: unknown): Promise<{ ok: true } | DraftRefusal> {
+  items: unknown, opts?: PlanTargetOpts): Promise<{ ok: true } | DraftRefusal> {
   if (!Array.isArray(items)) return { kind: 'invalid', message: 'items must be an array' };
   // #2093 stage 2: the line's own treatment, renewal Frequency and Mandatory
   // flag travel under the Plan editor's rule — a key the request does not name
@@ -184,7 +233,9 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
   }
 
   const table = PLAN_LINE_TABLE[category];
-  const snapshotId = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
+  const named = await namedPlanTarget(tx, draft, opts?.planSnapshotId);
+  if (isDraftRefusal(named)) return named;
+  const snapshotId = named ?? await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
   if (snapshotId == null) return { kind: 'invalid', message: 'This version has no Membership Plan to configure' };
   const { rows: currentRaw } = await tx.query<{
     id: number; product_id: number; assigned_member_id: number | null; mandatory: number; item_name: string;
@@ -344,7 +395,7 @@ const nonNegInt = (v: unknown): number | null | false => {
   return Number.isInteger(n) && n >= 0 ? n : false;
 };
 
-export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
+export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any, opts?: PlanTargetOpts): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Billing & Duration' };
   const patch: Record<string, number | null> = {};
   for (const field of ['free_periods', 'paid_periods', 'bonus_periods', 'pay_beforehand_periods'] as const) {
@@ -361,16 +412,21 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
   }
   if (Object.keys(patch).length === 0) return { kind: 'invalid', message: 'No Billing & Duration fields to update' };
 
-  const { rows } = await tx.query<any>(
-    `SELECT paid_periods, pay_beforehand_periods FROM plan_snapshots WHERE id = ${primaryPlanSnapshotSql('?', '?')} FOR UPDATE`,
-    [draft.id, draft.gym_id]);
+  const named = await namedPlanTarget(tx, draft, opts?.planSnapshotId);
+  if (isDraftRefusal(named)) return named;
+  const { rows } = named != null
+    ? await tx.query<any>('SELECT paid_periods, pay_beforehand_periods FROM plan_snapshots WHERE id = ? AND gym_id = ? FOR UPDATE',
+      [named, draft.gym_id])
+    : await tx.query<any>(
+      `SELECT paid_periods, pay_beforehand_periods FROM plan_snapshots WHERE id = ${primaryPlanSnapshotSql('?', '?')} FOR UPDATE`,
+      [draft.id, draft.gym_id]);
   if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   const paid = 'paid_periods' in patch ? Number(patch.paid_periods ?? 0) : Number(rows[0].paid_periods ?? 0);
   const prepaid = 'pay_beforehand_periods' in patch ? Number(patch.pay_beforehand_periods ?? 0) : Number(rows[0].pay_beforehand_periods ?? 0);
   if (prepaid > paid) return { kind: 'invalid', message: 'pay_beforehand_periods cannot exceed paid_periods' };
 
   const sets = Object.keys(patch).map((k) => `${k} = ?`).join(', ');
-  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+  const target = named ?? await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
   await tx.query(`UPDATE plan_snapshots SET ${sets} WHERE id = ? AND gym_id = ?`,
     [...Object.values(patch), target, draft.gym_id]);
   await touch(tx, draft);
@@ -440,7 +496,7 @@ export async function setMembershipFeePrice(tx: Tx, draft: LockedDraft, raw: unk
 }
 
 /** A negotiated fee: the regular fee is replaced and the reason is mandatory. */
-export async function setNegotiatedFee(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
+export async function setNegotiatedFee(tx: Tx, draft: LockedDraft, body: any, opts?: PlanTargetOpts): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Membership Fee' };
   const price = Number(body?.membership_fee_price);
   if (!Number.isFinite(price) || price < 0) return { kind: 'invalid', message: 'membership_fee_price must be a non-negative number' };
@@ -450,7 +506,8 @@ export async function setNegotiatedFee(tx: Tx, draft: LockedDraft, body: any): P
   if (expires != null && expires !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(expires))) {
     return { kind: 'invalid', message: 'discount_expires_at must be YYYY-MM-DD' };
   }
-  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+  const target = await writeTarget(tx, draft, opts);
+  if (isDraftRefusal(target)) return target;
   if (target == null) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   await tx.query(
     `UPDATE plan_snapshots
@@ -461,7 +518,7 @@ export async function setNegotiatedFee(tx: Tx, draft: LockedDraft, body: any): P
   return { ok: true };
 }
 
-export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
+export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any, opts?: PlanTargetOpts): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Membership Fee' };
   // #2945 — each beneficiary's own fee discount; absent keeps every stored one. A request that
   // names only `member_discounts` leaves the shared benefit (#772) as it is.
@@ -484,7 +541,8 @@ export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Prom
       value = Math.round(raw * 100) / 100;
     }
   }
-  const target = await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
+  const target = await writeTarget(tx, draft, opts);
+  if (isDraftRefusal(target)) return target;
   if (target == null) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
   if (memberDiscounts.kind === 'value' && memberDiscounts.value.length > 0) {
     const { rows: scope } = await tx.query<{ membership_fee_scope: string | null }>(

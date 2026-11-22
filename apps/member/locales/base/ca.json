@@ -1056,5 +1056,10 @@
     "title": "Accés revocat",
     "message": "S'ha revocat el teu accés a la Members App. Posa't en contacte amb {gymName} per obtenir més informació.",
     "message_no_gym": "S'ha revocat el teu accés a la Members App. Posa't en contacte amb el teu gimnàs per obtenir més informació."
+  },
+  "family": {
+    "title": "La meva família",
+    "loading": "Carregant…",
+    "empty": "No hi ha membres de la família per mostrar."
   }
 }
