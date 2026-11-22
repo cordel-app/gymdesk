@@ -9,11 +9,12 @@ const read = (p: string) => readFileSync(join(__dirname, '..', p), 'utf8');
 
 describe('assignment lifecycle dates (#1695)', () => {
   it('commit and projection stamp purchased_at once', () => {
-    // #2125 M6b-51c-3: the statement is the one writer's; the callers ask for `purchasedAt: 'fill'`.
-    expect(read('api/assignment-lifecycle-writer.ts')).toMatch(/\$\{LEGACY\('purchased_at'\)\} = COALESCE\(\$\{LEGACY\('purchased_at'\)\}, \?\)/);
-    expect(read('api/assignment-commit.ts')).toMatch(/status: 'active', from: row\.status, purchasedAt: 'fill'/);
+    // #2125 M6b-51d-7b: the purchase time is the plan snapshot's alone (`writeAssignmentPurchasedAt()`);
+    // the lifecycle writer no longer touches it.
+    expect(read('api/assignment-lifecycle-writer.ts')).not.toMatch(/purchasedAt\?: 'fill'/);
+    expect(read('api/assignment-commit.ts')).toMatch(/status: 'active', from: row\.status, actor: input\.actor/);
     const proj = read('api/product-set-projection.ts');
-    expect(proj).toMatch(/status: 'active', purchasedAt: 'fill', actor,\s+notFrom: \['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'\]/);
+    expect(proj).toMatch(/status: 'active', actor,\s+notFrom: \['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'\]/);
     // #2125 M6b-51c-1: a new assignment keeps its predecessor's purchase time, read off the
     // predecessor's plan snapshot, else now; the same value goes on its own snapshot.
     expect(proj).toMatch(/SELECT COALESCE\(\(SELECT pa\.purchased_at FROM plan_snapshots pa/);

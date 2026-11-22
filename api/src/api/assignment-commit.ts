@@ -218,10 +218,10 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   }
 
   const rowCount = await writeAssignmentLifecycle(tx, input.gymId, Number(row.id), {
-    status: 'active', from: row.status, purchasedAt: 'fill', actor: input.actor,
+    status: 'active', from: row.status, actor: input.actor,
   });
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
-  // #2125 M6b-51c-1: the purchase time is the plan snapshot's own; the legacy column above is a dual-write.
+  // #2125 M6b-51c-1: the purchase time is the plan snapshot's own.
   await writeAssignmentPurchasedAt(tx, input.gymId, Number(row.id), 'fill');
   await recordStatusChange(tx, {
     gymId: input.gymId, userMembershipId: Number(row.id), memberId: Number(row.member_id),
@@ -307,8 +307,7 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   await assertPlanOnePerMember(tx, input.gymId, Number(row.id), replaced);
 
   const rowCount = await writeAssignmentLifecycle(tx, input.gymId, Number(row.id), {
-    status: PENDING_PAYMENT_STATUS, from: DRAFT_STATUS,
-    replaceOnActivation: input.resolution === 'replace', actor: input.actor,
+    status: PENDING_PAYMENT_STATUS, from: DRAFT_STATUS, actor: input.actor,
   });
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
   // #2125 M6b-35: the choice the activation reads back (`lockAssignment()`) is the snapshot's.

@@ -108,7 +108,12 @@ describe('a plan that cancels on its end date, in the Members App', () => {
   });
 
   it('is restored to an Active set that predates the entitlement links (migration 418)', async () => {
-    const { m, setId } = await cancellingPlan();
+    const { m, um, setId } = await cancellingPlan();
+    // Migration 418 read the cancellation off `user_memberships`, which was kept in step when it ran;
+    // since #2125 M6b-51d-7b only the anchor is, so the row is put back as it stood then.
+    await testAssignmentWrite(
+      `UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() + INTERVAL 20 DAY WHERE id = ?`,
+      [CANCELS_AT_PERIOD_END_STATUS, um], { mirror: false });
     // An Active set activated before #2659 stage 3 carries no entitlement link.
     await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 1', [setId]);
     expect(await myPlans(m.clerk, setId)).toEqual([]);

@@ -7,7 +7,6 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
-import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import { testAssignmentWrite } from './assignmentFixture';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -48,9 +47,6 @@ async function expectInStep(um: number, status: string) {
   expect(anchor).toEqual(legacy);
   expect(anchor.status).toBe(status);
 }
-const mismatches = async (um: number) => (await findPlanAssignmentDrift(db, gymId)).checks
-  .find((c) => c.name === 'assignment_lifecycle_mismatch')!.sample
-  .filter((r) => Number(r.user_membership_id) === um);
 
 beforeAll(async () => {
   gymId = await createTestGym('Plan Assignment Anchor Lifecycle Gym');
@@ -79,7 +75,6 @@ describe('the anchor carries the assignment lifecycle', () => {
     const { legacy, anchor } = await both(um);
     expect(anchor).toEqual(legacy);
     expect(anchor.closed_at).not.toBeNull();
-    expect(await mismatches(um)).toEqual([]);
   });
 
   it('only the anchor carries it: a copy of the snapshot has none', async () => {
@@ -117,7 +112,7 @@ describe('the anchor carries the assignment lifecycle', () => {
     await db.query(
       `UPDATE plan_snapshots SET assignment_status = NULL, assignment_modified_by = 'Stale'
         WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id = id`, [gymId, um]);
-    expect((await mismatches(um)).length).toBe(1);
+    expect((await both(um)).anchor.status).toBeNull();
     // The migration's backfill on this connection (a knex-shaped `raw`), scoped by the data it sees.
     const knex = { raw: async (sql: string) => [await db.query(sql)] };
     await migration.backfillAssignmentLifecycle(knex);

@@ -1035,13 +1035,12 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
         return { kind: 'invalid_transition', from: current[0].status } as const;
       }
       // #2125 M6b-51b: a Draft's dates are written on its own plan snapshot and mirrored onto its
-      // version from there; the legacy row below takes the same values until its writes are dropped.
+      // version from there.
       await writeDraftAssignmentDates(tx, gymId, Number(req.params.id), {
         startsAt: starts_at ?? null,
         endsAt: 'ends_at' in req.body ? { value: ends_at ?? null } : null,
       });
       await writeAssignmentLifecycle(tx, gymId, Number(req.params.id), {
-        startsAt: starts_at ?? null,
         ...('ends_at' in req.body ? { endsAt: { set: ends_at ?? null } } : {}),
         status: status ?? null,
         actor: resolveRequestActor(getTenantContext(req)),
