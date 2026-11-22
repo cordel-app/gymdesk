@@ -564,6 +564,8 @@
     "plan_entitlement_only": "Fins a la seva data de fi",
     "summary_heading": "Resum",
     "summary_contracted": "Productes contractats",
+    "summary_plans": "Plans de membresia",
+    "summary_products": "Productes",
     "summary_cancelled": "Productes cancel·lats",
     "summary_deleted": "Cancel·lació pendent",
     "summary_deleted_chip": "Eliminat",
