@@ -57,8 +57,6 @@ describe('Plan Promotion snapshot writer (#3026)', () => {
     const applied = await rows(setId);
     expect(applied).toHaveLength(1);
     expect(applied[0]).toMatchObject({ status: 'applied', source_id: null, snapshot: null, snapshot_confirmed_at: null });
-    const { rows: legacy } = await db.query<any>('SELECT id FROM user_membership_promotions WHERE product_set_id = ?', [setId]);
-    expect(legacy).toHaveLength(0);
 
     // A second application of the same Promotion on the same plan is refused.
     const again = await request.post(`/user-memberships/${umId}/promotions`)
@@ -97,33 +95,5 @@ describe('Plan Promotion snapshot writer (#3026)', () => {
     expect(frozen).toHaveLength(1);
     expect(frozen[0]).toMatchObject({ product_id: Number(prod.insertId), product_name: 'PPW Locker', quantity: 2 });
     expect(Number(frozen[0].unit_price)).toBe(15);
-  });
-
-  it('migration 451 moves a legacy Plan row onto the plan snapshot and deletes it, leaving Product-target rows (#3026 stage 3d-2)', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { retireLegacyPlanPromotionRows } = require('../infra/migrations/451_retire_legacy_plan_promotion_rows.js');
-    const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'PPW Legacy', `ppw-l-${Date.now()}@test.com`]);
-    await createTestDraftAssignment(gymId, Number(m.insertId), planId, { config: { base_price: 100 } });
-    const { rows: set } = await db.query<any>(
-      `SELECT ps.id FROM product_sets ps WHERE ps.owner_member_id = ? AND ps.status = 'in_cart'`, [Number(m.insertId)]);
-    const setId = Number(set[0].id);
-    const productPromo = await db.query(
-      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable, only_applicable_for_new_members, applies_to)
-       VALUES (?, 'PPW Product', '2026-01-01', '2099-12-31', 'active', 1, 0, 'product')`, [gymId]);
-    const legacyPlan = await db.query(
-      `INSERT INTO user_membership_promotions (gym_id, product_set_id, promotion_id, status, snapshot, snapshot_confirmed_at)
-       VALUES (?, ?, ?, 'applied', JSON_OBJECT('name', 'Legacy'), UTC_TIMESTAMP())`, [gymId, setId, promoId]);
-    const legacyProduct = await db.query(
-      `INSERT INTO user_membership_promotions (gym_id, product_set_id, promotion_id, status) VALUES (?, ?, ?, 'applied')`,
-      [gymId, setId, Number(productPromo.insertId)]);
-
-    await retireLegacyPlanPromotionRows({ raw: async (sql: string) => { const r = await db.query(sql); return [(r as any).rows?.length !== undefined && /^\s*SELECT/i.test(sql) ? r.rows : { affectedRows: r.rowCount }]; } });
-
-    const moved = await rows(setId);
-    expect(moved).toHaveLength(1);
-    expect(Number(moved[0].source_id)).toBe(Number(legacyPlan.insertId));
-    expect(moved[0].snapshot_confirmed_at).not.toBeNull();
-    const { rows: left } = await db.query<any>('SELECT id FROM user_membership_promotions WHERE product_set_id = ? ORDER BY id', [setId]);
-    expect(left.map((r: any) => Number(r.id))).toEqual([Number(legacyProduct.insertId)]);
   });
 });

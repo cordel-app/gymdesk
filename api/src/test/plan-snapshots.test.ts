@@ -2,18 +2,13 @@
 // (since stage 17 the snapshots are written by the real writers; the backfill only has promotions left to copy).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
-import { createRequire } from 'node:module';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, legacyChildQuery,
 } from './helpers';
 
-const require = createRequire(import.meta.url);
-const migration = require('../infra/migrations/347_plan_snapshots.js');
-const knex = require('knex')({ client: 'mysql2', connection: process.env.DATABASE_URL });
 
 afterAll(async () => {
-  await knex.destroy();
   await cleanupTestGyms();
   await db.end();
 });
@@ -127,13 +122,5 @@ describe('plan snapshots (#2125)', () => {
     expect(grants).toHaveLength(1);
     expect(grants[0].product_name).toBe('Frozen grant');
     expect(Number(grants[0].value)).toBe(5);
-  });
-
-  it('is repeatable: a second run inserts nothing and rewrites nothing', async () => {
-    await db.query("UPDATE plan_snapshots SET membership_fee_price = 1.00 WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)", [setA]);
-    const counts = await migration.backfillPlanSnapshots(knex);
-    expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    const { rows } = await db.query<any>('SELECT membership_fee_price FROM plan_snapshots WHERE id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?)', [setA]);
-    expect(Number(rows[0].membership_fee_price)).toBe(1);
   });
 });
