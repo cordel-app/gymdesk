@@ -15,6 +15,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   MEMBER_PLAN_HISTORY_LIMIT,
+  isLiveMemberPlan,
   type MemberPlanHistoryRow,
   splitMemberPlanHistory,
   toMemberPastPlan,
@@ -111,6 +112,28 @@ describe('which plans are history', () => {
     expect(current?.id).toBe(7);
     expect(also_live).toEqual([]);
     expect(past.map((p) => p.id)).toEqual([7, 6]);
+  });
+
+  it('keeps a plan whose cancellation is pending in the Draft live, never history (#2125 Q3, #3007)', () => {
+    // `to_be_canceled` is a running status: it behaves as `active` until the
+    // cancellation is committed at Save & Pay.
+    const rows = [
+      row({ id: 9, status: 'to_be_canceled', lifecycle_status: 'active', ends_at: null }),
+      row({ id: 8, status: 'active', ends_at: null }),
+      row({ id: 2 }),
+    ];
+    const { current, also_live, past } = splitMemberPlanHistory(rows);
+    expect(current?.id).toBe(9);
+    expect(also_live.map((p) => p.id)).toEqual([8]);
+    expect(past.map((p) => p.id)).toEqual([2]);
+    expect(isLiveMemberPlan({ status: 'to_be_canceled' })).toBe(true);
+    expect(isLiveMemberPlan({ status: 'cancelled', lifecycle_status: 'cancelled' })).toBe(false);
+  });
+
+  it('forecasts the same live plans My Plans lists', () => {
+    const src = read(join(REPO, 'api', 'src', 'api', 'me-billing-forecast.ts'));
+    expect(src).toContain('rows.filter(isLiveMemberPlan)');
+    expect(src).toMatch(/FIELD\(um\.status, 'active','to_be_canceled','paused'/);
   });
 
   it('answers nothing at all for a member with no assignment', () => {
