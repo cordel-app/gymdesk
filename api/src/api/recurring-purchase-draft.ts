@@ -173,9 +173,8 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
     }
   }
 
-  // A line never starts before the version does, and a purchase made today
-  // starts today.
-  const startsAt = input.today > locked.starts_at ? input.today : locked.starts_at;
+  // #3167: a newly added Product starts today, never on a later plan start date.
+  const startsAt = input.today;
 
   // Buying a recurring Product the member already has is a line of its own
   // (#1865 stage 2): its own price, discount, schedule and lifecycle, so

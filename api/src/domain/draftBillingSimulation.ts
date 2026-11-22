@@ -45,7 +45,15 @@ export interface PendingOneOff {
 export interface DraftSimulationInput {
   base: BillingEventSimulationResult;
   /** What committing the Draft asks for, dated `date` (null when it owes nothing). */
-  initial: { date: string; lines: BillingEventLine[] } | null;
+  initial: {
+    date: string; lines: BillingEventLine[];
+    /**
+     * #3167: the dates whose scheduled lines the initial payment already carries (a Product's first
+     * stretch from today beside a plan starting later). Their groups are replaced by it, so no
+     * charge is listed twice.
+     */
+    coveredDates?: string[];
+  } | null;
   oneOffs: PendingOneOff[];
   /** `YYYY-MM-DD` — the date one-offs are paid on. */
   today: string;
@@ -78,6 +86,7 @@ export function composeDraftSimulation(input: DraftSimulationInput): DraftBillin
 
   if (input.initial && input.initial.lines.length > 0) {
     const existing = groups.get(input.initial.date);
+    for (const covered of input.initial.coveredDates ?? []) groups.delete(covered);
     groups.set(input.initial.date, {
       date: input.initial.date,
       lines: [...input.initial.lines],
