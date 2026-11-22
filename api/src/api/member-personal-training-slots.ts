@@ -328,7 +328,7 @@ memberPersonalTrainingSlotsRouter.put('/selections', requireModuleWrite('MEMBERS
  * is what makes `created_at` mean "since when has the Member had this slot",
  * which stage 4's job and any future audit of the pattern will want.
  */
-async function replaceSelections(
+export async function replaceSelections(
   gymId: string,
   memberId: number,
   wanted: SlotIdentity[],
