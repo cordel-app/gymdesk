@@ -135,3 +135,63 @@ describe('a Draft assignment is created set-first', () => {
     expect(after).toMatchObject({ id: set.id, status: 'active' });
   });
 });
+
+// #2125 M6b-51b: a Draft's dates are written on its plan snapshot and mirrored onto its version from it.
+describe('PUT /user-memberships/:id dates on a Draft (#2125 M6b-51b)', () => {
+  const day = (v: unknown) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
+  async function datesOf(umId: number) {
+    const set = await draftSetOf(umId);
+    const { rows: ps } = await db.query<any>('SELECT starts_at, ends_at FROM product_sets WHERE id = ?', [set.id]);
+    const { rows: snap } = await db.query<any>(
+      `SELECT s.starts_at, s.ends_at FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? AND s.source_user_membership_id = ?`, [set.id, umId]);
+    const { rows: um } = await db.query<any>('SELECT starts_at, ends_at FROM user_memberships WHERE id = ?', [umId]);
+    const pair = (r: any) => [day(r?.starts_at), day(r?.ends_at)];
+    return { set: pair(ps[0]), snapshot: pair(snap[0]), legacy: pair(um[0]) };
+  }
+
+  it('writes the dates on the plan snapshot, the version and the answer', async () => {
+    const created = await api('post', '/user-memberships')
+      .send({ member_id: await member(), membership_plan_id: await plan('D1'), starts_at: '2026-06-01' });
+    const res = await api('put', `/user-memberships/${created.body.id}`)
+      .send({ starts_at: '2026-07-15', ends_at: '2027-07-14' });
+    expect(res.status).toBe(200);
+    expect([day(res.body.starts_at), day(res.body.ends_at)]).toEqual(['2026-07-15', '2027-07-14']);
+    expect(await datesOf(created.body.id)).toEqual({
+      set: ['2026-07-15', '2027-07-14'], snapshot: ['2026-07-15', '2027-07-14'], legacy: ['2026-07-15', '2027-07-14'],
+    });
+  });
+
+  it('keeps the start when only the end is sent, and clears the end on an explicit null', async () => {
+    const created = await api('post', '/user-memberships')
+      .send({ member_id: await member(), membership_plan_id: await plan('D2'), starts_at: '2026-06-01', ends_at: '2026-12-31' });
+    expect((await api('put', `/user-memberships/${created.body.id}`).send({ ends_at: '2026-11-30' })).status).toBe(200);
+    expect((await datesOf(created.body.id)).snapshot).toEqual(['2026-06-01', '2026-11-30']);
+    const cleared = await api('put', `/user-memberships/${created.body.id}`).send({ ends_at: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.ends_at).toBeNull();
+    const after = await datesOf(created.body.id);
+    expect(after.snapshot).toEqual(['2026-06-01', null]);
+    expect(after.set).toEqual(['2026-06-01', null]);
+  });
+
+  it('mirrors the version from the plan snapshot, never from the legacy row', async () => {
+    const created = await api('post', '/user-memberships')
+      .send({ member_id: await member(), membership_plan_id: await plan('D3'), starts_at: '2026-06-01' });
+    // A legacy row that disagrees with the snapshot must not reach the version.
+    await db.query(`UPDATE user_memberships SET starts_at = '2020-01-01' WHERE id = ?`, [created.body.id]);
+    expect((await api('put', `/user-memberships/${created.body.id}`).send({ ends_at: '2026-12-31' })).status).toBe(200);
+    const after = await datesOf(created.body.id);
+    expect(after.set).toEqual(['2026-06-01', '2026-12-31']);
+    expect(after.snapshot).toEqual(['2026-06-01', '2026-12-31']);
+  });
+
+  it('a request that names no date moves none', async () => {
+    const created = await api('post', '/user-memberships')
+      .send({ member_id: await member(), membership_plan_id: await plan('D4'), starts_at: '2026-06-01', ends_at: '2026-12-31' });
+    expect((await api('put', `/user-memberships/${created.body.id}`).send({ discount_reason: null })).status).toBe(200);
+    expect(await datesOf(created.body.id)).toEqual({
+      set: ['2026-06-01', '2026-12-31'], snapshot: ['2026-06-01', '2026-12-31'], legacy: ['2026-06-01', '2026-12-31'],
+    });
+  });
+});
