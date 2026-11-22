@@ -283,6 +283,42 @@ describe('editing a Draft line (#2856)', () => {
     expect(await setsOf(m)).toBe(2);
   });
 
+  it('keeps each version\'s Promotions apart on a line the two share (#3026 stage 3d-3b)', async () => {
+    const m = await member();
+    const towel = await product({ name: 'Towel S', frequency: 'month', amount: '20.00', type: 'service' });
+    const half = await promotion({ name: 'Half S' });
+    await grant(half, towel, 'periodical', 'percentage_discount', 50);
+    const buy = await auth(request.post(base(m))).send({ product_id: towel, promotion_ids: [half] });
+    expect(buy.status).toBe(201);
+    const activeId = buy.body.product_set_id as number;
+    const sp = await auth(request.post(`${mset(activeId)}/save-and-pay`)).send({});
+    expect((await pay(sp.body.payment_request_id)).status).toBe(200);
+
+    const d = await auth(request.post('/product-sets/draft')).send({ member_id: m });
+    const draftId = d.body.id as number;
+    // The Draft links the Active line (one line), and holds its own copy of the line's application.
+    const [shared] = await openLines(draftId);
+    expect(shared.id).toBe((await openLines(activeId))[0].id);
+    const owners = async () => (await db.query<any>(
+      `SELECT pp.product_set_id, pp.source_application_id FROM product_promotion_snapshots pp
+         JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id
+        WHERE par.source_id = ? ORDER BY pp.product_set_id`, [shared.id])).rows
+      .map((r: any) => Number(r.product_set_id));
+    expect(await owners()).toEqual([activeId, draftId].sort((x, y) => x - y));
+    const towelRow = async () => (await listed(m)).find((i) => i.product_id === towel);
+    expect((await towelRow()).promotions.map((p: any) => p.promotion_id)).toEqual([half]);
+
+    // Removing the Promotion on the Draft leaves the Active version's application (and the shared line) alone.
+    const { rows: draftApps } = await db.query<any>(
+      'SELECT id FROM user_membership_promotions WHERE product_set_id = ? AND promotion_id = ?', [draftId, half]);
+    expect(draftApps).toHaveLength(1);
+    const del = await auth(request.delete(`${mset(draftId)}/promotions/${draftApps[0].id}`));
+    expect(del.status).toBeLessThan(300);
+    expect((await openLines(draftId))[0].id).toBe(shared.id);
+    expect(await owners()).toEqual([activeId]);
+    expect((await towelRow()).promotions).toEqual([]);
+  });
+
   it('refuses another gym (404) and an unauthenticated call (401)', async () => {
     const m = await member();
     const towel = await product({ name: 'Towel T', frequency: 'month', amount: '5.00', type: 'service' });

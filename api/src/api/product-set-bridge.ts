@@ -143,6 +143,11 @@ async function copyApplications(
         [insertId, gymId, app.id]);
     }
   }
+  // #3026 stage 3d-3b: the readers take a line-owned application from its Product snapshot row, so the
+  // copies are synced before the transaction reads the successor.
+  if (rows.some((app: any) => app.recurrent_snapshot_id != null)) {
+    await syncProductSnapshotsOfVersion(tx, gymId, to.productSetId);
+  }
 }
 
 
