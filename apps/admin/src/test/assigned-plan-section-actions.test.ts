@@ -37,7 +37,7 @@ describe('Assigned Plan section Save/Cancel placement (#2677)', () => {
 
   it('closes each Product benefit section with its own pair', () => {
     const body = sectionBody('BENEFIT_SECTIONS.map(', "t('section_plan_promotions')");
-    const pair = body.indexOf('sectionActions(() => saveBenefits(endpoint))');
+    const pair = body.indexOf('sectionActions(() => saveBenefits(endpoint, section))');
     // #2835: the grid stays in Edit mode; the pair closes it, after the hints.
     expect(pair).toBeGreaterThan(body.indexOf('<ProductBenefitView'));
     expect(pair).toBeGreaterThan(body.indexOf("t('assigned_line_edit_hint')"));

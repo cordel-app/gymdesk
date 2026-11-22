@@ -15,8 +15,11 @@
 //
 // #2966 stage 8: an added cart plan's row lists the Promotions applied to it
 // (`addedPlanPromotionNames()`), as the list's accent badges.
+//
+// #2966 stage 10: an in-cart row offers Edit beside Remove, which opens that plan's
+// configuration editor under the row (`renderEditor`, the caller's); one at a time.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
 import { listCellStyle, listNameBadgeAccentStyle, listRowDividerStyle, listSurfaceStyle } from '@/components/listChrome';
@@ -26,16 +29,19 @@ import { secondaryBtnSmall } from '@/components/formChrome';
 import type { ProductSetRow } from './membershipConfiguration';
 import { addedPlanPromotionNames } from './membershipPlansView';
 
-export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment', onRemove }: {
+export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment', onRemove, renderEditor }: {
   sets: ProductSetRow[];
   spaced: boolean;
   status?: 'pending_payment' | 'cancelled' | 'in_cart';
   /** #2966 stage 5 — offered on an in-cart row only; the caller owns the request. */
   onRemove?: (row: ProductSetRow) => void;
+  /** #2966 stage 10 — the editor drawn under an in-cart row whose Edit is open; absent offers no Edit. */
+  renderEditor?: (row: ProductSetRow) => React.ReactNode;
 }) {
   const t = useTranslations('members');
   const tStatus = useTranslations('status');
   const gymFmt = useGymFormatSettings();
+  const [editingId, setEditingId] = useState<number | null>(null);
   if (sets.length === 0) return null;
   return (
     <div
@@ -43,8 +49,8 @@ export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment', 
       {...(status === 'cancelled' ? { 'data-cancelled-plan-sets': true } : status === 'in_cart' ? { 'data-added-cart-plans': true } : { 'data-pending-payment-plans': true })}
     >
       {sets.map((ps, i) => (
+        <React.Fragment key={ps.id}>
         <div
-          key={ps.id}
           data-product-set-id={ps.id}
           style={{
             ...listCellStyle, ...(i > 0 ? listRowDividerStyle : {}),
@@ -67,10 +73,22 @@ export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment', 
             : ps.starts_at && <span>{formatGymDateOnly(ps.starts_at, gymFmt)}</span>}
           {ps.amount_due != null && <span>{formatGymAmount(ps.amount_due, gymFmt)}</span>}
           <StatusBadge status={status} label={tStatus(status as never)} />
+          {status === 'in_cart' && renderEditor && (
+            <button
+              type="button" style={secondaryBtnSmall} aria-expanded={editingId === ps.id}
+              onClick={() => setEditingId(editingId === ps.id ? null : ps.id)}
+            >
+              {editingId === ps.id ? t('added_plan_edit_done') : t('added_plan_edit')}
+            </button>
+          )}
           {status === 'in_cart' && onRemove && (
             <button type="button" style={secondaryBtnSmall} onClick={() => onRemove(ps)}>{t('added_plan_remove')}</button>
           )}
         </div>
+        {status === 'in_cart' && renderEditor && editingId === ps.id && (
+          <div style={{ ...listCellStyle, ...listRowDividerStyle }}>{renderEditor(ps)}</div>
+        )}
+        </React.Fragment>
       ))}
     </div>
   );

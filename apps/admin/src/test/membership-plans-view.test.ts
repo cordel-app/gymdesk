@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addedCartPlans, addedPlanPromotionNames, addedPlanRemovePath, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from '../app/[locale]/members/membershipPlansView';
+import { addedCartPlans, addedPlanPromotionNames, addedPlanEditTarget, addedPlanRemovePath, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, status: string, is_live = true, membership_plan_id = id) => ({ id, status, is_live, membership_plan_id } as any);
 
@@ -154,5 +154,16 @@ describe('#3114 planReactivationAction — Reactivate on a plan cancelling at it
     for (const status of ['active', 'to_be_canceled', 'cancelled', 'in_cart', 'paused']) {
       expect(planReactivationAction({ status, is_current: true, assignment_relationship: 'primary' } as any)).toBeNull();
     }
+  });
+});
+
+describe('#2966 stage 10 addedPlanEditTarget', () => {
+  it('takes an in-cart added row apart into the cart and the plan snapshot', () => {
+    expect(addedPlanEditTarget({ id: 12 * 1_000_000 + 345, status: 'in_cart' })).toEqual({ productSetId: 12, planSnapshotId: 345 });
+  });
+  it('offers no editor for a row awaiting payment or a malformed id', () => {
+    expect(addedPlanEditTarget({ id: 12 * 1_000_000 + 345, status: 'pending_payment' })).toBeNull();
+    expect(addedPlanEditTarget({ id: 345, status: 'in_cart' })).toBeNull();
+    expect(addedPlanEditTarget({ id: 12 * 1_000_000, status: 'in_cart' })).toBeNull();
   });
 });

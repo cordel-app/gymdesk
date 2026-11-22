@@ -83,7 +83,8 @@ describe('Assigned Plan: Billing & Duration (#635 §7/§9)', () => {
   });
 
   it('saves it to the assignment, never to the Membership Plan (§15)', () => {
-    expect(src).toContain('/user-memberships/${assignedPlanId}/billing-duration');
+    // #2966 stage 10: the paths are configurationEndpoints()'s (tested in its own file).
+    expect(src).toContain('apiFetch(endpoints.billingDuration');
     expect(src, 'the editor writes to a membership-plans endpoint').not.toContain('/membership-plans/');
   });
 });
@@ -112,7 +113,7 @@ describe('Assigned Plan: One-off / Session / Period Benefits (#635 §3–§5/§9
     for (const endpoint of ['oneoff-benefits', 'session-benefits', 'periodical-benefits']) {
       expect(src, `no route for "${endpoint}"`).toContain(endpoint);
     }
-    expect(src).toContain('/user-memberships/${assignedPlanId}/${endpoint}');
+    expect(src).toContain('apiFetch(endpoints.benefits(section, endpoint)');
   });
 
   // #924 stage 1: the hand-rolled table this section used to render — its own
