@@ -5798,6 +5798,7 @@
     "image_male": "Male image",
     "image_female": "Female image",
     "image_requirements": "Any JPEG, PNG, WebP or GIF image. The server fits it into a 1080 × 1080 WebP with a transparent background and generates a 256 × 256 thumbnail. Male and female are managed separately.",
+    "image_open": "Open the {image} of {muscle}",
     "image_none": "No image",
     "image_upload": "Upload Image",
     "image_replace": "Replace Image",
