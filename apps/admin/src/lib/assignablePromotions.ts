@@ -75,3 +75,22 @@ export function selectedDraftPromotionIds(applied: readonly { promotion_id: numb
 export function draftPromotionToggle(selectedIds: readonly number[], promotionId: number): 'apply' | 'revoke' {
   return selectedIds.includes(promotionId) ? 'revoke' : 'apply';
 }
+
+/**
+ * #3169 — the Draft's applied Promotions the checkbox list does not offer (no longer targeting the
+ * plan, outside its dates): drawn as their own checked rows under the list, so each applied
+ * Promotion is shown exactly once and can still be unticked. Empty until the offer is known.
+ */
+export function appliedOutsideOffer<T extends { promotion_id: number; status: string }>(
+  applied: readonly T[], offeredIds: readonly number[] | null,
+): T[] {
+  if (offeredIds == null) return [];
+  const offered = new Set(offeredIds.map(Number));
+  const seen = new Set<number>();
+  return applied.filter((a) => {
+    const id = Number(a.promotion_id);
+    if (a.status !== 'applied' || offered.has(id) || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}

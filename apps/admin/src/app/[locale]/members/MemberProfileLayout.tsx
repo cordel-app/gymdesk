@@ -139,9 +139,12 @@ export function NewMemberValue({
   );
 }
 
-/** #2547: New Member and Welcomed sit side by side on one wrapping row. */
+/**
+ * #2547 put New Member and Welcomed on one row; #3174 stacks them: Welcomed sits directly below the
+ * New Member chip, in both halves of the Profile, so the two modes keep one layout (#882).
+ */
 export const statusChipRowStyle: React.CSSProperties = {
-  display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
 };
 
 /**
@@ -155,13 +158,15 @@ export const profileInlineValueStyle: React.CSSProperties = {
 };
 
 /**
- * Read-only Welcomed value. #2807: regular profile text (`Welcomed: Yes`), not
- * a badge — the accent pill is New Member's alone.
+ * Read-only Welcomed value. #3174 (reversing #2807's plain text): `Welcomed:` then its value as a
+ * chip in the New Member chip's own style (`newMemberChipStyle()`, accent for Yes, neutral for No),
+ * under the New Member chip. `announce` is the full sentence a screen reader hears.
  */
-export function WelcomedValue({ label, value }: { label: string; value: string }) {
+export function WelcomedValue({ label, value, welcomed, announce }: { label: string; value: string; welcomed: boolean; announce: string }) {
   return (
-    <span data-testid="member-welcomed" style={profileInlineValueStyle}>
-      <span style={profileInlineFieldLabelStyle}>{label}:</span> {value}
+    <span data-testid="member-welcomed" style={{ ...profileInlineValueStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span style={profileInlineFieldLabelStyle}>{label}:</span>
+      <span style={newMemberChipStyle(welcomed)} role="img" aria-label={announce}>{value}</span>
     </span>
   );
 }

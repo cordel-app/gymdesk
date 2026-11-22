@@ -7,8 +7,8 @@ import { snapshotProductSetFromPlan } from './product-set-configuration';
 import { syncDraftAssignment } from './product-set-projection';
 import { syncMandatoryQuantities } from './product-set-draft';
 import { cloneConfiguration } from './product-set-bridge';
-import { ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
-import { primaryPlanSnapshotSql } from './plan-snapshot-lines';
+import { ownAssignmentPlanSnapshot, ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
+import { planSnapshotOfAssignment, primaryPlanSnapshotSql } from './plan-snapshot-lines';
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
@@ -175,15 +175,41 @@ export async function writeDiscountOnVersion(tx: Tx, gymId: string, userMembersh
 }
 
 /**
- * A Draft's dates are edited on the row by `PUT /user-memberships/:id`; its
- * version carries the same facts, so a write of them is mirrored onto it in the
- * same transaction.
+ * #2125 M6b-51b — a Draft's dates, edited by `PUT /user-memberships/:id`, are written on the Draft's
+ * own plan snapshot (owned first, so a snapshot another Product Set links is never moved) and then
+ * mirrored onto its version from that snapshot. `startsAt` null keeps the stored start; `endsAt` null
+ * keeps the stored end, `{ value: null }` clears it. Nothing is written for an assignment no Draft
+ * version is linked to.
+ */
+export async function writeDraftAssignmentDates(tx: Tx, gymId: string, userMembershipId: number, input: {
+  startsAt: string | null; endsAt: { value: string | null } | null;
+}): Promise<void> {
+  if (input.startsAt == null && !input.endsAt) return;
+  const draft = await linkedDraftSetFor(tx, gymId, userMembershipId);
+  if (!draft) return;
+  const target = await ownAssignmentPlanSnapshot(tx, gymId, draft.id, userMembershipId);
+  if (target == null) return;
+  const day = (v: string | null) => (v == null ? null : String(v).slice(0, 10));
+  await tx.query(
+    `UPDATE plan_snapshots
+        SET starts_at = COALESCE(?, starts_at), ends_at = IF(?, ?, ends_at)
+      WHERE id = ? AND gym_id = ?`,
+    [day(input.startsAt), input.endsAt ? 1 : 0, day(input.endsAt?.value ?? null), target, gymId]);
+  await syncDraftSetFromAssignment(tx, gymId, userMembershipId);
+}
+
+/**
+ * A Draft's version carries the same dates as its assignment, so a write of them is mirrored onto
+ * it in the same transaction. #2125 M6b-51b: the dates are read from the Draft's plan snapshot that
+ * names the assignment (where `writeDraftAssignmentDates()` wrote them), never `user_memberships`.
  */
 export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const draft = await linkedDraftSetFor(tx, gymId, userMembershipId);
   if (!draft) return;
+  const snapshotId = await planSnapshotOfAssignment(tx, gymId, draft.id, userMembershipId);
+  if (snapshotId == null) return;
   const { rows } = await tx.query<any>(
-    'SELECT starts_at, ends_at FROM user_memberships WHERE id = ? AND gym_id = ?', [userMembershipId, gymId]);
+    'SELECT starts_at, ends_at FROM plan_snapshots WHERE id = ? AND gym_id = ?', [snapshotId, gymId]);
   const um = rows[0];
   if (!um) return;
   const dateOnly = (v: unknown) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));

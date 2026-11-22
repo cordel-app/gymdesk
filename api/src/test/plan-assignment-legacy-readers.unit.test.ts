@@ -45,7 +45,7 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
 const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-commit.ts': 4,
-  'api/assignment-draft-set.ts': 3,
+  'api/assignment-draft-set.ts': 2,
   'api/assignment-lifecycle.ts': 1,
   'api/membership-plans.ts': 1,
   'api/one-active-plan.ts': 2,

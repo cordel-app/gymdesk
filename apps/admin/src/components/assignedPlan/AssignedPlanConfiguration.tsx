@@ -845,19 +845,9 @@ export function AssignedPlanConfiguration({
           Benefits: a Promotion belongs to the whole Membership Plan. The
           square thumbnail opens the detail modal with the original image. */}
       <CardSection label={t('section_plan_promotions')}>
-        {promotions.length === 0 ? (
-          <p style={hintSt}>{t('no_plan_promotions')}</p>
-        ) : promotions.map((p) => (
-          <PlanPromotionRow
-            key={p.id}
-            promotion={p}
-            // #2853: on a Draft whose Promotions are chosen below, the picker
-            // holds the selection, so the row carries no second checkbox.
-            checkbox={draftPicker ? null : promotionToggle.checkbox(p, toggleGate)}
-            onOpen={() => setPromotionDetail(p)}
-          />
-        ))}
-        {draftPicker && membershipPlanId != null && ownerMemberId != null && (
+        {/* #3169 — on an In Cart plan in Edit mode the checkbox list below the plan is the one
+            rendering of its Promotions (applied ones checked), so no applied row is drawn twice. */}
+        {draftPicker && membershipPlanId != null && ownerMemberId != null ? (
           <DraftPromotionPicker
             assignedPlanId={assignedPlanId}
             membershipPlanId={membershipPlanId}
@@ -865,8 +855,18 @@ export function AssignedPlanConfiguration({
             applied={promotions}
             canWrite={canWrite}
             onChanged={onChanged}
+            onOpenPromotion={setPromotionDetail}
           />
-        )}
+        ) : promotions.length === 0 ? (
+          <p style={hintSt}>{t('no_plan_promotions')}</p>
+        ) : promotions.map((p) => (
+          <PlanPromotionRow
+            key={p.id}
+            promotion={p}
+            checkbox={promotionToggle.checkbox(p, toggleGate)}
+            onOpen={() => setPromotionDetail(p)}
+          />
+        ))}
       </CardSection>
 
       {promotionToggle.dialogs}
