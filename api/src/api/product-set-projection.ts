@@ -189,11 +189,11 @@ export async function projectActiveProductSet(
     // The end date always moves; a plan that is over keeps its status and its purchase time.
     await writeAssignmentLifecycle(tx, gymId, umId, { endsAt: { set: dateOnly(set.ends_at) }, actor });
     await writeAssignmentLifecycle(tx, gymId, umId, {
-      status: 'active', purchasedAt: 'fill', actor,
+      status: 'active', actor,
       notFrom: ['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'],
     });
     if (continuedUmId != null) await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
-    // #2125 M6b-51c-1: the purchase time is the plan snapshot's own; the legacy column is a dual-write.
+    // #2125 M6b-51c-1: the purchase time is the plan snapshot's own.
     await writeAssignmentPurchasedAt(tx, gymId, umId, 'fill');
     return umId;
   }
@@ -267,7 +267,7 @@ export async function syncDraftAssignment(
   // has just created, which is not a modification of anything.
   const touched = actor !== undefined;
   await writeAssignmentLifecycle(tx, gymId, umId, {
-    startsAt: dateOnly(set.starts_at), endsAt: { set: dateOnly(set.ends_at) },
+    endsAt: { set: dateOnly(set.ends_at) },
     actor: touched ? (actor ?? null) : undefined,
   });
 }

@@ -60,20 +60,32 @@ export function splitTopLevel(text: string): string[] {
 }
 
 /**
- * Copies a freshly written legacy row's lifecycle onto the anchor of each assignment named, for a
- * fixture that created the row (and maybe its first snapshot) by hand. Only these rows: never a
- * gym-wide repair, which would overwrite what a real route has since written on another anchor.
+ * The assignments a fixture inserted by hand whose anchor has not taken the row's lifecycle yet. A row
+ * is mirrored once, when its first snapshot exists; from then on the anchor is the record (routes write
+ * it, and the legacy row is never updated by production code since M6b-51d-7b), so a later fixture
+ * sync must not copy the row's stale values back.
+ */
+const awaitingAnchor = new Set<number>();
+
+/**
+ * Copies a hand-written row's lifecycle onto its anchor, once, for the named rows still awaiting one.
+ * Never a gym-wide repair, and never an assignment a production writer created.
  */
 export async function mirrorLegacyLifecycle(exec: Exec, userMembershipIds: readonly number[]): Promise<void> {
-  const ids = [...new Set(userMembershipIds.map(Number))].filter((id) => id > 0);
+  const ids = [...new Set(userMembershipIds.map(Number))].filter((id) => id > 0 && awaitingAnchor.has(id));
   if (ids.length === 0) return;
+  const marks = ids.map(() => '?').join(',');
   await exec.query(
     `UPDATE plan_snapshots a
        JOIN user_memberships um ON um.id = a.source_user_membership_id AND um.gym_id = a.gym_id
         SET a.assignment_status = um.status, a.assignment_closed_at = um.closed_at,
             a.assignment_ends_at = um.ends_at, a.assignment_modified_at = um.modified_at,
             a.assignment_modified_by = um.modified_by
-      WHERE a.assignment_id = a.id AND um.id IN (${ids.map(() => '?').join(',')})`, ids);
+      WHERE a.assignment_id = a.id AND um.id IN (${marks})`, ids);
+  const { rows } = await exec.query<{ id: number }>(
+    `SELECT DISTINCT source_user_membership_id AS id FROM plan_snapshots
+      WHERE assignment_id = id AND source_user_membership_id IN (${marks})`, ids);
+  for (const r of rows) awaitingAnchor.delete(Number(r.id));
 }
 
 /**
@@ -118,6 +130,9 @@ export async function testAssignmentWrite<T = any>(
   }
 
   const result = await exec.query<T>(sql, params as any[]);
-  if (mirror && result.insertId > 0) await mirrorLegacyLifecycle(exec, [result.insertId]);
+  if (mirror && result.insertId > 0) {
+    awaitingAnchor.add(Number(result.insertId));
+    await mirrorLegacyLifecycle(exec, [result.insertId]);
+  }
   return result;
 }

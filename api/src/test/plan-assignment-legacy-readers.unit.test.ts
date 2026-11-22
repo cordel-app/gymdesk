@@ -44,11 +44,11 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
 const LEGACY_STATEMENTS: Record<string, number> = {
-  // M6b-51c-3: every UPDATE of the table; M6b-51d-1: and its one INSERT, under a registry id;
-  // M6b-51d-3: and its one DELETE, of Draft rows only.
-  'api/assignment-lifecycle-writer.ts': 3,
-  'api/plan-assignment-drift.ts': 5, // M6b-51c-4: the report compares the anchor's lifecycle with the legacy row
-  'api/plan-assignment-sync.ts': 1, // M6b-51d-7a: only the anchor lifecycle's repair (`plan-assignments:settle`)
+  // M6b-51d-1: the table's one INSERT, under a registry id; M6b-51d-3: and its one DELETE, of Draft
+  // rows only. M6b-51d-7b: no UPDATE any more (the lifecycle is written on the anchor alone).
+  'api/assignment-lifecycle-writer.ts': 2,
+  // M6b-51d-7b: the report checks identity only (a row with no snapshot, a snapshot with no row).
+  'api/plan-assignment-drift.ts': 2,
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -265,12 +265,13 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(config).toContain('FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um');
   });
 
-  it('M6b-51c-3: an assignment is updated only by the one lifecycle writer', () => {
+  it('M6b-51c-3 / M6b-51d-7b: no production code updates the table; the lifecycle writer writes the anchor', () => {
     const UPDATE = /\bUPDATE\s+user_memberships\b/g;
     const writers = sourceFiles(API_SRC)
       .filter((f) => (code(readFileSync(f, 'utf8')).match(UPDATE) ?? []).length > 0)
       .map((f) => f.slice(API_SRC.length + 1));
-    expect(writers).toEqual(['api/assignment-lifecycle-writer.ts']);
+    expect(writers).toEqual([]);
+    expect(readFileSync(join(API_SRC, 'api/assignment-lifecycle-writer.ts'), 'utf8')).toMatch(/UPDATE plan_snapshots SET \$\{sets\.join/);
   });
 
   it('M6b-51d-1: an assignment is created only by the writer, under a plan_assignment_ids id', () => {

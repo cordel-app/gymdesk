@@ -8,7 +8,6 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
-import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
@@ -64,9 +63,6 @@ describe('the Member card plan history reads plan_snapshots', () => {
     expect(row.status).toBe(rows[0].status);
     expect(row.created_by).toBe(rows[0].created_by);
     expect(row.modified_by).toBe(rows[0].modified_by);
-
-    const report = await findPlanAssignmentDrift(db as any, gymId);
-    expect(report.checks.find((c) => c.name === 'modifier_mismatch')?.count).toBe(0);
   });
 
   it('follows the snapshot when the legacy row disagrees', async () => {
@@ -79,10 +75,6 @@ describe('the Member card plan history reads plan_snapshots', () => {
     expect(row.is_live).toBe(true);
     expect(row.starts_at).not.toBe('2001-01-01');
     expect(row.modified_by).not.toBe('Legacy Only');
-
-    const report = await findPlanAssignmentDrift(db as any, gymId);
-    const check = report.checks.find((c) => c.name === 'modifier_mismatch')!;
-    expect(check.sample.some((s: any) => Number(s.user_membership_id) === um)).toBe(true);
   });
 
   it('reports the latest modifier across the assignment\'s snapshots, not only the current one', async () => {

@@ -59,17 +59,6 @@ export async function stampAssignmentIds(exec: Exec, gymId: string, planSnapshot
   await seedAnchorLifecycle(exec, gymId, anchorIds);
 }
 
-/**
- * #2125 M6b-51c-4 — an anchor's lifecycle as its `user_memberships` row states it. Since M6b-51d-7a
- * only the repair (`plan-assignments:settle`) reads it; a new anchor is seeded from itself.
- */
-const ANCHOR_LIFECYCLE_FROM_LEGACY = `
-  UPDATE plan_snapshots a
-    JOIN user_memberships um ON um.id = a.source_user_membership_id AND um.gym_id = a.gym_id
-     SET a.assignment_status = um.status, a.assignment_closed_at = um.closed_at,
-         a.assignment_ends_at = um.ends_at, a.assignment_modified_at = um.modified_at,
-         a.assignment_modified_by = um.modified_by
-   WHERE a.assignment_id = a.id`;
 
 /**
  * #2125 M6b-51d-7a — the seed reads the anchor snapshot itself: a new assignment's first snapshot is
@@ -87,21 +76,6 @@ async function seedAnchorLifecycle(exec: Exec, gymId: string, anchorIds: number[
     [gymId, ...anchorIds]);
 }
 
-/**
- * #2125 M6b-51c-4 — the repair for anchors that fell out of step with their `user_memberships` row
- * (a change made by code deployed before the one writer mirrored it, e.g. between migration 453 and
- * the deploy). Run by `npm run plan-assignments:settle -- --execute`; answers how many it repaired.
- * The migration's own backfill does the same once (`backfillAssignmentLifecycle()`).
- */
-export async function repairAnchorLifecycles(exec: Exec, gymId?: string): Promise<number> {
-  const { rowCount } = await exec.query(
-    `${ANCHOR_LIFECYCLE_FROM_LEGACY}
-       AND (NOT (a.assignment_status <=> um.status) OR NOT (a.assignment_closed_at <=> um.closed_at)
-            OR NOT (a.assignment_ends_at <=> um.ends_at) OR NOT (a.assignment_modified_at <=> um.modified_at)
-            OR NOT (a.assignment_modified_by <=> um.modified_by))${gymId ? ' AND a.gym_id = ?' : ''}`,
-    gymId ? [gymId] : []);
-  return rowCount;
-}
 
 export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotId: number): Promise<void> {
   await stampAssignmentIds(exec, gymId, [planSnapshotId]);
