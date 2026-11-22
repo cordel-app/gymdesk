@@ -575,6 +575,7 @@
     "summary_nothing_due": "Avui no hi ha res a pagar.",
     "summary_line_regular": "Preu habitual {amount}",
     "summary_line_promotion": "Promoció: {name}",
+    "summary_line_prorated": "Prorratejat: {days} de {period} dies",
     "summary_line_discount": "Descompte −{amount}",
     "summary_line_tax": "IVA {rate}% incl.",
     "summary_total": "Total pagament inicial",

@@ -575,6 +575,7 @@
     "summary_nothing_due": "Hoy no hay nada que pagar.",
     "summary_line_regular": "Precio habitual {amount}",
     "summary_line_promotion": "Promoción: {name}",
+    "summary_line_prorated": "Prorrateado: {days} de {period} días",
     "summary_line_discount": "Descuento −{amount}",
     "summary_line_tax": "IVA {rate}% incl.",
     "summary_total": "Total pago inicial",
