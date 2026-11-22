@@ -33,6 +33,7 @@ async function indexExists(knex, name) {
 }
 
 exports.up = async (knex) => {
+  if (!(await knex.schema.hasColumn('plan_allowance_renewals', 'user_membership_session_id'))) return;
   const [orphans] = await knex.raw(
     `SELECT id, gym_id, user_membership_session_id, renewal_date
        FROM plan_allowance_renewals WHERE plan_session_snapshot_id IS NULL ORDER BY id LIMIT 20`);
