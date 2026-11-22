@@ -9,6 +9,7 @@ import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { assignmentReplacementOf, lockAssignmentAnchor, writeAssignmentReplacement } from './plan-assignment-sync';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #1108 — the one place an assignment is **committed**.
@@ -229,13 +230,9 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
     });
   }
 
-  const { rowCount } = await tx.query(
-    `UPDATE user_memberships
-        SET status = 'active', purchased_at = COALESCE(purchased_at, UTC_TIMESTAMP()),
-            modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE id = ? AND gym_id = ? AND status = ?`,
-    [input.actor, row.id, input.gymId, row.status],
-  );
+  const rowCount = await writeAssignmentLifecycle(tx, input.gymId, Number(row.id), {
+    status: 'active', from: row.status, purchasedAt: 'fill', actor: input.actor,
+  });
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
   await recordStatusChange(tx, {
     gymId: input.gymId, userMembershipId: Number(row.id), memberId: Number(row.member_id),
@@ -320,12 +317,10 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
     ? replacementTargets(conflicts, row.replaces_user_membership_id).map((c) => Number(c.id)) : [];
   await assertPlanOnePerMember(tx, input.gymId, Number(row.id), replaced);
 
-  const { rowCount } = await tx.query(
-    `UPDATE user_memberships
-        SET status = ?, replace_on_activation = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE id = ? AND gym_id = ? AND status = ?`,
-    [PENDING_PAYMENT_STATUS, input.resolution === 'replace' ? 1 : 0, input.actor, row.id, input.gymId, DRAFT_STATUS],
-  );
+  const rowCount = await writeAssignmentLifecycle(tx, input.gymId, Number(row.id), {
+    status: PENDING_PAYMENT_STATUS, from: DRAFT_STATUS,
+    replaceOnActivation: input.resolution === 'replace', actor: input.actor,
+  });
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
   // #2125 M6b-35: the choice the activation reads back (`lockAssignment()`) is the snapshot's.
   await writeAssignmentReplacement(tx, input.gymId, Number(row.id), { replaceOnActivation: input.resolution === 'replace' });

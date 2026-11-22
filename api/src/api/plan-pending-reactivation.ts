@@ -5,6 +5,7 @@ import {
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { unmarkPlanForCancellation } from './plan-pending-cancellation';
 import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #3114 — the pending-reactivation lifecycle of a Membership Plan, mirroring #3007's pending
@@ -50,11 +51,9 @@ const dateOnly = (v: unknown): string | null =>
 async function setLegacy(
   tx: Tx, gymId: string, id: number, from: string, to: string, actor: string | null, clearEnd: boolean,
 ) {
-  await tx.query(
-    `UPDATE user_memberships
-        SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-            ${clearEnd ? ', ends_at = NULL, closed_at = NULL' : ''}
-      WHERE id = ? AND gym_id = ? AND status = ?`, [to, actor, id, gymId, from]);
+  await writeAssignmentLifecycle(tx, gymId, id, {
+    status: to, from, actor, ...(clearEnd ? { endsAt: 'clear' as const, closedAt: 'clear' as const } : {}),
+  });
 }
 
 /**
