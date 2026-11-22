@@ -618,6 +618,13 @@ by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
   consumes no period, and regular billing starts on the grid. A plan starting on a grid date
   is not prorated. Example: €31/month, 3 pre-paid, starting 17 Nov → €14 + €93 on 17 Nov,
   nothing on 1 Dec, 1 Jan or 1 Feb, €31 from 1 Mar.
+- **A recurring Product added beside a plan that starts later** (#3167) starts today, on its own:
+  the line's `starts_at` is today and the plan keeps its start date. Its first stretch (prorated
+  to the next date of the schedule it joins, a whole year for a yearly Product) is due now, so the
+  first version's initial payment carries it beside the plan's first cycle and is dated today; the
+  schedule's later dates are scheduled obligations, and the stretch already paid is never
+  generated again. Example: plan from 15 Dec, €31/month Product added 22 Nov → €9 for 22–30 Nov
+  plus the plan's first cycle today, €31 on 1 Dec.
 - **Existing schedules** are moved by `npm run schedules:realign`
   (`api/src/api/schedule-realignment.ts`, dry run unless `--execute`, one transaction per
   chain, run from the VPS as `node dist/scripts/realign-billing-schedules.js`): each

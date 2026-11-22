@@ -597,14 +597,15 @@ export async function addService(
   const quantity = body?.quantity == null || body.quantity === '' ? 1 : Number(body.quantity);
   if (!Number.isInteger(quantity) || quantity <= 0) return { kind: 'invalid', message: 'quantity must be a positive integer' };
 
-  // A service can never be billed before the plan it belongs to: by default it
-  // starts today, or on the plan's start date when that is still ahead.
+  // #3167: an ad-hoc recurring Product is its own line, independent of the Membership Plan, so by
+  // default it starts today, even when the plan starts later (the plan's date is never moved). An
+  // explicit date may not precede both the plan's start and today.
   const today = new Date().toISOString().slice(0, 10);
   const startsAt = body?.starts_at == null || body.starts_at === ''
-    ? (today > draft.starts_at ? today : draft.starts_at)
+    ? today
     : String(body.starts_at);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startsAt)) return { kind: 'invalid', message: 'starts_at must be YYYY-MM-DD' };
-  if (startsAt < draft.starts_at) {
+  if (startsAt < draft.starts_at && startsAt < today) {
     return { kind: 'invalid', message: 'starts_at cannot be earlier than the Assigned Plan start date' };
   }
   const { rows: window } = await tx.query<any>('SELECT ends_at FROM product_sets WHERE id = ? AND gym_id = ?', [draft.id, draft.gym_id]);
