@@ -86,7 +86,6 @@ describe('development billing reset (#1325)', () => {
     const order = RESET_STEPS.map((s) => s.table);
     const before = (a: string, b: string) => order.indexOf(a) < order.indexOf(b);
     expect(before('payment_requests', 'billing_events')).toBe(true);
-    expect(before('user_membership_promotions', 'user_memberships')).toBe(true);
     for (const kept of ['members', 'membership_plans', 'promotions', 'products', 'tax_rates', 'charge_types',
       'payment_methods', 'receipt_sequences', 'audit_logs', 'gyms', 'centers']) {
       expect(order).not.toContain(kept);
@@ -97,8 +96,7 @@ describe('development billing reset (#1325)', () => {
     expect(RESET_STEPS.filter((s) => s.uncascaded).map((s) => s.table)).toEqual(['product_sets']);
     const order = RESET_STEPS.map((s) => s.table);
     // Every table that references product_sets is emptied before it.
-    for (const child of ['billing_events', 'product_set_schedules',
-      'user_membership_promotions']) {
+    for (const child of ['billing_events', 'product_set_schedules']) {
       expect(order.indexOf(child)).toBeGreaterThanOrEqual(0);
       expect(order.indexOf(child)).toBeLessThan(order.indexOf('product_sets'));
     }

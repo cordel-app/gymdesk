@@ -39,11 +39,8 @@ let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
 
 const DEFINITION_TABLES = ['promotion_session', 'promotion_oneoff', 'promotion_periodical'];
-const SNAPSHOT_TABLES = [
-  'user_membership_promotion_session_snapshot',
-  'user_membership_promotion_oneoff_snapshot',
-  'user_membership_promotion_periodical_snapshot',
-];
+// #3026 stage 3d-3d: the three legacy grant snapshot tables are dropped.
+const SNAPSHOT_TABLES: string[] = [];
 
 describe('Promotion item Requirement (#959)', () => {
   let gymId: string;
@@ -117,7 +114,7 @@ describe('Promotion item Requirement (#959)', () => {
             AND TABLE_NAME IN (${[...DEFINITION_TABLES, ...SNAPSHOT_TABLES].map(() => '?').join(',')})`,
         [...DEFINITION_TABLES, ...SNAPSHOT_TABLES],
       );
-      expect(rows).toHaveLength(6);
+      expect(rows).toHaveLength(DEFINITION_TABLES.length + SNAPSHOT_TABLES.length);
       for (const row of rows as any[]) {
         // NOT NULL with the default that is also the backfill: `mandatory` is what
         // every row written before the ticket means.

@@ -106,8 +106,6 @@ describe('gate: audited tables', () => {
    * declared here with the reason, never skipped silently.
    */
   const TECHNICAL_UPDATES: Array<{ file: string; table: string; why: string }> = [
-    { file: 'api/membership-promotions.ts', table: 'user_membership_promotions', why: '#2624 stage 4: a Draft application\'s snapshot re-captured and stamped confirmed at Save & Pay; modified_by on an application records who revoked it, which this is not' },
-    { file: 'api/recurring-line-writer.ts', table: 'user_membership_promotions', why: '#2126 stage 5c-2c: ownRecurringLine() moves the set\'s line-owned applications onto the set\'s copy of a shared line; modified_by on an application records who revoked it, which this is not' },
     { file: 'api/plan-assignment-lifecycle.ts', table: 'plan_allowance_renewals', why: '#2125 M6b-4: moveSessionLedger() re-points a renewal at the matching line of the lifecycle copy of its plan snapshot; an append-only ledger row carries created_by only and nothing about the renewal changes' },
     { file: 'api/me.ts', table: 'members', why: 'POST /me/link: the member linking their own Clerk account (clerk_user_id, invitation_id, enrolled_at), not a content edit' },
     { file: 'api/member-image-storage.ts', table: 'members', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
@@ -139,11 +137,8 @@ describe('gate: audited tables', () => {
     { file: 'api/product-set-bridge.ts', table: 'product_sets', why: 'plan_assignment_id link moved between the version and the assignment projection (#2125 M6b-46)' },
     { file: 'api/product-sets-router.ts', table: 'product_sets', why: 'payment_request_id pointer written with the attempt in the transaction that already moved the version (#1664)' },
     { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'plan_assignment_id link written by the projection (#2125 M6b-46)' },
-    { file: 'api/product-set-projection.ts', table: 'user_membership_promotions', why: 'user_membership_id pointer: re-keys a successor version\'s applications to the assignment it projects (#1995); the application itself is not edited' },
     { file: 'api/plan-assignment-sync.ts', table: 'product_sets', why: '#2125 M6b-36: plan_assignment_id linked and re-pointed at its assignment anchor (M6b-46 dropped user_membership_id); product_sets keeps only created_by and the version itself is not edited' },
     { file: 'api/plan-assignment-sync.ts', table: 'payment_requests', why: '#2125 M6b-34: plan_assignment_id linked and re-pointed at its assignment anchor (M6b-46 dropped user_membership_id); the request itself is not edited' },
-    { file: 'api/assignment-draft-set.ts', table: 'user_membership_promotions', why: 'user_membership_id pointer: the Draft assignment ⋮ → Edit opens owns the clone\'s copies of the edited assignment\'s plan applications (#2946); the application itself is not edited' },
-    { file: 'api/plan-assignment-sync.ts', table: 'user_membership_promotions', why: '#2125 M6b-33: assignment_id kept in step with user_membership_id (the re-key, dual-written); the application itself is not edited' },
     { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
     { file: 'api/recurring-purchase-draft.ts', table: 'product_sets', why: 'ends_at carried onto the Draft just created in the same transaction (created_by is recorded by createDraft)' },
     { file: 'api/product-set-draft.ts', table: 'product_sets', why: 'membership_plan_id of a Draft set or cleared with the plan the member adds to or takes off it (#2496 stage 4); product_sets keeps only created_by and the edit is audited against the product_set' },

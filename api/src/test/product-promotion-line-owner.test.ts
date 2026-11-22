@@ -138,8 +138,6 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     const m = await member();
     const prod = await product();
     const promo = await promotion(prod);
-    const legacyRows = async (setId: number) => Number((await db.query<any>(
-      'SELECT COUNT(*) AS n FROM user_membership_promotions WHERE product_set_id = ?', [setId])).rows[0].n);
     const onSnapshot = async (setId: number) => (await db.query<any>(
       `SELECT pp.id, pp.source_application_id, pp.snapshot_confirmed_at, pp.snapshot,
               (SELECT COUNT(*) FROM product_promotion_grant_snapshots g WHERE g.product_promotion_snapshot_id = pp.id) AS grants
@@ -151,7 +149,6 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     expect(rows[0].source_application_id).toBeNull();
     expect(rows[0].snapshot).toBeNull();
     expect(Number(rows[0].grants)).toBe(0);
-    expect(await legacyRows(first.productSetId)).toBe(0);
     // The route-facing id is the snapshot row's own.
     expect(Number((await apps(first.productSetId))[0].id)).toBe(Number(rows[0].id));
 
@@ -172,6 +169,5 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     expect(copied[0].id).not.toBe(rows[0].id);
     expect(copied[0].snapshot_confirmed_at).not.toBeNull();
     expect(Number(copied[0].grants)).toBe(1);
-    expect(await legacyRows(draft)).toBe(0);
   });
 });

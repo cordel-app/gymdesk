@@ -237,65 +237,16 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
   };
 }
 
-// #635 stage 2 — the Products a Promotion grants, frozen onto the
-// application the moment it is applied.
-//
-// Migration 156 created these three tables for exactly this and left them
-// unwritten ("the assignment flow that populates these is out of scope for
-// this ticket"), with only the item's name and quantity. Migration 174 adds
-// the pricing columns, because a name and a quantity cannot reproduce a
-// charge: §16/§17 require that repricing a Product, or editing the
-// Promotion's benefits, leave an already-applied Promotion alone.
-//
-// `products` is joined without a `deleted_at` filter (as everywhere else a
-// snapshot is taken) so an item retired later still reads back with its real
-// name and price rather than disappearing from the record. `product_name`
-// is NOT NULL while `products.name`/`.type` are nullable (a system charge
-// displays under its `charge_types` name), so both resolve the same fallback
-// `assigned-plan-snapshot.ts` and migration 174 use — otherwise applying a
-// Promotion that grants a system item would fail on the insert.
-//
-// #959: the grant's **Requirement** travels with it for the same reason — the
-// screen that will offer the member the choice reads this snapshot, so a copy
-// that left the flag behind would tell them an item is mandatory that the
-// Promotion they were given made optional. Nothing prices or acts on it yet.
-//
-// #896 stage 1: the grant's `(action, value)` pricing treatment is copied with
-// everything else. It has to be: billing reads this snapshot and never the
-// live `promotion_*` row, so a copy that left the pair behind would record a
-// Promotion the member was never given — a grant that means *waive* today
-// would read back as "charge the normal price" the moment stage 3 starts
-// pricing from the column.
+// The three live `promotion_*` benefit tables a Promotion's granted Products are read from.
+// #3026 stage 3d-3d: the legacy grant snapshot tables they were frozen into are dropped; a
+// confirmed application's grants are frozen by its own writer (plan / Product snapshot rows).
 const PROMOTION_GRANT_SNAPSHOTS: {
-  category: ProductBenefitCategory; source: string; target: string;
+  category: ProductBenefitCategory; source: string;
 }[] = [
-  { category: 'session', source: 'promotion_session', target: 'user_membership_promotion_session_snapshot' },
-  { category: 'oneoff', source: 'promotion_oneoff', target: 'user_membership_promotion_oneoff_snapshot' },
-  { category: 'periodical', source: 'promotion_periodical', target: 'user_membership_promotion_periodical_snapshot' },
+  { category: 'session', source: 'promotion_session' },
+  { category: 'oneoff', source: 'promotion_oneoff' },
+  { category: 'periodical', source: 'promotion_periodical' },
 ];
-
-async function snapshotPromotionGrants(
-  tx: Tx, gymId: string, userMembershipPromotionId: number, promotionId: number,
-): Promise<void> {
-  for (const { source, target } of PROMOTION_GRANT_SNAPSHOTS) {
-    await tx.query(
-      `INSERT INTO ${target}
-         (gym_id, user_membership_promotion_id, product_id, product_name, quantity,
-          item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
-          requirement)
-       SELECT ?, ?, b.product_id,
-              COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)), b.quantity,
-              COALESCE(gc.type, 'other'), gc.billing_frequency,
-              COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`,
-              b.requirement
-       FROM ${source} b
-       JOIN products gc ON gc.id = b.product_id
-       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-       WHERE b.promotion_id = ? AND b.gym_id = ?`,
-      [gymId, userMembershipPromotionId, promotionId, gymId],
-    );
-  }
-}
 
 // Merges a row's `snapshot` (if present — only populated going forward, see
 // migration 149) over its live-joined promotion fields, so historically
@@ -790,15 +741,13 @@ export async function applyPromotionToProductSet(
   // Promotion on another plan or snapshot cannot make this plan refuse it or read as not stackable.
   let existing: any[];
   if (opts.productTarget) {
-    // #3026 stage 3d-3c: a line-owned Product application is the line's Product snapshot row. One owned
-    // by no line (no route writes one since #1865) has no snapshot row to live on and stays a legacy row
-    // until stage 3d-3d moves or drops it.
-    ({ rows: existing } = lineId != null
-      ? { rows: await standingLineApplications(tx, gymId, productSetId, lineId) }
-      : await tx.query(
-        `SELECT id, promotion_id FROM user_membership_promotions
-          WHERE product_set_id = ? AND gym_id = ? AND status = 'applied' AND recurrent_snapshot_id IS NULL`,
-        [productSetId, gymId]));
+    // #3026 stage 3d-3c: a Product application is the line's Product snapshot row. #3026 stage 3d-3d:
+    // an application owned by no line has no row to live on (`user_membership_promotions` is dropped),
+    // so a Product Promotion is applied to a line or not at all.
+    if (lineId == null) {
+      throw Object.assign(new Error('A product promotion is applied to a product line of this ProductSet'), { status: 400 });
+    }
+    existing = await standingLineApplications(tx, gymId, productSetId, lineId);
   } else {
     const { primaryPlanSnapshotId } = await import('./plan-snapshot-lines');
     const primary = opts.planSnapshotId ?? await primaryPlanSnapshotId(tx, gymId, productSetId);
@@ -840,20 +789,10 @@ export async function applyPromotionToProductSet(
     await syncPlanSnapshot(tx, gymId, productSetId);
     return { application_id: applicationId };
   }
-  // #3026 stage 3d-3c: and a Product application is its line's Product snapshot row, with no
-  // `user_membership_promotions` row beside it.
-  if (lineId != null) {
-    const applicationId = await insertProductPromotionReference(tx, gymId, productSetId, lineId, promotionId, actor);
-    if (applicationId == null) throw Object.assign(new Error('Product line not found on this ProductSet'), { status: 404 });
-    return { application_id: applicationId };
-  }
-  const { insertId } = await tx.query(
-    `INSERT INTO user_membership_promotions
-       (gym_id, product_set_id, user_membership_id, recurrent_snapshot_id, promotion_id, created_by, status, snapshot)
-     VALUES (?, ?, NULL, NULL, ?, ?, 'applied', NULL)`,
-    [gymId, productSetId, promotionId, actor],
-  );
-  return { application_id: Number(insertId) };
+  // #3026 stage 3d-3c: and a Product application is its line's Product snapshot row.
+  const applicationId = await insertProductPromotionReference(tx, gymId, productSetId, lineId!, promotionId, actor);
+  if (applicationId == null) throw Object.assign(new Error('Product line not found on this ProductSet'), { status: 404 });
+  return { application_id: applicationId };
 }
 
 /* ── #2624 stage 4 (§8), #2833: snapshots are taken when the Draft is confirmed ── */
@@ -875,40 +814,13 @@ export async function applyPromotionToProductSet(
  * already resolves live.
  */
 export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, productSetId: number): Promise<void> {
-  // #2880: a Promotion removed from the Draft before confirmation is not history of this
-  // assignment — a reference that was revoked (written before removal became a deletion) is
-  // discarded here rather than confirmed as an inactive application.
-  // #3026 stage 3d-3c: only an application owned by no line is still a legacy row (none written
-  // since #1865); a line-owned one is confirmed on its Product snapshot row below.
-  const { rowCount: discarded } = await tx.query(
-    `DELETE FROM user_membership_promotions
-      WHERE gym_id = ? AND product_set_id = ? AND status = 'revoked' AND snapshot_confirmed_at IS NULL
-        AND recurrent_snapshot_id IS NULL`,
-    [gymId, productSetId]);
-  const { rows } = await tx.query<{ id: number; promotion_id: number }>(
-    `SELECT ump.id, ump.promotion_id FROM user_membership_promotions ump
-      WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NULL
-        AND ump.status = 'applied' AND ump.snapshot_confirmed_at IS NULL
-      ORDER BY ump.id FOR UPDATE`,
-    [gymId, productSetId]);
-  for (const app of rows) {
-    const snapshot = await buildPromotionSnapshot(tx, gymId, Number(app.promotion_id));
-    await tx.query(
-      `UPDATE user_membership_promotions SET snapshot = ?, snapshot_confirmed_at = UTC_TIMESTAMP()
-        WHERE id = ? AND gym_id = ? AND snapshot_confirmed_at IS NULL`,
-      [snapshot != null ? JSON.stringify(snapshot) : null, app.id, gymId]);
-    for (const { target } of PROMOTION_GRANT_SNAPSHOTS) {
-      await tx.query(`DELETE FROM ${target} WHERE gym_id = ? AND user_membership_promotion_id = ?`, [gymId, app.id]);
-    }
-    await snapshotPromotionGrants(tx, gymId, Number(app.id), Number(app.promotion_id));
-  }
   // #3026 stage 3d-1: the references the plan snapshot itself holds (no legacy twin) are confirmed there.
   const native = await confirmPlanPromotionReferences(
     tx, gymId, productSetId, (promotionId) => buildPromotionSnapshot(tx, gymId, promotionId));
   // #3026 stage 3d-3c: and the Product references the Draft's lines hold, on their Product snapshot rows.
   const onLines = await confirmProductPromotionReferences(
     tx, gymId, productSetId, (promotionId) => buildPromotionSnapshot(tx, gymId, promotionId));
-  if (rows.length > 0 || discarded > 0 || native > 0 || onLines > 0) await syncPlanSnapshot(tx, gymId, productSetId);
+  if (native > 0 || onLines > 0) await syncPlanSnapshot(tx, gymId, productSetId);
 }
 
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
@@ -1024,11 +936,11 @@ function shapeGrant(grant: {
 }
 
 /**
- * #635 stage 7 — the Products each application granted, keyed by
- * `user_membership_promotions.id`.
+ * #635 stage 7 — the Products each application granted, keyed by its
+ * application id.
  *
- * The rows come from the application's own snapshot
- * (`snapshotPromotionGrants()` above), which is why a later rename, reprice or
+ * The rows come from the application's own snapshot (the grant rows frozen when
+ * its Draft was confirmed), which is why a later rename, reprice or
  * deletion of the Product — or an edit to the Promotion's own benefits —
  * leaves them where they were (§16/§17). Reusing
  * `loadPromotionGrantSnapshots()` keeps the card and the Billing Simulation

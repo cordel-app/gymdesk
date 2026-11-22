@@ -128,31 +128,16 @@ describe('#2125 M6b-33: an application carries its assignment_id beside user_mem
     expect(await keysOf(v1)).toEqual([{ promotion: promo, um, assignment: anchor }]);
   });
 
-  it('a Product-target application has no assignment_id', async () => {
+  it('a Product Promotion owned by no line is refused (#3026 stage 3d-3d)', async () => {
     const owner = await member();
     const { insertId: productId } = await db.query(
       `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
        VALUES (?, ?, 'fee', 10, 'EUR', 'once', 'active', 'available', 0)`, [gymId, `P-${uniq()}`]);
     const productPromo = await promotion('product', Number(productId));
-    const setId = await db.transaction(async (tx) => {
+    await expect(db.transaction(async (tx) => {
       const d = await createDraft(tx, { gymId, ownerMemberId: owner, membershipPlanId: planId, startsAt: TODAY, actor });
       if (d.kind !== 'created') throw new Error(d.kind);
-      await snapshotProductSetFromPlan(tx, { gymId, productSetId: d.productSet.id, membershipPlanId: planId, membershipFeePrice: 30, startsAt: TODAY });
       await applyPromotionToProductSet(tx, gymId, 'T', d.productSet.id, productPromo, { productTarget: true });
-      await addCoverage(tx, { gymId, productSetId: d.productSet.id, memberId: owner, isOwner: true });
-      const out = await activateWithEvents(tx, { gymId, productSetId: d.productSet.id, today: TODAY });
-      if (out.kind !== 'ok') throw new Error(out.kind);
-      return d.productSet.id;
-    });
-    expect(await keysOf(setId)).toEqual([{ promotion: productPromo, um: null, assignment: null }]);
-  });
-
-  it('a Plan application writes no legacy row, so there is nothing to drift (#3026 stage 3d-1)', async () => {
-    const owner = await member();
-    const promo = await promotion();
-    const setId = await commit(owner, [promo]);
-    const { rows } = await db.query<any>(
-      'SELECT id FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?', [gymId, setId]);
-    expect(rows).toHaveLength(0);
+    })).rejects.toMatchObject({ status: 400 });
   });
 });
