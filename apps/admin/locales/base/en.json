@@ -966,7 +966,7 @@
     "booking_status_cancelled": "Cancelled",
     "booking_status_unknown": "—",
     "booking_event_cancelled": "Event cancelled",
-    "draft_line_save": "Save changes",
+    "draft_line_save": "Save",
     "draft_line_quantity": "Quantity",
     "draft_line_delete": "Delete",
     "draft_line_delete_confirm": "Delete {product} from the draft? It is removed from this Product Set; nothing has been charged for it.",
