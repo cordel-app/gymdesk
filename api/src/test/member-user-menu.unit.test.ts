@@ -119,6 +119,9 @@ describe('#3156 the Family section', () => {
     expect(familyPage).toContain('familySectionMembers(body)');
     expect(familyPage).toContain('<ImagePreviewButton');
     expect(familyPage).toContain("t('nav.family_owner')");
+    // #3156 stage 3: the Owner chip is the Theme's accent chip, never a status pill.
+    expect(familyPage).toContain('...accentChipStyle');
+    expect(familyPage).not.toContain('statusPillStyle');
   });
 });
 
