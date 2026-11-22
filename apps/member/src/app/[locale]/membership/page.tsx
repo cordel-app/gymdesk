@@ -113,7 +113,6 @@ import {
   pastPlanStatusKey,
   pastPromotionBenefitText,
   pastPromotionName,
-  planAccessLines,
 } from '@/lib/memberPlans';
 import {
   type AppliedMemberProductPromotion,
@@ -169,6 +168,9 @@ import {
   EMPTY_FORECAST,
   billingEventAmount,
   forecastDatesAfterNext,
+  forecastPaymentAnchorId,
+  planNextPayment,
+  productNextPayment,
   formatPaymentAmount,
   formatPaymentDate,
   lineKindKey,
@@ -412,6 +414,13 @@ export default function MembershipPage() {
   // #1779 — the Professional Services tab. `null` = the read failed.
   const [serviceBalances, setServiceBalances] = useState<MemberServiceBalanceItem[] | null>([]);
   const [tab, setTab] = useState<'products' | 'services' | 'payments'>('products');
+  // #3235 — the forecast payment *View payment* opened on the Payments tab (its date).
+  const [focusedPayment, setFocusedPayment] = useState<string | null>(null);
+  useEffect(() => {
+    if (tab !== 'payments' || !focusedPayment) return;
+    const el = document.getElementById(forecastPaymentAnchorId(focusedPayment));
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [tab, focusedPayment]);
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -861,12 +870,10 @@ export default function MembershipPage() {
   // the plans and the Products on screen always belong to the same version.
   // Every figure is that version's own snapshot, as the server reports it.
 
-  /** The plan's beneficiaries, named only where the plan covers someone besides the reader. */
-  function planForLine(plan: MemberSetPlan): string | null {
-    const people = plan.beneficiaries ?? [];
-    if (people.length === 0) return null;
-    if (people.length === 1 && selfMemberId != null && people[0].member_id === selfMemberId) return null;
-    return t('membership.plan_for', { names: people.map((b) => b.name ?? '—').join(', ') });
+  /** #3235 — open the Payments tab on the payment a plan or Product card is part of. */
+  function openPayment(date: string) {
+    setFocusedPayment(date);
+    setTab('payments');
   }
 
   function renderMyPlans() {
@@ -902,22 +909,21 @@ export default function MembershipPage() {
   function myPlanCardItem(plan: MemberSetPlan, payable: boolean): MemberPlanCardItem {
     const status = plan.status ?? setView?.status ?? 'active';
     const benefits = (plan.benefits ?? []) as (Benefit & { final_price?: number | null; mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null })[];
-    const forLine = planForLine(plan);
     const frequencyKey = planFrequencyKey({ billing_interval: plan.billing_interval ?? null, billing_unit: plan.billing_unit ?? null });
     const feeScopeNote = planFeeScopeNote(plan);
-    // #3099 — everything the plan contracts is *Included*: its access (`Access to [center]` for each
-    // beneficiary, as Admin words it) and every line it holds; there is no Optional group.
-    const accessNames = planAccessLines(plan.plan_access).map((l) =>
-      [t(`membership.${l.key}` as any, l.values as any), l.beneficiary ? `(${l.beneficiary})` : null].filter(Boolean).join(' '));
-    const included = [...accessNames, ...new Set(benefits.map((b) => b.name))].join(', ') || null;
+    // #3235 — the collapsed card names who the plan covers (*Beneficiaries*), not what it includes.
+    const beneficiaryNames = (plan.beneficiaries ?? []).map((b) => b.name ?? '—');
+    // #3235 — the amount is the next scheduled payment the plan is part of, never a line's price.
+    const next = paymentsVisible ? planNextPayment(forecast, plan.user_membership_id) : null;
     const pendingAmount = payable && pendingMembership?.membership_fee != null
       ? formatPaymentAmount(pendingMembership.membership_fee, 'EUR', gymFmt) : null;
     return {
       key: String(plan.plan_snapshot_id),
       name: plan.plan_name ?? '—',
-      description: [plan.plan_description, forLine, plan.entitlement_only ? t('membership.plan_entitlement_only') : null].filter(Boolean).join(' · ') || null,
-      price: plan.membership_fee != null ? formatPaymentAmount(plan.membership_fee, 'EUR', gymFmt) : null,
-      frequency: [
+      description: [plan.plan_description, plan.entitlement_only ? t('membership.plan_entitlement_only') : null].filter(Boolean).join(' · ') || null,
+      price: next ? money(next.total)
+        : plan.membership_fee != null ? formatPaymentAmount(plan.membership_fee, 'EUR', gymFmt) : null,
+      frequency: next ? t('membership.next_payment_on', { date: formatPaymentDate(next.date, gymFmt) }) : [
         frequencyKey
           ? t(frequencyKey as any)
           : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
@@ -926,8 +932,8 @@ export default function MembershipPage() {
       ].filter(Boolean).join(' · ') || null,
       imageUrl: plan.plan_image_thumbnail_url ?? null,
       imageFullUrl: plan.plan_image_url ?? null,
-      includedLabel: t('membership.plan_included'),
-      included,
+      includedLabel: t('membership.plan_beneficiaries'),
+      included: beneficiaryNames.length > 0 ? beneficiaryNames.join(', ') : null,
       // #2798 — always the start date; the end date, or *Open-ended* when the plan has none.
       period: t('membership.plan_period', {
         start: plan.starts_at ? formatGymDateOnly(plan.starts_at, gymFmt) : '—',
@@ -953,6 +959,13 @@ export default function MembershipPage() {
       details: (
         <>
           {/* #2798 — the dates are the collapsed header's Plan Period, not repeated here. */}
+          {next && (
+            <div style={styles.viewPaymentRow}>
+              <button type="button" style={secondaryButtonStyle} data-view-payment onClick={() => openPayment(next.date)}>
+                {t('membership.view_payment')}
+              </button>
+            </div>
+          )}
           {plan.discount_reason && (
             <dl style={styles.dl}>
               <div style={styles.row}>
@@ -974,10 +987,12 @@ export default function MembershipPage() {
                     <h3 style={styles.planLineGroupLabel}>{t(`membership.item_group.${group}`)}</h3>
                     <ul style={styles.benefitList}>
                       {rows.map((b, index) => {
+                        // #3235 — quantity, frequency and beneficiary; no price, no Mandatory chip.
+                        const beneficiary = b.member_name ?? (beneficiaryNames.length > 0 ? beneficiaryNames.join(', ') : null);
                         const meta = [
-                          b.member_name ? t('membership.product_assignee_line', { name: b.member_name }) : null,
-                          `× ${b.quantity}`,
+                          t('membership.plan_line_quantity', { quantity: b.quantity }),
                           b.billing_frequency ? t(`membership.frequency.${b.billing_frequency}` as any) : null,
+                          beneficiary ? t('membership.plan_line_beneficiary', { name: beneficiary }) : null,
                         ].filter(Boolean).join(' · ');
                         return (
                           <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`}
@@ -990,17 +1005,8 @@ export default function MembershipPage() {
                               </ImagePreviewButton>
                             )}
                             <span style={styles.planLineText}>
-                              <span style={styles.planLineName}>
-                                {b.name}
-                                {/* #2805 — a Mandatory line says so beside its name; an Optional one carries no badge. */}
-                                {b.mandatory !== false && (
-                                  <span style={styles.benefitMandatory} data-plan-line-mandatory>{t('membership.plan_ov_mandatory')}</span>
-                                )}
-                              </span>
+                              <span style={styles.planLineName}>{b.name}</span>
                               <span style={styles.planLineMeta}>{meta}</span>
-                            </span>
-                            <span style={styles.planLinePrice} data-plan-line-price>
-                              {b.final_price != null ? formatPaymentAmount(b.final_price, 'EUR', gymFmt) : '—'}
                             </span>
                           </li>
                         );
@@ -1027,15 +1033,17 @@ export default function MembershipPage() {
         ? assignees.find((a) => a.member_id === line.assigned_member_id)?.name ?? null : null;
       // #2781 — each Product carries its own status chip; the Product Set's is never shown.
       const lineStatusKey = setLineStatusKey(line);
+      // #3235 — the next scheduled payment the line is part of, its amount on the card.
+      const next = paymentsVisible ? productNextPayment(forecast, line.product_id) : null;
       return {
         key: `set-line-${line.id}`,
         name: line.product_name ?? '—',
         description: line.description ?? null,
         imageUrl: line.image_thumbnail_url ?? null,
         imageFullUrl: line.image_url ?? null,
-        price: final != null ? formatPaymentAmount(final, currency, gymFmt) : null,
-        regularPrice: regular != null && final != null && regular !== final ? formatPaymentAmount(regular, currency, gymFmt) : null,
-        frequency: line.billing_frequency && RECURRING_ITEM_FREQUENCIES.includes(line.billing_frequency)
+        price: next ? money(next.total) : final != null ? formatPaymentAmount(final, currency, gymFmt) : null,
+        regularPrice: !next && regular != null && final != null && regular !== final ? formatPaymentAmount(regular, currency, gymFmt) : null,
+        frequency: next ? t('membership.next_payment_on', { date: formatPaymentDate(next.date, gymFmt) }) : line.billing_frequency && RECURRING_ITEM_FREQUENCIES.includes(line.billing_frequency)
           ? t(`membership.frequency.${line.billing_frequency}` as any) : null,
         meta: [
           quantity > 1 ? `× ${quantity}` : null,
@@ -1043,8 +1051,16 @@ export default function MembershipPage() {
           line.status === 'cancels_on_end_date' && line.ends_at
             ? t('membership.product_end_date', { date: formatGymDateOnly(line.ends_at, gymFmt) }) : null,
         ].filter(Boolean).join(' · ') || null,
-        action: lineStatusKey && line.status
-          ? <StatusPill status={line.status} label={t(lineStatusKey as any)} /> : undefined,
+        action: (lineStatusKey && line.status) || next ? (
+          <>
+            {lineStatusKey && line.status ? <StatusPill status={line.status} label={t(lineStatusKey as any)} /> : null}
+            {next && (
+              <button type="button" style={{ ...secondaryButtonStyle, marginLeft: 'auto' }} data-view-payment onClick={() => openPayment(next.date)}>
+                {t('membership.view_payment')}
+              </button>
+            )}
+          </>
+        ) : undefined,
       };
     });
     return (
@@ -1308,6 +1324,8 @@ export default function MembershipPage() {
         <PaymentsSubcard title={t('payments.next_heading')} defaultOpen>
           {nextGroup ? (
             <BillingEventCard
+              anchorId={forecastPaymentAnchorId(nextGroup.date)}
+              highlighted={focusedPayment === nextGroup.date}
               date={formatPaymentDate(nextGroup.date, gymFmt)}
               total={money(nextGroup.total)}
               totalLabel={t('payments.total')}
@@ -1329,7 +1347,8 @@ export default function MembershipPage() {
           )}
         </PaymentsSubcard>
 
-        <PaymentsSubcard title={t('payments.forecast_heading')}>
+        <PaymentsSubcard title={t('payments.forecast_heading')}
+          forceOpen={focusedPayment != null && laterGroups.some((g) => g.date === focusedPayment)}>
           {laterGroups.length === 0 ? (
             <p style={styles.hint}>
               {forecast.available ? t('payments.forecast_empty') : t('payments.forecast_unavailable')}
@@ -1338,6 +1357,8 @@ export default function MembershipPage() {
             laterGroups.map((group) => (
               <BillingEventCard
                 key={group.date}
+                anchorId={forecastPaymentAnchorId(group.date)}
+                highlighted={focusedPayment === group.date}
                 date={formatPaymentDate(group.date, gymFmt)}
                 total={money(group.total)}
                 totalLabel={t('payments.total')}
@@ -2389,7 +2410,6 @@ const styles: Record<string, React.CSSProperties> = {
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
-  benefitMandatory: { ...statusPillStyle('neutral'), padding: '1px 8px', fontSize: 11 },
   // #2892 — My Plans' expanded lines: hairlines between rows, no card per item.
   planLines: { marginTop: 12 },
   planLineGroup: { marginBottom: 10 },
@@ -2398,7 +2418,7 @@ const styles: Record<string, React.CSSProperties> = {
   planLineText: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
   planLineName: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 13, color: memberTheme.text, overflowWrap: 'anywhere' },
   planLineMeta: { fontSize: 12, color: memberTheme.textMuted },
-  planLinePrice: { flexShrink: 0, marginLeft: 'auto', textAlign: 'right', fontSize: 13, fontWeight: 600, color: memberTheme.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
+  viewPaymentRow: { display: 'flex', justifyContent: 'flex-end', marginBottom: 8 },
   benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
   benefitThumbImg: { width: 36, height: 36, objectFit: 'cover', display: 'block' },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },

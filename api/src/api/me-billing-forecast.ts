@@ -131,6 +131,24 @@ export function mergeBillingEventForecasts(
 }
 
 /**
+ * #3235 — each line names the assignment whose forecast it came from
+ * (`user_membership_id`), so *My Plans* can find the next payment a plan is part
+ * of and open it on the Payments tab. It labels the engine's lines and changes
+ * no figure: the merge by date is unchanged.
+ */
+export function tagForecastAssignment(
+  result: AssignmentBillingEventSimulationResult, userMembershipId: number,
+): AssignmentBillingEventSimulationResult {
+  return {
+    ...result,
+    dates: result.dates.map((d) => ({
+      ...d,
+      lines: d.lines.map((l) => ({ ...l, user_membership_id: userMembershipId })),
+    })),
+  };
+}
+
+/**
  * The Billing Event Forecast of the member's current plans (#2125: every live
  * one, merged by date; a member with none reads the most recent historical one).
  *
@@ -156,6 +174,6 @@ export async function memberBillingEventForecast(
   const live = rows.filter(isLiveMemberPlan);
   const chosen = live.length > 0 ? live : [rows[0]];
   return mergeBillingEventForecasts(
-    await Promise.all(chosen.map((r) => assignedPlanBillingForecast(gymId, r.id))),
+    await Promise.all(chosen.map(async (r) => tagForecastAssignment(await assignedPlanBillingForecast(gymId, r.id), r.id))),
   );
 }
