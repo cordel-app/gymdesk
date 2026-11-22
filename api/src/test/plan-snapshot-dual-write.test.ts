@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
+import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import {
@@ -93,10 +94,12 @@ describe('plan snapshot dual-write (#2125 stage 2)', () => {
     const { recordStatusChange } = await import('../api/billing-events');
     await db.transaction(async (tx) => {
       await tx.query("UPDATE user_memberships SET status = 'paused' WHERE id = ?", [umId]);
+      await repairAnchorLifecycles(tx, gymId); // M6b-51c-5: as the one writer mirrors it
       await recordStatusChange(tx, { gymId, userMembershipId: umId, memberId: owner, previousStatus: 'active', newStatus: 'paused', source: 'admin', actorUserId: null } as any);
     });
     expect((await snapshots(setId))[0].status).toBe('paused');
     await db.query("UPDATE user_memberships SET status = 'active' WHERE id = ?", [umId]);
+    await repairAnchorLifecycles(db, gymId);
     const { syncPlanSnapshot } = await import('../api/plan-snapshot-sync');
     await db.transaction((tx) => syncPlanSnapshot(tx, gymId, setId));
     expect((await snapshots(setId))[0].status).toBe('active');

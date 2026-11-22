@@ -10,7 +10,7 @@ import {
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import { findUnsettledActiveSets, inFlightLinkMove } from '../api/plan-assignment-lifecycle';
 import { settlePlanAssignmentLifecycles } from '../api/plan-assignment-settle';
-import { deleteUnlinkedPlanSnapshots } from '../api/plan-assignment-sync';
+import { deleteUnlinkedPlanSnapshots, repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { loadProductSetSimulationAssignments } from '../api/plan-snapshot-assignments';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
 
@@ -322,6 +322,8 @@ describe('the repair of changes made before the writer existed', () => {
     const [before] = await linkOfSet(m, active);
     // What a pause looked like before this stage: the assignment moved, the shared snapshot did not.
     await db.query("UPDATE user_memberships SET status = 'paused' WHERE id = ?", [um]);
+    // The history this stands for is on the anchor too, as migration 452's backfill put it (M6b-51c-5).
+    await repairAnchorLifecycles(db, gymId);
     expect((await findUnsettledActiveSets(db, gymId)).map((s) => s.productSetId)).toContain(active);
 
     const dry = await settlePlanAssignmentLifecycles({ gymId, execute: false });

@@ -3,6 +3,7 @@ import { legacyProductInsert } from './legacyProductFixture';
 import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
+import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
@@ -525,6 +526,9 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
             SET s.status = um.status, s.starts_at = um.starts_at, s.ends_at = um.ends_at
           WHERE s.source_user_membership_id = ?`, [result.insertId]);
     }
+    // #2125 M6b-51c-5: the sync reads an assignment's lifecycle off its anchor, which a hand-written
+    // row has no writer to fill; this is what migration 452's backfill does for history.
+    if (row) await repairAnchorLifecycles(db, row.gym_id);
     return result;
   }
   const update = sql.match(/^\s*UPDATE user_memberships\s+SET\s+([\s\S]*?)\s+WHERE\s+([\s\S]*)$/i);
@@ -548,7 +552,9 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
     const { rows } = await db.query<{ id: number }>(`SELECT id FROM user_memberships WHERE ${where}`, whereParams);
     for (const r of rows) await setAssignmentConfig(Number(r.id), config);
     if (kept.length > 0) {
-      return db.query(`UPDATE user_memberships SET ${kept.join(', ')} WHERE ${where}`, [...keptParams, ...whereParams]);
+      const out = await db.query(`UPDATE user_memberships SET ${kept.join(', ')} WHERE ${where}`, [...keptParams, ...whereParams]);
+      await repairAnchorLifecycles(db); // #2125 M6b-51c-5: the anchor follows the hand-written row.
+      return out;
     }
     return { rows: [], rowCount: rows.length, insertId: 0 };
   }
@@ -881,6 +887,9 @@ export async function syncTestAssignmentSnapshots(umId: number): Promise<void> {
   const { syncPlanSnapshotsForAssignment } = await import('../api/plan-snapshot-sync');
   const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM user_memberships WHERE id = ?', [umId]);
   if (!rows[0]) throw new Error(`syncTestAssignmentSnapshots: no assignment ${umId}`);
+  // #2125 M6b-51c-5: the sync reads the lifecycle off the anchor; a hand-written row is mirrored onto
+  // it first, as the one writer does for a real change (migration 452's backfill for history).
+  await repairAnchorLifecycles(db, rows[0].gym_id);
   await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, rows[0].gym_id, umId));
 }
 
@@ -1110,6 +1119,7 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
       `UPDATE plan_snapshots SET status = ?, starts_at = ?, ends_at = ?, closed_at = ?, created_at = ?
         WHERE source_user_membership_id = ?`,
       [um.status, um.starts_at, um.ends_at, um.closed_at, um.created_at, umId]);
+    await repairAnchorLifecycles(db, um.gym_id);
     return Number(existing[0].id);
   }
   const { insertId: setId } = await db.query(
@@ -1126,6 +1136,7 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
   await db.query(
     'INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapId]);
   await db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [snapId, setId]);
+  await repairAnchorLifecycles(db, um.gym_id);
   return Number(snapId);
 }
 
@@ -1170,3 +1181,4 @@ export async function linkTestSetToAssignment(productSetId: number, umId: number
                                    WHERE a.gym_id = product_sets.gym_id AND a.source_user_membership_id = ?)
       WHERE id = ?`, [umId, productSetId]);
 }
+
