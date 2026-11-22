@@ -51,6 +51,7 @@ import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase
 import { AssigneeRefused } from './product-assignee';
 import { cancelPendingProductSet, cancelPendingResponse, reconcileSetPayments } from './product-set-cancellation';
 import { logger } from '../lib/logger';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #1325 PR 2d — the ProductSet-keyed commercial API.
@@ -249,11 +250,9 @@ async function syncLinkedAssignmentToPendingPayment(
     [gymId, userMembershipId],
   );
   if (!rows[0]) return;
-  const { rowCount } = await tx.query(
-    `UPDATE user_memberships SET status = 'pending_payment', modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE id = ? AND gym_id = ? AND status = 'in_cart'`,
-    [actor, userMembershipId, gymId],
-  );
+  const rowCount = await writeAssignmentLifecycle(tx, gymId, userMembershipId, {
+    status: 'pending_payment', from: 'in_cart', actor,
+  });
   if (rowCount === 0) return;
   await recordStatusChange(tx, {
     gymId, userMembershipId, memberId: Number(rows[0].member_id),

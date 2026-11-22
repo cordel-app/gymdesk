@@ -6,6 +6,7 @@ import { isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { buildJobMetrics } from '../domain/jobRuns';
 import { recordStatusChange } from './billing-events';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #2659 stage 2: the scheduled sweep that ends a plan cancelled at its period
@@ -60,11 +61,9 @@ export async function sweepCancelledAtPeriodEnd(): Promise<{ moved: number; cons
         ORDER BY pa.source_user_membership_id`);
     let moved = 0;
     for (const row of rows) {
-      const { rowCount } = await tx.query(
-        `UPDATE user_memberships
-            SET status = 'cancelled', modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND gym_id = ? AND status = ?`,
-        [SYSTEM_ACTOR, row.id, row.gym_id, CANCELS_AT_PERIOD_END_STATUS]);
+      const rowCount = await writeAssignmentLifecycle(tx, row.gym_id, Number(row.id), {
+        status: 'cancelled', from: CANCELS_AT_PERIOD_END_STATUS, actor: SYSTEM_ACTOR,
+      });
       if (rowCount === 0) continue;
       await recordStatusChange(tx, {
         gymId: row.gym_id, userMembershipId: Number(row.id), memberId: Number(row.member_id),
