@@ -114,8 +114,8 @@ describe('#2125 M6b-36: a Product Set carries its plan_assignment_id beside user
   async function strayLink(setId: number): Promise<{ um: number; stray: number }> {
     const { um, key } = await setOf(setId);
     const { insertId } = await db.query(
-      `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, assignment_id, assignment_id)
-       SELECT gym_id, member_id, membership_plan_id, status, starts_at, assignment_id, assignment_id
+      `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, assignment_id)
+       SELECT gym_id, member_id, membership_plan_id, status, starts_at, assignment_id
          FROM plan_snapshots WHERE id = ?`, [key]);
     await db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [insertId, setId]);
     return { um: um!, stray: Number(insertId) };
