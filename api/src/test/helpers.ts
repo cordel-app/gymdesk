@@ -1,11 +1,15 @@
 import supertest from 'supertest';
 import { legacyProductInsert } from './legacyProductFixture';
+import { installAssignmentIdRegistration } from './assignmentIdFixture';
 import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+
+// #2125 M6b-51d-1: hand-written `user_memberships` rows register their id (`assignmentIdFixture.ts`).
+installAssignmentIdRegistration();
 
 export const request = supertest(app);
 

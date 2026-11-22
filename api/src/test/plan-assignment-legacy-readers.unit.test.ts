@@ -46,15 +46,14 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-commit.ts': 2,
   'api/assignment-draft-set.ts': 2,
-  // M6b-51c-3: every UPDATE of the table, the one writer of an assignment after its creation.
-  'api/assignment-lifecycle-writer.ts': 1,
-  'api/membership-plans.ts': 1,
+  // M6b-51c-3: every UPDATE of the table; M6b-51d-1: and its one INSERT, under a registry id.
+  'api/assignment-lifecycle-writer.ts': 2,
   'api/one-active-plan.ts': 1,
   'api/plan-assignment-drift.ts': 5, // M6b-51c-4: the report compares the anchor's lifecycle with the legacy row
   'api/plan-assignment-sync.ts': 2, // M6b-51c-4: the anchor lifecycle's seed and repair share one statement
-  'api/product-set-projection.ts': 3, // M6b-51c-1: the predecessor's purchase time is read off its snapshot
+  'api/product-set-projection.ts': 2, // M6b-51c-1: the predecessor's purchase time is read off its snapshot
   'api/product-sets.ts': 2,
-  'api/user-memberships.ts': 12,
+  'api/user-memberships.ts': 9,
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -222,8 +221,8 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(promotions.split('SELECT um.status FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(2);
   });
   it('M6b-22: the Membership Plan router\'s assignment counts read plan_snapshots', () => {
-    // Since M6b-29 the one statement left in membership-plans.ts is the bulk assign's INSERT.
-    expect(LEGACY_STATEMENTS['api/membership-plans.ts']).toBe(1);
+    // The bulk assign's INSERT, the last statement left there after M6b-29, went to the writer in M6b-51d-1.
+    expect(LEGACY_STATEMENTS['api/membership-plans.ts']).toBeUndefined();
     const plans = readFileSync(join(API_SRC, 'api/membership-plans.ts'), 'utf8');
     expect(plans.split('FROM ${GYM_ASSIGNMENT_ROWS_SQL} um').length - 1).toBe(4);
     expect(plans).toContain("isCurrentAssignmentSnapshotSql('pa')");
@@ -248,7 +247,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   });
 
   it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
-    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(3);
+    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(2);
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
     expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
       .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
@@ -266,6 +265,16 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       .filter((f) => (code(readFileSync(f, 'utf8')).match(UPDATE) ?? []).length > 0)
       .map((f) => f.slice(API_SRC.length + 1));
     expect(writers).toEqual(['api/assignment-lifecycle-writer.ts']);
+  });
+
+  it('M6b-51d-1: an assignment is created only by the writer, under a plan_assignment_ids id', () => {
+    const INSERT = /\bINTO\s+user_memberships\b/g;
+    const creators = sourceFiles(API_SRC)
+      .filter((f) => (code(readFileSync(f, 'utf8')).match(INSERT) ?? []).length > 0)
+      .map((f) => f.slice(API_SRC.length + 1));
+    expect(creators).toEqual(['api/assignment-lifecycle-writer.ts']);
+    const writer = readFileSync(join(API_SRC, 'api/assignment-lifecycle-writer.ts'), 'utf8');
+    expect(writer).toContain('INSERT INTO plan_assignment_ids');
   });
 
   it('M6b-47: the end-of-period sweep and both dunning pauses pick their assignment from plan_snapshots', () => {
