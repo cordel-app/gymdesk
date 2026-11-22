@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addedCartPlans, addedPlanRemovePath, pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
+import { addedCartPlans, addedPlanPromotionNames, addedPlanRemovePath, pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, status: string, is_live = true, membership_plan_id = id) => ({ id, status, is_live, membership_plan_id } as any);
 
@@ -109,6 +109,24 @@ describe('#2966 stage 4 addedCartPlans', () => {
   });
   it('lists nothing for a set that is not in flight or has no added plan', () => {
     expect(addedCartPlans([set('active', [a]), set('in_cart', [])])).toEqual([]);
+  });
+});
+
+describe('#2966 stage 8 promotions on an added plan', () => {
+  const set = (added: any[]): any => ({ id: 5, status: 'in_cart', plan_name: 'Gold', starts_at: null, amount_due: null, expired: false, created_by: 'Ana', added_plans: added });
+  it('carries the added plan\'s Promotions onto its row and names them in order', () => {
+    const promotions = [
+      { id: 1, promotion_id: 7, promotion_name: 'Spring' },
+      { id: 2, promotion_id: 8, promotion_name: null },
+      { id: 3, promotion_id: 9, promotion_name: 'Family' },
+    ];
+    const [row] = addedCartPlans([set([{ plan_snapshot_id: 9, membership_plan_id: 3, plan_name: 'Duo', starts_at: null, promotions }])]);
+    expect(row.promotions).toEqual(promotions);
+    expect(addedPlanPromotionNames(row)).toEqual(['Spring', 'Family']);
+  });
+  it('names nothing for a plan with no Promotions reported', () => {
+    const [row] = addedCartPlans([set([{ plan_snapshot_id: 9, membership_plan_id: 3, plan_name: 'Duo', starts_at: null }])]);
+    expect(addedPlanPromotionNames(row)).toEqual([]);
   });
 });
 
