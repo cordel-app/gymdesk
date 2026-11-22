@@ -33,6 +33,8 @@ export async function settlePlanAssignmentLifecycles(
   for (const set of sets) {
     await db.transaction((tx) => syncPlanSnapshot(tx, set.gymId, set.productSetId));
   }
+  // M6b-51c-4: and every anchor whose lifecycle is out of step with its assignment's legacy row.
+  await repairAnchorLifecycles(db, opts.gymId);
   const remaining = (await findUnsettledActiveSets(db, opts.gymId)).length;
   return { found: sets.length, settled: sets.length - remaining, remaining };
 }
