@@ -10,7 +10,7 @@ import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
-import { primaryPlanSnapshotSql } from './plan-snapshot-lines';
+import { primaryPlanSnapshotSql, promotionHolderSql } from './plan-snapshot-lines';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
 /**
@@ -176,8 +176,34 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
         membership_plan_id: r.membership_plan_id != null ? Number(r.membership_plan_id) : null,
         plan_name: r.plan_name ?? null,
         starts_at: toDateOnly(r.starts_at),
+        promotions: [] as Array<{ id: number; promotion_id: number; promotion_name: string | null }>,
       });
       addedBySet.set(Number(r.product_set_id), list);
+    }
+
+    // #2966 stage 8 — the Promotions applied to each added plan (stage 7 writes them on that plan's
+    // own snapshot as Draft references): the standing rows of the snapshot's Promotion holder, the
+    // one place every plan snapshot's applications are read from. Display only.
+    const added = [...addedBySet.values()].flat();
+    if (added.length > 0) {
+      const { rows: promoRows } = await db.query<any>(
+        `SELECT s.id AS plan_snapshot_id, pps.id, pps.promotion_id, p.name AS promotion_name
+           FROM plan_snapshots s
+           JOIN plan_promotion_snapshots pps
+             ON pps.plan_snapshot_id = ${promotionHolderSql('s.id')} AND pps.gym_id = s.gym_id
+           LEFT JOIN promotions p ON p.id = pps.promotion_id
+          WHERE s.gym_id = ? AND s.id IN (${added.map(() => '?').join(',')}) AND pps.status = 'applied'
+          ORDER BY pps.id`,
+        [gymId, ...added.map((a) => a.plan_snapshot_id)],
+      );
+      const bySnapshot = new Map(added.map((a) => [a.plan_snapshot_id, a]));
+      for (const r of promoRows) {
+        bySnapshot.get(Number(r.plan_snapshot_id))?.promotions.push({
+          id: Number(r.id),
+          promotion_id: Number(r.promotion_id),
+          promotion_name: r.promotion_name ?? null,
+        });
+      }
     }
   }
 

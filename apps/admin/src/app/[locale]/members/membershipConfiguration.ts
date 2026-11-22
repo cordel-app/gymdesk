@@ -96,6 +96,8 @@ export interface ProductSetRow {
   cancelled_by?: string | null;
   /** #2966 stage 4 — further plans the version holds as plan snapshots only (no assignment row). */
   added_plans?: AddedPlanRow[];
+  /** #2966 stage 8 — on a row built by `addedCartPlans()`: the Promotions applied to that added plan. */
+  promotions?: AddedPlanPromotion[];
 }
 
 export interface AddedPlanRow {
@@ -103,6 +105,14 @@ export interface AddedPlanRow {
   membership_plan_id: number | null;
   plan_name: string | null;
   starts_at: string | null;
+  /** #2966 stage 8 — the Promotions applied to this added plan (standing applications only). */
+  promotions?: AddedPlanPromotion[];
+}
+
+export interface AddedPlanPromotion {
+  id: number;
+  promotion_id: number;
+  promotion_name: string | null;
 }
 
 /**

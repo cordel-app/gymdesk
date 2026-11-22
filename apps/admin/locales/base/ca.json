@@ -972,7 +972,8 @@
     "draft_line_delete_confirm": "Vols eliminar {product} de l'esborrany? Es treu d'aquest Product Set; no s'hi ha cobrat res.",
     "draft_line_delete_error": "No s'ha pogut eliminar el producte de l'esborrany.",
     "add_product_error_promotion_requires_products": "Aquesta promoció requereix altres productes. Afegeix-los primer i després aplica la promoció.",
-    "added_plan_remove": "Treure"
+    "added_plan_remove": "Treure",
+    "added_plan_promotion_title": "Promoció aplicada a aquest pla: {name}"
   },
   "member_payments": {
     "title": "Pagaments del membre",
