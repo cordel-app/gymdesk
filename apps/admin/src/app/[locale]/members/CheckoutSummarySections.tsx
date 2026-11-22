@@ -17,7 +17,8 @@
 import React, { type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { alertTextColor, cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
-import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR, LIST_HEADER_BACKGROUND } from '@/components/listChrome';
+import { primaryActionColors } from '@/components/ui';
+import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/components/listChrome';
 import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
@@ -210,13 +211,21 @@ const thNum: CSSProperties = { ...th, textAlign: 'right' };
 const td: CSSProperties = { ...listCellStyle, padding: '6px 8px', fontSize: 13, borderTop: `1px solid ${LIST_DIVIDER_COLOR}` };
 const tdNum: CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap' };
 const totals: CSSProperties = { marginTop: 8, marginLeft: 'auto', maxWidth: 360, fontSize: 13, display: 'grid', gap: 2 };
+// #3188 (reopened) — the Member's expanded row is itself drawn on the Theme's app background
+// (`listExpandedStyle`), so a panel painted with that same token was invisible. The panel takes
+// the card surface tinted with the Theme's primary action colour, with a left rail in that colour,
+// so it stands out on any theme without a colour of its own.
+const SUMMARY_ACCENT = String(primaryActionColors.background);
+const SUMMARY_SURFACE = 'var(--gd-card-bg, #ffffff)';
 const panel: CSSProperties = {
-  background: LIST_HEADER_BACKGROUND, border: `1px solid ${LIST_DIVIDER_COLOR}`, borderRadius: 8,
-  padding: '12px 14px', marginTop: 8, marginBottom: 12,
+  background: `color-mix(in srgb, ${SUMMARY_ACCENT} 7%, ${SUMMARY_SURFACE})`,
+  border: `1px solid color-mix(in srgb, ${SUMMARY_ACCENT} 30%, ${SUMMARY_SURFACE})`,
+  borderLeft: `4px solid ${SUMMARY_ACCENT}`, borderRadius: 8,
+  padding: '14px 16px', marginTop: 8, marginBottom: 12,
 };
 const panelHeader: CSSProperties = {
   display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '4px 16px', marginBottom: 8,
 };
 const headline: CSSProperties = { marginLeft: 'auto', textAlign: 'right' };
 const headlineLabel: CSSProperties = { ...cardSubLabelStyle, margin: 0 };
-const headlineAmount: CSSProperties = { fontSize: 28, fontWeight: 700, lineHeight: 1.15, whiteSpace: 'nowrap' };
+const headlineAmount: CSSProperties = { fontSize: 32, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', color: 'var(--gd-text, #111827)' };
