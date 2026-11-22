@@ -486,6 +486,8 @@ export interface MemberSetView {
 /** One Membership Plan of `GET /me/product-sets/:id`. */
 export interface MemberSetPlan {
   plan_snapshot_id: number;
+  /** #3235 — the assignment's id, as the forecast's lines name it; null for a plan no assignment holds yet. */
+  user_membership_id?: number | null;
   membership_plan_id: number | null;
   plan_name: string | null;
   change: 'added' | 'inherited';

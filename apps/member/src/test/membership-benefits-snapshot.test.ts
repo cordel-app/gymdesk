@@ -45,10 +45,12 @@ describe('My Membership — the benefits section reads the snapshot (#635 stage 
     expect(page).toContain('membership.item_group.${group}');
   });
 
-  it('shows the line\'s final price with its currency, right-aligned, and the frozen billing frequency (#2892)', () => {
-    expect(page).toContain('formatPaymentAmount(b.final_price, \'EUR\', gymFmt)');
-    expect(page).toContain('data-plan-line-price');
-    expect(page).not.toContain('b.unit_price.toFixed(2)');
+  it('lists quantity, frequency and beneficiary with no price and no Mandatory chip (#3235)', () => {
+    expect(page).not.toContain('formatPaymentAmount(b.final_price');
+    expect(page).not.toContain('data-plan-line-price');
+    expect(page).not.toContain('data-plan-line-mandatory');
+    expect(page).toContain('membership.plan_line_quantity');
+    expect(page).toContain('membership.plan_line_beneficiary');
     expect(page).toContain('membership.frequency.${b.billing_frequency}');
   });
 

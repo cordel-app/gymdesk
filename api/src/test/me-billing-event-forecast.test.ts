@@ -166,7 +166,13 @@ describe('GET /me/billing-event-forecast', () => {
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
 
     expect(staff.status).toBe(200);
-    expect(mine.body).toEqual(staff.body);
+    // #3235: the member's lines also name their assignment; every figure is the staff route's.
+    for (const d of mine.body.dates) for (const l of d.lines) expect(l.user_membership_id).toBe(umId);
+    const untagged = {
+      ...mine.body,
+      dates: mine.body.dates.map((d: any) => ({ ...d, lines: d.lines.map(({ user_membership_id: _, ...l }: any) => l) })),
+    };
+    expect(untagged).toEqual(staff.body);
 
     // #2125 M6b-17: the snapshot is the record the forecast reads, so it is closed with the row;
     // M6b-51d-3: and its anchor's lifecycle, which the one-plan check reads.

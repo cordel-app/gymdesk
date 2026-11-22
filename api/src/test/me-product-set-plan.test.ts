@@ -90,6 +90,12 @@ describe('POST /me/product-sets/:id/plans', () => {
       `SELECT um.status FROM ${TEST_ASSIGNMENTS} um JOIN product_sets ps ON ${productSetOfLegacyAssignmentSql('um.id', 'ps')}
         WHERE ps.id = ?`, [draft.id]);
     expect(um[0]?.status).toBe('active');
+    // #3235: the committed plan names its assignment, the id the forecast tags its lines with.
+    const { rows: umIds } = await db.query<any>(
+      `SELECT um.id FROM ${TEST_ASSIGNMENTS} um JOIN product_sets ps ON ${productSetOfLegacyAssignmentSql('um.id', 'ps')}
+        WHERE ps.id = ?`, [draft.id]);
+    const active = await as(m.clerk, 'get', `/${draft.id}`);
+    expect(active.body.plans[0].user_membership_id).toBe(Number(umIds[0].id));
     const { rows: lines } = await db.query<any>(
       `SELECT bl.kind FROM billing_events be JOIN billing_event_lines bl ON bl.billing_event_id = be.id
         WHERE be.product_set_id = ? AND be.is_scheduled = 1`, [draft.id]);
