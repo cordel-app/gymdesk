@@ -23,6 +23,12 @@ export interface DriftReport { clean: boolean; checks: DriftCheck[] }
 
 const SAMPLE_SIZE = 20;
 
+/**
+ * #2125 M8 — the anchor of an assignment as `anchorsOf()` (`plan-assignment-sync.ts`) decides it: the
+ * snapshot already anchoring it, else the lowest snapshot naming it. Used inside a GROUP BY per assignment id.
+ */
+const ANCHOR_ID_SQL = 'COALESCE(MIN(CASE WHEN assignment_id = id THEN id END), MIN(id))';
+
 /** `a` and `b` name the two sides; NULL-safe, and a DATETIME is compared to the second. */
 const differs = (a: string, b: string) => `NOT (${a} <=> ${b})`;
 
@@ -41,11 +47,11 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       WHERE s.assignment_id IS NULL${scope('s')} ORDER BY s.id`);
 
   await add('assignment_identity_split',
-    'A plan snapshot whose assignment_id is not the first snapshot naming its assignment id.',
+    'A plan snapshot whose assignment_id is not the anchor of its assignment id.',
     `SELECT s.id AS plan_snapshot_id, s.gym_id, s.source_user_membership_id AS user_membership_id,
             s.assignment_id, a.anchor_id AS expected_assignment_id
        FROM plan_snapshots s
-       JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+       JOIN (SELECT gym_id, source_user_membership_id AS um_id, ${ANCHOR_ID_SQL} AS anchor_id
                FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
               GROUP BY gym_id, source_user_membership_id) a
          ON a.gym_id = s.gym_id AND a.um_id = s.source_user_membership_id
@@ -81,7 +87,7 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
     `SELECT pr.id AS payment_request_id, pr.gym_id, pr.user_membership_id, pr.plan_assignment_id,
             a.anchor_id AS expected_plan_assignment_id
        FROM payment_requests pr
-       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, ${ANCHOR_ID_SQL} AS anchor_id
                     FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
                    GROUP BY gym_id, source_user_membership_id) a
               ON a.gym_id = pr.gym_id AND a.um_id = pr.user_membership_id
@@ -90,14 +96,14 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
 
   // #2125 M6b-36 / M6b-46: a Product Set's link (migration 432) is the anchor of the assignment it
   // names. Since migration 441 dropped `product_sets.user_membership_id`, the check is that the link
-  // is the lowest snapshot naming the same legacy assignment as the snapshot it points at.
+  // is the anchor of the legacy assignment the snapshot it points at names.
   await add('product_set_assignment_mismatch',
-    'A Product Set whose plan_assignment_id is not the anchor (lowest snapshot) of the assignment it names.',
+    'A Product Set whose plan_assignment_id is not the anchor of the assignment it names.',
     `SELECT ps.id AS product_set_id, ps.gym_id, ps.status, ps.plan_assignment_id,
             a.anchor_id AS expected_plan_assignment_id
        FROM product_sets ps
        JOIN plan_snapshots cur ON cur.id = ps.plan_assignment_id
-       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, MIN(id) AS anchor_id
+       LEFT JOIN (SELECT gym_id, source_user_membership_id AS um_id, ${ANCHOR_ID_SQL} AS anchor_id
                     FROM plan_snapshots WHERE source_user_membership_id IS NOT NULL
                    GROUP BY gym_id, source_user_membership_id) a
               ON a.gym_id = cur.gym_id AND a.um_id = cur.source_user_membership_id

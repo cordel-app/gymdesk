@@ -6,9 +6,10 @@
  * `plan_snapshots.assignment_id` is the stable identity of the logical Membership Plan assignment:
  * the id of the assignment's first snapshot. It is decided here and nowhere else:
  *
- *   - a snapshot naming an assignment id (`source_user_membership_id`) takes the lowest
- *     snapshot id naming that id, so one assignment id is exactly one `assignment_id` (which is
- *     what let M6b-3 re-key every reference through the pair);
+ *   - a snapshot naming an assignment id (`source_user_membership_id`) takes that assignment's
+ *     anchor — the snapshot already anchoring it, else (its first snapshot) the lowest snapshot id
+ *     naming that id — so one assignment id is exactly one `assignment_id` (which is what let M6b-3
+ *     re-key every reference through the pair), and an anchor, once set, never moves (#2125 M8);
  *   - a snapshot naming none keeps the assignment it was given (a copy is given its source's by
  *     `copyPlanSnapshotToVersion()`), else it is its own.
  *
@@ -22,16 +23,21 @@ import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 type Exec = { query: Tx['query'] };
 
 /**
- * The lowest snapshot id naming each of the given assignment ids. Asked per assignment (the
- * `source_user_membership_id` index), never as a scan of the gym's snapshots: the sync runs on every
- * Draft edit.
+ * The anchor of each of the given assignment ids: the snapshot already stamped as that assignment's
+ * anchor (`assignment_id = id`), else — for an assignment no snapshot anchors yet — the lowest snapshot
+ * id naming it. #2125 M8: once an assignment has an anchor it keeps it, so a snapshot named after it
+ * later, whatever its id, can never move the identity every pointer (`product_sets.plan_assignment_id`,
+ * `payment_requests.plan_assignment_id`, `replaces_assignment_id`) is keyed on. Asked per assignment
+ * (the `source_user_membership_id` index), never as a scan of the gym's snapshots: the sync runs on
+ * every Draft edit.
  */
 async function anchorsOf(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<Map<number, number>> {
   const ids = [...new Set(userMembershipIds)];
   const anchors = new Map<number, number>();
   if (ids.length === 0) return anchors;
   const { rows } = await exec.query<{ um_id: number; anchor_id: number }>(
-    `SELECT source_user_membership_id AS um_id, MIN(id) AS anchor_id FROM plan_snapshots
+    `SELECT source_user_membership_id AS um_id,
+            COALESCE(MIN(CASE WHEN assignment_id = id THEN id END), MIN(id)) AS anchor_id FROM plan_snapshots
       WHERE gym_id = ? AND source_user_membership_id IN (${ids.map(() => '?').join(',')})
       GROUP BY source_user_membership_id`, [gymId, ...ids]);
   for (const r of rows) anchors.set(Number(r.um_id), Number(r.anchor_id));
@@ -174,17 +180,39 @@ export async function syncProductSetAssignmentIds(
 export const RESET_ASSIGNMENT_FACTS_SQL =
   'replace_on_activation = 0, replaces_assignment_id = NULL, deleted_at = NULL, deleted_by = NULL';
 
+/**
+ * #2125 M8 — a snapshot that anchors an assignment other snapshots still belong to is that
+ * assignment's identity; naming it after another assignment would move the first one's identity onto
+ * a snapshot of the second. Nothing in the application does that (an anchor is never the unshared
+ * primary of a Draft that links a new assignment); this makes it impossible rather than unobserved.
+ */
+async function refuseRenamingAnAnchor(exec: Exec, gymId: string, planSnapshotId: number, userMembershipId: number): Promise<void> {
+  const { rows } = await exec.query<{ um_id: number | null }>(
+    `SELECT s.source_user_membership_id AS um_id FROM plan_snapshots s
+      WHERE s.id = ? AND s.gym_id = ? AND s.assignment_id = s.id
+        AND NOT (s.source_user_membership_id <=> ?)
+        AND EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.assignment_id = s.id AND o.id <> s.id)`,
+    [planSnapshotId, gymId, userMembershipId]);
+  if (rows.length > 0) {
+    throw new Error(
+      `plan snapshot ${planSnapshotId} anchors assignment ${rows[0].um_id}; it cannot be named after assignment ${userMembershipId}`);
+  }
+}
+
 export async function nameAssignmentSnapshot(
   exec: Exec, gymId: string, productSetId: number, userMembershipId: number,
 ): Promise<void> {
   const primary = await primaryPlanSnapshotId(exec, gymId, productSetId);
   if (primary != null && !(await isPlanSnapshotShared(exec, productSetId, primary))) {
+    await refuseRenamingAnAnchor(exec, gymId, primary, userMembershipId);
     // #2125 M6b-51c-2: a snapshot that comes to name another assignment drops the facts of the one
     // it named before (a copy made for an edit carries its source's); the new assignment's writers
     // write its own afterwards (`writeAssignmentReplacement()`). The facts are reset before the name
-    // moves, since MySQL applies the assignments of one UPDATE left to right.
+    // moves, since MySQL applies the assignments of one UPDATE left to right. #2125 M8: its identity
+    // goes too (`assignment_id = NULL`, which the refusal above makes safe), so the stamp below gives it
+    // the new assignment's existing anchor rather than letting it stand as an anchor of its own.
     await exec.query(
-      `UPDATE plan_snapshots SET ${RESET_ASSIGNMENT_FACTS_SQL}, source_user_membership_id = ?
+      `UPDATE plan_snapshots SET ${RESET_ASSIGNMENT_FACTS_SQL}, assignment_id = NULL, source_user_membership_id = ?
         WHERE id = ? AND gym_id = ? AND NOT (source_user_membership_id <=> ?)`,
       [userMembershipId, primary, gymId, userMembershipId]);
     await stampAssignmentIds(exec, gymId, [primary]);
