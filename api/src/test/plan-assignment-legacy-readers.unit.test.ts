@@ -44,15 +44,11 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
 const LEGACY_STATEMENTS: Record<string, number> = {
-  'api/assignment-commit.ts': 1, // M6b-51d-2: the pending-conflict read (several rows)
-  'api/assignment-draft-set.ts': 2,
-  // M6b-51c-3: every UPDATE of the table; M6b-51d-1: and its one INSERT, under a registry id.
-  'api/assignment-lifecycle-writer.ts': 2,
-  'api/one-active-plan.ts': 1,
+  // M6b-51c-3: every UPDATE of the table; M6b-51d-1: and its one INSERT, under a registry id;
+  // M6b-51d-3: and its one DELETE, of Draft rows only.
+  'api/assignment-lifecycle-writer.ts': 3,
   'api/plan-assignment-drift.ts': 5, // M6b-51c-4: the report compares the anchor's lifecycle with the legacy row
   'api/plan-assignment-sync.ts': 2, // M6b-51c-4: the anchor lifecycle's seed and repair share one statement
-  'api/product-sets.ts': 2,
-  'api/user-memberships.ts': 2, // M6b-51d-2: a Draft's DELETE and the edit Draft's owner join
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -321,5 +317,21 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   it('M6b-50: a Promotion apply reads the assignment from plan_snapshots', () => {
     expect(LEGACY_STATEMENTS['api/membership-promotions.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'api/membership-promotions.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
+  });
+
+  it('M6b-51d-3: the conflict reads lock the anchors and an assignment is deleted only by the writer', () => {
+    for (const file of ['api/one-active-plan.ts', 'api/assignment-commit.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('lockAssignmentsCovering(');
+    }
+    const DELETE = /\bDELETE\b[^`'"]*\bFROM\s+user_memberships\b/g;
+    const deleters = sourceFiles(API_SRC)
+      .filter((f) => (code(readFileSync(f, 'utf8')).match(DELETE) ?? []).length > 0)
+      .map((f) => f.slice(API_SRC.length + 1));
+    expect(deleters).toEqual(['api/assignment-lifecycle-writer.ts']);
+    for (const file of ['api/user-memberships.ts', 'api/assignment-draft-set.ts', 'api/product-sets.ts']) {
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('deleteDraftAssignments(');
+    }
   });
 });

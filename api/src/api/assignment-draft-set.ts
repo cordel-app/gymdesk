@@ -1,5 +1,6 @@
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, nameAssignmentSnapshot } from './plan-assignment-sync';
+import { deleteDraftAssignments } from './assignment-lifecycle-writer';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { staffProductDraftSql } from './editable-draft';
@@ -10,7 +11,7 @@ import { cloneConfiguration } from './product-set-bridge';
 import { ownAssignmentPlanSnapshot, ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
 import { planSnapshotOfAssignment, primaryPlanSnapshotSql } from './plan-snapshot-lines';
 import { linkCancellingPlans } from './entitlement-plan-links';
-import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -60,16 +61,16 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   // A Pending Payment version, or a Draft that is not an assignment's (it holds
   // product lines), is left alone and still answers `in_flight`.
   const { rows: stale } = await tx.query<{ id: number; user_membership_id: number }>(
-    `SELECT ps.id, um.id AS user_membership_id
-       FROM product_sets ps JOIN user_memberships um ON um.id = ${productSetLegacyAssignmentIdSql()} AND um.gym_id = ps.gym_id
+    // #2125 M6b-51d-3: read and locked on the stale Draft's anchor (the set's link), not `user_memberships`.
+    `SELECT ps.id, a.source_user_membership_id AS user_membership_id
+       FROM product_sets ps JOIN plan_snapshots a ON a.id = ps.plan_assignment_id AND a.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
-        AND um.status = 'in_cart' AND um.id <> ? FOR UPDATE`,
+        AND a.assignment_status = 'in_cart' AND a.source_user_membership_id <> ? FOR UPDATE`,
     [input.gymId, input.ownerMemberId, input.userMembershipId],
   );
   for (const old of stale) {
     await discardDraftSet(tx, input.gymId, Number(old.id));
-    await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart'`,
-      [old.user_membership_id, input.gymId]);
+    await deleteDraftAssignments(tx, input.gymId, [Number(old.user_membership_id)]);
   }
   // #2966: the owner's live plain Draft with no Membership Plan yet (their cart of recurring
   // Products) is the cart this plan joins — adopted, never a competing version. Its lines, quantities

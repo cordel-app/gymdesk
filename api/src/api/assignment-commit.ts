@@ -7,7 +7,7 @@ import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-a
 import { importAssignmentAsProductSet } from './product-set-bridge';
 import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
-import { assignmentReplacementOf, lockAssignmentRecord, writeAssignmentPurchasedAt, writeAssignmentReplacement } from './plan-assignment-sync';
+import { assignmentReplacementOf, lockAssignmentRecord, lockAssignmentsCovering, writeAssignmentPurchasedAt, writeAssignmentReplacement } from './plan-assignment-sync';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
@@ -112,17 +112,9 @@ async function liveConflicts(tx: Tx, gymId: string, row: { id: number; member_id
  */
 async function pendingConflicts(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<number[]> {
   const ids = await coveredMemberIds(tx, gymId, row);
-  const marks = ids.map(() => '?').join(',');
-  const { rows } = await tx.query<{ id: number }>(
-    `SELECT DISTINCT um.id
-       FROM user_memberships um
-       LEFT JOIN ${ASSIGNMENT_BENEFICIARIES} umm ON umm.user_membership_id = um.id AND umm.gym_id = um.gym_id
-      WHERE um.gym_id = ? AND um.status = ? AND um.id <> ?
-        AND (um.member_id IN (${marks}) OR umm.member_id IN (${marks}))
-      FOR UPDATE`,
-    [gymId, PENDING_PAYMENT_STATUS, row.id, ...ids, ...ids],
-  );
-  return rows.map((r) => Number(r.id));
+  // #2125 M6b-51d-3: locked on the anchor snapshots, never on `user_memberships`.
+  const rows = await lockAssignmentsCovering(tx, gymId, ids, [PENDING_PAYMENT_STATUS], { excludeUserMembershipId: Number(row.id) });
+  return rows.map((r) => Number(r.id)).sort((a, b) => a - b);
 }
 
 /**

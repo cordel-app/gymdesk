@@ -8,7 +8,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, writeDiscountOnVersion, writeDraftAssignmentDates } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
-import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { lockAssignmentRecord, writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
@@ -88,7 +88,7 @@ import {
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { loadPlanAccessEntries } from './plan-center-access';
-import { insertAssignment, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { deleteDraftAssignments, insertAssignment, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -1128,7 +1128,7 @@ userMembershipsRouter.delete('/:id/draft', requireModuleWrite('PAYMENTS'), async
       // #1325 PR 3e: the Draft's version goes with it — left behind it would be
       // the owner's one in-flight version and lock them out of another.
       await deleteLinkedDraftSet(tx, gymId, Number(req.params.id));
-      await tx.query('DELETE FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+      await deleteDraftAssignments(tx, gymId, [Number(req.params.id)]);
       return { kind: 'deleted', previous: rows[0] } as const;
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1625,8 +1625,11 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
       const active = await projectedSetFor(tx, gymId, Number(um.id));
       if (!active) return { kind: 'not_projected' as const };
       const { rows: owned } = await tx.query<any>(
-        `SELECT ps.id, um.id AS um_id FROM product_sets ps JOIN user_memberships um ON um.id = ${productSetLegacyAssignmentIdSql()} AND um.gym_id = ps.gym_id
-          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND um.status = 'in_cart' FOR UPDATE`,
+        // #2125 M6b-51d-3: the Draft assignment is read and locked on its anchor (the set's link).
+        `SELECT ps.id, a.source_user_membership_id AS um_id
+           FROM product_sets ps JOIN plan_snapshots a ON a.id = ps.plan_assignment_id AND a.gym_id = ps.gym_id
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND a.assignment_status = 'in_cart'
+          FOR UPDATE`,
         [gymId, active.owner_member_id]);
       if (owned[0]) return { kind: 'created' as const, id: Number(owned[0].um_id), reused: true };
       // #2858: a plain Draft the owner already holds (their recurring products, cloned from this

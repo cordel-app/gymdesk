@@ -157,3 +157,18 @@ export async function insertAssignment(exec: Exec, a: NewAssignment): Promise<nu
       a.replacesUserMembershipId ?? null, a.purchasedAt ?? null, a.createdBy]);
   return id;
 }
+
+/**
+ * #2125 M6b-51d-3 — the one place a `user_memberships` row is deleted: a Draft (`in_cart`) assignment
+ * discarded with its version, which billed nothing. Any other status is left alone, so a caller that
+ * names a committed assignment by mistake deletes nothing. Decides nothing about the assignment: the
+ * callers lock it (its anchor snapshot) and delete its version themselves. Answers the rows deleted.
+ */
+export async function deleteDraftAssignments(exec: Exec, gymId: string, ids: readonly number[]): Promise<number> {
+  const keep = ids.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0);
+  if (keep.length === 0) return 0;
+  const { rowCount } = await exec.query(
+    `DELETE FROM user_memberships WHERE gym_id = ? AND status = 'in_cart' AND id IN (${keep.map(() => '?').join(',')})`,
+    [gymId, ...keep]);
+  return Number(rowCount ?? 0);
+}
