@@ -1,7 +1,7 @@
 /**
  * #2125 M6b-51c-3 — the one writer of an assignment's lifecycle (status, `closed_at`, `ends_at`, the
  * modifier). Callers describe the change and this module spells the statement, on the anchor snapshot
- * (M6b-51d-7b). M6b-51d-1 — and the one allocator of an assignment's id (`allocateAssignmentId()`).
+ * (M6b-51d-7b). Since #2125 N1 an assignment's id is its anchor snapshot's own (`openAssignmentOnSet()`).
  * Since M6b-51d-7c-1 nothing writes `user_memberships`. Nothing here decides a transition: each
  * caller keeps its own guard (the `from` statuses below), its audit row and its snapshot sync.
  */
@@ -97,17 +97,3 @@ export function anchorPasses(
   return true;
 }
 
-/**
- * Allocates an assignment id (M6b-51d-1, migration 455): one row of `plan_assignment_ids` per id ever
- * handed out. Since M6b-51d-7c-1 this is the whole of creating an assignment: no `user_memberships`
- * row is written, and the assignment is its plan snapshots, named with this id
- * (`nameAssignmentSnapshot()` / `createDraftSetForAssignment()`), whose anchor carries its identity
- * and lifecycle. A Draft discarded with its version leaves only its registry row behind, so an id is
- * never handed out twice.
- */
-export async function allocateAssignmentId(exec: Exec, gymId: string): Promise<number> {
-  const { insertId } = await exec.query('INSERT INTO plan_assignment_ids (gym_id) VALUES (?)', [gymId]);
-  const id = Number(insertId);
-  if (!Number.isSafeInteger(id) || id < 1) throw new Error('Assignment id allocation returned no id');
-  return id;
-}

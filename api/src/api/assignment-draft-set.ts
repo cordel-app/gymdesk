@@ -1,5 +1,5 @@
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
-import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, nameAssignmentSnapshot } from './plan-assignment-sync';
+import { openAssignmentOnSet } from './plan-assignment-sync';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
 import { staffProductDraftSql } from './editable-draft';
@@ -32,7 +32,6 @@ import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 
 export interface DraftSetInput {
   gymId: string;
-  userMembershipId: number;
   ownerMemberId: number;
   membershipPlanId: number;
   startsAt: string;
@@ -53,7 +52,7 @@ export interface DraftSetInput {
  * in_flight` (rolling the caller's transaction back) when the owner already has
  * a version in flight — the database's own one-in-flight rule, said in words.
  */
-export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput): Promise<number> {
+export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput): Promise<{ setId: number; assignmentId: number }> {
   // #1707: a Draft is editable until it is committed, so assigning (or
   // re-assigning) a plan while the owner's Draft assignment is still open
   // replaces that Draft — one Draft per owner stays true, and nothing was billed.
@@ -64,8 +63,8 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     `SELECT ps.id, a.source_user_membership_id AS user_membership_id
        FROM product_sets ps JOIN plan_snapshots a ON a.id = ps.plan_assignment_id AND a.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
-        AND a.assignment_status = 'in_cart' AND a.source_user_membership_id <> ? FOR UPDATE`,
-    [input.gymId, input.ownerMemberId, input.userMembershipId],
+        AND a.assignment_status = 'in_cart' FOR UPDATE`,
+    [input.gymId, input.ownerMemberId],
   );
   for (const old of stale) {
     await discardDraftSet(tx, input.gymId, Number(old.id));
@@ -103,17 +102,14 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
     }
     setId = created.productSet.id;
   }
-  await tx.query(
-    `UPDATE product_sets SET ends_at = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
-    [input.endsAt, input.userMembershipId, setId, input.gymId],
-  );
+  await tx.query('UPDATE product_sets SET ends_at = ? WHERE id = ? AND gym_id = ?', [input.endsAt, setId, input.gymId]);
   await snapshotProductSetFromPlan(tx, {
     gymId: input.gymId, productSetId: setId, membershipPlanId: input.membershipPlanId,
     membershipFeePrice: input.membershipFeePrice, startsAt: input.startsAt,
     declinedBenefits: input.declinedBenefits, origin: 'admin',
   });
-  // #2125 M6b-44: the plan snapshot names the new assignment as soon as it exists, so its anchor does too.
-  await nameAssignmentSnapshot(tx, input.gymId, setId, input.userMembershipId);
+  // #2125 N1: the new assignment is opened on the plan snapshot just frozen; its id is that snapshot's.
+  const assignmentId = await openAssignmentOnSet(tx, input.gymId, setId);
   await tx.query(
     `UPDATE plan_snapshots
         SET plan_price_id = ?, base_price = ?, discount_reason = ?, discount_expires_at = ?
@@ -126,7 +122,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   // commit, as before (`mergeActiveVersionIntoDraft()`).
   await linkCancellingPlans(tx, input.gymId, setId);
   await syncDraftAssignment(tx, input.gymId, setId);
-  return setId;
+  return { setId, assignmentId };
 }
 
 /** The Draft version an assignment is linked to, locked; `null` for a legacy Draft with none. */
@@ -248,12 +244,12 @@ export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMemb
  * and its billing stay exactly as they are until the Draft completes Save & Pay.
  */
 export async function createDraftSetFromActive(tx: Tx, input: {
-  gymId: string; userMembershipId: number; ownerMemberId: number; activeSetId: number;
+  gymId: string; ownerMemberId: number; activeSetId: number;
   /** The running assignment being edited, whose Plan Promotions the Draft carries (#2946). */
   editedUserMembershipId: number;
   membershipPlanId: number | null; startsAt: string; endsAt: string | null;
   actor: { name: string | null; type?: string | null };
-}): Promise<number> {
+}): Promise<{ setId: number; assignmentId: number }> {
   // #2966: the owner's live plain Draft with no Membership Plan yet (their cart of recurring
   // Products) is the cart this plan joins — adopted, never a competing version. Its lines, quantities
   // and Promotions stay as they were; the plan is frozen onto it below like onto a fresh Draft.
@@ -287,18 +283,17 @@ export async function createDraftSetFromActive(tx: Tx, input: {
     }
     setId = created.productSet.id;
   }
-  await tx.query(`UPDATE product_sets SET ends_at = ?, ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
-    [input.endsAt, input.userMembershipId, setId, input.gymId]);
+  await tx.query('UPDATE product_sets SET ends_at = ? WHERE id = ? AND gym_id = ?', [input.endsAt, setId, input.gymId]);
   await cloneConfiguration(tx, input.gymId, input.activeSetId, setId);
   // #2125 M4b-3: the clone links the running plan's snapshot, which is the running assignment's
   // contract; this Draft is a **new** assignment (its own assignment id, which replaces the
   // running one when it commits), so its plan is a proposed change by construction and is copied
   // now — the sync below then names the Draft assignment on the copy. Any other plan stays shared.
   await ownPrimaryPlanSnapshot(tx, input.gymId, setId);
-  // #2125 M6b-44: the owned copy names the Draft assignment before the sync (which reads the anchor).
-  await nameAssignmentSnapshot(tx, input.gymId, setId, input.userMembershipId);
+  // #2125 N1: the owned copy opens the Draft assignment (its id is the copy's) before the sync.
+  const assignmentId = await openAssignmentOnSet(tx, input.gymId, setId);
   await syncDraftAssignment(tx, input.gymId, setId);
-  return setId;
+  return { setId, assignmentId };
 }
 
 /**
@@ -309,16 +304,17 @@ export async function createDraftSetFromActive(tx: Tx, input: {
  * is owned and re-derived exactly as `createDraftSetFromActive()` does for a fresh clone.
  */
 export async function adoptDraftForEdit(tx: Tx, input: {
-  gymId: string; userMembershipId: number; draftSetId: number;
+  gymId: string; draftSetId: number;
   /** The Active version the plain Draft was cloned from, and the running assignment being edited (#2946). */
   activeSetId: number; editedUserMembershipId: number;
-}): Promise<number> {
+}): Promise<{ setId: number; assignmentId: number }> {
   await tx.query(
-    `UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL}, last_activity_at = UTC_TIMESTAMP()
+    `UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP()
       WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND plan_assignment_id IS NULL`,
-    [input.userMembershipId, input.draftSetId, input.gymId]);
+    [input.draftSetId, input.gymId]);
   await ownPrimaryPlanSnapshot(tx, input.gymId, input.draftSetId);
-  await nameAssignmentSnapshot(tx, input.gymId, input.draftSetId, input.userMembershipId);
+  // #2125 N1: the owned copy opens the Draft assignment; its id is the copy's.
+  const assignmentId = await openAssignmentOnSet(tx, input.gymId, input.draftSetId);
   await syncDraftAssignment(tx, input.gymId, input.draftSetId);
-  return input.draftSetId;
+  return { setId: input.draftSetId, assignmentId };
 }
