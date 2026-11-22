@@ -1,7 +1,7 @@
 /**
  * Amounts cross the PaymentProvider boundary in the currency's **minor unit**
  * (cents for EUR), because that is what Monei's `/payments` takes. Everything
- * on our side of the boundary — `user_memberships.membership_fee_price`,
+ * on our side of the boundary — an assignment's `membership_fee_price`,
  * `billing_events.amount`, `payment_requests.amount`, what
  * `resolveMembershipFee()` and `priceMembershipFeeOn()` return — is a decimal
  * number of euros. Every caller of `createPaymentRequest()` and

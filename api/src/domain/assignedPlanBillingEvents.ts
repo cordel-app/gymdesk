@@ -1,7 +1,7 @@
 // #511 (stage 3 — Expanded detail + Billing Events endpoint).
 //
 // Pure calculation of the "Billing Events" view for a single Assigned Plan
-// (`user_memberships` row), per the issue #511 thread's Q2 answer:
+// (one assignment), per the issue #511 thread's Q2 answer:
 //
 //   - Show ALL billing events affected by promotions applied to the plan,
 //     PLUS the billing events covering the following two additional

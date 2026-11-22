@@ -820,7 +820,7 @@ export async function effectivePrice(planId: number, gymId: string, date: string
  * frozen onto it at assignment time (#635 stage 3), falling back to its Plan's
  * price window covering its start date only when it has none.
  *
- * `user_memberships.base_price` is not usable as *the* regular price — it is
+ * An assignment's `base_price` (its plan snapshot's) is not usable as *the* regular price — it is
  * snapshotted from `effectivePrice()`, which has returned a constant 0 for that
  * field since `membership_plans.base_price` was dropped in migration 058 — but a
  * row that does carry a non-zero one (written before that, or by a fixture) is
@@ -905,7 +905,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     const { userId, role } = getTenantContext(req);
     // #958 / #1182 — the creation actor, the plain-text snapshot written onto
     // the row so the Member's plan cards show *Created by* with no per-row
-    // audit subquery. One of the three paths that insert a `user_memberships` row.
+    // audit subquery. One of the three paths that create an assignment.
     const actorText = resolveRequestActor(getTenantContext(req));
     // #1108 stage 1: the assignment is created as a **Draft**, which is not the
     // Member's Membership Plan (Q2). So #956's one-plan check does not run here
@@ -1097,8 +1097,8 @@ userMembershipsRouter.get('/:id/cancellation-preview', requireModuleWrite('PAYME
 /**
  * #1240 — **Cancel on a Draft is a hard delete.** A Draft is not the member's
  * plan (#1108): it has billed nothing, booked nothing and has no Billing Events,
- * so discarding it removes the row and its snapshot children (every FK to
- * `user_memberships` cascades) instead of leaving a `cancelled` row in the
+ * so discarding it removes it with its Draft version and the plan snapshots
+ * only that version links (`deleteLinkedDraftSet()`) instead of leaving a `cancelled` row in the
  * member's history. Any other status answers 409 — those go through
  * `/close` or `DELETE /:id`, which keep the record of what was billed.
  */

@@ -14,9 +14,9 @@ import { allocateAssignmentId, writeAssignmentLifecycle } from './assignment-lif
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
  *
- * `user_memberships` is operational only (validity, access, eligibility,
- * coverage) and a ProductSet is the commercial truth. This is the **one writer**
- * of the assignment row — written when a version activates and never edited by
+ * The assignment (its plan snapshots; `user_memberships` until migration 458) is
+ * operational only (validity, access, eligibility, coverage) and a ProductSet is
+ * the commercial truth. This is the **one writer** of the assignment — written when a version activates and never edited by
  * anything else. Since PR 3e-4a it writes no benefit, Promotion or service rows
  * of its own: those are the version's, and every reader takes them through the
  * assignment's latest linked version. It is a derived read model, not a second

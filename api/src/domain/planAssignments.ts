@@ -51,7 +51,7 @@ export const assignmentCoversMemberSql = (alias = 'pa'): string =>
 
 /**
  * #2125 M6b-10 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
- * assignment a legacy `user_memberships` id names. Routes, payment requests and audit rows still
+ * assignment an assignment id (`source_user_membership_id`) names. Routes, payment requests and audit rows still
  * name an assignment by that id, and every snapshot of one carries it
  * (`source_user_membership_id`); one legacy id is exactly one `assignment_id` (M6b-1), so this
  * matches at most one row. For a reader that needs what never changes over an assignment's life
@@ -66,7 +66,7 @@ export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): str
  * #2125 M6b-37 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
  * assignment an anchor names (`plan_snapshots.assignment_id`, the id of its first snapshot). For a
  * reader that already holds the anchor, which since M6b-36 is `product_sets.plan_assignment_id`:
- * it asks the assignment by its own identity rather than through the legacy `user_memberships` id
+ * it asks the assignment by its own identity rather than through the assignment id
  * (`assignmentOfLegacyIdSql()`), which is how a Product Set's readers stop reading
  * `product_sets.user_membership_id` before that column is dropped.
  */
@@ -158,8 +158,8 @@ export const GYM_ASSIGNMENT_ROWS_SQL = `(
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
 
 /**
- * #2125 M6b-41 — predicate: the Product Set `alias` is linked to the assignment a legacy
- * `user_memberships` id names. Asked of the set's anchor (`product_sets.plan_assignment_id`,
+ * #2125 M6b-41 — predicate: the Product Set `alias` is linked to the assignment an assignment id
+ * (`source_user_membership_id`) names. Asked of the set's anchor (`product_sets.plan_assignment_id`,
  * M6b-36), the lowest snapshot naming that legacy id (the rule `PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL`
  * writes), never of `product_sets.user_membership_id`, the column the re-key drops. For the
  * lookups that are handed a legacy id and want the sets linked to it; `legacyIdExpr` is a column
@@ -171,7 +171,7 @@ export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'p
                                      AND ps_anc.source_user_membership_id = ${legacyIdExpr})`;
 
 /**
- * #2125 M6b-42 — the legacy `user_memberships` id of the assignment the Product Set `alias` is
+ * #2125 M6b-42 — the assignment id (`source_user_membership_id`) of the assignment the Product Set `alias` is
  * linked to, read off the set's anchor (`product_sets.plan_assignment_id`, M6b-36): the anchor
  * snapshot's own `source_user_membership_id`, which is that legacy id by construction (the anchor is
  * the lowest snapshot naming it). NULL for a set linked to no assignment. For a reader that needs the

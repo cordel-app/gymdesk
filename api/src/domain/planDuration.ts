@@ -90,8 +90,8 @@
 // from its second cycle on.
 //
 // Where the flag comes from is the other half of the answer, and it is not this
-// module's: `repeats` is the assignment's **own** `user_memberships.auto_renew`
-// (migration 230), snapshotted from the Plan at assignment time like every
+// module's: `repeats` is the assignment's **own** `auto_renew` (its plan snapshot's,
+// `ASSIGNMENT_AUTO_RENEW`; migration 230), snapshotted from the Plan at assignment time like every
 // other commercial term (#635 §13/§17) and backfilled to 0, so no assignment
 // that already exists has its billing moved by the deploy (answer **A**). The
 // Plan's own previews read the Plan's live `billing_policies.auto_renew`,
