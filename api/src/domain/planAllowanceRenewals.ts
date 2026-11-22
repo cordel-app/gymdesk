@@ -5,12 +5,12 @@ import { renewalDatesThrough, type SessionBenefitFrequency } from './sessionBene
  *
  * A Session Benefit with a renewing Frequency (#918: `2 | Weekly`) includes its
  * quantity again on every renewal. The entitlement is the **Assigned Plan
- * snapshot's** line (`user_membership_session`, #635 §13–§17), never the live
+ * snapshot's** line (`plan_session_snapshots`, #635 §13–§17), never the live
  * Plan, and each renewal is one append-only row of `plan_allowance_renewals`
  * (migration 244): the row is both the grant that raises the balance and the
  * history entry staff read, so there is no second record of what was renewed.
  *
- * Idempotency is the database's — `UNIQUE (user_membership_session_id,
+ * Idempotency is the database's — `UNIQUE (plan_session_snapshot_id,
  * renewal_date)` — so a repeated or concurrent run adds nothing. Pure; the SQL
  * half is `api/plan-allowance-renewals.ts`.
  */
@@ -25,7 +25,7 @@ import { renewalDatesThrough, type SessionBenefitFrequency } from './sessionBene
 export const FIRST_RUN_CATCH_UP_DAYS = 7;
 
 export interface RenewalLine {
-  /** `user_membership_session.id`. */
+  /** `plan_session_snapshots.id`. */
   line_id: number;
   /** Assignment `starts_at`, `YYYY-MM-DD`. */
   starts_at: string;
