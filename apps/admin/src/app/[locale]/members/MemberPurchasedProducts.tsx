@@ -66,6 +66,7 @@ import {
   PURCHASE_STATUS_FILTER_VALUES,
   formatAppliedTax,
   formatDirectDiscount,
+  productTypeLabelKey,
   hasBillingEvent,
   paymentStatusKey,
   purchaseDate,
@@ -99,6 +100,7 @@ export function MemberPurchasedProducts({
   // does not carry — the labels live where they were written.
   const tp = useTranslations('promotions');
   const tFreq = useTranslations('billing_frequency');
+  const tProducts = useTranslations('products');
   const locale = useLocale();
   const router = useRouter();
   const gymFmt = useGymFormatSettings();
@@ -224,6 +226,16 @@ export function MemberPurchasedProducts({
           {promotionsArea(item)}
         </div>
       ),
+    },
+    {
+      // #3190 — the Product Type the purchase froze (Fee, Sessions, Merchandise, …).
+      key: 'type',
+      header: t('purchase_col_type'),
+      mobile: 'secondary',
+      render: (item) => {
+        const key = productTypeLabelKey(item.product_type);
+        return <span data-product-type>{key ? tProducts(key as any) : dash}</span>;
+      },
     },
     {
       // #3088 — the billing frequency has a column of its own, between Product and Quantity.
