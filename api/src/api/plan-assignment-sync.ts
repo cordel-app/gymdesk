@@ -196,8 +196,8 @@ export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembersh
  * the assignments they name. Called by `syncPlanSnapshot()`, so every path that re-derives a set's
  * snapshots re-derives these too.
  *
- * Identity is stamped on every snapshot the set links. The facts (`purchased_at` and, since M6b-30,
- * `modified_at`/`modified_by`) are copied only onto a
+ * Identity is stamped on every snapshot the set links. The facts (since M6b-30, `modified_at`/`modified_by`;
+ * `purchased_at` since M6b-51c-1 is its writers', `writeAssignmentPurchasedAt()`) are copied only onto a
  * snapshot no other Product Set links, like every other write of the sync: a shared snapshot is
  * immutable to the sets that link it. A lifecycle change on a shared snapshot is copied first
  * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own. M6b-51c-2: the
@@ -226,8 +226,7 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
     await tx.query(
       `UPDATE plan_snapshots s
          JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
-          SET s.purchased_at = um.purchased_at,
-              s.modified_at = um.modified_at,
+          SET s.modified_at = um.modified_at,
               s.modified_by = um.modified_by
         WHERE s.id = ? AND s.gym_id = ?`,
       [r.id, gymId]);
@@ -323,4 +322,30 @@ export async function writeAssignmentReplacement(
                            ON j2.plan_snapshot_id = j1.plan_snapshot_id AND j2.product_set_id <> j1.product_set_id
                         WHERE j1.plan_snapshot_id = s.id)`,
     [...params, gymId, userMembershipId]);
+}
+
+/**
+ * #2125 M6b-51c-1 — writes the assignment's `purchased_at` on its plan snapshots, the record readers
+ * take it from (`OWNED_ASSIGNMENT_ROWS_SQL`, `ASSIGNMENT_HISTORY_ROWS_SQL`). The sync no longer copies
+ * it from `user_memberships`: the writers that stamp it (the commit, the projection) write it here, in
+ * their own transaction, and the legacy column is only dual-written for `plan-assignments:validate`
+ * until the table goes. Written on the snapshots naming the assignment that no other Product Set links
+ * (the rule every write of the sync keeps; a shared snapshot already carries the value it was written
+ * with). `'fill'` stamps the current time where none is stored and leaves a stored one alone, skipping
+ * a snapshot whose own status says the plan is over; a date sets that value.
+ */
+export async function writeAssignmentPurchasedAt(
+  exec: Exec, gymId: string, userMembershipId: number, value: 'fill' | Date | string,
+): Promise<void> {
+  const set = value === 'fill' ? 's.purchased_at = COALESCE(s.purchased_at, UTC_TIMESTAMP())' : 's.purchased_at = ?';
+  const guard = value === 'fill'
+    ? "AND s.status NOT IN ('active_cancel_at_period_end','cancelled','expired','superseded')" : '';
+  await exec.query(
+    `UPDATE plan_snapshots s SET ${set}
+      WHERE s.gym_id = ? AND s.source_user_membership_id = ? ${guard}
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j1
+                         JOIN product_set_plan_snapshots j2
+                           ON j2.plan_snapshot_id = j1.plan_snapshot_id AND j2.product_set_id <> j1.product_set_id
+                        WHERE j1.plan_snapshot_id = s.id)`,
+    value === 'fill' ? [gymId, userMembershipId] : [value, gymId, userMembershipId]);
 }
