@@ -1,3 +1,4 @@
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import crypto from 'crypto';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -284,7 +285,7 @@ describe('Save & Pay on an assignment’s version moves the assignment to Pendin
     const pay = await auth(request.post(`/product-sets/${sets[0].id}/save-and-pay`)).send({});
     expect(pay.status).toBe(201);
 
-    const { rows: um } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [created.body.id]);
+    const { rows: um } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [created.body.id]);
     expect(um[0].status).toBe('pending_payment');
     const { rows: audit } = await db.query<any>(
       `SELECT new_values FROM audit_logs WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'

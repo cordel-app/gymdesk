@@ -1,4 +1,5 @@
 // #1325 PR 3e — the Admin's Draft assignment is a ProductSet Draft from birth.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -57,7 +58,7 @@ describe('a Draft assignment is created set-first', () => {
     const second = await api('post', '/user-memberships')
       .send({ member_id: m, membership_plan_id: planB, starts_at: '2026-06-01' });
     expect(second.status).toBe(201);
-    const { rows } = await db.query<any>('SELECT id, membership_plan_id FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, m]);
+    const { rows } = await db.query<any>(`SELECT id, membership_plan_id FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ?`, [gymId, m]);
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].membership_plan_id)).toBe(planB);
     expect(await draftSetOf(first.body.id)).toBeNull();
@@ -112,7 +113,7 @@ describe('a Draft assignment is created set-first', () => {
       'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 3 HOUR WHERE id = ?', [set.id]);
     await expireDrafts();
     expect(await draftSetOf(res.body.id)).toBeNull();
-    const { rows } = await db.query('SELECT id FROM user_memberships WHERE id = ?', [res.body.id]);
+    const { rows } = await db.query(`SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [res.body.id]);
     expect(rows).toHaveLength(0);
   });
 
@@ -145,7 +146,7 @@ describe('PUT /user-memberships/:id dates on a Draft (#2125 M6b-51b)', () => {
     const { rows: snap } = await db.query<any>(
       `SELECT s.starts_at, s.ends_at FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
         WHERE j.product_set_id = ? AND s.source_user_membership_id = ?`, [set.id, umId]);
-    const { rows: um } = await db.query<any>('SELECT starts_at, ends_at FROM user_memberships WHERE id = ?', [umId]);
+    const { rows: um } = await db.query<any>(`SELECT starts_at, ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     const pair = (r: any) => [day(r?.starts_at), day(r?.ends_at)];
     return { set: pair(ps[0]), snapshot: pair(snap[0]), legacy: pair(um[0]) };
   }

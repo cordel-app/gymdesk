@@ -4,6 +4,7 @@
 // M4b-3 — `cloneConfiguration()` links the predecessor's plans; the primary plan is the set's first link and
 // survives its own copy-on-write; a version that reuses a plan unchanged keeps the plan's assignment.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -366,7 +367,7 @@ describe('activating a version that reuses the plan unchanged keeps its assignme
     });
   }
   const assignments = async (owner: number) =>
-    (await db.query<any>('SELECT id, status FROM user_memberships WHERE member_id = ? AND gym_id = ? ORDER BY id', [owner, gymId])).rows
+    (await db.query<any>(`SELECT id, status FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ? AND gym_id = ? ORDER BY id`, [owner, gymId])).rows
       .map((r: any) => ({ id: Number(r.id), status: String(r.status) }));
   const snapshotState = async (snapId: number) => {
     const { rows } = await db.query<any>('SELECT status, source_user_membership_id AS um FROM plan_snapshots WHERE id = ?', [snapId]);

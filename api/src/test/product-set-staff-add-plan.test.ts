@@ -1,3 +1,4 @@
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestFamily, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
@@ -96,7 +97,7 @@ describe('staff adds a plan to the in-cart ProductSet (#2966 stage 2)', () => {
     expect(res.status).toBe(200);
     const { rows } = await db.query<any>('SELECT membership_plan_id FROM product_sets WHERE id = ?', [setId]);
     expect(Number(rows[0].membership_plan_id)).toBe(p);
-    const { rows: um } = await db.query<any>('SELECT COUNT(*) AS n FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, owner]);
+    const { rows: um } = await db.query<any>(`SELECT COUNT(*) AS n FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ?`, [gymId, owner]);
     expect(Number(um[0].n)).toBe(0);
   });
 

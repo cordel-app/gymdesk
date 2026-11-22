@@ -29,6 +29,7 @@
 // Fixtures are inserted directly; the HTTP API is only used for the action
 // under test (CLAUDE.md).
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
@@ -356,7 +357,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     const { rows } = await db.query<{ notes: string }>(
       `SELECT notes FROM billing_events
         WHERE gym_id = ? AND event_type = 'adjustment'
-          AND member_id = (SELECT member_id FROM user_memberships WHERE id = ?)`,
+          AND member_id = (SELECT member_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?)`,
       [gymId, umId],
     );
     expect(rows).toEqual([]);

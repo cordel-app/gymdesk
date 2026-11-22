@@ -11,6 +11,7 @@
 //
 // The actor's name is the Clerk stub's (`Test User`).
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -49,7 +50,7 @@ async function createPlan(gymId: string, name: string, memberLimit = '1'): Promi
 
 async function readActor(umId: number) {
   const { rows } = await db.query(
-    'SELECT created_by FROM user_memberships WHERE id = ?',
+    `SELECT created_by FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`,
     [umId],
   );
   return rows[0];
@@ -107,8 +108,9 @@ describe('#958 — the creation actor is snapshotted by every path that assigns 
 
     // A different actor's name on the first row, so "the successor records who
     // assigned *it*" is asserted rather than coincidentally true.
+    // #2125 M6b-51d-4: an assignment's creator is its anchor snapshot's (the assignment's first).
     await db.query(
-      'UPDATE user_memberships SET created_by = ? WHERE id = ?',
+      'UPDATE plan_snapshots SET created_by = ? WHERE assignment_id = id AND source_user_membership_id = ?',
       ['Earlier Admin', first.body.id],
     );
     // #1325 PR 3e: one in-flight version per owner — the first Draft is

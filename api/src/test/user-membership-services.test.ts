@@ -8,6 +8,7 @@
 // hard-coded: the router stamps removals with the server's current date
 // (`todayISO()`), and `active` is derived by comparing `ends_at` to it.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -599,7 +600,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
       if (clash.rows.length === 0 && !dayOffset(start).endsWith('-01')) break;
       start += 1;
     }
-    const m = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
+    const m = await db.query(`SELECT member_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     const memberId = m.rows[0].member_id;
     const ev = await db.query(
       `INSERT INTO billing_events (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id, period_start, period_end, billing_date, is_scheduled)
