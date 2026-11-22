@@ -11,11 +11,11 @@
 import React, { useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { cardHintStyle, cardSubLabelStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
+import { cardHintStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
 import type { ReviewSummary } from './productsWorkflowView';
-import { ContractedItemsSection, InitialPaymentSection } from './CheckoutSummarySections';
+import { CheckoutSummaryPanel } from './CheckoutSummarySections';
 
 interface Props {
   productSets: ProductSetRow[];
@@ -67,12 +67,7 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
               {ps.amount_due != null ? ` · ${ps.amount_due.toFixed(2)} €` : ''}
             </span>
             {ps.status === 'in_cart' && review && (
-              <div data-checkout-summary style={{ marginTop: 8 }}>
-                <div style={cardSubLabelStyle}>{t('checkout_initial_payment')}</div>
-                <InitialPaymentSection payment={review.initial_payment} />
-                <div style={{ ...cardSubLabelStyle, marginTop: 12 }}>{t('checkout_contracted')}</div>
-                <ContractedItemsSection items={review.contracted_items} />
-              </div>
+              <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} />
             )}
             {link?.id === ps.id && (
               <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{link.url}</code></div>
