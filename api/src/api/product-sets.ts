@@ -1,4 +1,4 @@
-import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { deleteDraftAssignments, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 import { db, Tx } from '../infra/db';
 import { restorePendingCancellations } from './plan-pending-cancellation';
 import { restorePendingReactivations } from './plan-pending-reactivation';
@@ -89,9 +89,10 @@ export async function createDraft(tx: Tx, input: {
   if (inFlight) {
     if (inFlight.status === 'in_cart' && Number(inFlight.expired) === 1) {
       // The Admin's Draft assignment (#1325 PR 3e) expires with its version.
-      await tx.query(
-        `DELETE um FROM user_memberships um JOIN product_sets ps ON ${productSetLegacyAssignmentIdSql()} = um.id AND ps.gym_id = um.gym_id
-          WHERE ps.id = ? AND um.status = 'in_cart'`, [inFlight.id]);
+      const { rows: expired } = await tx.query<{ um: number | null }>(
+        `SELECT ${productSetLegacyAssignmentIdSql()} AS um FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
+        [inFlight.id, input.gymId]);
+      if (expired[0]?.um != null) await deleteDraftAssignments(tx, input.gymId, [Number(expired[0].um)]);
       await discardDraftSet(tx, input.gymId, Number(inFlight.id));
       await restorePendingCancellations(tx, input.gymId, input.ownerMemberId);
       await restorePendingReactivations(tx, input.gymId, input.ownerMemberId);
@@ -242,7 +243,7 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
     // this version; left behind it would keep showing as a Draft plan on a
     // restored Active set. Only a row still `draft` goes — nothing billed.
     const um = linked[0]?.user_membership_id;
-    if (um) await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'in_cart'`, [um, gymId]);
+    if (um) await deleteDraftAssignments(tx, gymId, [Number(um)]);
     return { kind: 'cancelled' };
   }
   if (row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };

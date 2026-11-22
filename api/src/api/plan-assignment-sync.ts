@@ -17,6 +17,7 @@
 import type { Tx } from '../infra/db';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 
 type Exec = { query: Tx['query'] };
 
@@ -283,6 +284,78 @@ export async function lockAssignmentRecord(
     starts_at: String(current[0]?.starts_at ?? anchor.anchor_starts_at),
     ends_at: anchor.ends_at,
   };
+}
+
+/** An assignment covering one of a set of Members, locked on its anchor (`lockAssignmentsCovering()`). */
+export interface CoveringAssignment {
+  /** The legacy id the routes name. */
+  id: number;
+  anchor_id: number;
+  /** The owner. */
+  member_id: number;
+  membership_plan_id: number | null;
+  status: string;
+  /** `YYYY-MM-DD`, from the assignment's current snapshot (its anchor's when no Product Set links one). */
+  starts_at: string;
+  /** `YYYY-MM-DD`, the assignment's own end date (`assignment_ends_at`). */
+  ends_at: string | null;
+}
+
+/**
+ * #2125 M6b-51d-3 — the multi-row counterpart of `lockAssignmentRecord()`: every assignment in one of
+ * `statuses` that one of `memberIds` owns or is a beneficiary of (`ASSIGNMENT_BENEFICIARIES`), locked on
+ * its anchor snapshot and read off it. Replaces the conflict reads that scanned `user_memberships …
+ * FOR UPDATE` (the one-plan check, the pending-payment check of a commit).
+ *
+ * Two statements on purpose. The first finds the candidates without a lock; the second locks exactly
+ * their anchors by id (in id order, so two callers lock in one order) and re-reads the status there.
+ * One locking statement over `plan_snapshots` would lock every snapshot of the gym it scans, and the
+ * snapshot sync writes those rows in every billing path. An assignment that becomes live between the
+ * two statements is not seen, the gap the legacy read's own doc already accepted for a Member with no
+ * live plan (nothing to lock). Sorted by start date, then id, both descending.
+ */
+export async function lockAssignmentsCovering(
+  exec: Exec, gymId: string, memberIds: readonly number[], statuses: readonly string[],
+  opts: { excludeUserMembershipId?: number } = {},
+): Promise<CoveringAssignment[]> {
+  if (memberIds.length === 0 || statuses.length === 0) return [];
+  const members = memberIds.map(() => '?').join(',');
+  const states = statuses.map(() => '?').join(',');
+  const exclude = opts.excludeUserMembershipId != null ? ' AND a.source_user_membership_id <> ?' : '';
+  const excludeParams = opts.excludeUserMembershipId != null ? [Number(opts.excludeUserMembershipId)] : [];
+  const { rows: candidates } = await exec.query<{ id: number }>(
+    `SELECT DISTINCT a.source_user_membership_id AS id FROM plan_snapshots a
+      WHERE a.gym_id = ? AND a.assignment_id = a.id AND a.source_user_membership_id IS NOT NULL
+        AND a.assignment_status IN (${states})
+        AND (a.member_id IN (${members})
+             OR EXISTS (SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
+                         WHERE umm.user_membership_id = a.source_user_membership_id AND umm.gym_id = a.gym_id
+                           AND umm.member_id IN (${members})))${exclude}`,
+    [gymId, ...statuses, ...memberIds, ...memberIds, ...excludeParams]);
+  if (candidates.length === 0) return [];
+  const ids = candidates.map((c) => Number(c.id));
+  const { rows } = await exec.query<{
+    id: number; anchor_id: number; member_id: number; membership_plan_id: number | null; status: string;
+    starts_at: string | null; ends_at: string | null;
+  }>(
+    `SELECT a.source_user_membership_id AS id, a.id AS anchor_id, a.member_id, a.membership_plan_id,
+            a.assignment_status AS status,
+            COALESCE((SELECT DATE_FORMAT(pa.starts_at, '%Y-%m-%d') FROM plan_snapshots pa
+                       WHERE pa.gym_id = a.gym_id AND ${assignmentOfLegacyIdSql('a.source_user_membership_id')} LIMIT 1),
+                     DATE_FORMAT(a.starts_at, '%Y-%m-%d')) AS starts_at,
+            DATE_FORMAT(a.assignment_ends_at, '%Y-%m-%d') AS ends_at
+       FROM plan_snapshots a
+      WHERE a.gym_id = ? AND a.assignment_id = a.id AND a.source_user_membership_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY a.id FOR UPDATE`,
+    [gymId, ...ids]);
+  return rows
+    .filter((r) => r.status != null && statuses.includes(String(r.status)))
+    .map((r) => ({
+      id: Number(r.id), anchor_id: Number(r.anchor_id), member_id: Number(r.member_id),
+      membership_plan_id: r.membership_plan_id == null ? null : Number(r.membership_plan_id),
+      status: String(r.status), starts_at: String(r.starts_at), ends_at: r.ends_at,
+    }))
+    .sort((x, y) => (x.starts_at === y.starts_at ? y.id - x.id : (x.starts_at < y.starts_at ? 1 : -1)));
 }
 
 /** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
