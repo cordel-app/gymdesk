@@ -15,6 +15,8 @@
  *
  * `down` puts the constraint back only while every request still names a `user_memberships` row;
  * after the new code has created an assignment that has none, it refuses rather than delete history.
+ * Adding a foreign key rebuilds `payment_requests` (ALGORITHM=COPY), so `down` blocks its writes for
+ * the copy. Apply `up` before the new API takes traffic (the normal migrate-then-deploy order).
  */
 
 const FK = 'payment_requests_user_membership_id_foreign';
@@ -29,7 +31,10 @@ async function fkExists(knex) {
 
 exports.up = async (knex) => {
   if (await fkExists(knex)) {
-    await knex.raw(`ALTER TABLE payment_requests DROP FOREIGN KEY ${FK}`);
+    // Metadata only (INPLACE, no rebuild), but it still waits for a metadata lock on both tables;
+    // fail fast rather than stall every payment query behind a long transaction.
+    await knex.raw('SET SESSION lock_wait_timeout = 30');
+    await knex.raw(`ALTER TABLE payment_requests DROP FOREIGN KEY ${FK}, ALGORITHM=INPLACE, LOCK=NONE`);
   }
 };
 
