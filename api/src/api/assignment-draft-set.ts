@@ -73,11 +73,14 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   // #2966: the owner's live plain Draft with no Membership Plan yet (their cart of recurring
   // Products) is the cart this plan joins — adopted, never a competing version. Its lines, quantities
   // and Promotions stay as they were; the plan is frozen onto it below like onto a fresh Draft.
+  // #2966 stage 11: a plan the cart carries for entitlement only (#2659 stage 3, the owner's plan
+  // cancelling at its period end) is not one of its plans, so it does not stop the adoption.
   const { rows: cart } = await tx.query<{ id: number }>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${staffProductDraftSql('ps')}
         AND ps.plan_assignment_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj WHERE cj.product_set_id = ps.id)
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj
+                         WHERE cj.product_set_id = ps.id AND cj.entitlement_only = 0)
       FOR UPDATE`,
     [input.gymId, input.ownerMemberId],
   );
@@ -254,11 +257,14 @@ export async function createDraftSetFromActive(tx: Tx, input: {
   // #2966: the owner's live plain Draft with no Membership Plan yet (their cart of recurring
   // Products) is the cart this plan joins — adopted, never a competing version. Its lines, quantities
   // and Promotions stay as they were; the plan is frozen onto it below like onto a fresh Draft.
+  // #2966 stage 11: a plan the cart carries for entitlement only (#2659 stage 3, the owner's plan
+  // cancelling at its period end) is not one of its plans, so it does not stop the adoption.
   const { rows: cart } = await tx.query<{ id: number }>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${staffProductDraftSql('ps')}
         AND ps.plan_assignment_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj WHERE cj.product_set_id = ps.id)
+        AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj
+                         WHERE cj.product_set_id = ps.id AND cj.entitlement_only = 0)
       FOR UPDATE`,
     [input.gymId, input.ownerMemberId],
   );
