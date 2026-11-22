@@ -1,3 +1,4 @@
+import { deleteProductApplication } from './product-promotion-writer';
 import { Router, Response } from 'express';
 import { nameSimulatedEvents } from './billing-event-name';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
@@ -229,7 +230,10 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
     // its grant snapshots, by the FK) — there is no history to preserve yet.
     // M4b-2: the plan's applied Promotions change, so the Draft takes its own copy of the plan.
     await ownPrimaryPlanSnapshot(tx, draft.gym_id, draft.id);
-    const { rowCount } = await tx.query(
+    // #3026 stage 3d-3c: a line-owned Product application is its line's Product snapshot row; only one
+    // owned by no line (none written since #1865) is still a legacy row.
+    const onLine = await deleteProductApplication(tx, draft.gym_id, draft.id, Number(req.params.applicationId));
+    const { rowCount } = onLine ? { rowCount: 1 } : await tx.query(
       'DELETE FROM user_membership_promotions WHERE id = ? AND gym_id = ? AND product_set_id = ?',
       [Number(req.params.applicationId), draft.gym_id, draft.id]);
     // #3026 stage 3d-1: a Plan application's id is its plan snapshot row's, on the Draft's own primary plan.

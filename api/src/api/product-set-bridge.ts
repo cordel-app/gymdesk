@@ -2,7 +2,6 @@ import { isCancelledAssignmentStatus } from '../domain/assignmentStatus';
 import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
 import { loadPaidThrough } from './cancellation-entitlement';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { linkRecurringLines } from './recurring-line-writer';
 import { cancellationEndDate, prepaidCoverageEnd } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
@@ -23,6 +22,7 @@ import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
 import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { removePlanPromotion } from './plan-promotion-writer';
+import { copyProductApplications, removeProductPromotion } from './product-promotion-writer';
 
 /**
  * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
@@ -78,7 +78,7 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
 
 /** #2125 stage 13: only the Promotions about a Product (a plan's own live on its plan snapshot). */
 export async function copyProductTargetApplications(tx: Tx, gymId: string, fromSetId: number, toSetId: number): Promise<void> {
-  await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId }, { onlyProductTarget: true });
+  await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
 }
 
 /**
@@ -87,43 +87,25 @@ export async function copyProductTargetApplications(tx: Tx, gymId: string, fromS
  */
 async function copyApplications(
   tx: Tx, gymId: string, from: { productSetId: number }, to: { productSetId: number },
-  opts: { onlyProductTarget?: boolean } = {},
 ) {
+  // #3026 stage 3d-3c: a line-owned application is its line's Product snapshot row, copied onto the
+  // successor's line (matched on `line_ref`) as the successor's own row, with the Products it froze.
+  await copyProductApplications(tx, gymId, from.productSetId, to.productSetId);
+  // Only an application owned by no line (none written since #1865) is still a legacy row, copied as one
+  // until stage 3d-3d moves or drops it.
   const { rows } = await tx.query<any>(
     `SELECT id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
-            modified_at, modified_by, recurrent_snapshot_id, snapshot_confirmed_at
-       FROM user_membership_promotions ump WHERE gym_id = ? AND product_set_id = ?
+            modified_at, modified_by, snapshot_confirmed_at
+       FROM user_membership_promotions ump WHERE gym_id = ? AND product_set_id = ? AND recurrent_snapshot_id IS NULL
         AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')`,
     [gymId, from.productSetId]);
-  // #2126 stage 3u — a line-owned application finds its line in the successor through
-  // `product_periodical_snapshots` and the successor's links (since stage 5c-2c-2 a clone links the
-  // predecessor's line, so the application follows the very same line id; a merge still copies it).
-  if (rows.some((app: any) => app.recurrent_snapshot_id != null)) {
-    await syncProductSnapshotsOfVersion(tx, gymId, to.productSetId);
-  }
   for (const app of rows) {
-    // #1991 stage 3: a Product-target application follows its line into the new
-    // version (a clone keeps `line_ref`), so the copy is owned by the copy.
-    let ownerLine: number | null = null;
-    if (app.recurrent_snapshot_id != null) {
-      // `source_id` is the legacy line id, which is what an application and the routes are keyed on.
-      const { rows: lines } = await tx.query<any>(
-        `SELECT n.source_id FROM product_periodical_snapshots o
-           JOIN product_set_periodical_snapshots nl ON nl.product_set_id = ?
-           JOIN product_periodical_snapshots n
-             ON n.id = nl.product_periodical_snapshot_id AND n.gym_id = o.gym_id AND n.source_id IS NOT NULL
-            AND COALESCE(n.line_ref, n.source_id) = COALESCE(o.line_ref, o.source_id)
-          WHERE o.source_id = ? AND o.gym_id = ? ORDER BY n.source_id LIMIT 1`,
-        [to.productSetId, app.recurrent_snapshot_id, gymId]);
-      ownerLine = lines[0] ? Number(lines[0].source_id) : null;
-      if (ownerLine == null) continue; // the line is not part of the successor, nor is its application
-    }
     const { insertId } = await tx.query(
       `INSERT INTO user_membership_promotions
          (gym_id, product_set_id, recurrent_snapshot_id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
           modified_at, modified_by, snapshot_confirmed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, to.productSetId, ownerLine, app.promotion_id, app.created_by, app.applied_at, app.consumed_at, app.status,
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, to.productSetId, app.promotion_id, app.created_by, app.applied_at, app.consumed_at, app.status,
         app.snapshot == null ? null : (typeof app.snapshot === 'string' ? app.snapshot : JSON.stringify(app.snapshot)),
         // #2624 stage 4: a copy keeps its source's confirmation, so a confirmed
         // (historical) snapshot is never re-captured by the successor's Save & Pay.
@@ -142,11 +124,6 @@ async function copyApplications(
            FROM ${table} WHERE gym_id = ? AND user_membership_promotion_id = ?`,
         [insertId, gymId, app.id]);
     }
-  }
-  // #3026 stage 3d-3b: the readers take a line-owned application from its Product snapshot row, so the
-  // copies are synced before the transaction reads the successor.
-  if (rows.some((app: any) => app.recurrent_snapshot_id != null)) {
-    await syncProductSnapshotsOfVersion(tx, gymId, to.productSetId);
   }
 }
 
@@ -532,18 +509,21 @@ export function revokePromotionMutator(promotionId: number, actor: string | null
     // #3026 stage 3d-1: a Plan application is the plan snapshot's own row, removed there first
     // (a Draft's reference deleted, a confirmed application revoked and kept).
     const onSnapshot = await removePlanPromotion(tx, draft.gym_id, draft.id, promotionId, actor);
-    // Product-target applications are `user_membership_promotions` rows: the same rule, asked of that table.
+    // #3026 stage 3d-3c: a Product-target application is its line's Product snapshot row, removed there
+    // by the same rule; only one owned by no line (none written since #1865) is still a legacy row.
+    const onLines = await removeProductPromotion(tx, draft.gym_id, draft.id, promotionId, actor);
+    if (onLines === 'deleted') return { ok: true };
     const { draftReferenceApplicationSql } = await import('../domain/draftPromotionApplication');
     const { rows: standingRef } = await tx.query<{ id: number }>(
       `SELECT ump.id FROM user_membership_promotions ump
         WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ? AND ump.status = 'applied'
-          AND ${draftReferenceApplicationSql('ump')}
+          AND ump.recurrent_snapshot_id IS NULL AND ${draftReferenceApplicationSql('ump')}
         FOR UPDATE`,
       [draft.gym_id, draft.id, promotionId]);
     if (standingRef.length > 0) {
       await tx.query(
         `DELETE ump FROM user_membership_promotions ump
-          WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ?
+          WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ? AND ump.recurrent_snapshot_id IS NULL
             AND ump.status IN ('applied', 'revoked') AND ump.snapshot_confirmed_at IS NULL`,
         [draft.gym_id, draft.id, promotionId]);
       return { ok: true };
@@ -552,9 +532,10 @@ export function revokePromotionMutator(promotionId: number, actor: string | null
       `UPDATE user_membership_promotions
           SET status = 'revoked', revoked_at = UTC_TIMESTAMP(),
               modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ? AND status = 'applied'`,
+        WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ? AND status = 'applied'
+          AND recurrent_snapshot_id IS NULL`,
       [actor, draft.gym_id, draft.id, promotionId]);
-    if (rowCount === 0 && onSnapshot === 'none') return { kind: 'not_found' };
+    if (rowCount === 0 && onSnapshot === 'none' && onLines === 'none') return { kind: 'not_found' };
     return { ok: true };
   };
 }
