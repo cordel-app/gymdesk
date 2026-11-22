@@ -367,7 +367,11 @@ export default function MemberSchedulePage() {
                   aria-expanded={isExpanded}
                   aria-label={foldsControls ? `${s.class_type_name} · ${t(isExpanded ? 'member_schedule.hide_booking_options' : 'member_schedule.show_booking_options')}` : undefined}
                 >
-                  {/* #1880 §4/§5 — the image fills the card's height on the left and
+                  {/* #2848 stage 3 — the image and the event's summary share the top
+                      row; every option (services, family, details, actions) sits below
+                      it at the card's full width, so expanding never stretches the image. */}
+                  <div style={styles.cardTop}>
+                  {/* #1880 §4/§5 — the image fills the summary's height on the left and
                       opens the enlarged preview with the description; with no image
                       the content takes the whole width. */}
                   {s.class_type_image_url && s.class_type_image_url.trim() && (
@@ -397,7 +401,7 @@ export default function MemberSchedulePage() {
                       </ImagePreviewButton>
                     </div>
                   )}
-                  <div style={styles.cardBody}>
+                  <div style={styles.sessionBody}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={styles.time}>{timeOnly(s.starts_at)} – {timeOnly(s.ends_at)}</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center' }}>
@@ -442,8 +446,14 @@ export default function MemberSchedulePage() {
                       <span>{value.trim()}</span>
                     </div>
                   ) : null))}
+                  {foldsControls && !isExpanded && (
+                    <EventServicesList collapsed services={s.professional_services} />
+                  )}
+                  </div>
+                  </div>
+                  <div style={styles.cardOptions}>
+                  {!(foldsControls && !isExpanded) && (
                   <EventServicesList
-                    collapsed={foldsControls && !isExpanded}
                     services={s.professional_services}
                     bookedId={s.my_booking_id ? (s.my_professional_service_id ?? null) : null}
                     choose={choicesFor(s).length > 0 ? {
@@ -452,6 +462,7 @@ export default function MemberSchedulePage() {
                       onChoose: (id) => { setChosenService((m) => ({ ...m, [s.id]: id })); setAttemptedSession(null); },
                     } : null}
                   />
+                  )}
                   {(() => {
                     const svc = groupServiceFor(s);
                     if (!svc || !familyRead || !controlsShown) return null;
@@ -480,6 +491,14 @@ export default function MemberSchedulePage() {
                       {s.my_booking_id && s.booked_on && (
                         <div style={styles.sub}>{t(BOOKED_ON_KEY, { date: `${dayLabel(s.booked_on)} · ${timeOnly(s.booked_on)}` })}</div>
                       )}
+                    </div>
+                  )}
+                  {!controlsShown && (
+                    /* #2848 stage 3 — a folded card offers View Options, which only expands it. */
+                    <div style={{ marginTop: 10, display: 'flex' }} onClick={(e) => e.stopPropagation()}>
+                      <button type="button" style={styles.btnBook} onClick={toggle}>
+                        {t('member_schedule.view_options')}
+                      </button>
                     </div>
                   )}
                   {controlsShown && (
@@ -548,7 +567,7 @@ export default function MemberSchedulePage() {
             return (
               <div
                 key={`p-${item.booking_id}`}
-                style={{ ...styles.sessionCard, marginBottom: 10 }}
+                style={{ ...styles.sessionCard, flexDirection: 'row', marginBottom: 10 }}
                 onClick={() => setExpandedPast(isExpanded ? null : item.booking_id)}
                 role="button"
                 tabIndex={0}
@@ -618,10 +637,13 @@ const styles: Record<string, React.CSSProperties> = {
   card: { ...sectionCardStyle, padding: 14, marginBottom: 10, cursor: 'pointer' },
   filters: { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
   filterSelect: { flex: '1 1 140px', minWidth: 0, minHeight: 40, padding: '6px 10px', borderRadius: 8, border: `1px solid ${memberTheme.separator}`, background: memberTheme.inputBackground, color: memberTheme.text, fontSize: 14 },
-  sessionCard: { ...sectionCardStyle, padding: 0, marginBottom: 10, cursor: 'pointer', display: 'flex', overflow: 'hidden' },
+  sessionCard: { ...sectionCardStyle, padding: 0, marginBottom: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  cardTop: { display: 'flex' },
+  cardOptions: { padding: '0 14px 14px', minWidth: 0 },
   imageCol: { flex: '0 0 112px', alignSelf: 'stretch', position: 'relative' },
   cardImage: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   cardBody: { flex: 1, minWidth: 0, padding: 14 },
+  sessionBody: { flex: 1, minWidth: 0, padding: '14px 14px 4px' },
   details: { marginTop: 8, paddingTop: 8, borderTop: `1px solid ${memberTheme.separator}` },
   chevron: { marginLeft: 8, fontSize: 14, color: memberTheme.textMuted, flex: '0 0 auto' },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: memberTheme.text },
