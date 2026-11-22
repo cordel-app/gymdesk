@@ -339,7 +339,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     // The fixture machinery still reads the hand-written rows it translates; migration 297's test
     // checks what that migration did to the table itself; the source gates name it in assertions.
     const ALLOWED = new Set([
-      'helpers.ts', 'assignmentIdFixture.ts', 'assignmentFixture.ts', 'cancelled-assignment-cleanup.test.ts',
+      'helpers.ts', 'assignmentFixture.ts',
       'plan-assignment-legacy-readers.unit.test.ts', 'member-enrollment.unit.test.ts',
       'draft-assignment-status.unit.test.ts',
     ]);
@@ -351,13 +351,23 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(readers).toEqual([]);
   });
 
+  it('M6b-51d-7c-2: user_memberships is dropped, one-way, and only the fixture door spells it', () => {
+    const migration = readFileSync(join(API_SRC, 'infra/migrations/458_drop_user_memberships.js'), 'utf8');
+    expect(migration).toContain('DROP TABLE user_memberships');
+    expect(migration).toMatch(/exports\.down = async \(\) => \{\s*throw new Error/);
+    // A hand-written fixture row lives in the door's memory, never in a table.
+    const door = code(readFileSync(join(API_SRC, 'test/assignmentFixture.ts'), 'utf8'));
+    expect(door).not.toMatch(/\b(?:FROM|JOIN|INTO|UPDATE)\s+user_memberships\b(?![^`]*\$\{)/);
+    expect(door).toContain('const handRows = new Map');
+  });
+
   it('M6b-51d-5: a test writes an assignment only through the fixture door', () => {
     // Every `INSERT INTO` / `UPDATE` / `DELETE FROM user_memberships` a test spells is handed to
     // `testAssignmentWrite()` (or `legacyAssignmentQuery()`, which goes through it), so dropping the
     // table changes `assignmentFixture.ts` and no test file. A statement passed straight to
     // `db.query` / `tx.query` fails the build.
     const DOORS = new Set(['testAssignmentWrite', 'legacyAssignmentQuery']);
-    const OWN = new Set(['assignmentFixture.ts', 'assignmentIdFixture.ts']);
+    const OWN = new Set(['assignmentFixture.ts']);
     const CALL = /([\w.]+)\s*(?:<[^>()]*>)?\(\s*['"`]\s*(?:INSERT\s+(?:IGNORE\s+)?INTO|UPDATE|DELETE\s+FROM)\s+user_memberships\b/g;
     const testDir = join(API_SRC, 'test');
     const offenders: string[] = [];

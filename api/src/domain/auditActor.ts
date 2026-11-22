@@ -186,7 +186,6 @@ export const AUDITED_TABLES: readonly string[] = [
   'promotions',
   'training_plans',
   'user_class_packages',
-  'user_memberships',
   // Stage 4 (migration 268)
   'billing_events',
   'feature_flags',

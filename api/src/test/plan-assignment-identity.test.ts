@@ -9,7 +9,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
-import { deleteUnlinkedPlanSnapshots } from '../api/plan-assignment-sync';
+import { deleteUnlinkedPlanSnapshots, stampAssignmentIds } from '../api/plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from '../api/plan-snapshot-add';
 import { discardDraftSet, ownPlanSnapshot } from '../api/plan-snapshot-ownership';
 import { createDraft } from '../api/product-sets';
@@ -17,8 +17,6 @@ import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
 import { testAssignmentWrite } from './assignmentFixture';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const migration = require('../infra/migrations/419_plan_assignment_identity.js');
 
 let gymId: string;
 let seq = 0;
@@ -238,7 +236,7 @@ describe('the drift check', () => {
     expect(snaps.at(-1)).toMatchObject({ assignmentId: snaps[0].id, status: CANCELS_AT_PERIOD_END_STATUS });
   });
 
-  it('reports a snapshot with no identity and one that names the wrong anchor, and the backfill repairs both', async () => {
+  it('reports a snapshot with no identity and one that names the wrong anchor, and the stamping repairs both', async () => {
     const um = await createTestDraftAssignment(gymId, await member(), await plan());
     const [snap] = await snapshotsOf(um);
     const other = await draftSet();
@@ -248,17 +246,9 @@ describe('the drift check', () => {
     expect((await check('assignment_identity_split')).sample.map((r) => Number(r.plan_snapshot_id))).toContain(snap.id);
     expect((await check('snapshot_without_assignment_id')).sample.map((r) => Number(r.plan_snapshot_id))).toContain(other.snapshot);
 
-    // The migration's backfill, run again: it converges on the same identities (repeatable).
-    // M6b-46: migration 441 dropped `product_sets.user_membership_id`, which the backfill's last
-    // statement falls back to; against today's schema that link is the set's anchor's legacy id.
-    // A derived table (materialized by DISTINCT) because the statement updates plan_snapshots itself.
-    const anchorLink = '(SELECT anc.source_user_membership_id FROM (SELECT DISTINCT id, source_user_membership_id FROM plan_snapshots) anc WHERE anc.id = ps.plan_assignment_id)';
-    const knex = { raw: async (sql: string) => {
-      const r: any = await db.query(sql.replace(/\bps\.user_membership_id\b/g, anchorLink));
-      return [{ affectedRows: Number(r.rowCount ?? 0) }];
-    } };
-    await migration.backfillPlanAssignmentIdentity(knex);
-    await migration.backfillPlanAssignmentIdentity(knex);
+    // The stamping rule the sync runs (migration 419's backfill ran it once over history; it read
+    // `user_memberships`, dropped by migration 458) converges on the same identities.
+    await stampAssignmentIds(db, gymId, [snap.id, other.snapshot]);
     expect(await assignmentIdOf(snap.id)).toBe(snap.id);
     expect(await assignmentIdOf(other.snapshot)).toBe(other.snapshot);
     expect((await check('assignment_identity_split')).count).toBe(0);
