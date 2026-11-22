@@ -208,6 +208,45 @@ memberProductPurchasesRouter.post('/quote', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+type RequiredProductPlan = { productId: number; promotionIds: number[] };
+
+/**
+ * #2374 — a Promotion's missing *mandatory* Products, decided before anything is written: none,
+ * a refusal (`promotion_requires_products` until the staff member confirmed; a Promotion the
+ * catalogue does not offer for one of them), or the Products to add with it. Optional ones are
+ * never added. #3168: the add path and both edit routes ask this one rule.
+ */
+async function planRequiredProducts(
+  gymId: string, memberId: number, productId: number, promotionIds: readonly number[], confirmed: boolean,
+): Promise<{ kind: 'add'; plans: RequiredProductPlan[] } | { kind: 'refuse'; status: number; body: any }> {
+  const missing = await loadMissingMandatoryProducts(gymId, memberId, productId, promotionIds);
+  if (missing.length === 0) return { kind: 'add', plans: [] };
+  if (!confirmed) return { kind: 'refuse', status: 409, body: { error: 'promotion_requires_products', products: missing } };
+  const catalogue = await staffCatalogue(gymId, memberId);
+  const plans: RequiredProductPlan[] = [];
+  for (const m of missing) {
+    const item = catalogue.find((i) => i.id === m.id);
+    const applicable = promotionIds.filter((id) => item?.promotions.some((o) => o.promotion_id === id));
+    if (!item || applicable.length === 0) {
+      return { kind: 'refuse', status: 409, body: { error: 'promotion_not_applicable', message: `This promotion is not available for ${m.name}` } };
+    }
+    plans.push({ productId: m.id, promotionIds: applicable });
+  }
+  return { kind: 'add', plans };
+}
+
+/** Adds the planned required Products through the add path itself (in the cart); the first refusal is answered. */
+async function addRequiredProducts(req: any, plans: RequiredProductPlan[]): Promise<{ status: number; body: any } | null> {
+  for (const plan of plans) {
+    const sub = Object.create(req);
+    sub.body = { product_id: plan.productId, promotion_ids: plan.promotionIds, draft: true };
+    const cap = captureRes();
+    await createPurchase(sub, cap.res, (e: unknown) => { throw e; }, true);
+    if (cap.out.status >= 400) return { status: cap.out.status, body: cap.out.body };
+  }
+  return null;
+}
+
 /** A `res` stand-in so a required Product can be created through the same handler (#2374). */
 function captureRes() {
   const out: { status: number; body: any } = { status: 200, body: undefined };
@@ -241,29 +280,10 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
     // staff member confirmed; optional ones are never added. Everything is validated
     // before the first row is written.
     if (!isRequiredExtra) {
-      const missing = await loadMissingMandatoryProducts(gymId, memberId, productId, promotionIds);
-      if (missing.length > 0) {
-        if ((req.body ?? {}).confirm_required_products !== true) {
-          return res.status(409).json({ error: 'promotion_requires_products', products: missing });
-        }
-        const catalogue = await staffCatalogue(gymId, memberId);
-        const plans: { productId: number; promotionIds: number[] }[] = [];
-        for (const m of missing) {
-          const item = catalogue.find((i) => i.id === m.id);
-          const applicable = promotionIds.filter((id) => item?.promotions.some((o) => o.promotion_id === id));
-          if (!item || applicable.length === 0) {
-            return res.status(409).json({ error: 'promotion_not_applicable', message: `This promotion is not available for ${m.name}` });
-          }
-          plans.push({ productId: m.id, promotionIds: applicable });
-        }
-        for (const plan of plans) {
-          const sub = Object.create(req);
-          sub.body = { product_id: plan.productId, promotion_ids: plan.promotionIds, draft: true };
-          const cap = captureRes();
-          await createPurchase(sub, cap.res, (e: unknown) => { throw e; }, true);
-          if (cap.out.status >= 400) return res.status(cap.out.status).json(cap.out.body);
-        }
-      }
+      const required = await planRequiredProducts(gymId, memberId, productId, promotionIds, (req.body ?? {}).confirm_required_products === true);
+      if (required.kind === 'refuse') return res.status(required.status).json(required.body);
+      const failed = await addRequiredProducts(req, required.plans);
+      if (failed) return res.status(failed.status).json(failed.body);
     }
 
     const actorName = resolveRequestActor(tenantCtx) ?? member.name;
@@ -450,12 +470,15 @@ memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBE
     if (!lineRows[0]) return res.status(404).json({ error: 'Draft line not found' });
     const productId = Number(lineRows[0].product_id);
 
+    let requiredPlans: RequiredProductPlan[] = [];
     if (promotionIds && promotionIds.length > 0) {
       if (new Set(promotionIds).size !== promotionIds.length) {
         return res.status(400).json({ error: 'duplicate_promotion', message: 'This promotion is already applied to this product.' });
       }
-      const missing = await loadMissingMandatoryProducts(gymId, memberId, productId, promotionIds);
-      if (missing.length > 0) return res.status(409).json({ error: 'promotion_requires_products', products: missing });
+      // #3168 — confirmed, the required Products are added with the edit (after its checks below).
+      const required = await planRequiredProducts(gymId, memberId, productId, promotionIds, body.confirm_required_products === true);
+      if (required.kind === 'refuse') return res.status(required.status).json(required.body);
+      requiredPlans = required.plans;
       const catalogue = await staffCatalogue(gymId, memberId);
       const item = catalogue.find((i) => i.id === productId);
       const chosen = promotionIds.map((id) => item?.promotions.find((o) => o.promotion_id === id) ?? null);
@@ -478,6 +501,8 @@ memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBE
 
     const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc(), { staff: true });
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
+    const requiredFailed = await addRequiredProducts(req, requiredPlans);
+    if (requiredFailed) return res.status(requiredFailed.status).json(requiredFailed.body);
 
     const actorName = resolveRequestActor(tenantCtx) ?? member.name;
     class Refused extends Error { constructor(public out: any) { super('draft refused'); } }
@@ -717,6 +742,15 @@ memberProductPurchasesRouter.put('/:purchaseId', requireModuleWrite('MEMBERS'), 
     // #3020 stage 5: the quantity may be edited while the purchase is in the cart; absent keeps it.
     const quantity = body.quantity === undefined ? Number(draft.quantity ?? 1) : parsePurchaseQuantity(body.quantity);
     if (quantity == null) return res.status(400).json({ error: 'quantity must be a whole number from 1 to 99' });
+    // #3168 — a Promotion newly ticked on the line that requires other Products: refused until the
+    // staff member confirmed, then those Products are added to the cart with the edit (the add
+    // path's own rule). A Promotion the line already held is not asked about again.
+    const held = new Set(((await loadAppliedPromotionLists(gymId, [purchaseId])).get(purchaseId) ?? []).map((p: any) => Number(p.promotion_id)));
+    const added = promotionIds.filter((id) => !held.has(id));
+    const required = await planRequiredProducts(gymId, memberId, Number(draft.product_id), added, body.confirm_required_products === true);
+    if (required.kind === 'refuse') return res.status(required.status).json(required.body);
+    const requiredFailed = await addRequiredProducts(req, required.plans);
+    if (requiredFailed) return res.status(requiredFailed.status).json(requiredFailed.body);
     const saved = await replacePurchaseDraft({
       gymId,
       memberId,

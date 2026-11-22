@@ -108,6 +108,9 @@ export function useAddProductForm({
   // #2374: the Promotion toggled last, and the promotion selection whose required Products were confirmed.
   const [lastToggled, setLastToggled] = useState<number | null>(null);
   const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
+  // #3168: the selection whose required Products the staff member confirmed in the dialog (an edit
+  // starts with the line's own selection confirmed, which must not add anything by itself).
+  const [dialogConfirmedKey, setDialogConfirmedKey] = useState<string | null>(null);
   const [frequencyPrompt, setFrequencyPrompt] = useState<FrequencyPrompt | null>(null);
 
   const product = useMemo(() => catalogue?.find((p) => p.id === productId) ?? null, [catalogue, productId]);
@@ -122,7 +125,7 @@ export function useAddProductForm({
     if (!enabled) {
       // A closed form starts fresh the next time it opens.
       setProductId(null); setPromotionIds([]); setDiscount(''); setQuote(null); setError(null); setOutcome(null);
-      setAssignedMemberId(memberId); setQuantity('1');
+      setAssignedMemberId(memberId); setQuantity('1'); setDialogConfirmedKey(null);
       return;
     }
     if (edit) {
@@ -171,6 +174,11 @@ export function useAddProductForm({
   const requiredProducts = quote?.required_products ?? [];
   const requiredPending = requiredProducts.length > 0 && confirmedKey !== selectionKey;
 
+  function confirmRequired() {
+    setConfirmedKey(selectionKey);
+    setDialogConfirmedKey(selectionKey);
+  }
+
   function cancelRequired() {
     // Cancel leaves the form as it was: the Promotion just ticked is unticked.
     setPromotionIds((prev) => prev.filter((p) => p !== lastToggled));
@@ -200,6 +208,8 @@ export function useAddProductForm({
         body: JSON.stringify({
           quantity: quantityValue,
           promotion_ids: promotionIds,
+          // #3168: confirmed in the dialog, the Promotion's required Products are added with the edit.
+          ...(requiredProducts.length > 0 && dialogConfirmedKey === selectionKey ? { confirm_required_products: true } : {}),
           // The direct discount is the Admin's alone; anyone else leaves it as stored.
           ...(isAdmin ? { direct_discount_percent: discountValue } : oneTime ? { direct_discount_percent: edit.directDiscountPercent } : {}),
         }),
@@ -265,7 +275,7 @@ export function useAddProductForm({
     edit, quantity, setQuantity, quantityValid, quantityMax,
     t, tFreq, isAdmin, embedded, recurringOnly, onClose,
     catalogue, productId, product, promotionIds, discount, setDiscount, quote, error, busy, outcome,
-    requiredProducts, requiredPending, selectionKey, setConfirmedKey, cancelRequired, togglePromotion,
+    requiredProducts, requiredPending, selectionKey, setConfirmedKey, confirmRequired, cancelRequired, togglePromotion,
     frequencyPrompt, setFrequencyPrompt, pickProduct, create, canCreate,
     assignees, assignedMemberId, setAssignedMemberId, showAssignee,
   };
@@ -440,7 +450,7 @@ export function AddProductFeedback({ form: f }: { form: AddProductForm }) {
         )}
         confirmLabel={t('required_products_confirm')}
         cancelLabel={t('add_product_cancel')}
-        onConfirm={() => f.setConfirmedKey(f.selectionKey)}
+        onConfirm={() => f.confirmRequired()}
         onCancel={f.cancelRequired}
       />
       <ConfirmDialog
