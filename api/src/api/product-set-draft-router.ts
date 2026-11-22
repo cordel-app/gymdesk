@@ -142,7 +142,8 @@ productSetDraftRouter.delete('/members/:memberId', requireModuleWrite('PAYMENTS'
  * `user_memberships` row; everything already on the Draft is preserved. Body: `membership_plan_id`,
  * optional `starts_at` (default the Draft's), `membership_fee_price`, `declined_benefits`,
  * `owner_is_beneficiary`, and since stage 6 `beneficiary_member_ids` (which then decides whether the
- * owner is one); a non-empty `promotion_ids` is refused (`promotions_not_supported_on_added_plan`).
+ * owner is one), and since stage 7 `promotion_ids`, judged against the added plan and applied onto its
+ * own plan snapshot as Draft references (confirmed with the others at Save & Pay).
  */
 productSetDraftRouter.post('/plans', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   try {
@@ -154,13 +155,9 @@ productSetDraftRouter.post('/plans', requireModuleWrite('PAYMENTS'), async (req,
     }
     const planError = await planAssignabilityError(gymId, planId);
     if (planError) return res.status(planError.status).json({ error: planError.error });
-    // #2966 stage 6: Promotions on a further plan are not supported yet. Refused rather than
-    // dropped, so the Assign flow never adds the plan as if they had been applied.
-    if (Array.isArray(req.body?.promotion_ids) && req.body.promotion_ids.length > 0) {
-      return res.status(400).json({
-        error: 'Promotions cannot yet be applied to a further plan added to the cart.',
-        code: 'promotions_not_supported_on_added_plan',
-      });
+    const promotionIds = req.body?.promotion_ids ?? [];
+    if (!Array.isArray(promotionIds) || promotionIds.some((id: unknown) => !Number.isInteger(Number(id)) || Number(id) <= 0)) {
+      return res.status(400).json({ error: 'promotion_ids must be an array of positive integers' });
     }
     const { rows } = await db.query<any>('SELECT starts_at, owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [Number(req.params.id), gymId]);
     if (!rows[0]) return res.status(404).json({ error: 'not_found' });
@@ -168,6 +165,12 @@ productSetDraftRouter.post('/plans', requireModuleWrite('PAYMENTS'), async (req,
     // cart owner's family; absent keeps the pre-stage-6 behaviour (`owner_is_beneficiary`).
     const judged = await judgeMemberBeneficiaries(gymId, Number(rows[0].owner_member_id), planId, req.body?.beneficiary_member_ids);
     if ('status' in judged) return res.status(judged.status).json(judged.body);
+    // #2966 stage 7: the Promotions staff picked are judged against the added plan, by the rule the
+    // assignment uses, and applied onto its own plan snapshot (references, confirmed at Save & Pay).
+    const selectionError = promotionIds.length > 0
+      ? await validatePromotionSelection(gymId, planId, promotionIds.map(Number), Number(rows[0].owner_member_id))
+      : null;
+    if (selectionError) return res.status(selectionError.status ?? 400).json({ error: selectionError.error });
     const draftStart = rows[0].starts_at instanceof Date ? rows[0].starts_at.toISOString().slice(0, 10) : String(rows[0].starts_at).slice(0, 10);
     const startsAt = req.body?.starts_at ? String(req.body.starts_at).slice(0, 10) : draftStart;
     const eff = await effectivePrice(planId, gymId, startsAt);
@@ -178,11 +181,20 @@ productSetDraftRouter.post('/plans', requireModuleWrite('PAYMENTS'), async (req,
     const fee = feeGiven ? Number(req.body.membership_fee_price) : (eff.plan_price_id != null ? eff.price : null);
     if (feeGiven && (!Number.isFinite(fee) || (fee as number) < 0)) return res.status(400).json({ error: 'membership_fee_price must be a non-negative number' });
     const actor = resolveRequestActor(getTenantContext(req));
-    return edit(req, res, 'update', (tx, d) => addStaffPlanToDraft(tx, d, {
-      membershipPlanId: planId, membershipFeePrice: fee, startsAt,
-      ownerIsBeneficiary: req.body?.owner_is_beneficiary !== false, declinedBenefits: declined.declined, actor,
-      beneficiaryIds: judged.ids,
-    }), next, { add_plan: planId });
+    return edit(req, res, 'update', async (tx, d) => {
+      const added = await addStaffPlanToDraft(tx, d, {
+        membershipPlanId: planId, membershipFeePrice: fee, startsAt,
+        ownerIsBeneficiary: req.body?.owner_is_beneficiary !== false, declinedBenefits: declined.declined, actor,
+        beneficiaryIds: judged.ids,
+      });
+      if (!('ok' in added)) return added;
+      // A refusal throws with its own status and rolls the whole add back: the plan is never added
+      // without what staff picked.
+      for (const promotionId of promotionIds.map(Number)) {
+        await applyPromotionToProductSet(tx, gymId, actor, d.id, promotionId, { planSnapshotId: added.plan_snapshot_id });
+      }
+      return added;
+    }, next, { add_plan: planId, promotion_ids: promotionIds.map(Number) });
   } catch (err) { next(err); }
 });
 

@@ -26,6 +26,21 @@ async function plan(price: number, gym = gymId, memberLimit = '1'): Promise<numb
     [gym, insertId]);
   return insertId;
 }
+async function promotion(planId: number, action: 'waive' | 'percentage_discount', value: number | null): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
+                            only_applicable_for_new_members, paid_months)
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 1, 0, 12)`, [gymId, `AP-Promo-${uniq()}`]);
+  await db.query('INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+    [gymId, insertId, planId]);
+  await db.query(
+    `INSERT INTO promotion_membership_fee_benefits (gym_id, promotion_id, duration_months, enabled, action, value)
+     VALUES (?, ?, NULL, 1, ?, ?)`, [gymId, insertId, action, value]);
+  return Number(insertId);
+}
+const promotionsOn = async (planSnapshotId: number) => (await db.query<any>(
+  'SELECT promotion_id, status, snapshot_confirmed_at FROM plan_promotion_snapshots WHERE plan_snapshot_id = ? ORDER BY id',
+  [planSnapshotId])).rows;
 async function draft(planId: number | null, owner: number) {
   const res = await auth(request.post('/product-sets')).send({ member_id: owner, membership_plan_id: planId, starts_at: TODAY });
   expect(res.status).toBe(201);
@@ -161,14 +176,55 @@ describe('beneficiaries and Promotions of an added plan (#2966 stage 6)', () => 
     expect(await planRows(setId)).toHaveLength(1);
   });
 
-  it('refuses selected Promotions rather than dropping them', async () => {
+});
+
+describe('Promotions on a plan added to the cart (#2966 stage 7)', () => {
+  it('applies the selected Promotions to the added plan alone, as Draft references', async () => {
     const setId = await draft(await plan(30), await member());
+    const [primary] = await planRows(setId);
+    const added = await plan(50);
+    const promo = await promotion(added, 'percentage_discount', 10);
     const res = await auth(request.post(`/product-sets/${setId}/plans`))
-      .send({ membership_plan_id: await plan(50), promotion_ids: [1] });
+      .send({ membership_plan_id: added, promotion_ids: [promo] });
+    expect(res.status).toBe(200);
+    const onAdded = await promotionsOn(res.body.plan_snapshot_id);
+    expect(onAdded).toEqual([expect.objectContaining({ promotion_id: promo, status: 'applied', snapshot_confirmed_at: null })]);
+    expect(await promotionsOn(Number(primary.id))).toEqual([]);
+  });
+
+  it('refuses a Promotion that does not target the added plan, and adds nothing', async () => {
+    const first = await plan(30);
+    const setId = await draft(first, await member());
+    const otherPlansPromo = await promotion(first, 'percentage_discount', 10);
+    const res = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50), promotion_ids: [otherPlansPromo] });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('promotions_not_supported_on_added_plan');
     expect(await planRows(setId)).toHaveLength(1);
-    expect((await auth(request.post(`/product-sets/${setId}/plans`))
-      .send({ membership_plan_id: await plan(50), promotion_ids: [] })).status).toBe(200);
+    const bad = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50), promotion_ids: ['x'] });
+    expect(bad.status).toBe(400);
+    expect(await planRows(setId)).toHaveLength(1);
+  });
+
+  it('prices the added plan with its Promotion and confirms the snapshot when the cart is committed', async () => {
+    const setId = await draft(await plan(0), await member());
+    const added = await plan(50);
+    const promo = await promotion(added, 'waive', null);
+    const res = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: added, promotion_ids: [promo] });
+    expect(res.status).toBe(200);
+    // The added plan's fee is waived by its own Promotion, so the cart owes nothing and commits free.
+    const activate = await auth(request.post(`/product-sets/${setId}/activate`)).send({});
+    expect(activate.status).toBe(200);
+    const [app] = await promotionsOn(res.body.plan_snapshot_id);
+    expect(app.status).toBe('applied');
+    expect(app.snapshot_confirmed_at).not.toBeNull();
+  });
+
+  it('without the Promotion the same cart owes the added plan and is not committed free', async () => {
+    const setId = await draft(await plan(0), await member());
+    expect((await auth(request.post(`/product-sets/${setId}/plans`)).send({ membership_plan_id: await plan(50) })).status).toBe(200);
+    const activate = await auth(request.post(`/product-sets/${setId}/activate`)).send({});
+    expect(activate.status).not.toBe(200);
   });
 });
