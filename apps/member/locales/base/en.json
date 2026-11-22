@@ -9,6 +9,7 @@
     "loading": "Loading…",
     "next_booking": "My Next Bookings",
     "no_upcoming_booking": "No upcoming bookings.",
+    "book_now": "Book now",
     "more_bookings_that_day": "+{count} more {count, plural, one {booking} other {bookings}} that day",
     "close": "Close",
     "waitlisted": "Waitlisted",

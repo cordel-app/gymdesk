@@ -9,6 +9,7 @@
     "loading": "Cargando…",
     "next_booking": "Mis próximas reservas",
     "no_upcoming_booking": "No tienes reservas próximas.",
+    "book_now": "Reservar ahora",
     "more_bookings_that_day": "+{count} {count, plural, one {reserva más} other {reservas más}} ese día",
     "close": "Cerrar",
     "waitlisted": "En lista de espera",
