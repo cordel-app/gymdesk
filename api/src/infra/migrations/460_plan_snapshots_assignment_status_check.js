@@ -30,7 +30,6 @@ async function checkExists(knex) {
   return rows.length > 0;
 }
 
-exports.STATUSES = STATUSES;
 
 exports.up = async (knex) => {
   if (await checkExists(knex)) return;
