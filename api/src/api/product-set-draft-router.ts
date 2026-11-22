@@ -144,8 +144,8 @@ productSetDraftRouter.delete('/members/:memberId', requireModuleWrite('PAYMENTS'
 
 /**
  * #2966 stage 2 — staff adds a Membership Plan to the member's in-cart ProductSet. The plan is a
- * plan snapshot of the set (addressed by its snapshot id), never a competing version and never a
- * `user_memberships` row; everything already on the Draft is preserved. Body: `membership_plan_id`,
+ * plan snapshot of the set (addressed by its snapshot id), never a competing version and never an
+ * assignment of its own; everything already on the Draft is preserved. Body: `membership_plan_id`,
  * optional `starts_at` (default the Draft's), `membership_fee_price`, `declined_benefits`,
  * `owner_is_beneficiary`, and since stage 6 `beneficiary_member_ids` (which then decides whether the
  * owner is one), and since stage 7 `promotion_ids`, judged against the added plan and applied onto its

@@ -160,8 +160,8 @@ export async function cancelPendingProductSet(
 
   if (set.user_membership_id != null) {
     // #2125 M6b-48: the assignment's owner is read off its current plan snapshot, never from
-    // `user_memberships`; the legacy row is still dual-written, by an UPDATE guarded on
-    // `pending_payment`, which decides whether it moves (it replaces the `FOR UPDATE` read).
+    // `user_memberships`; the move is written on the anchor (`writeAssignmentLifecycle()`), guarded
+    // on `pending_payment`, which decides whether it moves (it replaces the `FOR UPDATE` read).
     const { rows: um } = await tx.query<{ id: number; member_id: number }>(
       `SELECT pa.source_user_membership_id AS id, pa.member_id FROM plan_snapshots pa
         WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,

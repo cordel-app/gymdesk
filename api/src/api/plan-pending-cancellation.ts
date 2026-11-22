@@ -23,12 +23,12 @@ import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
  *   - `restorePendingCancellations()` runs when the Draft is discarded and puts every marked plan of
  *     the owner back exactly as it was, on the same snapshot.
  *
- * The status lives on the plan's own snapshot and is dual-written onto the `user_memberships` row
- * (the one `setLegacyStatus()` statement, in the style of M6b-47); no snapshot is copied for either move.
+ * The status lives on the plan's own snapshot and on the assignment's anchor (the one
+ * `setLegacyStatus()` call, in the style of M6b-47); no snapshot is copied for either move.
  * Everything else is read from `plan_snapshots`.
  */
 
-/** The dual-write: the legacy row follows the snapshot, guarded on the status it moves away from. */
+/** The anchor's lifecycle follows the snapshot, guarded on the status it moves away from (no legacy row since migration 458). */
 async function setLegacyStatus(tx: Tx, gymId: string, id: number, from: string, to: string, actor: string | null) {
   await writeAssignmentLifecycle(tx, gymId, id, { status: to, from, actor });
 }

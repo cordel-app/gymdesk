@@ -435,7 +435,7 @@ export const ASSIGNMENT_CADENCE = {
  * answer and there is nothing to fall back *to*.
  *
  * It is a function rather than a bare string for the reason the pair above is:
- * three of the five callers alias `user_memberships` as something else.
+ * three of the five callers alias the assignment rows as something else.
  */
 export const ASSIGNMENT_AUTO_RENEW = (um = 'um') => assignmentConfig('auto_renew', um);
 
@@ -453,7 +453,7 @@ function positiveQuantity(v: unknown): number {
  * at all — the Plan's live sections, so a pre-migration-174 assignment still
  * simulates what it is actually entitled to rather than nothing.
  *
- * `hasBillingSnapshot` comes from the caller's own `user_memberships` row (any
+ * `hasBillingSnapshot` comes from the caller's own assignment row (any
  * of the seven snapshot columns set): an assignment that captured a cadence but
  * whose Plan carried no benefits must read back as "no benefits", not fall
  * through to a Plan that has gained some since.

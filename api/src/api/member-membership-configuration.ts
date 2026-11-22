@@ -150,7 +150,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   );
 
   // #2966 stage 4 — the further plans an in-flight version holds only as plan snapshots (staff
-  // added them to the cart through `POST /product-sets/:id/plans`): no `user_memberships` row
+  // added them to the cart through `POST /product-sets/:id/plans`): no assignment
   // represents them, so the Member card lists them from the version's own snapshots. The set's
   // primary plan is the version's own plan row, and a snapshot an assignment names is already
   // one of `plans`.
@@ -310,9 +310,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       lifecycle_status: p.lifecycle_status,
       membership_fee: fees.get(Number(p.id)) ?? null,
       // #958 — the Assigned Membership Plan card shows who created the
-      // assignment and when, beside its dates and status. Both are columns of
-      // `user_memberships` (migration 215): the actor is snapshotted by the
-      // three paths that insert one, so no card costs an `audit_logs` subquery.
+      // assignment and when, beside its dates and status. Both are the
+      // assignment's anchor snapshot's (`ASSIGNMENT_HISTORY_ROWS_SQL`), stored when
+      // the assignment is created, so no card costs an `audit_logs` subquery.
       // `created_at` is a DATETIME, reported as a bare date like every other
       // date in this payload (see `toDateOnly` above).
       created_at: toDateOnly(p.created_at),

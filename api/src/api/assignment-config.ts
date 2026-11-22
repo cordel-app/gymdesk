@@ -6,11 +6,11 @@
  * the **ProductSet version linked to it** (`product_sets.user_membership_id`) —
  * the latest one, Draft and closed included, since a closed assignment's
  * configuration is the record of what it billed. The `user_memberships` row
- * carries none of them (migration 258): it is the assignment's identity, dates
- * and status.
+ * carried none of them (migration 258) and migration 458 dropped it: an
+ * assignment is its plan snapshots, whose anchor holds its identity and lifecycle.
  *
  * A reader takes a value through `assignmentConfig()` and puts
- * `ASSIGNMENT_CONFIG_JOIN` after its `FROM user_memberships um`; a list read as
+ * `ASSIGNMENT_CONFIG_JOIN` after its `FROM <assignment rows> um` (`GYM_ASSIGNMENT_ROWS_SQL`, …); a list read as
  * `um.*` (a derived table cannot carry a column twice) overlays them with
  * `withAssignmentConfig()`. The cadence is `ASSIGNMENT_CADENCE`: the version's
  * frozen pair, then its Plan's live policy — never the chain's schedule, which

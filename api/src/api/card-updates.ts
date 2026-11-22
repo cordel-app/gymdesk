@@ -231,7 +231,7 @@ export async function loadCardRemovalBlock(
   );
   const owedByProductSet = Number(scheduled[0]?.n ?? 0) > 0;
   // #2126 stage 4: an Active set with no Membership Plan assignment (recurring
-  // Products only) has no `user_memberships` row for the read above to find, yet
+  // Products only) has no assignment for the read above to find, yet
   // the nightly run charges its obligations from the payer's card all the same.
   const { rows: productOnly } = await db.query<{ n: number }>(
     `SELECT COUNT(*) AS n

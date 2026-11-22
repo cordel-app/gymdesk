@@ -30,8 +30,8 @@ import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
  * A plan marked `to_be_canceled` is a different case: reactivating it just undoes the pending
  * cancellation (`unmarkPlanForCancellation()`), with no billing and no reactivation audit.
  *
- * The status lives on the plan's own snapshot and is dual-written onto the `user_memberships` row (the
- * one `setLegacyStatus()` statement, as in `plan-pending-cancellation.ts`); no snapshot is copied.
+ * The status lives on the plan's own snapshot and on the assignment's anchor (the
+ * one `setLegacyStatus()` call, as in `plan-pending-cancellation.ts`); no snapshot is copied.
  */
 
 export interface PendingReactivationActor { name: string | null }
