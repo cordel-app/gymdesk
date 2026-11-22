@@ -195,10 +195,14 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
     // #1991 stage 3: what the predecessor version still has applied is history,
     // Product-target applications included (they have no assignment to carry
     // them). Idempotent: only `applied` rows move, and `revoked` ones stay revoked.
+    // #3026 stage 3d-3c: a line-owned one on its Product snapshot row; only one owned by no line
+    // (none written since #1865) is still a legacy row.
+    const { supersedeProductPromotionsOfSet } = await import('./product-promotion-writer');
+    await supersedeProductPromotionsOfSet(tx, gymId, Number(previous.id), SYSTEM_ACTOR);
     await tx.query(
       `UPDATE user_membership_promotions
           SET status = 'superseded', modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE gym_id = ? AND product_set_id = ? AND status = 'applied'`,
+        WHERE gym_id = ? AND product_set_id = ? AND status = 'applied' AND recurrent_snapshot_id IS NULL`,
       [SYSTEM_ACTOR, gymId, previous.id],
     );
     // #3026 stage 3c-3: and on the plan snapshots only the predecessor links.

@@ -19,6 +19,7 @@
 // the payment webhook, which is the one place a version is activated.
 
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
+import { deleteProductApplication, lineApplications } from './product-promotion-writer';
 import { ownRecurringLine, updateRecurringLine, type RecurringLinePatch } from './recurring-line-writer';
 import type { Tx } from '../infra/db';
 import { addService, lockDraft, isRefusal, type DraftRefusal } from './product-set-draft';
@@ -288,10 +289,8 @@ export async function editRecurringPurchaseLine(tx: Tx, input: {
 
   if (input.promotionIds !== undefined) {
     const wanted = new Set(input.promotionIds.map(Number));
-    const { rows: apps } = await tx.query<any>(
-      `SELECT id, promotion_id, status FROM user_membership_promotions
-        WHERE gym_id = ? AND product_set_id = ? AND recurrent_snapshot_id = ?`,
-      [input.gymId, draftId, lineId]);
+    // #3026 stage 3d-3c: the line's applications are its Product snapshot rows.
+    const apps = await lineApplications(tx, input.gymId, draftId, lineId);
     const keep = new Set<number>();
     for (const app of apps) {
       if (app.status === 'applied' && wanted.has(Number(app.promotion_id)) && !keep.has(Number(app.promotion_id))) {
@@ -299,7 +298,7 @@ export async function editRecurringPurchaseLine(tx: Tx, input: {
         continue;
       }
       // A Draft has charged nothing: a deselected application is deleted, its grant snapshots by the FK.
-      await tx.query('DELETE FROM user_membership_promotions WHERE id = ? AND gym_id = ?', [app.id, input.gymId]);
+      await deleteProductApplication(tx, input.gymId, draftId, app.id);
     }
     const added = input.promotionIds.map(Number).filter((id) => !keep.has(id));
     const refused = await applyPromotions(tx, { gymId: input.gymId, promotionIds: added, actor: input.actor }, draftId, lineId);

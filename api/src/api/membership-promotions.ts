@@ -1,6 +1,7 @@
 import { planSnapshotInheritedSql, planSnapshotSharedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { confirmProductPromotionReferences, insertProductPromotionReference, standingLineApplications } from './product-promotion-writer';
 import {
   confirmPlanPromotionReferences, insertPlanPromotionReference,
 } from './plan-promotion-writer';
@@ -789,12 +790,15 @@ export async function applyPromotionToProductSet(
   // Promotion on another plan or snapshot cannot make this plan refuse it or read as not stackable.
   let existing: any[];
   if (opts.productTarget) {
-    ({ rows: existing } = await tx.query(
-      `SELECT id, promotion_id FROM user_membership_promotions
-        WHERE product_set_id = ? AND gym_id = ? AND status = 'applied'
-          AND ${lineId != null ? 'recurrent_snapshot_id = ?' : 'recurrent_snapshot_id IS NULL'}`,
-      lineId != null ? [productSetId, gymId, lineId] : [productSetId, gymId],
-    ));
+    // #3026 stage 3d-3c: a line-owned Product application is the line's Product snapshot row. One owned
+    // by no line (no route writes one since #1865) has no snapshot row to live on and stays a legacy row
+    // until stage 3d-3d moves or drops it.
+    ({ rows: existing } = lineId != null
+      ? { rows: await standingLineApplications(tx, gymId, productSetId, lineId) }
+      : await tx.query(
+        `SELECT id, promotion_id FROM user_membership_promotions
+          WHERE product_set_id = ? AND gym_id = ? AND status = 'applied' AND recurrent_snapshot_id IS NULL`,
+        [productSetId, gymId]));
   } else {
     const { primaryPlanSnapshotId } = await import('./plan-snapshot-lines');
     const primary = opts.planSnapshotId ?? await primaryPlanSnapshotId(tx, gymId, productSetId);
@@ -836,13 +840,19 @@ export async function applyPromotionToProductSet(
     await syncPlanSnapshot(tx, gymId, productSetId);
     return { application_id: applicationId };
   }
+  // #3026 stage 3d-3c: and a Product application is its line's Product snapshot row, with no
+  // `user_membership_promotions` row beside it.
+  if (lineId != null) {
+    const applicationId = await insertProductPromotionReference(tx, gymId, productSetId, lineId, promotionId, actor);
+    if (applicationId == null) throw Object.assign(new Error('Product line not found on this ProductSet'), { status: 404 });
+    return { application_id: applicationId };
+  }
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
        (gym_id, product_set_id, user_membership_id, recurrent_snapshot_id, promotion_id, created_by, status, snapshot)
-     VALUES (?, ?, NULL, ?, ?, ?, 'applied', NULL)`,
-    [gymId, productSetId, lineId, promotionId, actor],
+     VALUES (?, ?, NULL, NULL, ?, ?, 'applied', NULL)`,
+    [gymId, productSetId, promotionId, actor],
   );
-  await syncPlanSnapshot(tx, gymId, productSetId);
   return { application_id: Number(insertId) };
 }
 
@@ -868,13 +878,16 @@ export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, prod
   // #2880: a Promotion removed from the Draft before confirmation is not history of this
   // assignment — a reference that was revoked (written before removal became a deletion) is
   // discarded here rather than confirmed as an inactive application.
+  // #3026 stage 3d-3c: only an application owned by no line is still a legacy row (none written
+  // since #1865); a line-owned one is confirmed on its Product snapshot row below.
   const { rowCount: discarded } = await tx.query(
     `DELETE FROM user_membership_promotions
-      WHERE gym_id = ? AND product_set_id = ? AND status = 'revoked' AND snapshot_confirmed_at IS NULL`,
+      WHERE gym_id = ? AND product_set_id = ? AND status = 'revoked' AND snapshot_confirmed_at IS NULL
+        AND recurrent_snapshot_id IS NULL`,
     [gymId, productSetId]);
   const { rows } = await tx.query<{ id: number; promotion_id: number }>(
     `SELECT ump.id, ump.promotion_id FROM user_membership_promotions ump
-      WHERE ump.gym_id = ? AND ump.product_set_id = ?
+      WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NULL
         AND ump.status = 'applied' AND ump.snapshot_confirmed_at IS NULL
       ORDER BY ump.id FOR UPDATE`,
     [gymId, productSetId]);
@@ -892,7 +905,10 @@ export async function confirmDraftPromotionSnapshots(tx: Tx, gymId: string, prod
   // #3026 stage 3d-1: the references the plan snapshot itself holds (no legacy twin) are confirmed there.
   const native = await confirmPlanPromotionReferences(
     tx, gymId, productSetId, (promotionId) => buildPromotionSnapshot(tx, gymId, promotionId));
-  if (rows.length > 0 || discarded > 0 || native > 0) await syncPlanSnapshot(tx, gymId, productSetId);
+  // #3026 stage 3d-3c: and the Product references the Draft's lines hold, on their Product snapshot rows.
+  const onLines = await confirmProductPromotionReferences(
+    tx, gymId, productSetId, (promotionId) => buildPromotionSnapshot(tx, gymId, promotionId));
+  if (rows.length > 0 || discarded > 0 || native > 0 || onLines > 0) await syncPlanSnapshot(tx, gymId, productSetId);
 }
 
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
