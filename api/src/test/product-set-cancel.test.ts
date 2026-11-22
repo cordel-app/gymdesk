@@ -35,6 +35,7 @@ vi.mock('../payments', async (importOriginal) => {
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, createTestMembership, linkTestSetToAssignment, request, TEST_AUTH_HEADER } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const SECRET = 'test-product-set-cancel';
 let gymId: string;
@@ -84,7 +85,7 @@ async function pending(memberId?: number, opts: { assignment?: boolean; cadence?
   // an Admin Save & Pay is linked to one.
   let umId: number | null = null;
   if (opts.assignment !== false) {
-    ({ insertId: umId } = await db.query(
+    ({ insertId: umId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,
       [gymId, ownerId, TODAY]));
     await linkTestSetToAssignment(Number(c.body.id), Number(umId));

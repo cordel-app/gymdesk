@@ -9,6 +9,7 @@ import {
   createTestGym,
   createTestMembership,
   request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery, createTestFamily, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -51,7 +52,7 @@ async function createActiveUserMembership(
   memberId: number,
   planId: number,
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await testAssignmentWrite(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
      VALUES (?, ?, ?, 'active', CURDATE())`,
     [gymId, memberId, planId],

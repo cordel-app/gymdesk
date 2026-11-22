@@ -17,6 +17,7 @@ import {
   createTestGym,
   createTestMembership,
   request, legacyAssignmentQuery, legacyChildQuery, createTestDraftAssignment, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -527,7 +528,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     await createAssignment(memberId, otherPlanId, {
       status: 'cancelled', startsAt: 'CURDATE() - INTERVAL 2 MONTH', endsAt: null,
     });
-    await db.query(
+    await testAssignmentWrite(
       "UPDATE user_memberships SET ends_at = CURDATE() WHERE member_id = ? AND status = 'cancelled'",
       [memberId],
     );
@@ -546,7 +547,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       endsAt: null,
       createdMonthsAgo: 24,
     });
-    await db.query(
+    await testAssignmentWrite(
       "UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH WHERE member_id = ? AND status = 'expired'",
       [memberId],
     );
@@ -566,7 +567,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       startsAt: 'CURDATE() - INTERVAL 36 MONTH',
       createdMonthsAgo: 36,
     });
-    await db.query(
+    await testAssignmentWrite(
       'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 18 MONTH WHERE id = ?',
       [lapsedId],
     );

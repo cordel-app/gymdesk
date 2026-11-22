@@ -21,6 +21,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, linkTestSetToAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const SECRET = 'test-return-to-draft';
 let gymId: string;
@@ -71,7 +72,7 @@ async function pending() {
   const c = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: planId, starts_at: TODAY });
   const pay = await auth(request.post(`/product-sets/${c.body.id}/save-and-pay`)).send({});
   expect(pay.body.status).toBe('pending_payment');
-  const { insertId: umId } = await db.query(
+  const { insertId: umId } = await testAssignmentWrite(
     `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'pending_payment', ?)`,
     [gymId, memberId, TODAY]);
   await linkTestSetToAssignment(Number(c.body.id), Number(umId));

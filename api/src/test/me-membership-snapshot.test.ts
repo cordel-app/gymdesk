@@ -24,6 +24,7 @@ import {
   createTestGym,
   createTestMembership,
   request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -128,7 +129,7 @@ async function createCallingMember(gymId: string): Promise<number> {
   // unique index, which #2125 dropped), because `GET /me/membership` reads the
   // member's current plan and each block means a fresh one. It is also what the fixture means:
   // the member belongs to the gym this block just created.
-  await db.query(
+  await testAssignmentWrite(
     "UPDATE user_memberships SET status = 'cancelled' WHERE member_id = ? AND status IN ('active', 'paused')",
     [rows[0].id],
   );
@@ -139,8 +140,8 @@ async function createCallingMember(gymId: string): Promise<number> {
  * #2125 M6b-14: a hand-written assignment for the member's own plan reads, which take it from
  * `plan_snapshots` — so the fixture gives it the snapshot a real route's sync would write.
  */
-async function historyAssignment(sql: string, params: unknown[]): Promise<number> {
-  const { insertId } = await legacyAssignmentQuery(sql, params);
+async function historyAssignment(written: Promise<{ insertId: number }>): Promise<number> {
+  const { insertId } = await written;
   await snapshotTestAssignment(insertId);
   return insertId;
 }
@@ -469,30 +470,30 @@ describe('GET /me/membership — past_memberships', () => {
     olderPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
 
     // The live one the card above is about.
-    await historyAssignment(
+    await historyAssignment(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', '2026-10-01', 60)`,
       [gymId, memberId, currentPlanId],
-    );
+    ));
     // Two finished ones, the older carrying no `ends_at` so its `closed_at` is
     // what the history has to fall back to.
-    await historyAssignment(
+    await historyAssignment(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
        VALUES (?, ?, ?, 'cancelled', '2026-06-01', '2026-09-12', 60)`,
       [gymId, memberId, oldPlanId],
-    );
-    await historyAssignment(
+    ));
+    await historyAssignment(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, closed_at, base_price)
        VALUES (?, ?, ?, 'expired', '2026-01-05', '2026-05-30 09:15:00', 60)`,
       [gymId, memberId, olderPlanId],
-    );
+    ));
     // A Draft replacement being configured for this member, which is neither
     // their plan nor their history (#1108 Q2).
-    await historyAssignment(
+    await historyAssignment(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'in_cart', '2026-11-01', 60)`,
       [gymId, memberId, oldPlanId],
-    );
+    ));
   });
 
   it('lists the finished plans, newest first, and never the current one', async () => {
@@ -534,11 +535,11 @@ describe('GET /me/membership — past_memberships', () => {
     const otherGym = await createTestGym('Me Membership History Gym 2');
     await createTestMembership(otherGym, 'member');
     const otherMember = await createCallingMember(otherGym);
-    await historyAssignment(
+    await historyAssignment(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, NULL, 'active', '2026-10-01', 60)`,
       [otherGym, otherMember],
-    );
+    ));
     const { body } = await getMembership(otherGym);
     // The rows above belong to the first gym, so a tenant leak would show here.
     expect(body.past_memberships).toEqual([]);
@@ -557,17 +558,17 @@ describe('GET /me/membership — a plan that cancels on its end date (#2660)', (
     const pastPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
     // Cancelled, but paid through a day still ahead (stored as such since #2659 stage 2): the Admin reads it
     // `cancels_on_end_date` (LIFECYCLE_STATUS_SQL), so the member must too.
-    await historyAssignment(
+    await historyAssignment(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at, base_price)
        VALUES (?, ?, ?, 'active_cancel_at_period_end', '2026-06-01', DATE_ADD(UTC_DATE(), INTERVAL 20 DAY), NOW(), 60)`,
       [gymId, memberId, planId],
-    );
+    ));
     // An expired plan sorts ahead of a cancelled one in the ordering.
-    await historyAssignment(
+    await historyAssignment(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
        VALUES (?, ?, ?, 'expired', '2025-01-01', '2025-12-31', 60)`,
       [gymId, memberId, pastPlanId],
-    );
+    ));
   });
 
   it('is the member\'s plan, with the Admin status, never Cancelled and never history', async () => {
