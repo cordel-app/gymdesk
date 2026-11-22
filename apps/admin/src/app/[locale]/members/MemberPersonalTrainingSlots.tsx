@@ -44,6 +44,7 @@ import {
   type FamilyBookMemberResult, type FamilyMember,
 } from './slotFamilyBooking';
 import { overWeeklyAllowance } from './slotWeeklyAllowance';
+import { MemberScheduleEntries } from './MemberScheduleEntries';
 
 type SlotDateStatus = 'available' | 'no_occurrence' | 'not_scheduled' | 'full' | 'already_booked';
 
@@ -298,6 +299,18 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
           })}
         </p>
       )}
+
+      {/* #3090 stage 5: the schedule as entries the admin adds, edits and deletes. */}
+      <MemberScheduleEntries
+        memberId={memberId}
+        days={data.days}
+        family={family}
+        editing={editing}
+        canWrite={canWrite}
+        onChanged={async () => {
+          apply(await apiFetch<PersonalTrainingSlots>(`/members/${memberId}/personal-training-slots`));
+        }}
+      />
 
       {overAllowance.map((o) => (
         <p key={o.professional_service_id} style={warn} role="status" data-testid="pt-slots-over-allowance">

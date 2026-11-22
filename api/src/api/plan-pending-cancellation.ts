@@ -5,6 +5,7 @@ import { loadPaidThrough } from './cancellation-entitlement';
 import { closeAssignment } from './product-set-projection';
 import { linkCancellingPlan } from './entitlement-plan-links';
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #3007 stage 2(b) — the pending-cancellation lifecycle of a Membership Plan, backend only.
@@ -29,9 +30,7 @@ import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 /** The dual-write: the legacy row follows the snapshot, guarded on the status it moves away from. */
 async function setLegacyStatus(tx: Tx, gymId: string, id: number, from: string, to: string, actor: string | null) {
-  await tx.query(
-    `UPDATE user_memberships SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE id = ? AND gym_id = ? AND status = ?`, [to, actor, id, gymId, from]);
+  await writeAssignmentLifecycle(tx, gymId, id, { status: to, from, actor });
 }
 
 export interface PendingCancellationActor { name: string | null }

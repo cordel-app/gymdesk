@@ -57,14 +57,19 @@ const MOVED_ON_SQL = MOVED_ON.map((s) => `'${s}'`).join(',');
 export const CLOSED_ASSIGNMENT_STATUSES = ['cancelled', 'expired', 'superseded'] as const;
 const CLOSED_SQL = CLOSED_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(',');
 
-/** The assignment (`um`) the plan snapshot `s` is the contract of, while both records exist. */
-const ASSIGNMENT_OF_SNAPSHOT = 'JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id';
+/**
+ * The assignment the plan snapshot `s` is the contract of, as its anchor (`asg`) states it: the
+ * lifecycle columns migration 453 put there (`assignment_status`, …), written only by
+ * `writeAssignmentLifecycle()` (#2125 M6b-51c-5; until then this read `user_memberships`).
+ */
+const ASSIGNMENT_OF_SNAPSHOT = `JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.assignment_id = asg.id
+                                     AND asg.source_user_membership_id = s.source_user_membership_id`;
 
-/** The status a snapshot of an Active set, linked by `psj`, holds for its assignment `um`. */
-const WANTED_STATUS = `IF(um.status IN (${MOVED_ON_SQL}) OR (psj.entitlement_only = 1 AND um.status = 'superseded'), um.status, 'active')`;
+/** The status a snapshot of an Active set, linked by `psj`, holds for its assignment `asg`. */
+const WANTED_STATUS = `IF(asg.assignment_status IN (${MOVED_ON_SQL}) OR (psj.entitlement_only = 1 AND asg.assignment_status = 'superseded'), asg.assignment_status, 'active')`;
 /** Whether the snapshot `s`, linked by `psj`, does not hold its assignment's lifecycle yet. */
-const DIFFERS = `(NOT (s.status <=> ${WANTED_STATUS}) OR NOT (s.closed_at <=> um.closed_at)
-                  OR (psj.entitlement_only = 1 AND NOT (s.ends_at <=> um.ends_at)))`;
+const DIFFERS = `(NOT (s.status <=> ${WANTED_STATUS}) OR NOT (s.closed_at <=> asg.assignment_closed_at)
+                  OR (psj.entitlement_only = 1 AND NOT (s.ends_at <=> asg.assignment_ends_at)))`;
 /** The plan links of Active Product Sets with the snapshot and the assignment each is the contract of. */
 const ACTIVE_LINKS_FROM = `
   FROM product_set_plan_snapshots psj
@@ -131,8 +136,8 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
         `UPDATE plan_snapshots s
            JOIN product_set_plan_snapshots psj ON psj.id = ?
            ${ASSIGNMENT_OF_SNAPSHOT}
-            SET s.status = ${WANTED_STATUS}, s.closed_at = um.closed_at, s.ends_at = um.ends_at,
-                s.modified_at = um.modified_at, s.modified_by = um.modified_by
+            SET s.status = ${WANTED_STATUS}, s.closed_at = asg.assignment_closed_at, s.ends_at = asg.assignment_ends_at,
+                s.modified_at = asg.assignment_modified_at, s.modified_by = asg.assignment_modified_by
           WHERE s.id = ? AND s.gym_id = ?`, [r.link_id, target, gymId]);
       continue;
     }
@@ -155,8 +160,8 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
       `UPDATE plan_snapshots s
          JOIN product_set_plan_snapshots psj ON psj.id = ?
          ${ASSIGNMENT_OF_SNAPSHOT}
-          SET s.status = ${WANTED_STATUS}, s.closed_at = um.closed_at,
-              s.ends_at = IF(psj.entitlement_only = 1, um.ends_at, s.ends_at)
+          SET s.status = ${WANTED_STATUS}, s.closed_at = asg.assignment_closed_at,
+              s.ends_at = IF(psj.entitlement_only = 1, asg.assignment_ends_at, s.ends_at)
         WHERE s.id = ? AND s.gym_id = ?`, [r.link_id, target, gymId]);
   }
   return copied;
@@ -170,10 +175,10 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
 const UNSTATED_CLOSED_FROM = `
   FROM product_sets ps
   JOIN plan_snapshots s ON s.gym_id = ps.gym_id AND s.member_id = ps.owner_member_id AND s.assignment_id = s.id
-  ${ASSIGNMENT_OF_SNAPSHOT} AND um.status IN (${CLOSED_SQL})
+  ${ASSIGNMENT_OF_SNAPSHOT} AND asg.assignment_status IN (${CLOSED_SQL})
   JOIN plan_snapshots cur ON cur.gym_id = s.gym_id AND cur.id = ${currentAssignmentSnapshotSql('s.id', 's.gym_id')}
-                         AND cur.source_user_membership_id = um.id
- WHERE ps.status = 'active' AND NOT (cur.status <=> um.status)`;
+                         AND cur.source_user_membership_id = asg.source_user_membership_id
+ WHERE ps.status = 'active' AND NOT (cur.status <=> asg.assignment_status)`;
 
 /**
  * M6b-6: links, for the record only, the current snapshot of each of the owner's ended assignments
@@ -277,12 +282,12 @@ const UNSTATED_CLOSED_IN_PLACE_FROM = `
   FROM product_set_plan_snapshots psj
   JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.status = 'superseded'
   JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ps.gym_id
-  ${ASSIGNMENT_OF_SNAPSHOT} AND um.status IN (${CLOSED_SQL})
+  ${ASSIGNMENT_OF_SNAPSHOT} AND asg.assignment_status IN (${CLOSED_SQL})
  WHERE psj.entitlement_only = 0
    AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}
    AND s.id = ${currentAssignmentSnapshotSql('s.assignment_id', 's.gym_id')}
-   AND (NOT (s.ends_at <=> um.ends_at) OR NOT (s.closed_at <=> um.closed_at)
-        OR (um.status <> 'superseded' AND NOT (s.status <=> um.status)))`;
+   AND (NOT (s.ends_at <=> asg.assignment_ends_at) OR NOT (s.closed_at <=> asg.assignment_closed_at)
+        OR (asg.assignment_status <> 'superseded' AND NOT (s.status <=> asg.assignment_status)))`;
 
 /**
  * The Active Product Sets holding a plan snapshot that does not carry its assignment's lifecycle: the

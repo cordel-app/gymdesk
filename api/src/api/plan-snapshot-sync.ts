@@ -6,7 +6,7 @@
  */
 import type { Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
-import { syncPlanAssignment } from './plan-assignment-sync';
+import { stampAssignmentIds, syncPlanAssignment } from './plan-assignment-sync';
 import { settleSharedPlanLifecycle } from './plan-assignment-lifecycle';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { productSetLegacyAssignmentIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
@@ -35,6 +35,11 @@ import { productSetLegacyAssignmentIdSql, productSetOfLegacyAssignmentSql } from
  * alone and this sync moves it again.
  */
 export async function syncPlanSnapshot(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  // #2125 M6b-51c-5: the statements below read each assignment's lifecycle off its anchor, so a
+  // snapshot this set links is stamped (and a new anchor seeded) before they run, not after.
+  const { rows: linked } = await tx.query<{ id: number }>(
+    'SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ?', [productSetId]);
+  await stampAssignmentIds(tx, gymId, linked.map((r) => Number(r.id)));
   // M6b-2: a lifecycle change on a snapshot another Product Set links is written on a copy made for
   // the Active set (same assignment), which the statements below then treat as the set's own.
   await settleSharedPlanLifecycle(tx, gymId, productSetId);
@@ -55,6 +60,8 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
     `SELECT ${productSetLegacyAssignmentIdSql('ps')} AS um_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
     [productSetId, gymId]);
   const linkedUmId = linkRows[0]?.um_id != null ? Number(linkRows[0].um_id) : null;
+  // #2125 M6b-51c-5: the assignment's lifecycle is read off its anchor snapshot (`asg`, migration 453),
+  // never `user_memberships`.
   // Status and closed_at of every snapshot the version links and no other set does. M6b-7: and the
   // day an assignment that is over ended, on the snapshot of its superseded set (the last snapshot
   // of a plan that left the Active set), so the snapshot dates the plan as its assignment does.
@@ -64,13 +71,14 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
     `UPDATE plan_snapshots s
        JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ? AND psj.entitlement_only = 0
        JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
-       LEFT JOIN user_memberships um ON um.id = COALESCE(s.source_user_membership_id, ?) AND um.gym_id = s.gym_id
+       LEFT JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.assignment_id = asg.id
+                                   AND asg.source_user_membership_id = COALESCE(s.source_user_membership_id, ?)
         SET s.status = CASE WHEN ps.status = 'active'
-                                 AND um.status IN ('paused','to_be_canceled','active_cancel_at_period_end','to_be_reactivated','cancelled','expired') THEN um.status
-                            WHEN ps.status = 'superseded' AND um.status IN ('cancelled','expired') THEN um.status
+                                 AND asg.assignment_status IN ('paused','to_be_canceled','active_cancel_at_period_end','to_be_reactivated','cancelled','expired') THEN asg.assignment_status
+                            WHEN ps.status = 'superseded' AND asg.assignment_status IN ('cancelled','expired') THEN asg.assignment_status
                             ELSE ps.status END,
-            s.closed_at = um.closed_at,
-            s.ends_at = IF(ps.status IN ('superseded','cancelled') AND um.status IN ('cancelled','expired','superseded'), um.ends_at, s.ends_at)
+            s.closed_at = asg.assignment_closed_at,
+            s.ends_at = IF(ps.status IN ('superseded','cancelled') AND asg.assignment_status IN ('cancelled','expired','superseded'), asg.assignment_ends_at, s.ends_at)
       WHERE s.gym_id = ? AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}`,
     [productSetId, linkedUmId, gymId]);
 

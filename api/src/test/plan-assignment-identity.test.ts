@@ -8,7 +8,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
-import { deleteUnlinkedPlanSnapshots } from '../api/plan-assignment-sync';
+import { deleteUnlinkedPlanSnapshots, repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from '../api/plan-snapshot-add';
 import { discardDraftSet, ownPlanSnapshot } from '../api/plan-snapshot-ownership';
 import { createDraft } from '../api/product-sets';
@@ -223,6 +223,8 @@ describe('the drift check', () => {
     const [snap] = await snapshotsOf(um);
     // The assignment's own stored value, written the way the sweep and the cancel write it.
     await db.query('UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() WHERE id = ?', [CANCELS_AT_PERIOD_END_STATUS, um]);
+    // The history this stands for is on the anchor too, as migration 453's backfill put it (M6b-51c-5).
+    await repairAnchorLifecycles(db, gymId);
     const { syncPlanSnapshotsForAssignment } = await import('../api/plan-snapshot-sync');
     await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, gymId, um));
     expect((await snapshotsOf(um))[0]).toMatchObject({ id: snap.id, status: CANCELS_AT_PERIOD_END_STATUS });

@@ -10,6 +10,7 @@ import { recordStatusChange } from './billing-events';
 import { moveSetPurchases } from './set-purchases';
 import { releaseJoinedCartPurchases } from './cart-checkout';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #2747 stage 1 — cancelling a Product Set that awaits its first payment.
@@ -165,13 +166,11 @@ export async function cancelPendingProductSet(
       `SELECT pa.source_user_membership_id AS id, pa.member_id FROM plan_snapshots pa
         WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
       [gymId, set.user_membership_id]);
-    const { rowCount } = um[0]
-      ? await tx.query(
-        `UPDATE user_memberships SET status = 'cancelled', closed_at = UTC_TIMESTAMP(),
-                modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND gym_id = ? AND status = 'pending_payment'`,
-        [actor, um[0].id, gymId])
-      : { rowCount: 0 };
+    const rowCount = um[0]
+      ? await writeAssignmentLifecycle(tx, gymId, Number(um[0].id), {
+        status: 'cancelled', closedAt: 'now', from: 'pending_payment', actor,
+      })
+      : 0;
     if (rowCount > 0) {
       await recordStatusChange(tx, {
         gymId, userMembershipId: Number(um[0].id), memberId: Number(um[0].member_id),

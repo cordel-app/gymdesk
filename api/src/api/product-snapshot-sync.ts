@@ -49,7 +49,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
     [gymId, productSetId]);
 
   // Product-target applications owned by a line of this version. #3026 stage 3d-3a: the copy carries
-  // the application's confirmation (`snapshot_confirmed_at`, migration 452) so a reader can later
+  // the application's confirmation (`snapshot_confirmed_at`, migration 453) so a reader can later
   // tell a Draft's reference from a confirmed application on the snapshot row alone.
   const owned = `SELECT ump.id FROM user_membership_promotions ump
                    JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'

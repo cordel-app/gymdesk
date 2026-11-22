@@ -6,6 +6,7 @@ import {
   LiveAssignmentStatus,
 } from '../domain/oneActivePlan';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #956 — the one enforcement point for "a member holds at most one Membership
@@ -176,13 +177,9 @@ export async function supersedeLiveAssignments(
   },
 ): Promise<void> {
   for (const conflict of args.conflicts) {
-    await tx.query(
-      `UPDATE user_memberships
-       SET status = 'superseded', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()), ends_at = ?,
-           modified_at = UTC_TIMESTAMP(), modified_by = ?
-       WHERE id = ? AND gym_id = ?`,
-      [args.newStartsAt, args.actor, conflict.id, args.gymId],
-    );
+    await writeAssignmentLifecycle(tx, args.gymId, Number(conflict.id), {
+      status: 'superseded', closedAt: 'keep_or_now', endsAt: { set: args.newStartsAt }, actor: args.actor,
+    });
     await supersedeApplications(tx, args.gymId, conflict.id, args.actor);
     await recordStatusChange(tx, {
       gymId: args.gymId,
