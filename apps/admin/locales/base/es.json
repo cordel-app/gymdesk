@@ -972,6 +972,10 @@
     "draft_line_delete_error": "No se ha podido eliminar el producto del borrador.",
     "add_product_error_promotion_requires_products": "Esta promoción requiere otros productos. Añádelos primero y después aplica la promoción.",
     "added_plan_remove": "Quitar",
+    "added_plan_edit": "Editar",
+    "added_plan_edit_done": "Listo",
+    "added_plan_load_error": "No se ha podido cargar el plan.",
+    "added_plan_not_editable": "Este plan ya no se puede editar aquí: el carrito se ha confirmado o el plan pertenece a una versión en curso.",
     "added_plan_promotion_title": "Promoción aplicada a este plan: {name}"
   },
   "member_payments": {

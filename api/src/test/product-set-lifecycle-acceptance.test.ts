@@ -96,8 +96,9 @@ async function rowsHeldBy(setId: number): Promise<Record<string, number>> {
   }
   return out;
 }
+// #2125 M6b-51d-7c-1: an assignment's status is its anchor's (TEST_ASSIGNMENTS), not a table row.
 const statusOf = async (table: string, id: number) =>
-  (await db.query<any>(`SELECT status FROM ${table} WHERE id = ?`, [id])).rows[0]?.status;
+  (await db.query<any>(`SELECT status FROM ${table === 'user_memberships' ? `${TEST_ASSIGNMENTS} um` : table} WHERE id = ?`, [id])).rows[0]?.status;
 
 describe('ProductSet snapshot lifecycle (#1991 acceptance)', () => {
   it('editing a Draft never touches the Active version, and discarding it hard-deletes everything the Draft owns', async () => {

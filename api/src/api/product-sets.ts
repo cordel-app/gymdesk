@@ -1,4 +1,4 @@
-import { deleteDraftAssignments, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 import { db, Tx } from '../infra/db';
 import { restorePendingCancellations } from './plan-pending-cancellation';
 import { restorePendingReactivations } from './plan-pending-reactivation';
@@ -89,10 +89,6 @@ export async function createDraft(tx: Tx, input: {
   if (inFlight) {
     if (inFlight.status === 'in_cart' && Number(inFlight.expired) === 1) {
       // The Admin's Draft assignment (#1325 PR 3e) expires with its version.
-      const { rows: expired } = await tx.query<{ um: number | null }>(
-        `SELECT ${productSetLegacyAssignmentIdSql()} AS um FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
-        [inFlight.id, input.gymId]);
-      if (expired[0]?.um != null) await deleteDraftAssignments(tx, input.gymId, [Number(expired[0].um)]);
       await discardDraftSet(tx, input.gymId, Number(inFlight.id));
       await restorePendingCancellations(tx, input.gymId, input.ownerMemberId);
       await restorePendingReactivations(tx, input.gymId, input.ownerMemberId);
@@ -231,19 +227,14 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
   const row = await lockSet(tx, gymId, id);
   if (!row) return { kind: 'not_found' };
   if (row.status === 'in_cart') {
-    const { rows: linked } = await tx.query<{ user_membership_id: number | null }>(
-      `SELECT ${productSetLegacyAssignmentIdSql()} AS user_membership_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [id, gymId]);
+    // #1922 / #2125 M6b-51d-7c-1: a Draft assignment (an Admin-added Membership Plan) is this
+    // version's plan snapshot, so discarding the version discards the assignment; nothing else to delete.
     await discardDraftSet(tx, gymId, id);
     // #3007: the plans the discarded Draft marked as pending cancellation run on as they were.
     await restorePendingCancellations(tx, gymId, Number(row.owner_member_id));
     await restorePendingReactivations(tx, gymId, Number(row.owner_member_id));
     // #2967: Cancel is the whole cart, so the owner's standalone In Cart purchases go with it.
     await deleteStandaloneCartPurchases(tx, gymId, Number(row.owner_member_id));
-    // #1922: a Draft assignment (an Admin-added Membership Plan) is the cache of
-    // this version; left behind it would keep showing as a Draft plan on a
-    // restored Active set. Only a row still `draft` goes — nothing billed.
-    const um = linked[0]?.user_membership_id;
-    if (um) await deleteDraftAssignments(tx, gymId, [Number(um)]);
     return { kind: 'cancelled' };
   }
   if (row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };

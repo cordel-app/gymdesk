@@ -121,7 +121,7 @@ describe('assignment identity', () => {
 
     // A legacy value the writers did not write is not what the snapshot holds: a later sync (a pause
     // re-syncs the owner's Active set) leaves the snapshot's own purchase time alone.
-    await testAssignmentWrite("UPDATE user_memberships SET purchased_at = '2001-01-01 00:00:00' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET purchased_at = '2001-01-01 00:00:00' WHERE id = ?", [um], { mirror: false });
     expect((await auth(request.put(`/user-memberships/${um}`)).send({ status: 'paused' })).status).toBe(200);
     const [after] = await snapshotsOf(um);
     expect(after.status).toBe('paused');

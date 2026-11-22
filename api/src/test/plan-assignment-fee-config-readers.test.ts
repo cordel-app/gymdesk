@@ -62,7 +62,7 @@ describe('the Membership Fee pricing loader reads the assignment from plan_snaps
   it('reports the current snapshot\'s start date, not the legacy row\'s', async () => {
     const um = await running();
     await db.query("UPDATE plan_snapshots SET starts_at = '2026-01-05' WHERE id = ?", [await currentSnapshotId(um)]);
-    await testAssignmentWrite("UPDATE user_memberships SET starts_at = '2025-03-09' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET starts_at = '2025-03-09' WHERE id = ?", [um], { mirror: false });
     const row = await loadFeeAssignment(gymId, um);
     expect(row).not.toBeNull();
     expect(Number(row!.id)).toBe(um);

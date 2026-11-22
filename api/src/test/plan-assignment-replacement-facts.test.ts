@@ -103,10 +103,12 @@ describe('an assignment\'s replacement is its plan snapshot\'s', () => {
       'UPDATE plan_snapshots SET replace_on_activation = 1, replaces_assignment_id = ? WHERE id = ?',
       [replacedAnchor, snapshot]);
 
+    const { rows: firstRow } = await db.query<any>(
+      `SELECT member_id, gym_id, membership_plan_id, starts_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [first]);
     const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, status, created_by)
-       SELECT member_id, gym_id, membership_plan_id, starts_at, 'in_cart', 'Test' FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`,
-      [first]);
+       VALUES (?, ?, ?, ?, 'in_cart', 'Test')`,
+      [firstRow[0].member_id, firstRow[0].gym_id, firstRow[0].membership_plan_id, firstRow[0].starts_at]);
     const second = Number(insertId);
     await db.transaction(async (tx) => {
       await nameAssignmentSnapshot(tx, gymId, set, second);

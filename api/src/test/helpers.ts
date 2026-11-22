@@ -4,7 +4,7 @@ import { installAssignmentIdRegistration } from './assignmentIdFixture';
 import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
-import { mirrorLegacyLifecycle, splitTopLevel, testAssignmentWrite } from './assignmentFixture';
+import { FIXTURE_ASSIGNMENTS, mirrorLegacyLifecycle, splitTopLevel, testAssignmentWrite } from './assignmentFixture';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
@@ -163,7 +163,7 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
   await db.query(
     `UPDATE product_sets
         SET membership_plan_id = COALESCE(membership_plan_id,
-              (SELECT membership_plan_id FROM user_memberships WHERE id = ?))
+              (SELECT membership_plan_id FROM ${FIXTURE_ASSIGNMENTS} fa WHERE fa.id = ?))
       WHERE id = ?`, [umId, setId]);
   const { rows: own } = await db.query('SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
   if (own.length > 0) return;
@@ -250,7 +250,7 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
   let setId = await latestLinkedSet(umId);
   if (setId == null) {
     const { rows } = await db.query<any>(
-      'SELECT gym_id, member_id, membership_plan_id, starts_at, ends_at FROM user_memberships WHERE id = ?', [umId]);
+      `SELECT gym_id, member_id, membership_plan_id, starts_at, ends_at FROM ${FIXTURE_ASSIGNMENTS} fa WHERE fa.id = ?`, [umId]);
     const um = rows[0];
     if (!um) throw new Error(`setAssignmentConfig: assignment ${umId} not found`);
     const { insertId } = await db.query(
@@ -306,7 +306,7 @@ async function versionOfAssignment(userMembershipId: number): Promise<number> {
     `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`, [userMembershipId]);
   if (rows[0]) return Number(rows[0].id);
   const { rows: um } = await db.query<{ gym_id: string; member_id: number }>(
-    'SELECT gym_id, member_id FROM user_memberships WHERE id = ?', [userMembershipId]);
+    `SELECT gym_id, member_id FROM ${FIXTURE_ASSIGNMENTS} fa WHERE fa.id = ?`, [userMembershipId]);
   if (!um[0]) throw new Error(`legacy child fixture: assignment ${userMembershipId} not found`);
   const id = await ensureTestProductSet(um[0].gym_id, Number(um[0].member_id), userMembershipId);
   if (id == null) throw new Error('legacy child fixture: no version');
@@ -363,7 +363,7 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       if (!rows[0]) {
         // A version with no plan snapshot yet (a bare fixture): give it the assignment's own.
         const { rows: um } = await db.query<any>(
-          'SELECT member_id, membership_plan_id, starts_at, status FROM user_memberships WHERE id = ?', [Number(resolved.user_membership_id)]);
+          `SELECT member_id, membership_plan_id, starts_at, status FROM ${FIXTURE_ASSIGNMENTS} fa WHERE fa.id = ?`, [Number(resolved.user_membership_id)]);
         const { insertId } = await db.query(
           `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, origin, source_user_membership_id)
            VALUES (?, ?, ?, 'in_cart', ?, 'admin', ?)`,
@@ -546,7 +546,7 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
     }
     const where = update[2];
     const whereParams = [...queue];
-    const { rows } = await db.query<{ id: number }>(`SELECT id FROM user_memberships WHERE ${where}`, whereParams);
+    const { rows } = await db.query<{ id: number }>(`SELECT id FROM ${FIXTURE_ASSIGNMENTS} x WHERE ${where}`, whereParams);
     for (const r of rows) await setAssignmentConfig(Number(r.id), config);
     if (kept.length > 0) {
       // #2125 M6b-51d-5: the door mirrors the hand-written change onto the anchors it touched.
@@ -880,7 +880,7 @@ export async function createTestDraftAssignment(
  */
 export async function syncTestAssignmentSnapshots(umId: number): Promise<void> {
   const { syncPlanSnapshotsForAssignment } = await import('../api/plan-snapshot-sync');
-  const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM user_memberships WHERE id = ?', [umId]);
+  const { rows } = await db.query<{ gym_id: string }>(`SELECT gym_id FROM ${FIXTURE_ASSIGNMENTS} fa WHERE fa.id = ?`, [umId]);
   if (!rows[0]) throw new Error(`syncTestAssignmentSnapshots: no assignment ${umId}`);
   // #2125 M6b-51d-7b: the fixture door already wrote a hand-written change onto the anchor.
   await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, rows[0].gym_id, umId));
@@ -1103,13 +1103,8 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
   // hand-written row whose anchor has not taken them yet takes them now.
   await mirrorLegacyLifecycle(db, [umId]);
   const { rows } = await db.query<any>(
-    `SELECT um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.created_at,
-            IF(a.assignment_status IS NULL, um.status, a.assignment_status) AS status,
-            IF(a.assignment_status IS NULL, um.ends_at, a.assignment_ends_at) AS ends_at,
-            IF(a.assignment_status IS NULL, um.closed_at, a.assignment_closed_at) AS closed_at
-       FROM user_memberships um
-       LEFT JOIN plan_snapshots a ON a.gym_id = um.gym_id AND a.source_user_membership_id = um.id AND a.assignment_id = a.id
-      WHERE um.id = ?`, [umId]);
+    `SELECT gym_id, member_id, membership_plan_id, starts_at, created_at, status, ends_at, closed_at
+       FROM ${FIXTURE_ASSIGNMENTS} fa WHERE fa.id = ?`, [umId]);
   const um = rows[0];
   if (!um) throw new Error(`snapshotTestAssignment: no assignment ${umId}`);
   const { rows: existing } = await db.query<{ id: number }>(

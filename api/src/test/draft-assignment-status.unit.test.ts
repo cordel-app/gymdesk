@@ -123,27 +123,16 @@ describe('every assignment path creates a Draft', () => {
     expect(USER_MEMBERSHIPS).toContain("export const ASSIGNMENT_CREATION_STATUS = 'in_cart';");
   });
 
-  it('has no INSERT INTO user_memberships that omits the status column or hardcodes a literal', () => {
-    // #2125 M6b-51d-1: the one INSERT is the writer's (`insertAssignment()`), which takes the
-    // status as a required field; the three creation paths hand it the creation constant.
+  it('creates an assignment by allocating its id and recording a Draft, never an INSERT INTO user_memberships', () => {
+    // #2125 M6b-51d-7c-1: the assignment is its Draft version's plan snapshot (`in_cart`); the
+    // creation paths allocate the id and record the creation status they hand the Draft.
     const WRITER = code(API_SRC, 'api', 'assignment-lifecycle-writer.ts');
-    const inserts = [...WRITER.matchAll(
-      /INSERT INTO user_memberships\s*\(([^)]*)\)[\s\S]*?VALUES \(([^)]*)\)/g,
-    )];
-    expect(inserts).toHaveLength(1);
-    // The column still DEFAULTs to 'active' (migration 001), so an insert that
-    // simply left it out would create an Active plan with no error at all.
-    expect(inserts[0][1]).toContain('status');
-    expect(inserts[0][2]).not.toContain("'active'");
-    expect(WRITER).toMatch(/status: string;/);
+    expect(WRITER).not.toMatch(/INSERT INTO user_memberships/);
     for (const source of [USER_MEMBERSHIPS, MEMBERSHIP_PLANS]) {
       expect(source).not.toMatch(/INSERT INTO user_memberships/);
-      const calls = [...source.matchAll(/insertAssignment\(tx, \{([\s\S]*?)\}\);/g)];
-      expect(calls.length).toBeGreaterThan(0);
-      for (const call of calls) {
-        // A path writing `'active'` would skip the Draft state for whichever screen assigns through it.
-        expect(call[1]).toContain('status: ASSIGNMENT_CREATION_STATUS');
-      }
+      expect(source).toMatch(/allocateAssignmentId\(tx, gymId\)/);
+      // A path recording `'active'` would skip the Draft state for whichever screen assigns through it.
+      expect(source).toMatch(/newStatus: ASSIGNMENT_CREATION_STATUS/);
     }
   });
 
