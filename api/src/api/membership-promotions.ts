@@ -1,4 +1,4 @@
-import { planSnapshotInheritedSql, promotionHolderSql } from './plan-snapshot-lines';
+import { planSnapshotInheritedSql, planSnapshotSharedSql, promotionHolderSql } from './plan-snapshot-lines';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import {
@@ -693,7 +693,14 @@ export async function applyPromotionToProductSet(
    * #1991 stage 3: `lineId` is the recurring line (Product snapshot) the
    * application is owned by.
    */
-  opts: { productTarget?: boolean; lineId?: number } = {},
+  opts: {
+    productTarget?: boolean; lineId?: number;
+    /**
+     * #2966 stage 7: the plan snapshot of a further plan staff added to the cart. The Promotion is
+     * matched on, checked against and written onto that plan alone; absent = the set's primary plan.
+     */
+    planSnapshotId?: number;
+  } = {},
 ): Promise<{ application_id: number }> {
   const { rows: setRows } = await tx.query(
     'SELECT id, owner_member_id, membership_plan_id, status FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE',
@@ -737,13 +744,20 @@ export async function applyPromotionToProductSet(
   } else {
     // #1863 — the plan a Draft inherited from the previous Active version is not
     // eligible; only one added in this Draft is. Enforced here, so no route can
-    // bypass what the Admin hides.
+    // bypass what the Admin hides. #2966 stage 7: a further plan is judged alone.
+    const target = opts.planSnapshotId;
     const { rows: inheritedRows } = await tx.query(
-      `SELECT ${planSnapshotInheritedSql('s', 'psj.product_set_id')} AS is_inherited
+      `SELECT s.membership_plan_id,
+              (${planSnapshotInheritedSql('s', 'psj.product_set_id')}${target != null
+                ? ` OR ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}` : ''}) AS is_inherited
           FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-        WHERE psj.product_set_id = ? AND s.gym_id = ? AND psj.entitlement_only = 0`,
-      [productSetId, gymId],
+        WHERE psj.product_set_id = ? AND s.gym_id = ? AND psj.entitlement_only = 0
+          ${target != null ? 'AND s.id = ?' : ''}`,
+      target != null ? [productSetId, gymId, target] : [productSetId, gymId],
     );
+    if (target != null && inheritedRows.length === 0) {
+      throw Object.assign(new Error('Plan not found on this ProductSet'), { status: 404 });
+    }
     if (inheritedRows.some((r: any) => Number(r.is_inherited) === 1)) {
       throw Object.assign(
         new Error('A Promotion cannot be applied to a Membership Plan inherited from the previous version'),
@@ -752,7 +766,7 @@ export async function applyPromotionToProductSet(
     }
     const { rows: matchRows } = await tx.query(
       'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
-      [promotionId, set.membership_plan_id, gymId],
+      [promotionId, target != null ? inheritedRows[0].membership_plan_id : set.membership_plan_id, gymId],
     );
     if (matchRows.length === 0) {
       throw Object.assign(new Error("Promotion doesn't target this ProductSet's plan"), { status: 400 });
@@ -783,7 +797,7 @@ export async function applyPromotionToProductSet(
     ));
   } else {
     const { primaryPlanSnapshotId } = await import('./plan-snapshot-lines');
-    const primary = await primaryPlanSnapshotId(tx, gymId, productSetId);
+    const primary = opts.planSnapshotId ?? await primaryPlanSnapshotId(tx, gymId, productSetId);
     ({ rows: existing } = primary == null
       ? { rows: [] as any[] }
       : await tx.query(
@@ -804,7 +818,8 @@ export async function applyPromotionToProductSet(
   // M4b-2: a Plan Promotion changes the plan it is applied to, so the version takes its own copy of
   // that plan first — `syncPlanSnapshot()` writes the application onto the primary snapshot only when
   // no other set shares it.
-  if (!opts.productTarget) {
+  // #2966 stage 7: a further plan is the Draft's own (checked above), so there is nothing to copy.
+  if (!opts.productTarget && opts.planSnapshotId == null) {
     const { ownPrimaryPlanSnapshot } = await import('./plan-snapshot-ownership');
     await ownPrimaryPlanSnapshot(tx, gymId, productSetId);
   }
@@ -814,7 +829,7 @@ export async function applyPromotionToProductSet(
   // #3026 stage 3d-1: a Plan application is the plan snapshot's own row and nothing else — no
   // `user_membership_promotions` row is written for it; the application's id is that row's.
   if (!opts.productTarget) {
-    const applicationId = await insertPlanPromotionReference(tx, gymId, productSetId, promotionId, actor);
+    const applicationId = await insertPlanPromotionReference(tx, gymId, productSetId, promotionId, actor, opts.planSnapshotId);
     if (applicationId == null) {
       throw Object.assign(new Error('This ProductSet has no Membership Plan to apply the promotion to'), { status: 400 });
     }

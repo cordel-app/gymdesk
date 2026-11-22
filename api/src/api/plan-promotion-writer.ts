@@ -61,8 +61,10 @@ export async function supersedePlanPromotionsOfAssignment(
  */
 export async function insertPlanPromotionReference(
   tx: Tx, gymId: string, productSetId: number, promotionId: number, actor: string | null,
+  /** #2966 stage 7: a further plan of the set, by its snapshot id; absent = the primary plan. */
+  planSnapshotId?: number,
 ): Promise<number | null> {
-  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  const snapshotId = planSnapshotId ?? await primaryPlanSnapshotId(tx, gymId, productSetId);
   if (snapshotId == null) return null;
   const { insertId } = await tx.query(
     `INSERT INTO plan_promotion_snapshots
@@ -111,7 +113,8 @@ const LIVE_GRANTS: Array<{ source: string; target: string }> = [
 ];
 
 /**
- * Confirms the references the version's own primary plan snapshot holds (rows with no legacy twin):
+ * Confirms the references each of the version's own plan snapshots holds (rows with no legacy twin;
+ * the primary plan and, since #2966 stage 7, every further plan added to the cart):
  * each standing one takes the snapshot the caller builds from the Promotion as it stands and its
  * grant rows, frozen from the live benefit tables, and is stamped confirmed; a removed reference is
  * deleted. A snapshot another Product Set links is that set's contract and is left alone. Answers
@@ -121,8 +124,25 @@ export async function confirmPlanPromotionReferences(
   tx: Tx, gymId: string, productSetId: number,
   buildSnapshot: (promotionId: number) => Promise<unknown | null>,
 ): Promise<number> {
-  const snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
-  if (snapshotId == null) return 0;
+  // #2966 stage 7: every billable plan snapshot of the version, not only the primary one — a further
+  // plan staff added to the cart carries its own references, confirmed in the same transaction.
+  const { rows: links } = await tx.query<{ plan_snapshot_id: number }>(
+    `SELECT j.plan_snapshot_id FROM product_set_plan_snapshots j
+       JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+      WHERE j.product_set_id = ? AND s.gym_id = ? AND j.entitlement_only = 0
+      ORDER BY j.id`,
+    [productSetId, gymId]);
+  let written = 0;
+  for (const link of links) {
+    written += await confirmSnapshotReferences(tx, gymId, productSetId, Number(link.plan_snapshot_id), buildSnapshot);
+  }
+  return written;
+}
+
+async function confirmSnapshotReferences(
+  tx: Tx, gymId: string, productSetId: number, snapshotId: number,
+  buildSnapshot: (promotionId: number) => Promise<unknown | null>,
+): Promise<number> {
   if (await isPlanSnapshotShared(tx, productSetId, snapshotId)) return 0;
   const { rowCount: discarded } = await tx.query(
     `DELETE FROM plan_promotion_snapshots
