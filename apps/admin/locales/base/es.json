@@ -727,6 +727,7 @@
     "checkout_one_off": "Pago único",
     "checkout_members_family": "Toda la familia",
     "checkout_deleted": "Eliminado",
+    "checkout_reactivated": "Reactivado",
     "checkout_ends_on": "Termina el {date}",
     "checkout_contracted_none": "No se contrata nada.",
     "pay_direct_discount": "Descuento directo",

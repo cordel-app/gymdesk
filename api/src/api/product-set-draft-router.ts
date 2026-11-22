@@ -16,7 +16,7 @@ import { effectivePrice, planAssignabilityError } from './user-memberships';
 import { judgeMemberBeneficiaries } from './member-plan-beneficiaries';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
-import { loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
+import { loadPendingReactivationAssignments, loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
 import { loadPlanSnapshotConfiguration } from './assigned-plan-snapshot';
 import { mergeBillingEventForecasts } from './me-billing-forecast';
 import { loadSetPurchases } from './set-purchases';
@@ -329,6 +329,15 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
     return { ok: true as const };
   }, next, { remove_promotion: Number(req.params.applicationId) }));
 
+/** A forecast without the dates on or before `paidThrough` (#3114 stage 3); nothing is re-priced. */
+export function afterPaidThrough<T extends { dates: Array<{ date: string; total: number }>; total: number }>(
+  sim: T, paidThrough: string | null,
+): T {
+  if (paidThrough == null) return sim;
+  const dates = sim.dates.filter((d) => d.date > paidThrough);
+  return { ...sim, dates, total: Math.round(dates.reduce((n, d) => n + d.total, 0) * 100) / 100 };
+}
+
 export async function simulationHandler(req: any, res: any, next: any) {
   const { gymId } = getTenantContext(req);
   try {
@@ -339,9 +348,17 @@ export async function simulationHandler(req: any, res: any, next: any) {
     const assignments = await loadProductSetSimulationAssignments(gymId, id);
     if (assignments.length === 0) return res.status(404).json({ error: 'not_found' });
     // #3030: one shared horizon — two complete cycles of the plan with the longest cycle.
-    const sharedHorizonUntil = sharedCycleHorizon(assignments);
-    const base = mergeBillingEventForecasts(assignments.map((assignment) =>
-      computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true, sharedHorizonUntil })));
+    // #3114 stage 3: a plan the owner marked `to_be_reactivated` bills again once the cart is
+    // committed — open-ended, on its own schedule — from the first period after the one it had
+    // already paid through (those periods exist and are never generated again).
+    const reactivating = await loadPendingReactivationAssignments(gymId, id);
+    const sharedHorizonUntil = sharedCycleHorizon([...assignments, ...reactivating.map((r) => r.assignment)]);
+    const base = mergeBillingEventForecasts([
+      ...assignments.map((assignment) =>
+        computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true, sharedHorizonUntil })),
+      ...reactivating.map(({ assignment, paidThrough }) => afterPaidThrough(
+        computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true, sharedHorizonUntil }), paidThrough)),
+    ]);
 
     // #1867 stage 2 — the Draft's complete schedule: the initial payment (what
     // committing asks for today, the figure Save & Pay charges) and the member's
