@@ -48,7 +48,7 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   // M6b-51d-3: and its one DELETE, of Draft rows only.
   'api/assignment-lifecycle-writer.ts': 3,
   'api/plan-assignment-drift.ts': 5, // M6b-51c-4: the report compares the anchor's lifecycle with the legacy row
-  'api/plan-assignment-sync.ts': 2, // M6b-51c-4: the anchor lifecycle's seed and repair share one statement
+  'api/plan-assignment-sync.ts': 1, // M6b-51d-7a: only the anchor lifecycle's repair (`plan-assignments:settle`)
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */

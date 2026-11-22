@@ -60,10 +60,8 @@ export async function stampAssignmentIds(exec: Exec, gymId: string, planSnapshot
 }
 
 /**
- * #2125 M6b-51c-4 — an anchor that carries no assignment lifecycle yet (a new assignment's first
- * snapshot) takes it from the `user_memberships` row it names; from then on `writeAssignmentLifecycle()`
- * keeps it in step. This is the dual-write's seed, gone with the table (the creating writer will set
- * the values itself then).
+ * #2125 M6b-51c-4 — an anchor's lifecycle as its `user_memberships` row states it. Since M6b-51d-7a
+ * only the repair (`plan-assignments:settle`) reads it; a new anchor is seeded from itself.
  */
 const ANCHOR_LIFECYCLE_FROM_LEGACY = `
   UPDATE plan_snapshots a
@@ -73,11 +71,19 @@ const ANCHOR_LIFECYCLE_FROM_LEGACY = `
          a.assignment_modified_by = um.modified_by
    WHERE a.assignment_id = a.id`;
 
+/**
+ * #2125 M6b-51d-7a — the seed reads the anchor snapshot itself: a new assignment's first snapshot is
+ * written with the status, dates and modifier the assignment was created with, so its lifecycle starts
+ * from those, never from the `user_memberships` row.
+ */
 async function seedAnchorLifecycle(exec: Exec, gymId: string, anchorIds: number[]): Promise<void> {
   if (anchorIds.length === 0) return;
   await exec.query(
-    `${ANCHOR_LIFECYCLE_FROM_LEGACY}
-       AND a.gym_id = ? AND a.id IN (${anchorIds.map(() => '?').join(',')}) AND a.assignment_status IS NULL`,
+    `UPDATE plan_snapshots a
+        SET a.assignment_status = a.status, a.assignment_ends_at = a.ends_at,
+            a.assignment_closed_at = NULL, a.assignment_modified_at = NULL, a.assignment_modified_by = NULL
+      WHERE a.assignment_id = a.id AND a.gym_id = ? AND a.id IN (${anchorIds.map(() => '?').join(',')})
+        AND a.assignment_status IS NULL`,
     [gymId, ...anchorIds]);
 }
 
@@ -397,10 +403,11 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;
     await tx.query(
+      // M6b-51d-7a: the assignment's last modifier is its anchor's (`writeAssignmentLifecycle()`).
       `UPDATE plan_snapshots s
-         JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
-          SET s.modified_at = um.modified_at,
-              s.modified_by = um.modified_by
+         JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.id = s.assignment_id
+          SET s.modified_at = asg.assignment_modified_at,
+              s.modified_by = asg.assignment_modified_by
         WHERE s.id = ? AND s.gym_id = ?`,
       [r.id, gymId]);
   }
