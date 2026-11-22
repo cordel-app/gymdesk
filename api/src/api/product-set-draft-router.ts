@@ -17,13 +17,14 @@ import { judgeMemberBeneficiaries } from './member-plan-beneficiaries';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
 import { loadProductSetSimulationAssignments } from './plan-snapshot-assignments';
+import { loadPlanSnapshotConfiguration } from './assigned-plan-snapshot';
 import { mergeBillingEventForecasts } from './me-billing-forecast';
 import { loadSetPurchases } from './set-purchases';
 import { cartPurchasesForCharge } from './cart-checkout';
 import { IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS } from '../domain/memberProductPurchase';
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
-  addStaffPlanToDraft, removeStaffPlanFromDraft,
+  addStaffPlanToDraft, namedPlanTarget, removeStaffPlanFromDraft,
   removeCoveredMember, removeService, setBillingDuration, setServiceQuantity, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
 } from './product-set-draft';
 
@@ -41,6 +42,7 @@ import {
  *   POST   /plans, DELETE /plans/:planSnapshotId        a further plan of the cart (#2966)
  *   GET/PUT /plans/:planSnapshotId/benefits/:category, PUT …/billing-duration, …/fee, …/fee-benefit
  *                                  one plan's configuration, by its snapshot id (#2966 stage 9)
+ *   GET    /plans/:planSnapshotId           that plan's whole configuration, for its editor (#2966 stage 10)
  *   GET    /billing-event-simulation      the Billing Event Forecast of the Draft
  *
  * Every write locks the Draft, refuses a committed or expired one, refreshes its
@@ -217,6 +219,35 @@ productSetDraftRouter.delete('/plans/:planSnapshotId', requireModuleWrite('PAYME
  */
 const snapshotParam = (req: any): number => Number(req.params.planSnapshotId);
 
+/*
+ * #2966 stage 10 — one plan of the cart as its Admin editor reads it: the configuration in the
+ * Assigned Plan snapshot's shape (`loadPlanSnapshotConfiguration()`), and whether the routes below
+ * would take an edit of it: the set is still in the cart and the plan is the set's own (the same
+ * `namedPlanTarget()` the writers ask, unlocked here because nothing is written).
+ */
+productSetDraftRouter.get('/plans/:planSnapshotId', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const setId = Number((req.params as any).id);
+  const snapshotId = snapshotParam(req);
+  if (!Number.isInteger(setId) || setId <= 0 || !Number.isInteger(snapshotId) || snapshotId <= 0) {
+    return res.status(404).json({ error: 'not_found' });
+  }
+  try {
+    const { rows } = await db.query<{ status: string }>(
+      'SELECT status FROM product_sets WHERE id = ? AND gym_id = ?', [setId, gymId]);
+    if (!rows[0]) return res.status(404).json({ error: 'not_found' });
+    const target = await namedPlanTarget(db as any, { id: setId, gym_id: gymId } as LockedDraft, snapshotId);
+    if (isRef(target) && target.kind === 'not_found') return res.status(404).json({ error: 'not_found' });
+    const snapshot = await loadPlanSnapshotConfiguration(gymId, snapshotId);
+    res.json({
+      product_set_id: setId,
+      plan_snapshot_id: snapshotId,
+      editable: rows[0].status === 'in_cart' && !isRef(target),
+      snapshot,
+    });
+  } catch (err) { next(err); }
+});
+
 productSetDraftRouter.get('/plans/:planSnapshotId/benefits/:category', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const category = req.params.category as ProductBenefitCategory;
@@ -321,11 +352,14 @@ export async function simulationHandler(req: any, res: any, next: any) {
     const set = rows[0];
     if (!set || (set.status !== 'in_cart' && set.status !== 'pending_payment')) return res.json(await nameSimulatedEvents(db, gymId, base));
 
-    let initial: { date: string; lines: BillingEventLine[] } | null = null;
+    let initial: { date: string; lines: BillingEventLine[]; coveredDates?: string[] } | null = null;
     try {
       const { startsAt, charge } = await commitCharge(gymId, set);
       if (charge && charge.simulationLines.length > 0) {
-        initial = { date: startsAt, lines: charge.simulationLines.map(toBillingEventLine) };
+        initial = {
+          date: charge.billingDate ?? startsAt, lines: charge.simulationLines.map(toBillingEventLine),
+          coveredDates: charge.coveredDates,
+        };
       }
     } catch { initial = null; }
 

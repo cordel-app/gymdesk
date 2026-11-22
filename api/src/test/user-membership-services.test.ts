@@ -378,13 +378,14 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
     expect(res.body.starts_at).toBe(today());
   });
 
-  it('defaults starts_at to the Assigned Plan\'s start date when the plan has not started yet', async () => {
+  it('defaults starts_at to today even when the plan has not started yet (#3167)', async () => {
     const futureStart = dayOffset(10);
     const umId = await createAssignedPlan(gymId, { startsAt: futureStart });
     const itemId = await createProduct(gymId);
     const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(201);
-    expect(res.body.starts_at).toBe(futureStart);
+    // An ad-hoc Product is its own line: it starts when it is added, never on the plan's later date.
+    expect(res.body.starts_at).toBe(today());
     expect(res.body.active).toBe(true);
   });
 

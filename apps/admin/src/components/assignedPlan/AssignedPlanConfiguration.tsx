@@ -74,6 +74,7 @@ import {
 } from './inlineLineEdit';
 import { clampBenefitValue, saveBenefitSection } from '@/lib/benefitEditing';
 import { billingDurationPayload, durationFormError } from '@/lib/durationEditing';
+import { configurationEndpoints, withoutCadence } from './configurationEndpoints';
 import type {
   AppliedPromotion,
   AssignedPlanSnapshot,
@@ -136,6 +137,12 @@ interface DurationForm {
 
 interface Props {
   assignedPlanId: number;
+  /**
+   * #2966 stage 10 — a plan added to the member's cart, which has no assignment: the editor writes
+   * through `/product-sets/:setId/plans/:planSnapshotId/…` instead (`configurationEndpoints()`), and
+   * offers no Billing frequency. Absent for an assignment.
+   */
+  cartPlan?: { productSetId: number; planSnapshotId: number } | null;
   /** The assignment's stored status — a terminal one is read-only. */
   planStatus: string;
   snapshot: AssignedPlanSnapshot;
@@ -278,8 +285,11 @@ function toAllocationRows(
 
 export function AssignedPlanConfiguration({
   assignedPlanId, planStatus, snapshot, promotions = [], feeInclTax = null, feeTaxPercent = null, currentFee = null, planAccess = [], feeScope = null, beneficiaries = [], currentFeeByMember = null, cardEditing, canWrite, readOnlyTitle,
-  promotionsSelectable = false, membershipPlanId = null, ownerMemberId = null, onChanged,
+  promotionsSelectable = false, membershipPlanId = null, ownerMemberId = null, onChanged, cartPlan = null,
 }: Props) {
+  const endpoints = configurationEndpoints(cartPlan
+    ? { kind: 'cart_plan', productSetId: cartPlan.productSetId, planSnapshotId: cartPlan.planSnapshotId }
+    : { kind: 'assignment', assignedPlanId });
   const t = useTranslations('assigned_plans_page');
   // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
   // the stored pair ("1 × Month").
@@ -476,9 +486,10 @@ export function AssignedPlanConfiguration({
     }
     setSaving(true);
     try {
-      await apiFetch(`/user-memberships/${assignedPlanId}/billing-duration`, {
+      const payload = billingDurationPayload(durationForm);
+      await apiFetch(endpoints.billingDuration, {
         method: 'PUT',
-        body: JSON.stringify(billingDurationPayload(durationForm)),
+        body: JSON.stringify(endpoints.cadenceEditable ? payload : withoutCadence(payload)),
       });
       cancelEdit();
       onChanged();
@@ -513,7 +524,7 @@ export function AssignedPlanConfiguration({
     }
     setSaving(true);
     try {
-      await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
+      await apiFetch(endpoints.feeBenefit, {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
@@ -526,7 +537,7 @@ export function AssignedPlanConfiguration({
     }
   }
 
-  async function saveBenefits(endpoint: string) {
+  async function saveBenefits(endpoint: string, section: BenefitSection) {
     if (lineEntries.some((e) => !isValidDiscountPercent(e.draft.direct_discount_percent))) {
       toast(t('direct_discount_invalid'));
       return;
@@ -537,7 +548,7 @@ export function AssignedPlanConfiguration({
       // anything is sent, and a failure keeps the editor open with the input.
       const result = await saveBenefitSection({
         save: async (items) => {
-          await apiFetch(`/user-memberships/${assignedPlanId}/${endpoint}`, {
+          await apiFetch(endpoints.benefits(section, endpoint), {
             method: 'PUT',
             body: JSON.stringify({ items }),
           });
@@ -637,6 +648,9 @@ export function AssignedPlanConfiguration({
                 />
               </div>
             ))}
+            {/* #2966 stage 10: an added cart plan bills on the owner's schedule for its cadence, so
+                its Billing frequency is not offered (configurationEndpoints()). */}
+            {endpoints.cadenceEditable && (<>
             <div>
               <label style={labelSt}>{t('label_billing_interval')}</label>
               <input
@@ -657,6 +671,7 @@ export function AssignedPlanConfiguration({
                 {BILLING_UNITS.map((u) => <option key={u} value={u}>{t(`unit_${u}` as any)}</option>)}
               </select>
             </div>
+            </>)}
             <div>
               <label style={labelSt}>{t('label_membership_fee')}</label>
               <div style={{ ...inputSt, background: 'transparent', border: '1px solid transparent' }}>
@@ -834,7 +849,7 @@ export function AssignedPlanConfiguration({
               <>
                 <p style={hintSt}>{t('assigned_line_edit_hint')}</p>
                 <p style={hintSt}>{t('snapshot_edit_hint')}</p>
-                {sectionActions(() => saveBenefits(endpoint))}
+                {sectionActions(() => saveBenefits(endpoint, section))}
               </>
             )}
           </CardSection>
