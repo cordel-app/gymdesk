@@ -11,6 +11,8 @@
  * component does, so the gym's formatter stays the one place those are applied.
  */
 
+import { PRODUCT_TYPES } from '../financials/products/productProfile';
+
 /** The Promotion a purchase was made under, as the API reports the snapshot. */
 export interface PurchasedProductPromotion {
   id: number;
@@ -350,4 +352,14 @@ export function cartCountdown(
 /** #2962 — the server's refusal to pay for a cart purchase that has expired. */
 export function isPurchaseExpiredError(err: any): boolean {
   return err?.status === 410 && err?.body?.error === 'purchase_expired';
+}
+
+/**
+ * #3190 — the `products` locale key a purchase's frozen Product Type reads
+ * under (`type_fee`, `type_sessions`, …), or `null` for a value outside the
+ * Products page's own set, which then reads `—` rather than printing a key
+ * (next-intl prints a missing key verbatim).
+ */
+export function productTypeLabelKey(type: string | null | undefined): string | null {
+  return type && (PRODUCT_TYPES as readonly string[]).includes(type) ? `type_${type}` : null;
 }

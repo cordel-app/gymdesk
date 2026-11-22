@@ -13,6 +13,7 @@ import {
   showsAssigneeSelector,
   sharingTypeKey,
   yesNoKey,
+  productTypeLabelKey,
 } from '@/app/[locale]/members/purchasedProductsView';
 
 // #1521 — the Products card's pure rules: stored values only, `null` where the
@@ -139,5 +140,19 @@ describe('orderPurchasesForTable (#3161)', () => {
     const input = [row(5, '2026-11-01T10:00:00Z'), row(4, '2026-11-01T10:00:00Z'), row(8, null)];
     expect(orderPurchasesForTable(input).map((r) => r.id)).toEqual([8, 4, 5]);
     expect(input.map((r) => r.id)).toEqual([5, 4, 8]);
+  });
+});
+
+describe('productTypeLabelKey (#3190)', () => {
+  it('answers the Products page key for every Product Type', () => {
+    expect(productTypeLabelKey('fee')).toBe('type_fee');
+    expect(productTypeLabelKey('sessions')).toBe('type_sessions');
+    expect(productTypeLabelKey('merchandise')).toBe('type_merchandise');
+  });
+
+  it('answers null for an absent or unknown type, so the cell reads a dash', () => {
+    expect(productTypeLabelKey(null)).toBeNull();
+    expect(productTypeLabelKey('')).toBeNull();
+    expect(productTypeLabelKey('locker')).toBeNull();
   });
 });

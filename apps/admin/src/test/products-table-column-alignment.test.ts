@@ -9,7 +9,7 @@ import { draftRowCells } from '../components/draftRowCells';
 const TABLE = readFileSync(join(__dirname, '..', 'app', '[locale]', 'members', 'MemberPurchasedProducts.tsx'), 'utf8');
 
 const EXPECTED_ORDER = [
-  'product', 'frequency', 'quantity', 'assigned_to', 'date', 'end_date', 'price', 'promotion',
+  'product', 'type', 'frequency', 'quantity', 'assigned_to', 'date', 'end_date', 'price', 'promotion',
   'promotion_benefit', 'discount', 'final', 'payment_status', 'status',
 ];
 
@@ -26,7 +26,7 @@ describe('#2786 draft row cells follow the columns by key', () => {
 });
 
 describe('#2786 Products table column structure', () => {
-  it('declares the twelve data columns (#3021: Applied tax moved to the expanded row) in the agreed order (#3020: Quantity after Product, Assigned to before Date)', () => {
+  it('declares the data columns in the agreed order (#3020: Quantity after Product, Assigned to before Date; #3190: Type after Product)', () => {
     const keys = [...TABLE.matchAll(/^\s+key: '([a-z_]+)',$/gm)].map((m) => m[1]);
     expect(keys).toEqual(EXPECTED_ORDER);
   });
