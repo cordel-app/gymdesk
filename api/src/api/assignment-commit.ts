@@ -7,7 +7,7 @@ import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-a
 import { importAssignmentAsProductSet } from './product-set-bridge';
 import { mergeActiveVersionIntoDraft } from './plan-snapshot-add';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
-import { assignmentReplacementOf, lockAssignmentAnchor, writeAssignmentReplacement } from './plan-assignment-sync';
+import { assignmentReplacementOf, lockAssignmentAnchor, writeAssignmentPurchasedAt, writeAssignmentReplacement } from './plan-assignment-sync';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
@@ -234,6 +234,8 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
     status: 'active', from: row.status, purchasedAt: 'fill', actor: input.actor,
   });
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
+  // #2125 M6b-51c-1: the purchase time is the plan snapshot's own; the legacy column above is a dual-write.
+  await writeAssignmentPurchasedAt(tx, input.gymId, Number(row.id), 'fill');
   await recordStatusChange(tx, {
     gymId: input.gymId, userMembershipId: Number(row.id), memberId: Number(row.member_id),
     previousStatus: row.status, newStatus: 'active',

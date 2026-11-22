@@ -1,4 +1,4 @@
-// #2125 M6b-51c-4 (migration 452): an assignment's lifecycle — status, closed time, end date and
+// #2125 M6b-51c-4 (migration 453): an assignment's lifecycle — status, closed time, end date and
 // last modifier — is dual-written onto its anchor snapshot by the one writer, so the two records agree
 // through every transition, and the anchor is the only snapshot that carries it.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -9,7 +9,7 @@ import {
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const migration = require('../infra/migrations/452_plan_snapshot_assignment_lifecycle.js');
+const migration = require('../infra/migrations/453_plan_snapshot_assignment_lifecycle.js');
 
 let gymId: string;
 let seq = 0;

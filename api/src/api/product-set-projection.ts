@@ -1,6 +1,8 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { lockAssignmentAnchor, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import {
+  lockAssignmentAnchor, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, writeAssignmentPurchasedAt,
+} from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
@@ -194,6 +196,8 @@ export async function projectActiveProductSet(
       notFrom: ['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'],
     });
     if (continuedUmId != null) await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
+    // #2125 M6b-51c-1: the purchase time is the plan snapshot's own; the legacy column is a dual-write.
+    await writeAssignmentPurchasedAt(tx, gymId, umId, 'fill');
     return umId;
   }
 
@@ -218,13 +222,21 @@ export async function projectActiveProductSet(
     }
     await closeAssignment(tx, gymId, previousUmId, endsAt, actor, 'superseded');
   }
+  // #2125 M6b-51c-1: the new assignment keeps its predecessor's purchase time, read off the
+  // predecessor's current plan snapshot (never `user_memberships`), else it is bought now. One value,
+  // so the legacy dual-write and the snapshot cannot differ by a clock tick.
+  const { rows: bought } = await tx.query<{ purchased_at: Date | string }>(
+    `SELECT COALESCE((SELECT pa.purchased_at FROM plan_snapshots pa
+                       WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}), UTC_TIMESTAMP()) AS purchased_at`,
+    [gymId, previousUmId]);
+  const purchasedAt = bought[0].purchased_at;
   const { insertId } = await tx.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
         purchased_at, created_by)
-     VALUES (?, ?, ?, ?, ?, 'active', COALESCE((SELECT um0.purchased_at FROM user_memberships um0 WHERE um0.id = ? AND um0.gym_id = ?), UTC_TIMESTAMP()), ?)`,
+     VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
     [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at),
-      previousUmId, gymId, set.created_by],
+      purchasedAt, set.created_by],
   );
   const umId = Number(insertId);
 
@@ -233,6 +245,7 @@ export async function projectActiveProductSet(
   await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
   // #2125 M6b-44: the assignment just opened is named on the set's plan snapshot now, so it has an anchor.
   await nameAssignmentSnapshot(tx, gymId, productSetId, umId);
+  await writeAssignmentPurchasedAt(tx, gymId, umId, purchasedAt);
   return umId;
 }
 

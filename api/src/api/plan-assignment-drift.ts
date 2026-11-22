@@ -127,7 +127,7 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
              OR ${differs('um.modified_by', assignmentModifierSql('modified_by'))})${scope('um')}
       ORDER BY um.id`);
 
-  // #2125 M6b-51c-4: the assignment's lifecycle on its anchor snapshot (migration 452).
+  // #2125 M6b-51c-4: the assignment's lifecycle on its anchor snapshot (migration 453).
   await add('assignment_lifecycle_mismatch',
     'An assignment whose anchor snapshot holds a different status, closed time, end date or modifier.',
     `SELECT um.id AS user_membership_id, um.gym_id, a.id AS anchor_id,

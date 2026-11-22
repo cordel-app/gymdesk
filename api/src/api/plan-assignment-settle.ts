@@ -9,7 +9,7 @@
  * M6b-7: and a superseded Product Set whose own snapshot is the last one of an ended plan and lacks
  * the plan's closed status, `closed_at` or end date (written in place by the sync, no copy).
  *
- * M6b-51c-4: and every assignment anchor whose lifecycle columns (migration 452) are out of step with
+ * M6b-51c-4: and every assignment anchor whose lifecycle columns (migration 453) are out of step with
  * the `user_memberships` row, the gap a deploy leaves after the migration (`repairAnchorLifecycles()`).
  *
  * It decides nothing of its own: each listed set is re-synced (`syncPlanSnapshot()`), which is what
