@@ -1056,5 +1056,10 @@
     "title": "Access revoked",
     "message": "Your access to the Members App has been revoked. Please contact {gymName} for more information.",
     "message_no_gym": "Your access to the Members App has been revoked. Please contact your gym for more information."
+  },
+  "family": {
+    "title": "My family",
+    "loading": "Loading…",
+    "empty": "No family members to show."
   }
 }
