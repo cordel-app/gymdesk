@@ -8,6 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, snapshotTestAssignment, legacyChildQuery } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -121,7 +122,7 @@ describe('POST /membership-plans/:id/assign — manual Promotion selection (#280
     const planId = await createPlan(gymId);
     const newOnly = await createPromo(gymId, planId, { newOnly: true });
     const memberId = await createMember(gymId);
-    const { insertId: liveId } = await db.query(
+    const { insertId: liveId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
        VALUES (?, ?, ?, 'active', CURDATE())`,
       [gymId, memberId, planId],
@@ -200,7 +201,7 @@ describe('GET /promotions?for_member_id= (#2809)', () => {
 
   it('marks a new-members-only Promotion ineligible, with its reason, for a current member', async () => {
     const memberId = await createMember(gymId);
-    const { insertId: liveId } = await db.query(
+    const { insertId: liveId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
        VALUES (?, ?, ?, 'active', CURDATE())`,
       [gymId, memberId, planId],

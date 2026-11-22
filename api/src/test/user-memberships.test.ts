@@ -11,6 +11,7 @@ import {
   createTestMembership,
   request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery, legacyChildQuery,
   createTestDraftAssignment, activateTestAssignment, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -969,7 +970,7 @@ describe('DELETE /user-memberships/:id', () => {
     const umId = await createUserMembershipDirect(gymId, memberId, planId);
     // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
     // at once (a plan running to today or later is `active_cancel_at_period_end`).
-    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
+    await testAssignmentWrite('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await snapshotTestAssignment(umId); // #2125 M6b-27: the bridge reads the plan snapshot
     const res = await request
       .delete(`/user-memberships/${umId}`)
@@ -987,8 +988,8 @@ describe('DELETE /user-memberships/:id', () => {
     const umId = await createUserMembershipDirect(gymId, memberId, planId);
     // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
     // at once (a plan running to today or later is `active_cancel_at_period_end`).
-    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
-    await db.query('UPDATE user_memberships SET ends_at = NULL WHERE id = ?', [umId]);
+    await testAssignmentWrite('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
+    await testAssignmentWrite('UPDATE user_memberships SET ends_at = NULL WHERE id = ?', [umId]);
     await snapshotTestAssignment(umId); // #2125 M6b-27: the bridge reads the plan snapshot
     await request.delete(`/user-memberships/${umId}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     const { rows } = await db.query('SELECT status, ends_at FROM user_memberships WHERE id = ?', [umId]);
@@ -998,7 +999,7 @@ describe('DELETE /user-memberships/:id', () => {
     const other = await createUserMembershipDirect(gymId, await createMember(gymId), planId);
     // A stored end date is not what the member paid for: with nothing paid,
     // access ends the day before the cancellation (cancellationEndDate()).
-    await db.query("UPDATE user_memberships SET starts_at = '2020-01-01', ends_at = '2030-01-31' WHERE id = ?", [other]);
+    await testAssignmentWrite("UPDATE user_memberships SET starts_at = '2020-01-01', ends_at = '2030-01-31' WHERE id = ?", [other]);
     await snapshotTestAssignment(other); // #2125 M6b-27: the bridge reads the plan snapshot
     await request.delete(`/user-memberships/${other}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     const ended = await db.query(
@@ -2115,7 +2116,7 @@ describe('POST /user-memberships/:id/close', () => {
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
     // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
     // at once (a plan running to today or later is `active_cancel_at_period_end`).
-    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
+    await testAssignmentWrite('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await snapshotTestAssignment(umId); // #2125 M6b-27: the bridge reads the plan snapshot
     await setNextBillingDate(umId, null);
 
@@ -2145,7 +2146,7 @@ describe('POST /user-memberships/:id/close', () => {
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
     // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
     // at once (a plan running to today or later is `active_cancel_at_period_end`).
-    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
+    await testAssignmentWrite('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await snapshotTestAssignment(umId); // #2125 M6b-27: the bridge reads the plan snapshot
     await setNextBillingDate(umId, 'DATE_SUB(CURDATE(), INTERVAL 1 DAY)');
 
@@ -2166,7 +2167,7 @@ describe('POST /user-memberships/:id/close', () => {
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
     // #2659 stage 2: started a month ago and unpaid, so access ends yesterday and the plan is `cancelled`
     // at once (a plan running to today or later is `active_cancel_at_period_end`).
-    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
+    await testAssignmentWrite('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [umId]);
     await snapshotTestAssignment(umId); // #2125 M6b-27: the bridge reads the plan snapshot
     await setNextBillingDate(umId, 'DATE_ADD(CURDATE(), INTERVAL 7 DAY)');
 

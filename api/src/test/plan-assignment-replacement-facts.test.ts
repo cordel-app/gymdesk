@@ -9,6 +9,7 @@ import {
 import { nameAssignmentSnapshot } from '../api/plan-assignment-sync';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let seq = 0;
@@ -76,7 +77,7 @@ describe('an assignment\'s replacement is its plan snapshot\'s', () => {
     expect(await snapshotOf(replacement)).toMatchObject({ replaceOnActivation: 0, replacesAssignmentId: originalAnchor });
 
     // The legacy row disagrees on every fact; nothing reads it any more.
-    await db.query(
+    await testAssignmentWrite(
       `UPDATE user_memberships SET replace_on_activation = 1, replaces_user_membership_id = NULL,
               deleted_at = UTC_TIMESTAMP(), deleted_by = 'Legacy' WHERE id = ?`, [replacement]);
     const set = await setOf(replacement);
@@ -101,7 +102,7 @@ describe('an assignment\'s replacement is its plan snapshot\'s', () => {
       'UPDATE plan_snapshots SET replace_on_activation = 1, replaces_assignment_id = ? WHERE id = ?',
       [replacedAnchor, snapshot]);
 
-    const { insertId } = await db.query(
+    const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, status, created_by)
        SELECT member_id, gym_id, membership_plan_id, starts_at, 'in_cart', 'Test' FROM user_memberships WHERE id = ?`,
       [first]);

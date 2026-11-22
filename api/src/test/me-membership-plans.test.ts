@@ -166,7 +166,7 @@ describe('GET /me/membership-plans', () => {
   it('hides a new-members-only Promotion from a member who holds a live plan', async () => {
     const member = await createMember();
     const livePlan = await createPlan({ price: null });
-    const { insertId: liveId } = await db.query(
+    const { insertId: liveId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at) VALUES (?, ?, ?, 'active', CURDATE())`,
       [gymId, member.id, livePlan],
     );
@@ -323,6 +323,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
 // ─── The paid plan reaches the member's own page (#1325 PR 3a) ───────────────
 
 import crypto from 'crypto';
+import { testAssignmentWrite } from './assignmentFixture';
 
 describe('a ProductSet plan paid through the webhook is the member\'s plan', () => {
   const SECRET = 'mmp-productset-webhook';

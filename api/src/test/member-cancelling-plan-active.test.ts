@@ -11,6 +11,7 @@ import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
 // The migration that gives Active sets activated before #2659 stage 3 their entitlement links.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 import { settlePlanAssignmentLifecycles } from '../api/plan-assignment-settle';
+import { testAssignmentWrite } from './assignmentFixture';
 const backfill = require('../infra/migrations/418_backfill_entitlement_plan_links.js');
 
 let gymId: string;
@@ -53,7 +54,7 @@ async function cancellingPlan() {
   const um = await createTestDraftAssignment(gymId, m.id, planId, { config: { membership_fee_price: 30 } });
   expect((await asAdmin('post', `/user-memberships/${um}/activate`).send({ on_conflict: 'add' })).status).toBeLessThan(300);
   // A future end date, so the cancellation keeps it running rather than ending it today.
-  await db.query('UPDATE user_memberships SET ends_at = UTC_DATE() + INTERVAL 20 DAY WHERE id = ?', [um]);
+  await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() + INTERVAL 20 DAY WHERE id = ?', [um]);
   expect((await asAdmin('delete', `/user-memberships/${um}`)).status).toBe(204);
   const { rows } = await db.query<{ status: string }>('SELECT status FROM user_memberships WHERE id = ?', [um]);
   expect(rows[0].status).toBe(CANCELS_AT_PERIOD_END_STATUS);
@@ -94,7 +95,7 @@ describe('a plan that cancels on its end date, in the Members App', () => {
 
   it('moves to Past once its end date has passed', async () => {
     const { m, um, setId } = await cancellingPlan();
-    await db.query('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [um]);
+    await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [um]);
     // #2125 M6b-14: the Past list reads the plan snapshot, which the sync keeps on the same date.
     await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [um]);
 

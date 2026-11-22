@@ -12,6 +12,7 @@ import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import { findUnsettledActiveSets } from '../api/plan-assignment-lifecycle';
 import { settlePlanAssignmentLifecycles } from '../api/plan-assignment-settle';
 import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let seq = 0;
@@ -247,7 +248,7 @@ describe('the repair of plans that ended before this stage', () => {
 
   it('a plan a changed plan took over is stated as superseded', async () => {
     const { um, active, original } = await endedBeforeThisStage();
-    await db.query("UPDATE user_memberships SET status = 'superseded' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'superseded' WHERE id = ?", [um]);
     // The history this stands for is on the anchor too, as migration 453's backfill put it (M6b-51c-5).
     await repairAnchorLifecycles(db, gymId);
     expect(await unsettled()).toContain(active);

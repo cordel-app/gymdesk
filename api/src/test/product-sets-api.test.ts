@@ -21,6 +21,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const SECRET = 'test-productset-webhook';
 let gymId: string;
@@ -242,7 +243,7 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
   it('refuses a plan for a Member already on one (#956) and offers no confirmation', async () => {
     const memberId = await member();
     const planId = await plan(0);
-    const { insertId } = await db.query(
+    const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at) VALUES (?, ?, ?, 'active', ?)`,
       [gymId, memberId, planId, TODAY]);
     // #2125 M6b-51d-3: the one-plan check reads the assignment's anchor snapshot.

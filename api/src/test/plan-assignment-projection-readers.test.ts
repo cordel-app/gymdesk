@@ -12,6 +12,7 @@ import {
 } from './helpers';
 import { addCoverage, createDraft } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let seq = 0;
@@ -52,7 +53,7 @@ async function commit(owner: number, planId: number, fee: number): Promise<numbe
 }
 
 const setLegacy = (um: number, column: string, value: string) =>
-  db.query(`UPDATE user_memberships SET ${column} = ? WHERE id = ?`, [value, um]);
+  testAssignmentWrite(`UPDATE user_memberships SET ${column} = ? WHERE id = ?`, [value, um]);
 const setSnapshots = (um: number, column: string, value: string) =>
   db.query(`UPDATE plan_snapshots SET ${column} = ? WHERE gym_id = ? AND source_user_membership_id = ?`, [value, gymId, um]);
 

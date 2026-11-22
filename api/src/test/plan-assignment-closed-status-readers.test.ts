@@ -8,6 +8,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -108,7 +109,7 @@ describe('the enrollment status is read from plan_snapshots', () => {
   it('the snapshot is the record: a user_memberships row that disagrees does not move it', async () => {
     const m = await member();
     const um = await run(m, (await plan()).id);
-    await db.query("UPDATE user_memberships SET status = 'paused' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'paused' WHERE id = ?", [um]);
     expect((await row(m)).enrollment_status).toBe('active');
   });
 
@@ -144,7 +145,7 @@ describe('the New Member rule reads plan_snapshots', () => {
   it('the snapshot is the record: a user_memberships row that disagrees does not move it', async () => {
     const m = await member();
     const um = await run(m, (await plan()).id);
-    await db.query(
+    await testAssignmentWrite(
       "UPDATE user_memberships SET status = 'expired', ends_at = CURDATE() - INTERVAL 24 MONTH WHERE id = ?", [um]);
     expect((await row(m)).is_new_member).toBe(false);
   });

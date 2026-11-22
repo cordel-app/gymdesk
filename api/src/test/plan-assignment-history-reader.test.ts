@@ -8,6 +8,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let seq = 0;
@@ -69,7 +70,7 @@ describe('the Member card plan history reads plan_snapshots', () => {
 
   it('follows the snapshot when the legacy row disagrees', async () => {
     const { owner, um } = await activePlan();
-    await db.query(
+    await testAssignmentWrite(
       `UPDATE user_memberships SET status = 'cancelled', starts_at = '2001-01-01', modified_by = 'Legacy Only'
         WHERE id = ?`, [um]);
     const row = await historyRow(owner, um);

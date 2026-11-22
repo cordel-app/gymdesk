@@ -37,6 +37,7 @@ import {
 import { ACTIVE_PLAN_EXISTS } from '../domain/oneActivePlan';
 import { planSnapshotInheritedSql } from '../api/plan-snapshot-lines';
 import { legacyProductInsert } from './legacyProductFixture';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -114,7 +115,7 @@ async function assignDraft(
  * staged with a legacy row, which is exactly what the commit lock still guards.
  */
 async function legacyDraft(memberId: number, planId: number, startsAt: string, gym = gymId): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await testAssignmentWrite(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, starts_at, status)
      VALUES (?, ?, ?, ?, 'in_cart')`,
     [gym, memberId, planId, startsAt],
@@ -668,7 +669,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(draftSnap.map((r: any) => Number(r.r))).toEqual([Number(anchorB[0].id)]);
 
     // The legacy column no longer decides: with it cleared, the commit still names B alone.
-    await db.query('UPDATE user_memberships SET replaces_user_membership_id = NULL WHERE id = ?', [created.body.id]);
+    await testAssignmentWrite('UPDATE user_memberships SET replaces_user_membership_id = NULL WHERE id = ?', [created.body.id]);
     const asked = await commit(created.body.id);
     expect(asked.status).toBe(409);
     expect(asked.body.conflicts.map((x: any) => x.id)).toEqual([umB]);

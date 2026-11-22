@@ -14,6 +14,7 @@ import { discardDraftSet, ownPlanSnapshot } from '../api/plan-snapshot-ownership
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
+import { testAssignmentWrite } from './assignmentFixture';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const migration = require('../infra/migrations/419_plan_assignment_identity.js');
@@ -119,7 +120,7 @@ describe('assignment identity', () => {
 
     // A legacy value the writers did not write is not what the snapshot holds: a later sync (a pause
     // re-syncs the owner's Active set) leaves the snapshot's own purchase time alone.
-    await db.query("UPDATE user_memberships SET purchased_at = '2001-01-01 00:00:00' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET purchased_at = '2001-01-01 00:00:00' WHERE id = ?", [um]);
     expect((await auth(request.put(`/user-memberships/${um}`)).send({ status: 'paused' })).status).toBe(200);
     const [after] = await snapshotsOf(um);
     expect(after.status).toBe('paused');
@@ -222,7 +223,7 @@ describe('the drift check', () => {
     await activate(um);
     const [snap] = await snapshotsOf(um);
     // The assignment's own stored value, written the way the sweep and the cancel write it.
-    await db.query('UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() WHERE id = ?', [CANCELS_AT_PERIOD_END_STATUS, um]);
+    await testAssignmentWrite('UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() WHERE id = ?', [CANCELS_AT_PERIOD_END_STATUS, um]);
     // The history this stands for is on the anchor too, as migration 453's backfill put it (M6b-51c-5).
     await repairAnchorLifecycles(db, gymId);
     const { syncPlanSnapshotsForAssignment } = await import('../api/plan-snapshot-sync');
@@ -253,7 +254,7 @@ describe('the drift check', () => {
          (SELECT product_set_id FROM product_set_plan_snapshots WHERE plan_snapshot_id = ?) ORDER BY id DESC LIMIT 1`,
       [gymId, carried[0].id]);
     await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, entitlement_only) VALUES (?, ?, 1)', [other[0].id, carried[0].id]);
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     const row = (await check('lifecycle_mismatch')).sample.find((r) => Number(r.user_membership_id) === um);
     expect(row).toBeDefined();
     expect(String(row!.fields)).toContain('status');

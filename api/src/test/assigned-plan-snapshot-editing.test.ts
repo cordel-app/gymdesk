@@ -16,6 +16,7 @@ import {
   createTestGym,
   createTestMembership,
   request, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -327,7 +328,7 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
 
   it('refuses to rewrite the configuration of a cancelled assignment', async () => {
     const other = await assignConfiguredPlan(gymId);
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [other.umId]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [other.umId]);
     await snapshotTestAssignment(other.umId); // #2125 M6b-27: the bridge reads the plan snapshot
     expect((await putBenefits(gymId, other.umId, 'periodical-benefits', [])).status).toBe(400);
     expect((await putBillingDuration(gymId, other.umId, { paid_periods: 1 })).status).toBe(400);

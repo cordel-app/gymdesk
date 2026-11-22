@@ -21,6 +21,7 @@ import {
   request,
   snapshotTestAssignment,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -107,7 +108,7 @@ describe('#958 — the creation actor is snapshotted by every path that assigns 
 
     // A different actor's name on the first row, so "the successor records who
     // assigned *it*" is asserted rather than coincidentally true.
-    await db.query(
+    await testAssignmentWrite(
       'UPDATE user_memberships SET created_by = ? WHERE id = ?',
       ['Earlier Admin', first.body.id],
     );
@@ -161,7 +162,7 @@ describe('#958 — the creation actor is snapshotted by every path that assigns 
     const planId = await createPlan(gymId, `Actor Legacy Plan ${uniq()}`);
     // A row written before migration 215 with no audit history to backfill from
     // — the card renders an em dash for it.
-    const { insertId } = await db.query(
+    const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
        VALUES (?, ?, ?, 'active', '2026-03-01')`,
       [gymId, memberId, planId],

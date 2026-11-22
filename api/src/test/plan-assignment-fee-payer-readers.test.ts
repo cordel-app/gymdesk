@@ -6,6 +6,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let seq = 0;
@@ -68,7 +69,7 @@ describe('record-payment records the payment for the assignment snapshot\'s owne
     expect((await auth(request.post(`/user-memberships/${um}/save-and-pay`)).send({})).status).toBeLessThan(300);
 
     // The legacy row disagrees with the snapshot; the payment follows the snapshot.
-    await db.query('UPDATE user_memberships SET member_id = ? WHERE id = ?', [await member(), um]);
+    await testAssignmentWrite('UPDATE user_memberships SET member_id = ? WHERE id = ?', [await member(), um]);
     const res = await auth(request.post(`/user-memberships/${um}/record-payment`)).send({});
     expect(res.status).toBeLessThan(300);
 

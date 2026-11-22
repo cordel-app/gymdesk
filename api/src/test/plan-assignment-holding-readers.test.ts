@@ -10,6 +10,7 @@ import { violatesOnePerMember } from '../api/one-per-member';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -137,7 +138,7 @@ describe('One per Member reads the plans a Member holds from plan_snapshots', ()
   it('the snapshot is the record: a user_memberships row that disagrees does not release the Product', async () => {
     const m = await member();
     const um = await run(m.id, await plan({ withLocker: true }));
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     expect(await holdsLocker(m.id)).toBe(true);
   });
 });
@@ -182,7 +183,7 @@ describe('the Members App reads "already holds a plan" from plan_snapshots', () 
   it('the snapshot is the record: a user_memberships row that disagrees does not open the choice', async () => {
     const m = await member();
     const um = await run(m.id, await plan());
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     expect((await choose(m.userId, await plan())).body.error).toBe('plan_change_via_gym');
   });
 });

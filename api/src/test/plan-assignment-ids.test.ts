@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { allocateAssignmentId } from '../api/assignment-lifecycle-writer';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -60,7 +61,7 @@ describe('assignment ids come from plan_assignment_ids (#2125 M6b-51d-1)', () =>
 
   it('a hand-written legacy row cannot collide with a later created assignment', async () => {
     const m = await member();
-    const { insertId: legacyId } = await db.query(
+    const { insertId: legacyId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, status)
        VALUES (?, ?, ?, '2026-06-01', 'cancelled')`, [m, gymId, await plan()]);
     expect(await registered(legacyId)).toEqual({ gym_id: gymId });

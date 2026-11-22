@@ -7,6 +7,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 vi.mock('@clerk/backend', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@clerk/backend')>();
@@ -93,7 +94,7 @@ describe('GET /me/membership reads the plan awaiting payment from plan_snapshots
   it('a legacy row that says pending payment does not make the running plan one', async () => {
     const m = await member();
     const um = await run(m, await plan());
-    await db.query("UPDATE user_memberships SET status = 'pending_payment' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'pending_payment' WHERE id = ?", [um]);
 
     expect((await membership(m)).pending_membership).toBeNull();
   });
@@ -108,7 +109,7 @@ describe('the Billing Simulation reads its assignments from plan_snapshots', () 
   it('simulates the plan the snapshot says is running, and not one only the legacy row calls running', async () => {
     const m = await member();
     const um = await run(m, await plan());
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     expect((await simulation(m)).available).toBe(true);
 
     const closed = await member();

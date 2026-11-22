@@ -13,6 +13,7 @@ import { settlePlanAssignmentLifecycles } from '../api/plan-assignment-settle';
 import { deleteUnlinkedPlanSnapshots, repairAnchorLifecycles } from '../api/plan-assignment-sync';
 import { loadProductSetSimulationAssignments } from '../api/plan-snapshot-assignments';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const SECRET = 'plan-assignment-lifecycle-secret';
 process.env.BILLING_INTERNAL_SECRET = SECRET;
@@ -297,7 +298,7 @@ describe('cancelling a plan', () => {
     const draft = await draftOf(m);
     expect((await linkOfSet(m, draft)).map((l) => l.snapshot)).toEqual([carried.snapshot]);
 
-    await db.query('UPDATE user_memberships SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE id = ?', [um]);
+    await testAssignmentWrite('UPDATE user_memberships SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE id = ?', [um]);
     // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.
     await db.query('UPDATE plan_snapshots SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE source_user_membership_id = ?', [um]);
     // #2125 M6b-51c-4: and the assignment's own end date on its anchor, which the hand-written change skips.
@@ -321,7 +322,7 @@ describe('the repair of changes made before the writer existed', () => {
     const active = await activeSetOf(m);
     const [before] = await linkOfSet(m, active);
     // What a pause looked like before this stage: the assignment moved, the shared snapshot did not.
-    await db.query("UPDATE user_memberships SET status = 'paused' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'paused' WHERE id = ?", [um]);
     // The history this stands for is on the anchor too, as migration 453's backfill put it (M6b-51c-5).
     await repairAnchorLifecycles(db, gymId);
     expect((await findUnsettledActiveSets(db, gymId)).map((s) => s.productSetId)).toContain(active);

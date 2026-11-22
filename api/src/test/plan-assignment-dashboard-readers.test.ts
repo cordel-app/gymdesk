@@ -8,6 +8,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
   seedScheduledEvent,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -129,7 +130,7 @@ describe('the Financials dashboard counts assigned plans from plan_snapshots', (
   it('the snapshot is the record: a user_memberships row that disagrees does not move the count', async () => {
     const p = await plan();
     const um = await run(await member(), p.id);
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     expect(await assigned(p.id)).toBe(1);
   });
 });
@@ -203,7 +204,7 @@ describe('the card-removal check reads the plan\'s status from plan_snapshots', 
     expect(blocked.member_can_remove).toBe(false);
     expect(blocked.removal_blocked_reason).toBe('billable_membership');
 
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     expect(must(await card(m), 'card').body.member_can_remove).toBe(false);
   });
 

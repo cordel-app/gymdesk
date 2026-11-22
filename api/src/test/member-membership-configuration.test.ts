@@ -29,6 +29,7 @@ import {
   createTestGym,
   createTestMembership,
   request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -780,7 +781,7 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
     const lapsedUm = await createAssignment(gymId, memberId, oldPlan, {
       status: 'expired', startsAt: '2022-01-01',
     });
-    await db.query(
+    await testAssignmentWrite(
       'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH, created_at = ? WHERE id = ?',
       ['2022-01-01 09:00:00', lapsedUm],
     );

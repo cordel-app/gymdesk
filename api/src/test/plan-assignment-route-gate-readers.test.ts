@@ -7,6 +7,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -47,7 +48,7 @@ async function running(): Promise<number> {
 
 /** The legacy row's status, leaving every plan snapshot as it is. */
 const setLegacyStatus = (um: number, status: string) =>
-  db.query('UPDATE user_memberships SET status = ? WHERE id = ?', [status, um]);
+  testAssignmentWrite('UPDATE user_memberships SET status = ? WHERE id = ?', [status, um]);
 const setSnapshotStatus = (um: number, status: string) =>
   db.query('UPDATE plan_snapshots SET status = ? WHERE gym_id = ? AND source_user_membership_id = ?', [status, gymId, um]);
 
@@ -85,7 +86,7 @@ describe('the PUT status gates read the plan snapshot', () => {
 describe('the read routes find the assignment through its plan snapshot', () => {
   it('answers the cancellation preview with no legacy row in the gym', async () => {
     const um = await running();
-    await db.query('UPDATE user_memberships SET gym_id = ? WHERE id = ?', [otherGymId, um]);
+    await testAssignmentWrite('UPDATE user_memberships SET gym_id = ? WHERE id = ?', [otherGymId, um]);
     const res = await auth(request.get(`/user-memberships/${um}/cancellation-preview`));
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('ends_on');

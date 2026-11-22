@@ -7,6 +7,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const migration = require('../infra/migrations/427_plan_snapshot_assignment_modifier.js');
@@ -71,7 +72,7 @@ describe('the assignment modifier on plan_snapshots', () => {
 
   it('the backfill copies the legacy pair onto every snapshot naming the row, and is repeatable', async () => {
     const um = await createTestDraftAssignment(gymId, await member(), await plan());
-    await db.query(
+    await testAssignmentWrite(
       `UPDATE user_memberships SET modified_at = '2026-01-02 03:04:05', modified_by = 'Backfill Person' WHERE id = ?`, [um]);
     await db.query('UPDATE plan_snapshots SET modified_at = NULL, modified_by = NULL WHERE source_user_membership_id = ?', [um]);
 
