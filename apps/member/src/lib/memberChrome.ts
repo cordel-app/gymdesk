@@ -239,6 +239,23 @@ export function statusPillStyle(tone: StatusTone): CSSProperties {
   };
 }
 
+/**
+ * #3156 stage 3 — a chip that labels a role rather than a state (the Family
+ * page's **Owner**). It wears the Theme's own primary button pair, fill and
+ * text, so it follows the gym's brand exactly as a primary action does; a
+ * status colour would read it as a state, which it is not. The geometry is the
+ * status pill's, so the two kinds of chip sit at the same size.
+ */
+export const accentChipStyle: CSSProperties = {
+  background: memberTheme.primaryButton,
+  color: memberTheme.primaryButtonText,
+  borderRadius: 999,
+  padding: '3px 10px',
+  fontSize: 12,
+  fontWeight: 600,
+  whiteSpace: 'nowrap',
+};
+
 const STATUS_TONE_COLOR: Record<StatusTone, string> = {
   success: memberTheme.statusSuccess,
   warning: memberTheme.statusWarning,

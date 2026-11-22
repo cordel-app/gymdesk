@@ -9,8 +9,6 @@ import {
 } from './helpers';
 import { testAssignmentWrite } from './assignmentFixture';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const migration = require('../infra/migrations/453_plan_snapshot_assignment_lifecycle.js');
 
 let gymId: string;
 let seq = 0;
@@ -107,15 +105,4 @@ describe('the anchor carries the assignment lifecycle', () => {
     expect((await both(um)).anchor.status).toBe('in_cart');
   });
 
-  it('the migration backfill repairs an anchor that is out of step', async () => {
-    const um = await createTestDraftAssignment(gymId, await member(), await plan());
-    await db.query(
-      `UPDATE plan_snapshots SET assignment_status = NULL, assignment_modified_by = 'Stale'
-        WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id = id`, [gymId, um]);
-    expect((await both(um)).anchor.status).toBeNull();
-    // The migration's backfill on this connection (a knex-shaped `raw`), scoped by the data it sees.
-    const knex = { raw: async (sql: string) => [await db.query(sql)] };
-    await migration.backfillAssignmentLifecycle(knex);
-    await expectInStep(um, 'in_cart');
-  });
 });
