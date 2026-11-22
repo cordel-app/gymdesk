@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type ReactNode, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useState } from 'react';
 import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
@@ -65,13 +65,16 @@ export function PaymentsSection({ children }: { children: ReactNode }) {
  * Payment opens, the other two stay closed — and it is the *initial* state only,
  * so a member who opened Past Billing Events keeps it open while they read it.
  */
-export function PaymentsSubcard({ title, summary, defaultOpen = false, children }: {
+export function PaymentsSubcard({ title, summary, defaultOpen = false, forceOpen = false, children }: {
   title: string;
   summary?: string | null;
   defaultOpen?: boolean;
+  /** #3235 — *View payment* opened this subcard to reach one of its payments. */
+  forceOpen?: boolean;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(defaultOpen || forceOpen);
+  useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
   return (
     <div style={styles.subcard}>
       <button type="button" onClick={() => setOpen((prev) => !prev)} aria-expanded={open} style={styles.subcardToggle}>
@@ -97,8 +100,12 @@ export function PaymentsSubcard({ title, summary, defaultOpen = false, children 
  * subcards remain one structure.
  */
 export function BillingEventCard({
-  date, total, totalLabel, lines, badge, prominent = false, footer,
+  date, total, totalLabel, lines, badge, prominent = false, footer, anchorId, highlighted = false,
 }: {
+  /** #3235 — the DOM id *View payment* scrolls to. */
+  anchorId?: string;
+  /** #3235 — the payment *View payment* opened, outlined so the member finds it. */
+  highlighted?: boolean;
   date: string;
   total: string | null;
   totalLabel: string;
@@ -109,7 +116,7 @@ export function BillingEventCard({
   footer?: ReactNode;
 }) {
   return (
-    <div style={styles.eventCard}>
+    <div id={anchorId} style={highlighted ? { ...styles.eventCard, ...styles.eventCardHighlighted } : styles.eventCard}>
       <div style={styles.eventHead}>
         <span style={prominent ? styles.eventDateLarge : styles.eventDate}>{date}</span>
         {badge}
@@ -232,6 +239,7 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex', flexDirection: 'column', gap: 10, padding: '12px',
   },
   eventCard: { ...sectionCardStyle, padding: '12px 14px' },
+  eventCardHighlighted: { outline: `2px solid ${memberTheme.primaryButton}`, outlineOffset: 2 },
   eventHead: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     gap: 8, flexWrap: 'wrap',

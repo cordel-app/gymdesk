@@ -59,6 +59,8 @@ export interface ForecastLine {
   /** #2883 — the cadence those periods are counted in; `null` (or absent) on every other line. */
   prepaid_cadence?: { interval: number; unit: string } | null;
   benefits: ForecastBenefit[];
+  /** #3235 — the assignment whose forecast the line came from (the API's own tag). */
+  user_membership_id?: number;
 }
 
 /** Every line that falls on one future billing date, and what that date costs. */
@@ -166,6 +168,35 @@ export function nextPaymentDate(forecast: BillingEventForecast | null): Forecast
 export function forecastDatesAfterNext(forecast: BillingEventForecast | null): ForecastDate[] {
   if (!forecast?.available) return [];
   return forecast.dates.slice(1);
+}
+
+/**
+ * #3235 — the next scheduled payment a plan is part of: the first forecast date
+ * carrying a line of its assignment. Its `total` is that payment's amount — the
+ * whole Billing Event charged on that date, never one line's price. `null` when
+ * the plan has no assignment yet or nothing further is scheduled for it.
+ */
+export function planNextPayment(
+  forecast: BillingEventForecast | null, userMembershipId: number | null | undefined,
+): ForecastDate | null {
+  if (!forecast?.available || userMembershipId == null) return null;
+  return forecast.dates.find((d) => d.lines.some((l) => l.user_membership_id === userMembershipId)) ?? null;
+}
+
+/**
+ * #3235 — the next scheduled payment a recurring Product line is part of: the
+ * first forecast date carrying a Product line of that Product. `null` when none.
+ */
+export function productNextPayment(
+  forecast: BillingEventForecast | null, productId: number | null | undefined,
+): ForecastDate | null {
+  if (!forecast?.available || productId == null) return null;
+  return forecast.dates.find((d) => d.lines.some((l) => l.kind === 'product' && l.product_id === productId)) ?? null;
+}
+
+/** The DOM id of a forecast payment's card on the Payments tab, so *View payment* can reach it. */
+export function forecastPaymentAnchorId(date: string): string {
+  return `payment-forecast-${date}`;
 }
 
 /** The numeric amount of a ledger row, or `null` for a row that records no money. */

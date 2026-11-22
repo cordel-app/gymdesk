@@ -68,6 +68,8 @@ export interface BillingEventLine {
   fee_split?: FeeChargeSplit | null;
   /** Why `actual_charge` differs from `regular_price`; empty at the regular price. */
   benefits: SimulationBenefit[];
+  /** #3235 — the assignment whose forecast the line came from; set only by the member's forecast. */
+  user_membership_id?: number;
 }
 
 /** Every line that falls on one billing date, and what that date costs. */

@@ -101,6 +101,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 /** One Membership Plan of the version, as the Members App's *My Plans* draws it (#2663). */
 export interface MemberProductSetPlan {
   plan_snapshot_id: number;
+  /** #3235 — the assignment's id (as the forecast names it), or null for a plan no assignment holds yet. */
+  user_membership_id: number | null;
   membership_plan_id: number | null;
   plan_name: string | null;
   plan_description: string | null;
@@ -318,6 +320,7 @@ export async function loadMemberProductSetView(
         : r.membership_fee_price != null ? Number(r.membership_fee_price) : null;
       return {
         plan_snapshot_id: Number(r.plan_snapshot_id),
+        user_membership_id: umId,
         membership_plan_id: r.membership_plan_id == null ? null : Number(r.membership_plan_id),
         plan_name: r.plan_name ?? null,
         plan_description: r.plan_description ?? null,
