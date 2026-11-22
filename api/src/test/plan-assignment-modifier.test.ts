@@ -10,8 +10,6 @@ import {
 } from './helpers';
 import { testAssignmentWrite } from './assignmentFixture';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const migration = require('../infra/migrations/427_plan_snapshot_assignment_modifier.js');
 
 let gymId: string;
 let seq = 0;
@@ -71,19 +69,4 @@ describe('the assignment modifier on plan_snapshots', () => {
     expect(new Date(snap.modified_at).getTime()).toBe(new Date(row.modified_at).getTime());
   });
 
-  it('the backfill copies the legacy pair onto every snapshot naming the row, and is repeatable', async () => {
-    const um = await createTestDraftAssignment(gymId, await member(), await plan());
-    await testAssignmentWrite(
-      `UPDATE user_memberships SET modified_at = '2026-01-02 03:04:05', modified_by = 'Backfill Person' WHERE id = ?`, [um]);
-    await db.query('UPDATE plan_snapshots SET modified_at = NULL, modified_by = NULL WHERE source_user_membership_id = ?', [um]);
-
-    const knex = { raw: async (sql: string) => [await db.query(sql)] };
-    await migration.backfillPlanAssignmentModifier(knex);
-    await migration.backfillPlanAssignmentModifier(knex);
-
-    const { rows } = await db.query<any>(
-      'SELECT modified_by, DATE_FORMAT(modified_at, "%Y-%m-%d %H:%i:%s") AS at FROM plan_snapshots WHERE source_user_membership_id = ?', [um]);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const r of rows) expect(r).toEqual({ modified_by: 'Backfill Person', at: '2026-01-02 03:04:05' });
-  });
 });

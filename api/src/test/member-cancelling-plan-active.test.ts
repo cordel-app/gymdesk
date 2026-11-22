@@ -13,7 +13,6 @@ import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 import { settlePlanAssignmentLifecycles } from '../api/plan-assignment-settle';
 import { testAssignmentWrite } from './assignmentFixture';
-const backfill = require('../infra/migrations/418_backfill_entitlement_plan_links.js');
 
 let gymId: string;
 let seq = 0;
@@ -107,26 +106,4 @@ describe('a plan that cancels on its end date, in the Members App', () => {
       expect.arrayContaining([expect.objectContaining({ id: um, lifecycle_status: 'cancelled' })]));
   });
 
-  it('is restored to an Active set that predates the entitlement links (migration 418)', async () => {
-    const { m, um, setId } = await cancellingPlan();
-    // Migration 418 read the cancellation off `user_memberships`, which was kept in step when it ran;
-    // since #2125 M6b-51d-7b only the anchor is, so the row is put back as it stood then.
-    await testAssignmentWrite(
-      `UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() + INTERVAL 20 DAY WHERE id = ?`,
-      [CANCELS_AT_PERIOD_END_STATUS, um], { mirror: false });
-    // An Active set activated before #2659 stage 3 carries no entitlement link.
-    await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 1', [setId]);
-    expect(await myPlans(m.clerk, setId)).toEqual([]);
-
-    const knex = { raw: (sql: string) => db.query(sql) };
-    await backfill.up(knex);
-    await backfill.up(knex); // repeatable
-    // #2125 M6b-18: My Plans reads the plan's status off its plan snapshot. The backfill links the
-    // superseded set's snapshot, and the M6b-2 settle step (run after it on every database) writes the
-    // cancellation onto the Active set's own copy, as `npm run plan-assignments:settle` does.
-    expect(await settlePlanAssignmentLifecycles({ gymId, execute: true })).toMatchObject({ remaining: 0 });
-    const plans = await myPlans(m.clerk, setId);
-    expect(plans).toHaveLength(1);
-    expect(plans[0]).toMatchObject({ status: 'cancels_on_end_date', entitlement_only: true });
-  });
 });

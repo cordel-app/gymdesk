@@ -1827,11 +1827,12 @@ describe('retired pre-activation statuses (#786)', () => {
     // #1108 stage 1 (migration 227) brought `draft` back and left this one
     // retired: #1108's second pre-activation state is *Pending Payment*, which
     // arrives with stage 2's Save & Pay rather than as a value nothing writes.
+    // #2125 M6b-51d-7c-2: the status is the plan snapshot's, whose CHECK is the one that refuses it.
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    await expect(legacyAssignmentQuery(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-       VALUES (?, ?, ?, 'awaiting_payment', CURDATE(), 29.99)`,
+    await expect(db.query(
+      `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at)
+       VALUES (?, ?, ?, 'awaiting_payment', CURDATE())`,
       [gymId, memberId, planId],
     )).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
   });

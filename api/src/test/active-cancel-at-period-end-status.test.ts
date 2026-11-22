@@ -55,10 +55,12 @@ afterAll(async () => {
 
 describe('user_memberships.status — active_cancel_at_period_end (#2659 stage 1)', () => {
   it('the CHECK accepts exactly the declared statuses', async () => {
+    // #2125 M6b-51d-7c-2: an assignment's status is stated on its plan snapshot, whose CHECK mirrors
+    // the declaration (`user_memberships_status_check` went with the table, migration 458).
     const { rows: checks } = await db.query(
       `SELECT cc.CHECK_CLAUSE AS clause
          FROM information_schema.CHECK_CONSTRAINTS cc
-        WHERE cc.CONSTRAINT_SCHEMA = DATABASE() AND cc.CONSTRAINT_NAME = 'user_memberships_status_check'`,
+        WHERE cc.CONSTRAINT_SCHEMA = DATABASE() AND cc.CONSTRAINT_NAME = 'chk_plan_snapshots_status'`,
     );
     const values = [...String(checks[0].clause).replace(/\\/g, '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
     expect(values).toEqual([...ASSIGNMENT_STATUSES].sort());

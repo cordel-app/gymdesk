@@ -59,7 +59,6 @@ export const RESET_STEPS: readonly ResetStep[] = [
   { table: 'billing_event_lines', reason: 'child of billing_events', optional: true },
   { table: 'payment_requests', reason: 'would survive with no billing event (all sources, card_update included)' },
   { table: 'billing_events', reason: 'the ledger being reset' },
-  { table: 'user_memberships', reason: 'the assigned Membership Plans' },
   { table: 'product_set_schedules', reason: 'ProductSet rows created since PR 1', optional: true },
   { table: 'product_sets', reason: 'ProductSet rows created since PR 1', optional: true, uncascaded: true },
 ];
