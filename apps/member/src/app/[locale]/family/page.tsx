@@ -10,7 +10,7 @@ import { ImagePreviewButton } from '@/components/ImagePreview';
 import {
   familyMemberPreviewSrc, familySectionMembers, type FamilyMenuMember,
 } from '@/lib/memberUserMenu';
-import { memberTheme, sectionCardStyle, statusPillStyle } from '@/lib/memberChrome';
+import { accentChipStyle, memberTheme, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
  * #3156 stage 2 — the Family page, opened from the avatar menu's **Family**
@@ -87,6 +87,6 @@ const styles: Record<string, CSSProperties> = {
     flex: 1, minWidth: 0, fontSize: 16, fontWeight: 500, color: memberTheme.text,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
-  ownerChip: { ...statusPillStyle('info'), padding: '2px 10px', fontSize: 12, flexShrink: 0 },
+  ownerChip: { ...accentChipStyle, flexShrink: 0 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };
