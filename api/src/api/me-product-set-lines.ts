@@ -14,6 +14,7 @@ import { productBenefitPrices } from './product-benefit-pricing';
 import { loadPlanAccessEntries } from './plan-center-access';
 import type { PlanAccessEntry } from '../domain/planAccessBenefit';
 import { toProductBenefit } from '../domain/productBenefitActions';
+import { loadPlanPromotionsForView, withPromotionDescriptions, type PlanViewPromotion } from './cart-promotion-terms';
 
 /**
  * #2496 stage 2 — the member's own view of one Product Set version, read from
@@ -138,6 +139,11 @@ export interface MemberProductSetPlan {
      * exactly as the Assigned Plan card's grid does; `null` when it cannot be priced.
      */
     final_price: number | null }[];
+  /**
+   * #3154 — the plan's standing Promotions as the member reads them: name, picture,
+   * description and main terms (`cart-promotion-terms.ts`), never a price.
+   */
+  promotions: PlanViewPromotion[];
 }
 
 /**
@@ -172,6 +178,9 @@ export async function loadMemberProductSetView(
       pct: r.direct_discount_percent == null ? null : Number(r.direct_discount_percent),
     };
   }));
+
+  // #3154: a line's applied Promotion carries its description for the member's detail modal.
+  await withPromotionDescriptions(gymId, [...promos.values()].map((e) => e.promotions as Array<{ promotion_id: number }>));
 
   const shapeLine = (r: any, change: 'added' | 'inherited'): MemberProductSetLine => {
     const quantity = Number(r.quantity) || 1;
@@ -301,6 +310,7 @@ export async function loadMemberProductSetView(
       gymId, r.membership_plan_id == null ? null : Number(r.membership_plan_id),
       beneficiaries.get(Number(r.plan_snapshot_id)) ?? []));
   }
+  const planPromotions = await loadPlanPromotionsForView(gymId, snapshotIds);
   const plans: MemberProductSetPlan[] = planRows
     .map((r) => {
       const umId = r.user_membership_id == null ? null : Number(r.user_membership_id);
@@ -332,6 +342,7 @@ export async function loadMemberProductSetView(
         beneficiaries: beneficiaries.get(Number(r.plan_snapshot_id)) ?? [],
         plan_access: accessBySnapshot.get(Number(r.plan_snapshot_id)) ?? [],
         benefits: benefits.get(Number(r.plan_snapshot_id)) ?? [],
+        promotions: planPromotions.get(Number(r.plan_snapshot_id)) ?? [],
       };
     })
     .filter((p) => isOwnerView || p.beneficiaries.some((b) => b.member_id === viewer!.memberId))

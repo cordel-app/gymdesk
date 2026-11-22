@@ -32,6 +32,33 @@ export interface MemberSetPurchase {
   currency?: string | null;
   assigned_member_id?: number | null;
   image_thumbnail_url?: string | null;
+  /** #3154 — the Product's own description and picture, and its applied Promotions. */
+  description?: string | null;
+  image_url?: string | null;
+  promotions?: CartPromotion[];
+}
+
+/**
+ * #3154 — a Promotion as the cart reads it beside a plan or a Product: a plan's
+ * carries its Free / Paid / Bonus months and Membership Fee Benefit, a Product's
+ * its treatment and the cycles it covers. Amounts are never shown.
+ */
+export interface CartPromotion {
+  id?: number;
+  promotion_id: number;
+  promotion_name?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
+  free_months?: number | null;
+  paid_months?: number | null;
+  bonus_months?: number | null;
+  membership_fee_benefit?: { action: string; value: number | null; duration_months: number | null } | null;
+  benefit_action?: string | null;
+  benefit_value?: number | null;
+  duration_cycles?: number | null;
 }
 
 /** A standalone one-time purchase in the cart (`GET /me/cart/purchases`, #2949 stage 4). */

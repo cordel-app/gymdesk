@@ -20,6 +20,8 @@ import { formatDraftRemaining, isDraftWarning, isExpiredDraft, showsDraftExactTi
 import { CartSummary } from '@/components/CartSummary';
 import { CartCard, toCartCardItems, cartBeneficiaryLabel } from '@/components/CartCard';
 import { MemberDialog } from '@/components/MemberDialog';
+import { PreparingCartCard } from '@/components/PreparingCartCard';
+import { preparingCartContent } from '@/lib/preparingCart';
 import {
   EMPTY_STANDALONE_CART,
   cartCommitAction,
@@ -129,6 +131,9 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
     let summary: MemberSetReview | null = null;
     if (v && v.status === 'in_cart' && !v.awaiting_staff_setup) {
       r = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
+    } else if (v && v.status === 'in_cart' && v.awaiting_staff_setup) {
+      // #3154: the preparing card shows the set's Initial Payment — the review's own figure.
+      summary = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
     } else if (v && v.status === 'pending_payment') {
       summary = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
     } else if (!v && cart.purchases.length > 0) {
@@ -387,16 +392,12 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
   if (phase === 'standalone') {
     main = standaloneCard(false);
   } else if (phase === 'awaiting_staff') {
-    const c = cartCounts(view, viewerId);
+    const due = cartSummary?.amount_due;
     main = (
-      <CartCard
+      <PreparingCartCard
         key="staff"
-        dataAttrs={{ 'data-cart-awaiting-staff': true }}
-        headingKey="membership.cart_staff_heading"
-        counts={countsText(c.plans, c.products)}
-        staffEditing
-        hintKeys={['membership.cart_staff_hint']}
-        items={cardItems(cartItems(view, viewerId))}
+        content={preparingCartContent(view, gymFmt)}
+        initialPayment={due == null ? '—' : formatPaymentAmount(due, cartSummary?.currency ?? 'EUR', gymFmt) ?? '—'}
       />
     );
   } else if (phase === 'pending_payment') {
