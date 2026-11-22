@@ -9,6 +9,7 @@
 import { DateTime } from 'luxon';
 import { canAccess, type AppModule, type AppRole } from '../infra/permissions';
 import { DEFAULT_GYM_LOCALIZATION, isValidTimeZone } from './gymLocalization';
+import { deriveBillingEventStatus, isNonObligationEvent } from './billingEventStatus';
 
 export interface UtcWindow {
   /** Inclusive lower bound, `YYYY-MM-DD HH:mm:ss` UTC. */
@@ -148,6 +149,51 @@ export function groupPendingPaymentMembers(rows: OutstandingEventRow[]): Pending
       oldest_at: new Date(g.oldest).toISOString(),
     }))
     .sort((a, b) => a.oldest_at.localeCompare(b.oldest_at) || a.member_id - b.member_id);
+}
+
+/**
+ * #3186: Home's "Members without mandatory product" — the rows listed (the rest
+ * is the count).
+ */
+export const UNPAID_MANDATORY_PRODUCT_LIMIT = 10;
+
+/** The payment status a listed row shows: the existing Billing Event vocabulary plus a due obligation. */
+export type UnpaidMandatoryStatus = 'failed' | 'pending' | 'overdue';
+
+export interface MandatoryProductEventRow {
+  event_type: string;
+  latest_tx_status: string | null;
+  is_scheduled: number | boolean;
+  /** `YYYY-MM-DD` (or a Date) — the obligation's due date; null for an event that carries none. */
+  billing_date: string | Date | null;
+  cancelled: boolean;
+}
+
+function dateOnly(v: string | Date | null): string | null {
+  if (v == null) return null;
+  return (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
+}
+
+/**
+ * #3186: whether a Billing Event that bills a Mandatory recurring Product leaves
+ * that Product unpaid, and how. It decides nothing new: a rejected or expired
+ * attempt is `deriveBillingEventStatus()`'s `failed` (#779), an attempt in
+ * flight its `pending`, and a persisted obligation (`is_scheduled`) that is due
+ * today or earlier with no attempt is the same "scheduled and due" the Billing
+ * Events list offers payment actions for (`overdue` here). A future obligation,
+ * a paid, waived or cancelled event and a non-obligation event answer `null`.
+ */
+export function unpaidMandatoryStatus(row: MandatoryProductEventRow, today: string): UnpaidMandatoryStatus | null {
+  if (row.cancelled) return null;
+  if (isNonObligationEvent(row.event_type) || row.event_type === 'waived_billing') return null;
+  if (row.latest_tx_status == null && Number(row.is_scheduled) === 1) {
+    const due = dateOnly(row.billing_date);
+    return due != null && due <= today ? 'overdue' : null;
+  }
+  const status = deriveBillingEventStatus(row.event_type, row.latest_tx_status);
+  if (status === 'failed') return 'failed';
+  if (status === 'pending') return 'pending';
+  return null;
 }
 
 /** #1754: the four-week attendance KPIs look at this many complete weeks. */

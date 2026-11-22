@@ -24,6 +24,7 @@ import { resolveMemberProfessionalServices } from '../domain/memberProfessionalS
 import {
   dayWindow, weekWindow, nowSql, todayInZone, resolveTimeZone, completedWeekWindows,
   attendanceKpis, FOUR_WEEKS, homeAccess, visibleTasks, groupPendingPaymentMembers, PENDING_PAYMENT_MEMBER_LIMIT,
+  unpaidMandatoryStatus, UNPAID_MANDATORY_PRODUCT_LIMIT, type UnpaidMandatoryStatus,
   type HomeTask, type OutstandingEventRow, type UtcWindow,
 } from '../domain/homeDashboard';
 import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
@@ -200,6 +201,128 @@ async function loadPendingPaymentMembers(gymId: string, outstanding: Outstanding
       };
     });
   return { count: groups.length, members };
+}
+
+/**
+ * #3186: "Members without mandatory product" — a Member whose running Membership
+ * Plan carries a Mandatory recurring Product (a `plan_periodical_snapshots` line
+ * of the assignment's current plan snapshot with `mandatory = 1`, #1184) whose
+ * required payment is not made. Read only from what billing already persisted:
+ * a Billing Event of a Product Set that links the assignment, with a priced line
+ * for that Product, judged by `unpaidMandatoryStatus()`. Nothing is inferred
+ * from the Product definition, and nothing is written.
+ *
+ * Who is listed: the line's own member for an Individual line split per member
+ * (#2609), else the plan's beneficiaries, else the owner. One row per Member,
+ * Product and Membership Plan, carrying the status of the most recent unpaid
+ * event; ordered by the oldest unpaid due date (most overdue first).
+ */
+async function loadUnpaidMandatoryProducts(gymId: string) {
+  const { rows } = await db.query<any>(
+    `SELECT pa.id AS snapshot_id, pa.assignment_id, pa.member_id AS owner_id,
+            pa.membership_plan_id, mp.name AS plan_name,
+            pps.product_id, pps.item_name AS product_name, pps.assigned_member_id,
+            be.id AS event_id, be.event_type, be.is_scheduled, be.billing_date, be.created_at,
+            (be.cancelled_at IS NOT NULL) AS cancelled,
+            (SELECT pr.status FROM payment_requests pr
+              WHERE pr.billing_event_id = be.id
+              ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
+       FROM plan_snapshots pa
+       JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+       JOIN plan_periodical_snapshots pps ON pps.plan_snapshot_id = pa.id AND pps.mandatory = 1
+       JOIN billing_events be ON be.gym_id = pa.gym_id AND be.cancelled_at IS NULL
+        AND (be.is_scheduled = 0 OR be.billing_date <= UTC_DATE())
+        AND EXISTS (SELECT 1 FROM product_set_plan_snapshots bj
+                      JOIN plan_snapshots bs ON bs.id = bj.plan_snapshot_id
+                     WHERE bj.product_set_id = be.product_set_id AND bs.assignment_id = pa.assignment_id)
+       JOIN billing_event_lines bel ON bel.billing_event_id = be.id
+        AND bel.product_id = pps.product_id AND bel.amount > 0
+      WHERE pa.gym_id = ?
+        AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}, 'paused')
+        AND ${isCurrentAssignmentSnapshotSql('pa')}
+      GROUP BY pa.id, pps.id, be.id`,
+    [gymId],
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  type Item = {
+    snapshot_id: number; owner_id: number; assigned_member_id: number | null;
+    membership_plan_id: number; plan_name: string; product_id: number; product_name: string;
+    status: UnpaidMandatoryStatus; latest_key: string; oldest_due: string;
+  };
+  const items = new Map<string, Item>();
+  for (const r of rows) {
+    const status = unpaidMandatoryStatus({
+      event_type: r.event_type, latest_tx_status: r.latest_tx_status ?? null,
+      is_scheduled: r.is_scheduled, billing_date: r.billing_date, cancelled: Number(r.cancelled) === 1,
+    }, today);
+    if (!status) continue;
+    const due = (r.billing_date ?? r.created_at) as Date | string;
+    const dueKey = (due instanceof Date ? due.toISOString() : String(due)).slice(0, 10);
+    const latestKey = `${dueKey}:${String(r.event_id).padStart(12, '0')}`;
+    const key = `${r.snapshot_id}:${r.product_id}:${r.assigned_member_id ?? ''}`;
+    const cur = items.get(key);
+    if (!cur) {
+      items.set(key, {
+        snapshot_id: Number(r.snapshot_id), owner_id: Number(r.owner_id),
+        assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
+        membership_plan_id: Number(r.membership_plan_id), plan_name: r.plan_name,
+        product_id: Number(r.product_id), product_name: r.product_name,
+        status, latest_key: latestKey, oldest_due: dueKey,
+      });
+    } else {
+      if (latestKey > cur.latest_key) { cur.latest_key = latestKey; cur.status = status; }
+      if (dueKey < cur.oldest_due) cur.oldest_due = dueKey;
+    }
+  }
+  if (items.size === 0) return { count: 0, items: [] as unknown[] };
+
+  const snapshotIds = [...new Set([...items.values()].map((i) => i.snapshot_id))];
+  const { rows: bens } = await db.query<{ plan_snapshot_id: number; member_id: number }>(
+    `SELECT plan_snapshot_id, member_id FROM plan_snapshot_beneficiaries
+      WHERE gym_id = ? AND plan_snapshot_id IN (${snapshotIds.map(() => '?').join(',')})
+      ORDER BY member_id`,
+    [gymId, ...snapshotIds],
+  );
+  const bensBySnapshot = new Map<number, number[]>();
+  for (const b of bens) {
+    const arr = bensBySnapshot.get(Number(b.plan_snapshot_id)) ?? [];
+    arr.push(Number(b.member_id));
+    bensBySnapshot.set(Number(b.plan_snapshot_id), arr);
+  }
+  const expanded: Array<Item & { member_id: number }> = [];
+  const seen = new Set<string>();
+  for (const i of items.values()) {
+    const members = i.assigned_member_id != null ? [i.assigned_member_id]
+      : (bensBySnapshot.get(i.snapshot_id) ?? [i.owner_id]);
+    for (const memberId of members) {
+      const k = `${memberId}:${i.product_id}:${i.membership_plan_id}:${i.snapshot_id}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      expanded.push({ ...i, member_id: memberId });
+    }
+  }
+  const memberIds = [...new Set(expanded.map((e) => e.member_id))];
+  // A soft-deleted member is gone from every screen, so is not listed either.
+  const { rows: live } = await db.query<{ id: number; name: string }>(
+    `SELECT id, name FROM members
+      WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${memberIds.map(() => '?').join(',')})`,
+    [gymId, ...memberIds],
+  );
+  const names = new Map(live.map((m) => [Number(m.id), m.name]));
+  const listed = expanded
+    .filter((e) => names.has(e.member_id))
+    .sort((a, b) => a.oldest_due.localeCompare(b.oldest_due)
+      || String(names.get(a.member_id)).localeCompare(String(names.get(b.member_id)))
+      || a.product_id - b.product_id);
+  return {
+    count: listed.length,
+    items: listed.slice(0, UNPAID_MANDATORY_PRODUCT_LIMIT).map((e) => ({
+      member_id: e.member_id, name: names.get(e.member_id) as string,
+      product_id: e.product_id, product_name: e.product_name,
+      membership_plan_id: e.membership_plan_id, plan_name: e.plan_name,
+      payment_status: e.status,
+    })),
+  };
 }
 
 /** Task D: members holding plan-included service sessions with none booked ahead. */
@@ -493,6 +616,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       cards.outstanding_payments = { count: p.outstandingCount, amount: p.outstandingAmount, paid_count: p.paidOnDay, currency: 'EUR' };
       tasks.push({ key: 'payments_with_issues', count: p.outstandingCount });
       out.pending_payment_members = await loadPendingPaymentMembers(gymId, p.outstanding);
+      out.unpaid_mandatory_products = await loadUnpaidMandatoryProducts(gymId);
     }
 
     const themeImage = await loadThemeHomeImage(gymId);

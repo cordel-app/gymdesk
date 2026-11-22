@@ -38,6 +38,8 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   to_be_reactivated: { bg: '#fff4e0', fg: '#b26a00' },
   completed:    { bg: '#e6f6ec', fg: '#1e7e40' },
   failed:       { bg: '#fdeaea', fg: '#c0392b' },
+  // #3186: a persisted obligation due and not collected (Home's mandatory-product section).
+  overdue:      { bg: '#fdeaea', fg: '#c0392b' },
   // #1238: Access Rights
   granted:      { bg: '#e6f6ec', fg: '#1e7e40' },
   to_be_reviewed: { bg: '#fff4e0', fg: '#b26a00' },

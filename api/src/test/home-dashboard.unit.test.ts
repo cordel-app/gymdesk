@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  dayWindow, weekWindow, parseDashboardDate, completedWeekWindows, attendanceKpis, homeAccess, visibleTasks, groupPendingPaymentMembers, resolveTimeZone,
+  dayWindow, weekWindow, parseDashboardDate, completedWeekWindows, attendanceKpis, homeAccess, visibleTasks, groupPendingPaymentMembers, resolveTimeZone, unpaidMandatoryStatus,
 } from '../domain/homeDashboard';
 
 describe('parseDashboardDate', () => {
@@ -120,5 +120,30 @@ describe('attendanceKpis (#1754)', () => {
   });
   it('handles no data and no members without dividing by zero', () => {
     expect(attendanceKpis([], weeks, 0)).toEqual({ top_trainers: 0, average_classes_per_member_per_week: 0, weeks: 4 });
+  });
+});
+
+describe('unpaidMandatoryStatus (#3186)', () => {
+  const today = '2026-11-22';
+  const row = (over: Partial<Parameters<typeof unpaidMandatoryStatus>[0]> = {}) => ({
+    event_type: 'charge_created', latest_tx_status: null, is_scheduled: 1, billing_date: today, cancelled: false, ...over,
+  });
+  it('reads a rejected or expired attempt as failed and one in flight as pending', () => {
+    expect(unpaidMandatoryStatus(row({ latest_tx_status: 'failed' }), today)).toBe('failed');
+    expect(unpaidMandatoryStatus(row({ latest_tx_status: 'expired' }), today)).toBe('failed');
+    expect(unpaidMandatoryStatus(row({ latest_tx_status: 'pending' }), today)).toBe('pending');
+    expect(unpaidMandatoryStatus(row({ event_type: 'failed_billing', is_scheduled: 0 }), today)).toBe('failed');
+  });
+  it('flags a due obligation with no attempt, never a future one', () => {
+    expect(unpaidMandatoryStatus(row({ billing_date: '2026-11-01' }), today)).toBe('overdue');
+    expect(unpaidMandatoryStatus(row({ billing_date: today }), today)).toBe('overdue');
+    expect(unpaidMandatoryStatus(row({ billing_date: '2026-11-23' }), today)).toBeNull();
+    expect(unpaidMandatoryStatus(row({ billing_date: null }), today)).toBeNull();
+  });
+  it('ignores paid, cancelled, waived and non-obligation events', () => {
+    expect(unpaidMandatoryStatus(row({ latest_tx_status: 'completed' }), today)).toBeNull();
+    expect(unpaidMandatoryStatus(row({ latest_tx_status: 'failed', cancelled: true }), today)).toBeNull();
+    expect(unpaidMandatoryStatus(row({ event_type: 'waived_billing', is_scheduled: 0 }), today)).toBeNull();
+    expect(unpaidMandatoryStatus(row({ event_type: 'product_purchase', latest_tx_status: 'failed' }), today)).toBeNull();
   });
 });
