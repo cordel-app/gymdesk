@@ -1262,8 +1262,10 @@ export default function MembershipPage() {
   /**
    * #2973 stage 6 — the cart is the one shared `MemberCart` (Home draws the
    * very same component); the page adds only what is NOT part of the cart: the
-   * `+ Add Plan` / `+ Add Product` actions, outside the card. #2895: disabled,
-   * with the reason, while staff are still setting up the Draft.
+   * `+ Add Plan` / `+ Add Product` actions, outside the card. #2973 stage 7
+   * (reversing #2895's "disabled, never hidden"): absent while staff are still
+   * setting up the Draft — the member can add nothing to a gym-managed cart,
+   * and the card itself already says why.
    */
   function renderCart() {
     const phase = cartPhase(setView, viewerId, standaloneCart);
@@ -1271,7 +1273,7 @@ export default function MembershipPage() {
     return (
       <section style={styles.section} data-cart-host>
         <MemberCart refreshKey={setView} onChanged={loadSetView} />
-        {renderCartAddButtons(phase === 'awaiting_staff' ? t('membership.cart_error_awaiting_staff') : null)}
+        {phase !== 'awaiting_staff' && renderCartAddButtons()}
       </section>
     );
   }
