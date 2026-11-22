@@ -113,7 +113,11 @@ version: a carried line is not asked for again (a grown quantity owes the added 
 **adds** — a plan whose snapshot the previous version does not link (`planSnapshotInheritedSql()`,
 read through `planScheduledEvents(…, { newPlansOnly: true })`) — is owed exactly as on a first
 version, Pre-paid Duration and alignment stretch included. Before #2899 every fee line was
-dropped, so an Admin Draft adding a plan to a member who already held one reviewed at €0.00. The
+dropped, so an Admin Draft adding a plan to a member who already held one reviewed at €0.00. A
+recurring line is recognised across versions by its purchase (`line_ref`, #1865), never by its
+Product (#3165): a second line of a Product the member already holds is a new obligation and its
+first stretch is owed in full (matched by Product, it read as already paid and the review said
+*Nothing is due today*); a plan's own Product lines carry no `line_ref` and match by Product. The
 review, Save & Pay, the free activation and the Draft's initial-payment forecast group all read
 this one figure, and reading it writes nothing.
 

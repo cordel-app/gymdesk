@@ -188,10 +188,14 @@ export async function initialCharge(
       if (fees.length > 0) addedFees.set(`${e.scheduleKey ?? '~'}|${e.date}`, fees);
     }
     const previous = await planScheduledEvents(gymId, opts.previousProductSetId, startsAt, 1, exec);
-    const carried = new Map<number, number>();
+    // #3165: a recurring line is recognised across versions by its purchase (`line_ref`, #1865),
+    // never by its Product: a second line of a Product the member already holds is a new
+    // obligation, owed in full. A plan's own Product lines carry no `line_ref` and match by Product.
+    const carried = new Map<string, number>();
     for (const e of previous.filter((p) => p.date === startsAt)) {
       for (const l of e.lines) {
-        if (l.product_id != null) carried.set(l.product_id, (carried.get(l.product_id) ?? 0) + Number(l.quantity));
+        const key = carriedLineKey(l);
+        if (key != null) carried.set(key, (carried.get(key) ?? 0) + Number(l.quantity));
       }
     }
     first = first
@@ -200,7 +204,7 @@ export async function initialCharge(
         lines: e.lines.flatMap((l) => {
           // The plan's own fee is the previous version's, never this payment's.
           if (l.kind === 'membership_fee' || l.product_id == null) return [];
-          const had = carried.get(l.product_id) ?? 0;
+          const had = carried.get(carriedLineKey(l)!) ?? 0;
           const quantity = Number(l.quantity);
           if (quantity <= had) return [];
           if (had === 0) return [l];
@@ -248,6 +252,12 @@ export async function initialCharge(
     ...(earliestDate(first) != null && earliestDate(first) !== startsAt ? { billingDate: earliestDate(first)! } : {}),
     coveredDates: [...new Set(first.map((e) => e.date))].sort(),
   };
+}
+
+/** #3165 — what identifies a line across versions for the replacement delta. */
+function carriedLineKey(l: SimulationLine): string | null {
+  if (l.line_ref != null) return `ref:${l.line_ref}`;
+  return l.product_id != null ? `product:${l.product_id}` : null;
 }
 
 const earliestDate = (events: Array<{ date: string }>): string | null =>

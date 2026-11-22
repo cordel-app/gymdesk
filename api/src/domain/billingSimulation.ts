@@ -467,6 +467,12 @@ export interface SimulationLine {
    */
   proration?: { prorated_days: number; period_days: number } | null;
   /**
+   * #3165 — on a recurring Product line (an Additional Periodic Service), the purchase's identity
+   * across versions (#1865's `line_ref`), so a replacement version can tell a second line of a
+   * Product the member already holds from the inherited one. Absent everywhere else.
+   */
+  line_ref?: number;
+  /**
    * #2970 — on a Membership Fee line whose first charge is a prorated stretch **plus** a Pre-paid
    * Duration: the two parts kept apart (the stretch with its days and dates, the N full periods
    * with their coverage and amount). Both amounts are VAT-inclusive, sum to the line's
@@ -1472,6 +1478,7 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
       prepaid_periods: null,
       proration: proration && date === start
         ? { prorated_days: proration.proratedDays, period_days: proration.periodDays } : null,
+      ...(service.lineRef != null ? { line_ref: Number(service.lineRef) } : {}),
     }),
   };
 }
