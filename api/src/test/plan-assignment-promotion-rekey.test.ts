@@ -85,7 +85,7 @@ afterAll(async () => {
 /** The anchor `stampAssignmentIds()` gives an assignment: the lowest snapshot id naming it. */
 async function anchorOf(um: number): Promise<number> {
   const { rows } = await db.query<any>(
-    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, um]);
+    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?', [gymId, um]);
   return Number(rows[0].a);
 }
 async function keysOf(setId: number) {

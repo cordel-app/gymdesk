@@ -73,7 +73,7 @@ async function cartWithReactivation() {
 }
 
 const planStatus = async (umId: number) => (await db.query<any>(
-  'SELECT status FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1', [gymId, umId])).rows[0].status;
+  'SELECT status FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id DESC LIMIT 1', [gymId, umId])).rows[0].status;
 const statusAudits = async (umId: number) => Number((await db.query<any>(
   `SELECT COUNT(*) AS n FROM audit_logs WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'`,
   [gymId, String(umId)])).rows[0].n);

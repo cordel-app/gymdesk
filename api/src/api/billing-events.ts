@@ -149,7 +149,7 @@ billingEventsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, n
   if (user_membership_id) {
     const { rows } = await db.query(
       // #2125 M6b-10: the assignment's owner is its current plan snapshot's.
-      `SELECT pa.source_user_membership_id AS id, pa.member_id FROM plan_snapshots pa
+      `SELECT pa.assignment_id AS id, pa.member_id FROM plan_snapshots pa
         WHERE ${assignmentOfLegacyIdSql('?')} AND pa.gym_id = ?`,
       [user_membership_id, gymId],
     );

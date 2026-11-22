@@ -18,6 +18,7 @@
 import { escape } from 'mysql2';
 import { db, type QueryResult } from '../infra/db';
 import { TEST_ASSIGNMENTS } from './assignmentReads';
+import { reserveHandAssignmentId } from './handAnchor';
 
 type Exec = { query: <T = any>(sql: string, params?: any[]) => Promise<QueryResult<T>> };
 
@@ -77,7 +78,7 @@ export function fixtureAssignments(): string {
   UNION ALL
   SELECT ${cols} FROM ${handRowsSql()} hw
    WHERE NOT EXISTS (SELECT 1 FROM plan_snapshots a
-                      WHERE a.gym_id = hw.gym_id AND a.source_user_membership_id = hw.id AND a.assignment_id = a.id))`;
+                      WHERE a.gym_id = hw.gym_id AND a.assignment_id = hw.id AND a.assignment_id = a.id))`;
 }
 
 const STATEMENT = /^\s*(INSERT\s+(?:IGNORE\s+)?INTO|UPDATE|DELETE\s+FROM)\s+user_memberships\b/i;
@@ -141,7 +142,7 @@ export async function mirrorLegacyLifecycle(exec: Exec, userMembershipIds: reado
     const { rowCount } = await exec.query(
       `UPDATE plan_snapshots SET assignment_status = ?, assignment_closed_at = ?, assignment_ends_at = ?,
               assignment_modified_at = ?, assignment_modified_by = ?
-        WHERE assignment_id = id AND source_user_membership_id = ? AND gym_id = ?`,
+        WHERE assignment_id = id AND assignment_id = ? AND gym_id = ?`,
       [r.status ?? 'active', r.closed_at ?? null, r.ends_at ?? null, r.modified_at ?? null, r.modified_by ?? null,
         id, r.gym_id]);
     if (Number(rowCount) > 0) awaitingAnchor.delete(id);
@@ -222,12 +223,12 @@ export async function testAssignmentWrite<T = any>(
     if (anchorSets.length > 0) {
       await exec.query(
         `UPDATE plan_snapshots SET ${anchorSets.join(', ')}
-          WHERE assignment_id = id AND source_user_membership_id IN (${named})`,
+          WHERE assignment_id = id AND assignment_id IN (${named})`,
         [...anchorParams, ...ids]);
     }
     if (snapSets.length > 0) {
       await exec.query(
-        `UPDATE plan_snapshots SET ${snapSets.join(', ')} WHERE source_user_membership_id IN (${named})`,
+        `UPDATE plan_snapshots SET ${snapSets.join(', ')} WHERE assignment_id IN (${named})`,
         [...snapParams, ...ids]);
     }
   }
@@ -235,20 +236,8 @@ export async function testAssignmentWrite<T = any>(
 }
 
 /**
- * #2125 N1: production opens an assignment on its own plan snapshot, whose id is the assignment's;
- * a hand-written fixture row has no snapshot yet when it is inserted, so it takes an id from a range
- * no plan snapshot reaches (above 3e9; the column is INT UNSIGNED), one counter per test process with
- * a random start, so a hand id never names another assignment's snapshot of the same gym.
- */
-let handAssignmentId = 3_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
-function nextHandAssignmentId(): number {
-  handAssignmentId += 1;
-  return handAssignmentId;
-}
-
-/**
  * Keeps an `INSERT INTO user_memberships (…) VALUES (…)` as a hand row under an id from the
- * hand-assignment id range (`nextHandAssignmentId()`), since production derives an id from a snapshot.
+ * reserved plan snapshot id (`reserveHandAssignmentId()`), since production derives an id from a snapshot.
  */
 async function insertHandRow<T>(exec: Exec, sql: string, params: unknown[], mirror: boolean): Promise<QueryResult<T>> {
   const ins = sql.match(/^\s*INSERT\s+(?:IGNORE\s+)?INTO\s+user_memberships\s*\(([^)]*)\)\s*VALUES\s*\(([\s\S]*)\)\s*$/i);
@@ -263,7 +252,10 @@ async function insertHandRow<T>(exec: Exec, sql: string, params: unknown[], mirr
     if ((COLUMNS as readonly string[]).includes(c)) values[c as Column] = stored(c as Column, evaluated[0][`c${i}`]);
   });
   if (values.gym_id == null) throw new Error('testAssignmentWrite: an INSERT names its gym_id');
-  const id = values.id != null ? Number(values.id) : nextHandAssignmentId();
+  // #2125 N2: the id is a reserved plan snapshot id, which the row's first snapshot is re-keyed onto
+  // (`handAnchor.ts`), so `assignment_id` can name it as it names a real assignment's anchor.
+  const id = values.id != null ? Number(values.id)
+    : await reserveHandAssignmentId(exec, String(values.gym_id), values.member_id == null ? null : Number(values.member_id));
   const { rows: clock } = await exec.query<{ now: string }>(
     "SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%d %H:%i:%s') AS now");
   handRows.set(id, {

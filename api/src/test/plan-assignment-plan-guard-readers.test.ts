@@ -83,7 +83,7 @@ describe('Delete and Deactivate refuse a plan with a running assignment', () => 
   it('allows both once the snapshot says the assignment is over', async () => {
     const planId = await plan();
     const um = await running(planId);
-    await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, um]);
+    await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND assignment_id = ?`, [gymId, um]);
     expect((await auth(request.post(`/membership-plans/${planId}/archive`))).status).toBe(200);
     expect((await auth(request.delete(`/membership-plans/${planId}`))).status).toBe(204);
   });
@@ -96,7 +96,7 @@ describe('the member limit cannot go below a running assignment\'s beneficiaries
     const partner = await member();
     const um = await running(planId, owner);
     const { rows } = await db.query<{ id: number }>(
-      `SELECT id FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
+      `SELECT id FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
     await db.query(`INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id) VALUES (?, ?, ?)`,
       [gymId, rows[0].id, partner]);
     await moveLegacyRowAway(um);
@@ -123,7 +123,7 @@ describe('the Plan reprice picks its candidates from plan_snapshots', () => {
   it('skips an assignment its current snapshot states is over', async () => {
     const planId = await plan();
     const um = await running(planId);
-    await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, um]);
+    await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND assignment_id = ?`, [gymId, um]);
     const { rows: legacy } = await db.query<{ status: string }>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
     expect(legacy[0].status).toBe('active');
     const res = await applyPrice(planId, 46);

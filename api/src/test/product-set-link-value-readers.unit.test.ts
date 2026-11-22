@@ -60,7 +60,7 @@ describe('a Product Set link value is read through its anchor (#2125 M6b-42)', (
         const stmt = m[0];
         if (!/\bFROM\s+product_sets\b/.test(stmt) || !/^[`']\s*SELECT\b/.test(stmt)) continue;
         // A bare column in the select list or the WHERE clause; an alias (`AS user_membership_id`), a
-        // qualified column of another table and the `source_user_membership_id` of a snapshot are fine.
+        // qualified column of another table and the `assignment_id` of a snapshot are fine.
         const bare = stmt.replace(/\bAS\s+user_membership_id\b/g, '').match(/(?<![.\w])user_membership_id\b/);
         if (bare) found.push(`${rel}: ${stmt.slice(0, 80)}`);
       }
@@ -87,7 +87,7 @@ describe('a Product Set link value is read through its anchor (#2125 M6b-42)', (
     const sql = productSetLegacyAssignmentIdSql('p');
     expect(sql).toContain('ps_lid.id = p.plan_assignment_id');
     expect(sql).toContain('ps_lid.gym_id = p.gym_id');
-    expect(sql).toContain('ps_lid.source_user_membership_id');
+    expect(sql).toContain('ps_lid.assignment_id');
     expect(sql).not.toContain('p.user_membership_id');
   });
 });

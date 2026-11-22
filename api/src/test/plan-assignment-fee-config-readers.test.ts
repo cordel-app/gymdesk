@@ -42,7 +42,7 @@ async function running(): Promise<number> {
 async function currentSnapshotId(um: number): Promise<number> {
   const { rows } = await db.query<any>(
     `SELECT ${currentAssignmentSnapshotSql('a.assignment_id', 'a.gym_id')} AS id
-       FROM plan_snapshots a WHERE a.gym_id = ? AND a.source_user_membership_id = ? LIMIT 1`, [gymId, um]);
+       FROM plan_snapshots a WHERE a.gym_id = ? AND a.assignment_id = ? LIMIT 1`, [gymId, um]);
   return Number(rows[0].id);
 }
 

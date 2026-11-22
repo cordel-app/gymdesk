@@ -94,10 +94,10 @@ describe('GET /me/membership reads the member\'s plans from plan_snapshots', () 
     await cancel(first);
     // The cancellation leaves a later end date when the plan was paid through; end it today's past.
     await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [first]);
-    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [first]);
+    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE assignment_id = ?', [first]);
     // M6b-51c-5: and the assignment's own end date on its anchor, which the sync reads.
     await db.query(
-      'UPDATE plan_snapshots SET assignment_ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ? AND assignment_id = id',
+      'UPDATE plan_snapshots SET assignment_ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE assignment_id = ? AND assignment_id = id',
       [first]);
     const running = await run(m, runningPlan);
 

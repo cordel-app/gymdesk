@@ -121,7 +121,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
  * Copies one plan snapshot (and everything hanging off it: beneficiaries, included Products,
  * Promotion applications with the Products they grant) onto another version as an inherited copy.
  * The copy is native — it has no legacy twin — keeps the assignment the original is the contract
- * of (`source_user_membership_id`) and records its source in `copied_from_plan_snapshot_id` (#2125 M5a),
+ * of (`assignment_id`) and records its source in `copied_from_plan_snapshot_id` (#2125 M5a),
  * which is what keeps an edited inherited plan reading as inherited (`planSnapshotInheritedSql()`).
  */
 export async function copyPlanSnapshotToVersion(
@@ -139,14 +139,14 @@ export async function copyPlanSnapshotToVersion(
         schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at, membership_fee_price,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
-        source_user_membership_id, created_by, owner_is_beneficiary, membership_fee_scope, member_limit,
+        created_by, owner_is_beneficiary, membership_fee_scope, member_limit,
         assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by,
         modified_at, modified_by, promotions_plan_snapshot_id)
      SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.personal_fee_benefit_action,
             s.personal_fee_benefit_value, s.auto_renew, s.recurring_billing_interval, s.recurring_billing_unit, s.origin,
-            ${opts.keepAssignment === false ? 'NULL' : 's.source_user_membership_id'}, s.created_by, s.owner_is_beneficiary,
+            s.created_by, s.owner_is_beneficiary,
             s.membership_fee_scope, s.member_limit,
             ${opts.keepAssignment === false
               ? 'NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL'
@@ -154,8 +154,8 @@ export async function copyPlanSnapshotToVersion(
             ${opts.reusePromotions ? 'COALESCE(s.promotions_plan_snapshot_id, s.id)' : 'NULL'}
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, fromSnapshotId, gymId]);
-  // M6b-1: the copy is the same logical assignment as its source (same `assignment_id`); a copy that
-  // drops the assignment is a new one, anchored on itself.
+  // M6b-1: the copy is the same logical assignment as its source (same `assignment_id`); #2125 N2: a
+  // copy that drops the assignment names none (`assignment_id` NULL) until one is opened on it.
   await stampAssignmentId(tx, gymId, Number(insertId));
   if (opts.link !== false) {
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
@@ -218,11 +218,11 @@ export async function mergeActiveVersionIntoDraft(
 ): Promise<void> {
   const excluded = new Set((opts.excludeUserMembershipIds ?? []).map(Number));
   const { rows: plans } = await tx.query<any>(
-    `SELECT s.id, s.source_user_membership_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+    `SELECT s.id, s.assignment_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
       WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id`,
     [gymId, activeSetId]);
   for (const plan of plans) {
-    if (plan.source_user_membership_id != null && excluded.has(Number(plan.source_user_membership_id))) continue;
+    if (plan.assignment_id != null && excluded.has(Number(plan.assignment_id))) continue;
     await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), draftSetId);
   }
 

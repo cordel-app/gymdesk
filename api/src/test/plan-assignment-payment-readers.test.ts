@@ -82,7 +82,7 @@ afterAll(async () => {
 
 /** Close the assignment on its snapshots only, leaving the legacy row active. */
 const closeOnSnapshots = (um: number) =>
-  db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [um]);
+  db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE assignment_id = ?", [um]);
 
 describe('POST /payment-requests reads the assignment from plan_snapshots', () => {
   it('is closed to an unauthenticated caller', async () => {

@@ -74,14 +74,14 @@ export async function writeAssignmentLifecycle(
 
   const { rows: anchors } = await exec.query<{ status: string | null; ends_at: unknown }>(
     `SELECT assignment_status AS status, assignment_ends_at AS ends_at FROM plan_snapshots
-      WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id = id`,
+      WHERE gym_id = ? AND assignment_id = ? AND assignment_id = id`,
     [gymId, userMembershipId]);
   const anchor = anchors[0];
   if (!anchor || anchor.status == null) return 0;
   if (!anchorPasses(String(anchor.status), anchor.ends_at, change, from)) return 0;
   await exec.query(
     `UPDATE plan_snapshots SET ${sets.join(', ')}
-      WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id = id`,
+      WHERE gym_id = ? AND assignment_id = ? AND assignment_id = id`,
     [...params, gymId, userMembershipId]);
   return 1;
 }

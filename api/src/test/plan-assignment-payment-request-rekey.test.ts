@@ -50,7 +50,7 @@ async function raise(memberId: number, um: number | null): Promise<number> {
 }
 async function anchorOf(um: number): Promise<number> {
   const { rows } = await db.query<any>(
-    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, um]);
+    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?', [gymId, um]);
   return Number(rows[0].a);
 }
 async function keyOf(id: number): Promise<number | null> {

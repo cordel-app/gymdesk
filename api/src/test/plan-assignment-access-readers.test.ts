@@ -62,7 +62,7 @@ async function currentSnapshot(um: number) {
               WHERE j.plan_snapshot_id = s.id ORDER BY (p.status = 'active') DESC, p.id DESC LIMIT 1) AS set_status
        FROM plan_snapshots a
        JOIN plan_snapshots s ON s.id = ${currentAssignmentSnapshotSql('a.assignment_id', 'a.gym_id')}
-      WHERE a.gym_id = ? AND a.source_user_membership_id = ? LIMIT 1`, [gymId, um]);
+      WHERE a.gym_id = ? AND a.assignment_id = ? LIMIT 1`, [gymId, um]);
   return rows[0];
 }
 

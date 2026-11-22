@@ -51,16 +51,16 @@ export const assignmentCoversMemberSql = (alias = 'pa'): string =>
 
 /**
  * #2125 M6b-10 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
- * assignment an assignment id (`source_user_membership_id`) names. Routes, payment requests and audit rows still
+ * assignment an assignment id (`assignment_id`) names. Routes, payment requests and audit rows still
  * name an assignment by that id, and every snapshot of one carries it
- * (`source_user_membership_id`); one legacy id is exactly one `assignment_id` (M6b-1), so this
+ * (`assignment_id`); one legacy id is exactly one `assignment_id` (M6b-1), so this
  * matches at most one row. For a reader that needs what never changes over an assignment's life
  * (its owner, its Membership Plan), so it holds whatever the assignment's status is. Since the
  * settle run (M6b-13) the current snapshot of a closed assignment carries its closed status, so a
  * reader may ask that status through it too (M6b-15: a staff-raised payment request).
  */
 export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): string =>
-  `(${alias}.source_user_membership_id = ${legacyIdExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
+  `(${alias}.assignment_id = ${legacyIdExpr} AND ${isCurrentAssignmentSnapshotSql(alias)})`;
 
 /**
  * #2125 M6b-37 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
@@ -100,10 +100,10 @@ export const OWNED_ASSIGNMENT_IS_CURRENT_SQL = isCurrentAssignmentSnapshotSql('p
  * Binds two `?`: the gym id, then the member id. Use it as `FROM ${OWNED_ASSIGNMENT_ROWS_SQL} um`.
  */
 export const OWNED_ASSIGNMENT_ROWS_SQL = `(
-  SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
+  SELECT pa.assignment_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
          pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at
     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
-   WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.source_user_membership_id IS NOT NULL
+   WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.assignment_id IS NOT NULL
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
 
 /**
@@ -131,16 +131,16 @@ export const assignmentModifierSql = (column: 'modified_at' | 'modified_by', ali
  * Binds one `?`: the gym id. Use it as `FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um`.
  */
 export const ASSIGNMENT_HISTORY_ROWS_SQL = `(
-  SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
+  SELECT pa.assignment_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
          pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at, anc.created_by,
          ${assignmentModifierSql('modified_at')} AS modified_at,
          ${assignmentModifierSql('modified_by')} AS modified_by,
          pa.deleted_at, pa.deleted_by,
          pa.purchased_at, pa.replace_on_activation,
-         (SELECT rep.source_user_membership_id FROM plan_snapshots rep
+         (SELECT rep.assignment_id FROM plan_snapshots rep
            WHERE rep.id = pa.replaces_assignment_id AND rep.gym_id = pa.gym_id) AS replaces_user_membership_id
     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
-   WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
+   WHERE pa.gym_id = ? AND pa.assignment_id IS NOT NULL
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
 
 /**
@@ -151,15 +151,15 @@ export const ASSIGNMENT_HISTORY_ROWS_SQL = `(
  * legacy row is left out. Binds one `?`: the gym id. Use it as `FROM ${GYM_ASSIGNMENT_ROWS_SQL} um`.
  */
 export const GYM_ASSIGNMENT_ROWS_SQL = `(
-  SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
+  SELECT pa.assignment_id AS id, pa.gym_id, pa.member_id, pa.membership_plan_id,
          pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at
     FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
-   WHERE pa.gym_id = ? AND pa.source_user_membership_id IS NOT NULL
+   WHERE pa.gym_id = ? AND pa.assignment_id IS NOT NULL
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
 
 /**
  * #2125 M6b-41 — predicate: the Product Set `alias` is linked to the assignment an assignment id
- * (`source_user_membership_id`) names. Asked of the set's anchor (`product_sets.plan_assignment_id`,
+ * (`assignment_id`) names. Asked of the set's anchor (`product_sets.plan_assignment_id`,
  * M6b-36), the lowest snapshot naming that legacy id (the rule `PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL`
  * writes), never of `product_sets.user_membership_id`, the column the re-key drops. For the
  * lookups that are handed a legacy id and want the sets linked to it; `legacyIdExpr` is a column
@@ -168,15 +168,15 @@ export const GYM_ASSIGNMENT_ROWS_SQL = `(
 export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'ps'): string =>
   `${alias}.plan_assignment_id = (SELECT MIN(ps_anc.id) FROM plan_snapshots ps_anc
                                    WHERE ps_anc.gym_id = ${alias}.gym_id
-                                     AND ps_anc.source_user_membership_id = ${legacyIdExpr})`;
+                                     AND ps_anc.assignment_id = ${legacyIdExpr})`;
 
 /**
- * #2125 M6b-42 — the assignment id (`source_user_membership_id`) of the assignment the Product Set `alias` is
+ * #2125 M6b-42 — the assignment id (`assignment_id`) of the assignment the Product Set `alias` is
  * linked to, read off the set's anchor (`product_sets.plan_assignment_id`, M6b-36): the anchor
- * snapshot's own `source_user_membership_id`, which is that legacy id by construction (the anchor is
+ * snapshot's own `assignment_id`, which is that legacy id by construction (the anchor is
  * the lowest snapshot naming it). NULL for a set linked to no assignment. For a reader that needs the
  * value of the link, never `product_sets.user_membership_id`, the column the re-key drops.
  */
 export const productSetLegacyAssignmentIdSql = (alias = 'ps'): string =>
-  `(SELECT ps_lid.source_user_membership_id FROM plan_snapshots ps_lid
+  `(SELECT ps_lid.assignment_id FROM plan_snapshots ps_lid
      WHERE ps_lid.id = ${alias}.plan_assignment_id AND ps_lid.gym_id = ${alias}.gym_id)`;
