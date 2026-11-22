@@ -260,6 +260,25 @@ export default function HomePage() {
                 ))}
               </Panel>
             )}
+
+            {data.unpaid_mandatory_products && (
+              <Panel title={t('mandatory_title')} icon={<WalletIcon size={18} />} testId="home-unpaid-mandatory"
+                aside={<strong style={{ fontSize: 22 }} data-testid="home-unpaid-mandatory-count">{data.unpaid_mandatory_products.count}</strong>}>
+                <p style={{ ...mutedTextStyle, margin: '0 0 8px' }}>{t('mandatory_sub', { count: data.unpaid_mandatory_products.count })}</p>
+                {data.unpaid_mandatory_products.items.length === 0 ? (
+                  <p style={{ ...mutedTextStyle, margin: '12px 0 0' }}>{t('mandatory_empty')}</p>
+                ) : data.unpaid_mandatory_products.items.map((i) => (
+                  <div key={`${i.member_id}-${i.membership_plan_id}-${i.product_id}`} className="gd-home-row" style={row}
+                    data-testid={`home-unpaid-mandatory-${i.member_id}-${i.product_id}`}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Link href={memberHref(i.member_id, locale)} style={{ color: 'inherit', fontWeight: 600 }}>{i.name}</Link>
+                      <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{i.product_name} · {i.plan_name}</div>
+                    </div>
+                    <StatusBadge status={i.payment_status} label={t(`mandatory_status_${i.payment_status}`)} />
+                  </div>
+                ))}
+              </Panel>
+            )}
           </div>
 
           <div style={panelsGrid}>
