@@ -10,7 +10,7 @@ const read = (p: string) => readFileSync(join(__dirname, '..', p), 'utf8');
 describe('assignment lifecycle dates (#1695)', () => {
   it('commit and projection stamp purchased_at once', () => {
     // #2125 M6b-51c-3: the statement is the one writer's; the callers ask for `purchasedAt: 'fill'`.
-    expect(read('api/assignment-lifecycle-writer.ts')).toMatch(/purchased_at = COALESCE\(purchased_at, UTC_TIMESTAMP\(\)\)/);
+    expect(read('api/assignment-lifecycle-writer.ts')).toMatch(/\$\{LEGACY\('purchased_at'\)\} = COALESCE\(\$\{LEGACY\('purchased_at'\)\}, \?\)/);
     expect(read('api/assignment-commit.ts')).toMatch(/status: 'active', from: row\.status, purchasedAt: 'fill'/);
     const proj = read('api/product-set-projection.ts');
     expect(proj).toMatch(/status: 'active', purchasedAt: 'fill', actor,\s+notFrom: \['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'\]/);
@@ -23,7 +23,7 @@ describe('assignment lifecycle dates (#1695)', () => {
       expect(src).not.toMatch(/status = 'cancelled', closed_at = UTC_TIMESTAMP\(\)/);
     }
     // #2125 M6b-51c-3: `keep_or_now` is the writer's COALESCE; a cancel route asks for it.
-    expect(read('api/assignment-lifecycle-writer.ts')).toMatch(/closed_at = COALESCE\(closed_at, UTC_TIMESTAMP\(\)\)/);
+    expect(read('api/assignment-lifecycle-writer.ts')).toMatch(/\$\{closed\} = COALESCE\(\$\{closed\}, \?\)/);
     expect(read('api/user-memberships.ts').match(/status: 'cancelled', closedAt: 'keep_or_now'/g)?.length).toBeGreaterThanOrEqual(2);
   });
 

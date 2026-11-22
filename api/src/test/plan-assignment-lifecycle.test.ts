@@ -300,6 +300,10 @@ describe('cancelling a plan', () => {
     await db.query('UPDATE user_memberships SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE id = ?', [um]);
     // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.
     await db.query('UPDATE plan_snapshots SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE source_user_membership_id = ?', [um]);
+    // #2125 M6b-51c-4: and the assignment's own end date on its anchor, which the hand-written change skips.
+    await db.query(
+      'UPDATE plan_snapshots SET assignment_ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE source_user_membership_id = ? AND assignment_id = id',
+      [um]);
     await sweep();
 
     const [ended] = await linkOfSet(m, active);

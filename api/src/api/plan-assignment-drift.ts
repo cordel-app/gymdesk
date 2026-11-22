@@ -127,6 +127,19 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
              OR ${differs('um.modified_by', assignmentModifierSql('modified_by'))})${scope('um')}
       ORDER BY um.id`);
 
+  // #2125 M6b-51c-4: the assignment's lifecycle on its anchor snapshot (migration 452).
+  await add('assignment_lifecycle_mismatch',
+    'An assignment whose anchor snapshot holds a different status, closed time, end date or modifier.',
+    `SELECT um.id AS user_membership_id, um.gym_id, a.id AS anchor_id,
+            um.status AS assignment_status, a.assignment_status AS anchor_status
+       FROM user_memberships um
+       JOIN plan_snapshots a ON a.id = (SELECT MIN(x.id) FROM plan_snapshots x
+                                         WHERE x.source_user_membership_id = um.id AND x.gym_id = um.gym_id)
+      WHERE (${differs('um.status', 'a.assignment_status')} OR ${differs('um.closed_at', 'a.assignment_closed_at')}
+             OR ${differs('um.ends_at', 'a.assignment_ends_at')} OR ${differs('um.modified_at', 'a.assignment_modified_at')}
+             OR ${differs('um.modified_by', 'a.assignment_modified_by')})${scope('um')}
+      ORDER BY um.id`);
+
   // #2125 M6b-34: a payment request's re-keyed assignment (migration 431), by the same rule.
   await add('payment_request_assignment_mismatch',
     'A payment request whose plan_assignment_id is not the anchor of its user_membership_id.',

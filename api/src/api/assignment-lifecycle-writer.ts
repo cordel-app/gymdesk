@@ -36,33 +36,60 @@ export interface AssignmentLifecycleChange {
   touch?: boolean;
 }
 
-/** Writes one assignment's change; answers how many rows it wrote (0 when a guard refused it). */
-export async function writeAssignmentLifecycle(
-  exec: Exec, gymId: string, userMembershipId: number, change: AssignmentLifecycleChange,
-): Promise<number> {
+/** The columns a change may write, and their name on the assignment's anchor snapshot (M6b-51c-4). */
+type Column = 'status' | 'closed_at' | 'ends_at' | 'modified_at' | 'modified_by';
+const LEGACY = (c: Column | 'starts_at' | 'purchased_at' | 'replace_on_activation') => c;
+const ANCHOR = (c: Column) => `assignment_${c}`;
+
+/** The SET list of a change for one record, with `now`/`today` bound so both records get one value. */
+function setList(
+  change: AssignmentLifecycleChange, name: (c: Column) => string, clock: { now: string; today: string },
+  legacyOnly: boolean,
+): { sets: string[]; params: unknown[] } {
   const sets: string[] = [];
   const params: unknown[] = [];
-  if (change.startsAt != null) { sets.push('starts_at = ?'); params.push(change.startsAt); }
-  if (change.endsAt === 'today_if_null') sets.push('ends_at = COALESCE(ends_at, UTC_DATE())');
-  else if (change.endsAt === 'clear') sets.push('ends_at = NULL');
-  else if (change.endsAt) { sets.push('ends_at = ?'); params.push(change.endsAt.set); }
-  if (change.status != null) { sets.push('status = ?'); params.push(change.status); }
-  if (change.closedAt === 'keep_or_now') sets.push('closed_at = COALESCE(closed_at, UTC_TIMESTAMP())');
-  else if (change.closedAt === 'now') sets.push('closed_at = UTC_TIMESTAMP()');
-  else if (change.closedAt === 'clear') sets.push('closed_at = NULL');
-  if (change.purchasedAt === 'fill') sets.push('purchased_at = COALESCE(purchased_at, UTC_TIMESTAMP())');
-  if (change.replaceOnActivation !== undefined) {
-    sets.push('replace_on_activation = ?');
+  if (legacyOnly && change.startsAt != null) { sets.push(`${LEGACY('starts_at')} = ?`); params.push(change.startsAt); }
+  const ends = name('ends_at');
+  if (change.endsAt === 'today_if_null') { sets.push(`${ends} = COALESCE(${ends}, ?)`); params.push(clock.today); }
+  else if (change.endsAt === 'clear') sets.push(`${ends} = NULL`);
+  else if (change.endsAt) { sets.push(`${ends} = ?`); params.push(change.endsAt.set); }
+  if (change.status != null) { sets.push(`${name('status')} = ?`); params.push(change.status); }
+  const closed = name('closed_at');
+  if (change.closedAt === 'keep_or_now') { sets.push(`${closed} = COALESCE(${closed}, ?)`); params.push(clock.now); }
+  else if (change.closedAt === 'now') { sets.push(`${closed} = ?`); params.push(clock.now); }
+  else if (change.closedAt === 'clear') sets.push(`${closed} = NULL`);
+  if (legacyOnly && change.purchasedAt === 'fill') {
+    sets.push(`${LEGACY('purchased_at')} = COALESCE(${LEGACY('purchased_at')}, ?)`);
+    params.push(clock.now);
+  }
+  if (legacyOnly && change.replaceOnActivation !== undefined) {
+    sets.push(`${LEGACY('replace_on_activation')} = ?`);
     params.push(change.replaceOnActivation ? 1 : 0);
   }
   if (change.touch !== false && change.actor !== undefined) {
-    sets.push('modified_at = UTC_TIMESTAMP()', 'modified_by = ?');
-    params.push(change.actor);
+    sets.push(`${name('modified_at')} = ?`, `${name('modified_by')} = ?`);
+    params.push(clock.now, change.actor);
   }
-  if (sets.length === 0) return 0;
+  return { sets, params };
+}
+
+/**
+ * Writes one assignment's change; answers how many rows it wrote (0 when a guard refused it).
+ * M6b-51c-4: a change that passed its guards is mirrored onto the assignment's anchor snapshot
+ * (`assignment_status`, `assignment_closed_at`, `assignment_ends_at`, `assignment_modified_*`),
+ * with the same clock value, so the two records agree to the second.
+ */
+export async function writeAssignmentLifecycle(
+  exec: Exec, gymId: string, userMembershipId: number, change: AssignmentLifecycleChange,
+): Promise<number> {
+  const { rows: clockRows } = await exec.query<{ now: string; today: string }>(
+    `SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%d %H:%i:%s') AS now, DATE_FORMAT(UTC_DATE(), '%Y-%m-%d') AS today`);
+  const clock = { now: String(clockRows[0].now), today: String(clockRows[0].today) };
+  const legacy = setList(change, LEGACY, clock, true);
+  if (legacy.sets.length === 0) return 0;
 
   const where: string[] = ['id = ?', 'gym_id = ?'];
-  params.push(userMembershipId, gymId);
+  const params: unknown[] = [...legacy.params, userMembershipId, gymId];
   const from = change.from == null ? [] : (typeof change.from === 'string' ? [change.from] : [...change.from]);
   if (from.length > 0) { where.push(`status IN (${from.map(() => '?').join(',')})`); params.push(...from); }
   if (change.notFrom && change.notFrom.length > 0) {
@@ -72,6 +99,19 @@ export async function writeAssignmentLifecycle(
   if (change.onlyIfEndsAtNull) where.push('ends_at IS NULL');
 
   const { rowCount } = await exec.query(
-    `UPDATE user_memberships SET ${sets.join(', ')} WHERE ${where.join(' AND ')}`, params);
+    `UPDATE user_memberships SET ${legacy.sets.join(', ')} WHERE ${where.join(' AND ')}`, params);
+  if (rowCount > 0) await writeAnchorLifecycle(exec, gymId, userMembershipId, change, clock);
   return rowCount;
+}
+
+async function writeAnchorLifecycle(
+  exec: Exec, gymId: string, userMembershipId: number, change: AssignmentLifecycleChange,
+  clock: { now: string; today: string },
+): Promise<void> {
+  const anchor = setList(change, ANCHOR, clock, false);
+  if (anchor.sets.length === 0) return;
+  await exec.query(
+    `UPDATE plan_snapshots SET ${anchor.sets.join(', ')}
+      WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id = id`,
+    [...anchor.params, gymId, userMembershipId]);
 }
