@@ -14,7 +14,7 @@ import { primaryBtnSmall } from '@/components/ui';
 import { secondaryBtnSmall } from '@/components/formChrome';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { ProductSetSummary } from './membershipConfiguration';
-import { cancelRequestFor, cartCancelContents, pendingCancelErrorKey, psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
+import { cancelRequestFor, cartCancelContents, cartCancelIntroKey, pendingCancelErrorKey, psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
 import { DraftExpiryIndicator } from './DraftExpiryIndicator';
 
 /** The Draft's review (`changes` + `amount_due`), re-read whenever the configuration was. */
@@ -103,7 +103,7 @@ export function ProductsWorkflowActions({
   const request = canWrite ? cancelRequestFor(current) : null;
   const canDiscard = request != null;
   const pending = request?.kind === 'cancel_pending';
-  // #3162 — the cart's contents, named, under the question; an empty section is omitted.
+  // #3162 — the cart's contents, named, between the opening sentence and the question; an empty section is omitted.
   const contents = cartCancelContents(workflow.review);
   const contentsDetails = pending ? undefined : (contents.plans.length + contents.products.length > 0 ? (
     <div data-cancel-cart-contents style={{ fontSize: 14, lineHeight: 1.5 }}>
@@ -159,8 +159,9 @@ export function ProductsWorkflowActions({
         open={confirming}
         message={pending
           ? `${t('ps_cancel_pending_title')} ${t('ps_cancel_pending_confirm')}`
-          : `${t('ps_cancel_title')} ${t('ps_cancel_confirm')}`}
+          : t(cartCancelIntroKey(contents))}
         details={contentsDetails}
+        question={pending ? undefined : t('ps_cancel_question')}
         confirmLabel={t(pending ? 'ps_cancel_pending_action' : 'ps_cancel_discard')}
         cancelLabel={t(pending ? 'ps_cancel_pending_keep' : 'ps_cancel_keep')}
         busy={discarding}

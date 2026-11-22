@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, cartCancelContents, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
+  billingMode, cancelRequestFor, cartCancelContents, cartCancelIntroKey, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
 } from '@/app/[locale]/members/productsWorkflowView';
 
 const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
@@ -145,5 +145,13 @@ describe('#3162 cancel-cart confirmation contents', () => {
   it('leaves a section empty (omitted by the dialog) and copes with no review', () => {
     expect(cartCancelContents({ contracted_items: [item('product', 'Locker')] })).toEqual({ plans: [], products: ['Locker'] });
     expect(cartCancelContents(null)).toEqual({ plans: [], products: [] });
+  });
+});
+
+describe('#3162 cancel-cart opening sentence', () => {
+  it('announces the lists when the cart holds anything, and stands alone when it holds nothing', () => {
+    expect(cartCancelIntroKey({ plans: ['Gold'], products: [] })).toBe('ps_cancel_intro');
+    expect(cartCancelIntroKey({ plans: [], products: ['Locker'] })).toBe('ps_cancel_intro');
+    expect(cartCancelIntroKey({ plans: [], products: [] })).toBe('ps_cancel_intro_empty');
   });
 });
