@@ -52,9 +52,9 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/one-active-plan.ts': 1,
   'api/plan-assignment-drift.ts': 4,
   'api/plan-assignment-lifecycle.ts': 1,
-  'api/plan-assignment-sync.ts': 2,
+  'api/plan-assignment-sync.ts': 1,
   'api/plan-snapshot-sync.ts': 1,
-  'api/product-set-projection.ts': 4,
+  'api/product-set-projection.ts': 3, // M6b-51c-1: the predecessor's purchase time is read off its snapshot
   'api/product-sets.ts': 2,
   'api/user-memberships.ts': 12,
 };
@@ -250,7 +250,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   });
 
   it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
-    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(4);
+    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(3);
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
     expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
       .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");

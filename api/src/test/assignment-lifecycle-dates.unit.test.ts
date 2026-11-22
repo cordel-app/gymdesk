@@ -14,7 +14,12 @@ describe('assignment lifecycle dates (#1695)', () => {
     expect(read('api/assignment-commit.ts')).toMatch(/status: 'active', from: row\.status, purchasedAt: 'fill'/);
     const proj = read('api/product-set-projection.ts');
     expect(proj).toMatch(/status: 'active', purchasedAt: 'fill', actor,\s+notFrom: \['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'\]/);
-    expect(proj).toMatch(/purchased_at, created_by\)\s+VALUES \(\?, \?, \?, \?, \?, 'active', COALESCE\(\(SELECT um0\.purchased_at FROM user_memberships um0 WHERE um0\.id = \? AND um0\.gym_id = \?\), UTC_TIMESTAMP\(\)\), \?\)/);
+    // #2125 M6b-51c-1: a new assignment keeps its predecessor's purchase time, read off the
+    // predecessor's plan snapshot, else now; the same value goes on its own snapshot.
+    expect(proj).toMatch(/SELECT COALESCE\(\(SELECT pa\.purchased_at FROM plan_snapshots pa/);
+    expect(proj).toMatch(/writeAssignmentPurchasedAt\(tx, gymId, umId, purchasedAt\)/);
+    expect(read('api/assignment-commit.ts')).toMatch(/writeAssignmentPurchasedAt\(tx, input\.gymId, Number\(row\.id\), 'fill'\)/);
+    expect(read('api/plan-assignment-sync.ts')).not.toMatch(/s\.purchased_at = um\.purchased_at/);
   });
 
   it('every cancelling UPDATE keeps the first closed_at', () => {
