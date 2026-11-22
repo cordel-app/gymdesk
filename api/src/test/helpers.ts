@@ -516,6 +516,12 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
         `UPDATE plan_snapshots s JOIN user_memberships um ON um.id = s.source_user_membership_id
             SET s.status = um.status, s.starts_at = um.starts_at, s.ends_at = um.ends_at
           WHERE s.source_user_membership_id = ?`, [result.insertId]);
+      // #2125 M6b-51d-7b: and so does its anchor, the assignment's record (the set's activation above
+      // wrote the lifecycle a real activation would, not the hand-written row's).
+      await db.query(
+        `UPDATE plan_snapshots a JOIN user_memberships um ON um.id = a.source_user_membership_id
+            SET a.assignment_status = um.status, a.assignment_ends_at = um.ends_at, a.assignment_closed_at = um.closed_at
+          WHERE a.source_user_membership_id = ? AND a.assignment_id = a.id`, [result.insertId]);
     }
     // #2125 M6b-51c-5: the sync reads an assignment's lifecycle off its anchor, which a hand-written
     // row has no writer to fill; this is what migration 453's backfill does for history.
@@ -858,6 +864,8 @@ export async function createTestDraftAssignment(
       membershipFeePrice: null, basePrice: null, planPriceId: null,
       discountReason: null, discountExpiresAt: null, actor: { name: 'Test fixture' },
     });
+    // The Draft's anchor now exists and was seeded by the real writer; nothing is left to mirror.
+    await mirrorLegacyLifecycle(tx, [Number(insertId)]);
     return Number(insertId);
   });
   if (opts.config) await setAssignmentConfig(umId, opts.config);
@@ -874,9 +882,7 @@ export async function syncTestAssignmentSnapshots(umId: number): Promise<void> {
   const { syncPlanSnapshotsForAssignment } = await import('../api/plan-snapshot-sync');
   const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM user_memberships WHERE id = ?', [umId]);
   if (!rows[0]) throw new Error(`syncTestAssignmentSnapshots: no assignment ${umId}`);
-  // #2125 M6b-51c-5: the sync reads the lifecycle off the anchor; a hand-written row is mirrored onto
-  // it first, as the one writer does for a real change (migration 453's backfill for history).
-  await mirrorLegacyLifecycle(db, [umId]);
+  // #2125 M6b-51d-7b: the fixture door already wrote a hand-written change onto the anchor.
   await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, rows[0].gym_id, umId));
 }
 
@@ -1092,9 +1098,18 @@ export function proratedToNextFirst(monthly: number, today: Date = new Date()): 
  * row again can call it again. A real route writes these through the sync.
  */
 export async function snapshotTestAssignment(umId: number): Promise<number> {
+  // #2125 M6b-51d-7b: once an anchor states the assignment, its lifecycle is the anchor's (a route may
+  // have moved it since the row was written by hand); the row's own values are the creation's. A
+  // hand-written row whose anchor has not taken them yet takes them now.
+  await mirrorLegacyLifecycle(db, [umId]);
   const { rows } = await db.query<any>(
-    `SELECT gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at, created_at
-       FROM user_memberships WHERE id = ?`, [umId]);
+    `SELECT um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.created_at,
+            IF(a.assignment_status IS NULL, um.status, a.assignment_status) AS status,
+            IF(a.assignment_status IS NULL, um.ends_at, a.assignment_ends_at) AS ends_at,
+            IF(a.assignment_status IS NULL, um.closed_at, a.assignment_closed_at) AS closed_at
+       FROM user_memberships um
+       LEFT JOIN plan_snapshots a ON a.gym_id = um.gym_id AND a.source_user_membership_id = um.id AND a.assignment_id = a.id
+      WHERE um.id = ?`, [umId]);
   const um = rows[0];
   if (!um) throw new Error(`snapshotTestAssignment: no assignment ${umId}`);
   const { rows: existing } = await db.query<{ id: number }>(
@@ -1104,7 +1119,9 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
       `UPDATE plan_snapshots SET status = ?, starts_at = ?, ends_at = ?, closed_at = ?, created_at = ?
         WHERE source_user_membership_id = ?`,
       [um.status, um.starts_at, um.ends_at, um.closed_at, um.created_at, umId]);
-    await mirrorLegacyLifecycle(db, [umId]);
+    await db.query(
+      `UPDATE plan_snapshots SET assignment_status = ?, assignment_ends_at = ?, assignment_closed_at = ?
+        WHERE source_user_membership_id = ? AND assignment_id = id`, [um.status, um.ends_at, um.closed_at, umId]);
     return Number(existing[0].id);
   }
   const { insertId: setId } = await db.query(
@@ -1156,7 +1173,11 @@ export async function linkTestSetToAssignment(productSetId: number, umId: number
       `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
         WHERE j.product_set_id = ? AND s.source_user_membership_id IS NULL ORDER BY j.id LIMIT 1`, [productSetId]);
     if (own[0]) {
-      await db.query('UPDATE plan_snapshots SET source_user_membership_id = ? WHERE id = ?', [umId, own[0].id]);
+      // The snapshot becomes the hand-written assignment's anchor, carrying the row's lifecycle
+      // (#2125 M6b-51d-7b: the anchor is the only record the writer reads and writes).
+      await db.query('UPDATE plan_snapshots SET source_user_membership_id = ?, assignment_id = id WHERE id = ?',
+        [umId, own[0].id]);
+      await mirrorLegacyLifecycle(db, [umId]);
     } else {
       await snapshotTestAssignment(umId);
     }

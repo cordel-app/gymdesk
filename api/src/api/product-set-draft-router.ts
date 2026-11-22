@@ -352,11 +352,14 @@ export async function simulationHandler(req: any, res: any, next: any) {
     const set = rows[0];
     if (!set || (set.status !== 'in_cart' && set.status !== 'pending_payment')) return res.json(await nameSimulatedEvents(db, gymId, base));
 
-    let initial: { date: string; lines: BillingEventLine[] } | null = null;
+    let initial: { date: string; lines: BillingEventLine[]; coveredDates?: string[] } | null = null;
     try {
       const { startsAt, charge } = await commitCharge(gymId, set);
       if (charge && charge.simulationLines.length > 0) {
-        initial = { date: startsAt, lines: charge.simulationLines.map(toBillingEventLine) };
+        initial = {
+          date: charge.billingDate ?? startsAt, lines: charge.simulationLines.map(toBillingEventLine),
+          coveredDates: charge.coveredDates,
+        };
       }
     } catch { initial = null; }
 
