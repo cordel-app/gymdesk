@@ -188,7 +188,7 @@ describe('editing a Draft line (#2856)', () => {
 
     // #3026 stage 3d-3a: the line's Product snapshot copy states the reference's confirmation too.
     const confirmationOnSnapshot = async () => (await db.query<any>(
-      `SELECT pp.snapshot_confirmed_at, pp.source_application_id FROM product_promotion_snapshots pp
+      `SELECT pp.snapshot_confirmed_at, COALESCE(pp.source_application_id, pp.id) AS app_id FROM product_promotion_snapshots pp
          JOIN product_set_periodical_snapshots lnk ON lnk.product_periodical_snapshot_id = pp.product_periodical_snapshot_id
         WHERE lnk.product_set_id = ?`, [draftId])).rows;
     const referenced = await confirmationOnSnapshot();
@@ -208,7 +208,8 @@ describe('editing a Draft line (#2856)', () => {
         WHERE lnk.product_set_id = ?`, [draftId]);
     expect(Number(frozen[0].n)).toBe(1);
     const confirmed = await confirmationOnSnapshot();
-    expect(Number(confirmed[0].source_application_id)).toBe(Number(apps[0].id));
+    // #3026 stage 3d-3c: the snapshot row is the application, with no legacy twin.
+    expect(Number(confirmed[0].app_id)).toBe(Number(apps[0].id));
     expect(confirmed[0].snapshot_confirmed_at).not.toBeNull();
     expect(new Date(confirmed[0].snapshot_confirmed_at).getTime())
       .toBe(new Date(apps[0].snapshot_confirmed_at).getTime());
@@ -309,7 +310,7 @@ describe('editing a Draft line (#2856)', () => {
     expect((await towelRow()).promotions.map((p: any) => p.promotion_id)).toEqual([half]);
 
     // Removing the Promotion on the Draft leaves the Active version's application (and the shared line) alone.
-    const { rows: draftApps } = await db.query<any>(
+    const { rows: draftApps } = await legacyChildQuery(
       'SELECT id FROM user_membership_promotions WHERE product_set_id = ? AND promotion_id = ?', [draftId, half]);
     expect(draftApps).toHaveLength(1);
     const del = await auth(request.delete(`${mset(draftId)}/promotions/${draftApps[0].id}`));

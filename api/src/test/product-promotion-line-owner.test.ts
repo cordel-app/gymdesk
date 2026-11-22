@@ -6,6 +6,7 @@ import { activateWithEvents } from '../api/product-set-configuration';
 import { ensureRecurringDraft, startRecurringPurchaseDraft } from '../api/recurring-purchase-draft';
 import { revokePromotionMutator } from '../api/product-set-bridge';
 import { deleteRecurringLine } from '../api/recurring-line-writer';
+import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
 import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 // #1991 stage 3: a Product-target Promotion application is owned by the
@@ -131,5 +132,46 @@ describe('a Product promotion application is owned by its line (#1991 stage 3)',
     expect(two.lineId).not.toBe(one.lineId);
     const rows = await apps(one.productSetId);
     expect(rows.map((r: any) => Number(r.recurrent_snapshot_id)).sort()).toEqual([one.lineId, two.lineId].sort());
+  });
+
+  it('writes the line\'s Product snapshot rows and no legacy row, through apply, confirmation and clone (#3026 stage 3d-3c)', async () => {
+    const m = await member();
+    const prod = await product();
+    const promo = await promotion(prod);
+    const legacyRows = async (setId: number) => Number((await db.query<any>(
+      'SELECT COUNT(*) AS n FROM user_membership_promotions WHERE product_set_id = ?', [setId])).rows[0].n);
+    const onSnapshot = async (setId: number) => (await db.query<any>(
+      `SELECT pp.id, pp.source_application_id, pp.snapshot_confirmed_at, pp.snapshot,
+              (SELECT COUNT(*) FROM product_promotion_grant_snapshots g WHERE g.product_promotion_snapshot_id = pp.id) AS grants
+         FROM product_promotion_snapshots pp WHERE pp.product_set_id = ? ORDER BY pp.id`, [setId])).rows;
+
+    const first = await buy(m, prod, [promo]);
+    let rows = await onSnapshot(first.productSetId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source_application_id).toBeNull();
+    expect(rows[0].snapshot).toBeNull();
+    expect(Number(rows[0].grants)).toBe(0);
+    expect(await legacyRows(first.productSetId)).toBe(0);
+    // The route-facing id is the snapshot row's own.
+    expect(Number((await apps(first.productSetId))[0].id)).toBe(Number(rows[0].id));
+
+    await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, first.productSetId));
+    rows = await onSnapshot(first.productSetId);
+    expect(rows[0].snapshot_confirmed_at).not.toBeNull();
+    expect(rows[0].snapshot).not.toBeNull();
+    expect(Number(rows[0].grants)).toBe(1);
+    await activate(first.productSetId, m, true);
+
+    const draft = await db.transaction(async (tx) => {
+      const out = await ensureRecurringDraft(tx, { gymId, memberId: m, actor, today: TODAY });
+      if (out.kind !== 'ok') throw new Error(out.kind);
+      return out.productSetId;
+    });
+    const copied = await onSnapshot(draft);
+    expect(copied).toHaveLength(1);
+    expect(copied[0].id).not.toBe(rows[0].id);
+    expect(copied[0].snapshot_confirmed_at).not.toBeNull();
+    expect(Number(copied[0].grants)).toBe(1);
+    expect(await legacyRows(draft)).toBe(0);
   });
 });

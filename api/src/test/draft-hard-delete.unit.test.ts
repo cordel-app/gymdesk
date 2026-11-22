@@ -16,7 +16,7 @@ describe('DELETE /user-memberships/:id/draft (#1240)', () => {
   });
 
   it('only deletes a locked Draft row and answers 409 otherwise', () => {
-    expect(block).toContain('FOR UPDATE');
+    expect(block).toContain('lockAssignmentRecord('); // #2125 M6b-51d-2: the lock is the anchor snapshot's
     expect(block).toContain('ASSIGNMENT_CREATION_STATUS');
     expect(block).toContain('DELETE FROM user_memberships');
     expect(block).toContain('409');

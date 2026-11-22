@@ -3,7 +3,9 @@
 // `user_membership_promotions` row for it any more. Tests written against the legacy shape
 // ("the applications of this assignment / this Product Set") read these derived tables instead,
 // which present the plan snapshot rows under the legacy column names, beside the legacy rows that
-// have no plan snapshot twin (Product-target applications, and rows a fixture seeded by hand).
+// have no plan snapshot twin (rows a fixture seeded by hand). #3026 stage 3d-3c: a line-owned
+// Product-target application is its line's Product snapshot row, presented the same way (its id is
+// `COALESCE(source_application_id, id)`, its line the legacy line id).
 
 const APPLICATION_COLUMNS = (setExpr: string) => `
   pps.id, pps.gym_id, pps.promotion_id, pps.applied_by, pps.applied_at, pps.consumed_at, pps.status,
@@ -17,7 +19,14 @@ const LEGACY_ONLY = `
          ump.created_by, ump.user_membership_id, ump.recurrent_snapshot_id,
          ump.snapshot_confirmed_at, ump.assignment_id
     FROM user_membership_promotions ump
-   WHERE NOT EXISTS (SELECT 1 FROM plan_promotion_snapshots tw WHERE tw.source_id = ump.id)`;
+   WHERE NOT EXISTS (SELECT 1 FROM plan_promotion_snapshots tw WHERE tw.source_id = ump.id)
+     AND NOT EXISTS (SELECT 1 FROM product_promotion_snapshots tp WHERE tp.source_application_id = ump.id)
+  UNION ALL
+  SELECT COALESCE(pp.source_application_id, pp.id), pp.gym_id, pp.promotion_id, pp.applied_by, pp.applied_at,
+         pp.consumed_at, pp.status, pp.snapshot, pp.revoked_at, pp.product_set_id, pp.modified_at, pp.modified_by,
+         pp.created_by, NULL, par.source_id, pp.snapshot_confirmed_at, NULL
+    FROM product_promotion_snapshots pp
+    JOIN product_periodical_snapshots par ON par.id = pp.product_periodical_snapshot_id`;
 
 /** One row per application: `product_set_id` is the latest Product Set linking its plan snapshot. */
 export const TEST_PLAN_APPLICATIONS = `(
@@ -41,7 +50,13 @@ export const TEST_PLAN_APPLICATION_GRANTS = (kind: 'session' | 'oneoff' | 'perio
   UNION ALL
   SELECT l.id, l.user_membership_promotion_id, ${GRANT_COLUMNS}
     FROM user_membership_promotion_${kind}_snapshot l
-   WHERE NOT EXISTS (SELECT 1 FROM plan_promotion_snapshots tw WHERE tw.source_id = l.user_membership_promotion_id))`;
+   WHERE NOT EXISTS (SELECT 1 FROM plan_promotion_snapshots tw WHERE tw.source_id = l.user_membership_promotion_id)
+     AND NOT EXISTS (SELECT 1 FROM product_promotion_snapshots tp WHERE tp.source_application_id = l.user_membership_promotion_id)
+  UNION ALL
+  SELECT g.id, COALESCE(pp.source_application_id, pp.id), g.${GRANT_COLUMNS.split(', ').join(', g.').replace('g.`action`', 'g.`action`')}
+    FROM product_promotion_grant_snapshots g
+    JOIN product_promotion_snapshots pp ON pp.id = g.product_promotion_snapshot_id
+   WHERE g.grant_kind = '${kind}' AND pp.product_periodical_snapshot_id IS NOT NULL)`;
 
 /** Rewrites a SELECT written against the legacy tables onto the derived tables above. */
 export function rewriteLegacyPromotionSelect(sql: string): string {
