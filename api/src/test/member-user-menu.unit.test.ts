@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  familyMemberPreviewSrc, familySectionMembers, signInPath, userMenuItems,
+  familyMemberPreviewSrc, familySectionMembers, signInPath, userMenuItemPath, userMenuItems,
 } from '../../../apps/member/src/lib/memberUserMenu';
 
 // #1282 — the Members App avatar is a menu (email, Profile, Log out) and Log out
@@ -22,10 +22,16 @@ const logout = source('src', 'lib', 'memberLogout.ts');
 const dialog = source('src', 'components', 'LogoutConfirmDialog.tsx');
 const adminBar = source('src', 'components', 'AdminBar.tsx');
 const topBar = source('src', 'components', 'TopBar.tsx');
+const familyPage = source('src', 'app', '[locale]', 'family', 'page.tsx');
 
 describe('#1282 what the menu offers', () => {
-  it('offers Profile, then the Family section, then Log out (#3156)', () => {
+  it('offers Profile, then Family, then Log out (#3156)', () => {
     expect(userMenuItems()).toEqual(['profile', 'family', 'logout']);
+  });
+
+  it('Profile and Family each open their own page (#3156 stage 2)', () => {
+    expect(userMenuItemPath('profile', 'es')).toBe('/es/profile');
+    expect(userMenuItemPath('family', 'ca')).toBe('/ca/family');
   });
 
   it('while impersonating, Log out returns to Support mode and keeps the superadmin signed in', () => {
@@ -59,11 +65,8 @@ describe('#1282 the top bar and the menu', () => {
 
   it('shows the entries with menu semantics and no longer the email (#3156)', () => {
     expect(menu).not.toContain('member.email');
-    expect(menu).toContain("t('nav.family')");
-    expect(menu).toContain("t('nav.family_owner')");
-    expect(menu).toContain("apiFetch('/me/family')");
-    expect(menu).toContain('<ImagePreviewButton');
-    expect(menu).toContain("t('nav.profile')");
+    expect(menu).toContain("t(`nav.${i}`)");
+    expect(menu).toContain('userMenuItemPath(i, locale)');
     expect(menu).toContain("t('nav.logout')");
     expect(menu).toContain('aria-haspopup="menu"');
     expect(menu).toContain("e.key === 'Escape'");
@@ -109,8 +112,13 @@ describe('#3156 the Family section', () => {
     expect(familyMemberPreviewSrc({ image_url: '  ' })).toBeNull();
   });
 
-  it('a click inside the portalled preview does not close the menu', () => {
-    expect(menu).toContain(`closest('[role="dialog"]')`);
+  it('lists the members on the Family page, never as menu options (#3156 stage 2)', () => {
+    expect(menu).not.toContain("apiFetch('/me/family')");
+    expect(menu).not.toContain('<ImagePreviewButton');
+    expect(familyPage).toContain("apiFetch('/me/family')");
+    expect(familyPage).toContain('familySectionMembers(body)');
+    expect(familyPage).toContain('<ImagePreviewButton');
+    expect(familyPage).toContain("t('nav.family_owner')");
   });
 });
 
@@ -132,6 +140,8 @@ describe('#1282 the labels exist in every locale', () => {
         expect(typeof nav[key]).toBe('string');
         expect(nav[key].length).toBeGreaterThan(0);
       }
+      const family = JSON.parse(readFileSync(join(MEMBER, 'locales', 'base', `${locale}.json`), 'utf-8')).family;
+      for (const key of ['title', 'loading', 'empty']) expect(typeof family[key]).toBe('string');
     });
   }
 });
