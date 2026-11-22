@@ -14,6 +14,7 @@ import {
   sharingTypeKey,
   yesNoKey,
   productTypeLabelKey,
+  purchaseEndDisplay,
 } from '@/app/[locale]/members/purchasedProductsView';
 
 // #1521 — the Products card's pure rules: stored values only, `null` where the
@@ -154,5 +155,18 @@ describe('productTypeLabelKey (#3190)', () => {
     expect(productTypeLabelKey(null)).toBeNull();
     expect(productTypeLabelKey('')).toBeNull();
     expect(productTypeLabelKey('locker')).toBeNull();
+  });
+});
+
+// #3189 — Merchandise reads — in the End date column; other types keep theirs.
+describe('purchaseEndDisplay', () => {
+  it('reads a dash for Merchandise, whatever dates it holds', () => {
+    expect(purchaseEndDisplay({ product_type: 'merchandise', valid_until: null, cancelled_on: null })).toEqual({ kind: 'dash' });
+    expect(purchaseEndDisplay({ product_type: 'merchandise', valid_until: '2026-12-01', cancelled_on: null })).toEqual({ kind: 'dash' });
+  });
+  it('keeps the date or Open-ended for other types', () => {
+    expect(purchaseEndDisplay({ product_type: 'fee', valid_until: null, cancelled_on: null })).toEqual({ kind: 'open_ended' });
+    expect(purchaseEndDisplay({ product_type: 'sessions', valid_until: '2026-12-01', cancelled_on: null })).toEqual({ kind: 'date', value: '2026-12-01' });
+    expect(purchaseEndDisplay({ product_type: 'other', valid_until: null, cancelled_on: '2026-11-02' })).toEqual({ kind: 'date', value: '2026-11-02' });
   });
 });

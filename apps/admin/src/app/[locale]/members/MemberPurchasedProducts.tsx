@@ -76,6 +76,7 @@ import {
   editableDraftLineId,
   yesNoKey,
   sharingTypeKey,
+  purchaseEndDisplay,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
@@ -271,9 +272,10 @@ export function MemberPurchasedProducts({
       header: t('purchase_col_end_date'),
       mobile: 'secondary',
       render: (item) => {
-        // The last valid day; a cancelled purchase with no defined validity ends the day it was cancelled (#1693).
-        const end = item.valid_until ?? item.cancelled_on ?? null;
-        return <span style={{ whiteSpace: 'nowrap' }}>{end ? formatGymDateOnly(end, gymFmt) : t('purchase_open_ended')}</span>;
+        // #1693 / #3189 — decided by purchaseEndDisplay(); Merchandise reads —.
+        const end = purchaseEndDisplay(item);
+        if (end.kind === 'dash') return dash;
+        return <span style={{ whiteSpace: 'nowrap' }}>{end.kind === 'date' ? formatGymDateOnly(end.value, gymFmt) : t('purchase_open_ended')}</span>;
       },
     },
     {
