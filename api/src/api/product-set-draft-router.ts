@@ -38,6 +38,9 @@ import {
  *   POST   /services, PUT /services/:serviceId (quantity), DELETE /services/:serviceId
  *   POST   /promotions, DELETE /promotions/:applicationId
  *   POST   /members, DELETE /members/:memberId
+ *   POST   /plans, DELETE /plans/:planSnapshotId        a further plan of the cart (#2966)
+ *   GET/PUT /plans/:planSnapshotId/benefits/:category, PUT …/billing-duration, …/fee, …/fee-benefit
+ *                                  one plan's configuration, by its snapshot id (#2966 stage 9)
  *   GET    /billing-event-simulation      the Billing Event Forecast of the Draft
  *
  * Every write locks the Draft, refuses a committed or expired one, refreshes its
@@ -203,6 +206,56 @@ productSetDraftRouter.delete('/plans/:planSnapshotId', requireModuleWrite('PAYME
   const snapshotId = Number(req.params.planSnapshotId);
   if (!Number.isInteger(snapshotId) || snapshotId <= 0) return res.status(404).json({ error: 'not_found' });
   return edit(req, res, 'update', (tx, d) => removeStaffPlanFromDraft(tx, d, snapshotId), next, { remove_plan: snapshotId });
+});
+
+/*
+ * #2966 stage 9 — the configuration of one plan of the cart, addressed by its plan snapshot id
+ * (the owner's contract: the set id names the cart, the snapshot id the plan within it). The same
+ * writers and the same contract as the set-level routes above, which keep editing the primary plan;
+ * a plan shared with or inherited from a running version answers `409 plan_not_editable`, and one
+ * the set does not hold `404`.
+ */
+const snapshotParam = (req: any): number => Number(req.params.planSnapshotId);
+
+productSetDraftRouter.get('/plans/:planSnapshotId/benefits/:category', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const category = req.params.category as ProductBenefitCategory;
+  if (!CATEGORIES.includes(category)) return res.status(404).json({ error: 'unknown section' });
+  const snapshotId = snapshotParam(req);
+  if (!Number.isInteger(snapshotId) || snapshotId <= 0) return res.status(404).json({ error: 'not_found' });
+  try {
+    const rows = await loadBenefitSection(gymId, Number((req.params as any).id), category, snapshotId);
+    if (rows == null) return res.status(404).json({ error: 'not_found' });
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+productSetDraftRouter.put('/plans/:planSnapshotId/benefits/:category', requireModuleWrite('PAYMENTS'), (req, res, next) => {
+  const category = req.params.category as ProductBenefitCategory;
+  if (!CATEGORIES.includes(category)) return res.status(404).json({ error: 'unknown section' });
+  const planSnapshotId = snapshotParam(req);
+  return edit(req, res, 'update', async (tx, draft) => {
+    const r = await writeBenefitSection(tx, draft, category, req.body?.items, { planSnapshotId });
+    return isRef(r) ? r : { ok: true as const, section: category, plan_snapshot_id: planSnapshotId };
+  }, next, { plan_snapshot_id: planSnapshotId, [`${category}_benefits`]: req.body?.items });
+});
+
+productSetDraftRouter.put('/plans/:planSnapshotId/billing-duration', requireModuleWrite('PAYMENTS'), (req, res, next) => {
+  const planSnapshotId = snapshotParam(req);
+  return edit(req, res, 'update', (tx, d) => setBillingDuration(tx, d, req.body, { planSnapshotId }), next,
+    { plan_snapshot_id: planSnapshotId, billing_duration: req.body });
+});
+
+productSetDraftRouter.put('/plans/:planSnapshotId/fee', requireModuleWrite('PAYMENTS'), (req, res, next) => {
+  const planSnapshotId = snapshotParam(req);
+  return edit(req, res, 'update', (tx, d) => setNegotiatedFee(tx, d, req.body, { planSnapshotId }), next,
+    { plan_snapshot_id: planSnapshotId, negotiated_fee: req.body });
+});
+
+productSetDraftRouter.put('/plans/:planSnapshotId/fee-benefit', requireModuleWrite('PAYMENTS'), (req, res, next) => {
+  const planSnapshotId = snapshotParam(req);
+  return edit(req, res, 'update', (tx, d) => setFeeBenefit(tx, d, req.body, { planSnapshotId }), next,
+    { plan_snapshot_id: planSnapshotId, personal_fee_benefit: req.body });
 });
 
 productSetDraftRouter.post('/promotions', requireModuleWrite('PAYMENTS'), (req, res, next) => {
