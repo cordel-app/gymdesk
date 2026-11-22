@@ -136,6 +136,18 @@ export function addedPlanRemovePath(row: { id: number; status?: string | null })
   return setId > 0 && snapshotId > 0 ? `/product-sets/${setId}/plans/${snapshotId}` : null;
 }
 
+/**
+ * #2966 stage 10 — which cart plan an added row's editor reads and writes, taken apart from the row
+ * id as `addedPlanRemovePath()` does. Only a Draft (`in_cart`) row is edited; the server still judges
+ * whether the plan takes an edit (`editable` on `GET /product-sets/:id/plans/:planSnapshotId`).
+ */
+export function addedPlanEditTarget(row: { id: number; status?: string | null }): { productSetId: number; planSnapshotId: number } | null {
+  if (row.status !== 'in_cart') return null;
+  const productSetId = Math.floor(row.id / 1_000_000);
+  const planSnapshotId = row.id % 1_000_000;
+  return productSetId > 0 && planSnapshotId > 0 ? { productSetId, planSnapshotId } : null;
+}
+
 const uniqueById = <T extends { id: number }>(rows: readonly T[]): T[] => {
   const seen = new Set<number>();
   return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));

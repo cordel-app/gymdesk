@@ -61,8 +61,9 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { addedCartPlans, addedPlanRemovePath, canEditLivePlan, pastPlans, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from './membershipPlansView';
+import { addedCartPlans, addedPlanEditTarget, addedPlanRemovePath, canEditLivePlan, pastPlans, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from './membershipPlansView';
 import { PendingPaymentPlans } from './PendingPaymentPlans';
+import { AddedCartPlanEditor } from './AddedCartPlanEditor';
 
 
 interface Props {
@@ -253,7 +254,15 @@ export function MemberMembershipPlans({
       {/* #1703: an in-flight (Draft) plan carries no sub-label; the status badge says it. */}
       {visible.heading !== 'draft' && <div style={subLabel}>{t('membership_plans_active')}</div>}
       <PendingPaymentPlans sets={pendingSets} spaced={visible.rows.length > 0 || addedSets.length > 0} />
-      <PendingPaymentPlans sets={addedSets} spaced={visible.rows.length > 0} status="in_cart" onRemove={canWrite ? removeAddedPlan : undefined} />
+      <PendingPaymentPlans sets={addedSets} spaced={visible.rows.length > 0} status="in_cart" onRemove={canWrite ? removeAddedPlan : undefined}
+        renderEditor={(row) => {
+          // #2966 stage 10: an added plan's configuration, edited by its plan snapshot.
+          const target = addedPlanEditTarget(row);
+          return target && (
+            <AddedCartPlanEditor {...target} canWrite={canWrite} onChanged={onChanged} />
+          );
+        }}
+      />
       {(visible.rows.length > 0 || (pendingSets.length === 0 && addedSets.length === 0)) && (
         <AssignedPlansTable
           rows={visible.rows}

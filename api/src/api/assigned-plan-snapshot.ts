@@ -214,7 +214,9 @@ const CATEGORIES: ProductBenefitCategory[] = ['session', 'oneoff', 'periodical']
  * configured). The frozen *price* is still the frozen price — nothing here
  * reaches for `products.amount`.
  */
-function selectSnapshotSection(table: string): string {
+function selectSnapshotSection(table: string, byPlanSnapshot = false): string {
+  // #2966 stage 10: a plan of a cart that no assignment names is read by its snapshot id alone.
+  const snapshot = byPlanSnapshot ? 'prm.um_id' : assignmentConfigSnapshotId('prm.um_id', 'prm.gym_id');
   return `SELECT b.*, gc.tax_behavior AS product_tax_behavior,
                  tr.rate_percent AS product_tax_rate_percent,
                  gc.image_url AS product_image_url,
@@ -223,7 +225,7 @@ function selectSnapshotSection(table: string): string {
                  gc.sharing_type AS product_sharing_type
           FROM (SELECT ? AS um_id, ? AS gym_id) prm
           JOIN ${table} b ON b.gym_id = prm.gym_id
-           AND b.plan_snapshot_id = ${assignmentConfigSnapshotId('prm.um_id', 'prm.gym_id')}
+           AND b.plan_snapshot_id = ${snapshot}
           LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
           ORDER BY b.item_name ASC, b.id ASC`;
@@ -342,6 +344,51 @@ export async function loadAssignedPlanSnapshot(
     snapshot_captured:
       Object.values(billing).some((v) => v != null)
       || session.length > 0 || oneoff.length > 0 || periodical.length > 0,
+  };
+}
+
+/**
+ * #2966 stage 10 — the configuration of one plan snapshot, in the Assigned Plan snapshot's shape, for
+ * a plan of a cart that no assignment names yet (a plan staff added to the member's in-cart Product
+ * Set). The same section query and the same line shaping as `loadAssignedPlanSnapshot()`, keyed by
+ * the snapshot itself; the caller has already checked the snapshot belongs to the set it named.
+ */
+export async function loadPlanSnapshotConfiguration(
+  gymId: string, planSnapshotId: number,
+): Promise<AssignedPlanSnapshot> {
+  const [{ rows: cfgRows }, ...benefitResults] = await Promise.all([
+    db.query(
+      `SELECT free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
+              recurring_billing_interval, recurring_billing_unit, membership_fee_price,
+              personal_fee_benefit_action, personal_fee_benefit_value, auto_renew
+         FROM plan_snapshots WHERE id = ? AND gym_id = ?`,
+      [planSnapshotId, gymId],
+    ),
+    ...CATEGORIES.map((category) => db.query(
+      selectSnapshotSection(PLAN_SNAPSHOT_TABLE_BY_CATEGORY[category], true),
+      [planSnapshotId, gymId],
+    )),
+  ]);
+  const cfg: any = cfgRows[0] ?? {};
+  const [session, oneoff, periodical] = await Promise.all(benefitResults.map(async (r) =>
+    (await withUnitAssignees(gymId, r.rows as any[])).map((row: any) => shapeBenefit({ ...row, user_membership_id: null }))));
+  const billing: AssignedPlanBillingSnapshot = {
+    free_periods: cfg.free_periods ?? null,
+    paid_periods: cfg.paid_periods ?? null,
+    bonus_periods: cfg.bonus_periods ?? null,
+    pay_beforehand_periods: cfg.pay_beforehand_periods ?? null,
+    recurring_billing_interval: cfg.recurring_billing_interval ?? null,
+    recurring_billing_unit: cfg.recurring_billing_unit ?? null,
+    membership_fee_price: cfg.membership_fee_price != null ? Number(cfg.membership_fee_price) : null,
+  };
+  return {
+    ...billing,
+    session_benefits: session,
+    oneoff_benefits: oneoff,
+    periodical_benefits: periodical,
+    personal_fee_benefit: toPersonalFeeBenefit(cfg.personal_fee_benefit_action, cfg.personal_fee_benefit_value),
+    auto_renew: toPlanDurationRepeats(cfg.auto_renew),
+    snapshot_captured: true,
   };
 }
 
