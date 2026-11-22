@@ -1158,6 +1158,39 @@ meRouter.get('/family-members', requireRole('member'), requireFeatureEnabled('ca
   } catch (err) { next(err); }
 });
 
+/**
+ * #3156 — the Family section of the avatar menu: every member of the caller's
+ * Family (the caller included) with their name, photo pair and whether they own
+ * it, owner first, then alphabetically. The caller is never named by the request,
+ * and a member alone in their family reads a list of one. Not behind a feature
+ * flag: the menu is on every page, as Profile is.
+ */
+meRouter.get('/family', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  try {
+    const memberId = await resolveMemberId(ctx.gymId, ctx);
+    const { rows } = await db.query<any>(
+      `SELECT fm.member_id, m.name, fm.is_owner, m.image_url, m.image_thumbnail_url, m.modified_at
+         FROM family_members me
+         JOIN family_members fm ON fm.family_id = me.family_id AND fm.gym_id = me.gym_id
+         JOIN members m ON m.id = fm.member_id AND m.gym_id = fm.gym_id AND m.deleted_at IS NULL
+        WHERE me.gym_id = ? AND me.member_id = ?
+        ORDER BY fm.is_owner DESC, m.name ASC, fm.member_id ASC`,
+      [ctx.gymId, memberId]);
+    res.json({
+      member_id: memberId,
+      members: rows.map((r: any) => ({
+        member_id: Number(r.member_id),
+        name: r.name,
+        is_owner: Number(r.is_owner) === 1,
+        image_url: r.image_url ?? null,
+        image_thumbnail_url: r.image_thumbnail_url ?? null,
+        modified_at: r.modified_at ?? null,
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
 /** Book self on a session. Returns the booking with booked/waitlisted status. */
 meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);

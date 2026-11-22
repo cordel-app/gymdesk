@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { signInPath, userMenuItems } from '../../../apps/member/src/lib/memberUserMenu';
+import {
+  familyMemberPreviewSrc, familySectionMembers, signInPath, userMenuItems,
+} from '../../../apps/member/src/lib/memberUserMenu';
 
 // #1282 — the Members App avatar is a menu (email, Profile, Log out) and Log out
 // asks first. In the API suite for #1009's reason: CI runs `npm test` in `api/`
@@ -22,12 +24,8 @@ const adminBar = source('src', 'components', 'AdminBar.tsx');
 const topBar = source('src', 'components', 'TopBar.tsx');
 
 describe('#1282 what the menu offers', () => {
-  it('offers exactly Profile and Log out', () => {
-    expect(userMenuItems()).toEqual(['profile', 'logout']);
-  });
-
-  it('offers a superadmin impersonating a member the same menu, Log out included', () => {
-    expect(userMenuItems()).toEqual(['profile', 'logout']);
+  it('offers Profile, then the Family section, then Log out (#3156)', () => {
+    expect(userMenuItems()).toEqual(['profile', 'family', 'logout']);
   });
 
   it('while impersonating, Log out returns to Support mode and keeps the superadmin signed in', () => {
@@ -59,8 +57,12 @@ describe('#1282 the top bar and the menu', () => {
     expect(topBar).not.toContain("router.push(`${homePath}/profile`)");
   });
 
-  it('shows the email and the two entries, with menu semantics', () => {
-    expect(menu).toContain('member.email');
+  it('shows the entries with menu semantics and no longer the email (#3156)', () => {
+    expect(menu).not.toContain('member.email');
+    expect(menu).toContain("t('nav.family')");
+    expect(menu).toContain("t('nav.family_owner')");
+    expect(menu).toContain("apiFetch('/me/family')");
+    expect(menu).toContain('<ImagePreviewButton');
     expect(menu).toContain("t('nav.profile')");
     expect(menu).toContain("t('nav.logout')");
     expect(menu).toContain('aria-haspopup="menu"');
@@ -84,6 +86,34 @@ describe('#1282 the top bar and the menu', () => {
   });
 });
 
+describe('#3156 the Family section', () => {
+  it('keeps the API order and drops unreadable rows', () => {
+    const members = familySectionMembers({ members: [
+      { member_id: 2, name: 'Zoe', is_owner: true, image_url: null, image_thumbnail_url: null },
+      { member_id: 1, name: 'Anna', is_owner: false, image_url: 'x.webp', image_thumbnail_url: 'x-t.webp' },
+      { name: 'no id' },
+      null,
+    ] });
+    expect(members.map((m) => m.member_id)).toEqual([2, 1]);
+  });
+
+  it('lists nobody for an unreadable answer, so the section is absent', () => {
+    expect(familySectionMembers(null)).toEqual([]);
+    expect(familySectionMembers({})).toEqual([]);
+    expect(familySectionMembers({ members: 'x' })).toEqual([]);
+  });
+
+  it('enlarges the 1080 × 1080 master, never the thumbnail, and nothing without a photo', () => {
+    expect(familyMemberPreviewSrc({ image_url: 'https://cdn/m.webp' })).toBe('https://cdn/m.webp');
+    expect(familyMemberPreviewSrc({ image_url: null })).toBeNull();
+    expect(familyMemberPreviewSrc({ image_url: '  ' })).toBeNull();
+  });
+
+  it('a click inside the portalled preview does not close the menu', () => {
+    expect(menu).toContain(`closest('[role="dialog"]')`);
+  });
+});
+
 describe('#1282 the logout sequence', () => {
   it('removes the push token before the session ends, then lands on sign-in', () => {
     const unregister = logout.indexOf('unregisterPushToken(apiFetch)');
@@ -98,7 +128,7 @@ describe('#1282 the labels exist in every locale', () => {
   for (const locale of ['en', 'es', 'ca']) {
     it(`${locale} has the menu keys`, () => {
       const nav = JSON.parse(readFileSync(join(MEMBER, 'locales', 'base', `${locale}.json`), 'utf-8')).nav;
-      for (const key of ['user_menu', 'logout', 'logout_confirm_title', 'logout_confirm_body', 'logout_cancel']) {
+      for (const key of ['user_menu', 'logout', 'logout_confirm_title', 'logout_confirm_body', 'logout_cancel', 'family', 'family_owner']) {
         expect(typeof nav[key]).toBe('string');
         expect(nav[key].length).toBeGreaterThan(0);
       }

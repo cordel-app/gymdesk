@@ -50,7 +50,9 @@
     "logout": "Log out",
     "logout_confirm_title": "Log out?",
     "logout_confirm_body": "You will be signed out of this account on this device.",
-    "logout_cancel": "Cancel"
+    "logout_cancel": "Cancel",
+    "family": "Family",
+    "family_owner": "Owner"
   },
   "common": {
     "error": "Something went wrong.",
