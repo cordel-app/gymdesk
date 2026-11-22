@@ -228,3 +228,48 @@ describe('Promotions on a plan added to the cart (#2966 stage 7)', () => {
     expect(activate.status).not.toBe(200);
   });
 });
+
+describe('the Member card reports an added plan\'s Promotions (#2966 stage 8)', () => {
+  const configuration = (memberId: number, gym = gymId) =>
+    auth(request.get(`/user-memberships/member/${memberId}/configuration`), gym);
+
+  it('lists the standing Promotions of each added plan, and none on a plan without', async () => {
+    const owner = await member();
+    const setId = await draft(await plan(30), owner);
+    const withPromo = await plan(50);
+    const promo = await promotion(withPromo, 'percentage_discount', 10);
+    const a = await auth(request.post(`/product-sets/${setId}/plans`)).send({ membership_plan_id: withPromo, promotion_ids: [promo] });
+    expect(a.status).toBe(200);
+    const b = await auth(request.post(`/product-sets/${setId}/plans`)).send({ membership_plan_id: await plan(40) });
+    expect(b.status).toBe(200);
+
+    const res = await configuration(owner);
+    expect(res.status).toBe(200);
+    const set = res.body.product_sets.find((ps: any) => ps.id === setId);
+    const byId = new Map(set.added_plans.map((p: any) => [p.plan_snapshot_id, p]));
+    const promoName = (await db.query<any>('SELECT name FROM promotions WHERE id = ?', [promo])).rows[0].name;
+    expect((byId.get(a.body.plan_snapshot_id) as any).promotions)
+      .toEqual([expect.objectContaining({ promotion_id: promo, promotion_name: promoName })]);
+    expect((byId.get(b.body.plan_snapshot_id) as any).promotions).toEqual([]);
+  });
+
+  it('drops a Promotion that is no longer standing on the added plan', async () => {
+    const owner = await member();
+    const setId = await draft(await plan(30), owner);
+    const added = await plan(50);
+    const promo = await promotion(added, 'percentage_discount', 10);
+    const a = await auth(request.post(`/product-sets/${setId}/plans`)).send({ membership_plan_id: added, promotion_ids: [promo] });
+    expect(a.status).toBe(200);
+    await db.query(`UPDATE plan_promotion_snapshots SET status = 'revoked', revoked_at = UTC_TIMESTAMP() WHERE plan_snapshot_id = ?`,
+      [a.body.plan_snapshot_id]);
+    const set = (await configuration(owner)).body.product_sets.find((ps: any) => ps.id === setId);
+    expect(set.added_plans[0].promotions).toEqual([]);
+  });
+
+  it('keeps another gym out', async () => {
+    const owner = await member();
+    await draft(await plan(30), owner);
+    const res = await configuration(owner, otherGymId);
+    expect(res.status === 404 || (res.status === 200 && res.body.product_sets.length === 0)).toBe(true);
+  });
+});
