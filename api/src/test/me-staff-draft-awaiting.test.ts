@@ -159,6 +159,9 @@ describe('#2895 a staff assignment Draft in the Members App', () => {
       [gymId, promoId, planId]);
     await db.query(`INSERT INTO promotion_membership_fee_benefits (gym_id, promotion_id, enabled, action, value, duration_months)
                     VALUES (?, ?, 1, 'percentage_discount', 50, 2)`, [gymId, promoId]);
+    // An earlier `as()` call may have queued a member identity its request never consumed; the
+    // staff call must authenticate as the admin, so drop any leftover before it.
+    vi.mocked(verifyToken).mockReset().mockResolvedValue({ sub: 'test-user-id' } as any);
     const apply = await request.post(`/user-memberships/${umId}/promotions`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ promotion_id: promoId });
     expect(apply.status).toBeLessThan(300);
