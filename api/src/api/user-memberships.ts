@@ -88,7 +88,7 @@ import {
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { loadPlanAccessEntries } from './plan-center-access';
-import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { insertAssignment, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -926,18 +926,12 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     // Ledger row (P1.6): membership creation is a NULL -> draft transition,
     // written in the same transaction as the insert.
     const outcome = await db.transaction(async (tx) => {
-      const { insertId } = await tx.query(
-        `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, starts_at, ends_at, status,
-          created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          member_id, gymId, membership_plan_id,
-          starts_at, ends_at ?? null,
-          ASSIGNMENT_CREATION_STATUS,
-          actorText,
-        ],
-      );
+      const insertId = await insertAssignment(tx, {
+        gymId, memberId: Number(member_id), membershipPlanId: Number(membership_plan_id),
+        startsAt: starts_at, endsAt: ends_at ?? null,
+        status: ASSIGNMENT_CREATION_STATUS,
+        createdBy: actorText,
+      });
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: Number(member_id),
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
@@ -1546,22 +1540,16 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       // live assignment covering this member, answers the 409 or supersedes
       // them. That moved #956's whole enforcement, including this route's
       // `confirm`, onto one transition instead of four insert paths.
-      const { insertId } = await tx.query(
-        `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, starts_at, ends_at, status,
-          replaces_user_membership_id, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          prev.member_id, gymId, membership_plan_id,
-          starts_at, ends_at ?? null,
-          ASSIGNMENT_CREATION_STATUS,
-          // #2125 stage 20: the plan whose row this was raised from is the one a Replace cancels.
-          Number(req.params.id),
-          // #958 — the successor is a new Assigned Plan, so it records who
-          // assigned *it*; the superseded row keeps its own.
-          actorText,
-        ],
-      );
+      const insertId = await insertAssignment(tx, {
+        gymId, memberId: Number(prev.member_id), membershipPlanId: Number(membership_plan_id),
+        startsAt: starts_at, endsAt: ends_at ?? null,
+        status: ASSIGNMENT_CREATION_STATUS,
+        // #2125 stage 20: the plan whose row this was raised from is the one a Replace cancels.
+        replacesUserMembershipId: Number(req.params.id),
+        // #958 — the successor is a new Assigned Plan, so it records who
+        // assigned *it*; the superseded row keeps its own.
+        createdBy: actorText,
+      });
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: prev.member_id,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
@@ -1655,11 +1643,11 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
       const adopt = plain && plain.user_membership_id == null && plain.previous_product_set_id === active.id
         ? plain.id : null;
       const dateOnly = (v: any) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
-      const { insertId } = await tx.query(
-        `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [um.member_id, gymId, um.membership_plan_id, dateOnly(um.starts_at), dateOnly(um.ends_at),
-          ASSIGNMENT_CREATION_STATUS, actorText]);
+      const insertId = await insertAssignment(tx, {
+        gymId, memberId: Number(um.member_id), membershipPlanId: Number(um.membership_plan_id),
+        startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
+        status: ASSIGNMENT_CREATION_STATUS, createdBy: actorText,
+      });
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: um.member_id,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,

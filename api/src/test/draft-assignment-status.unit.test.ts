@@ -124,18 +124,25 @@ describe('every assignment path creates a Draft', () => {
   });
 
   it('has no INSERT INTO user_memberships that omits the status column or hardcodes a literal', () => {
+    // #2125 M6b-51d-1: the one INSERT is the writer's (`insertAssignment()`), which takes the
+    // status as a required field; the three creation paths hand it the creation constant.
+    const WRITER = code(API_SRC, 'api', 'assignment-lifecycle-writer.ts');
+    const inserts = [...WRITER.matchAll(
+      /INSERT INTO user_memberships\s*\(([^)]*)\)[\s\S]*?VALUES \(([^)]*)\)/g,
+    )];
+    expect(inserts).toHaveLength(1);
+    // The column still DEFAULTs to 'active' (migration 001), so an insert that
+    // simply left it out would create an Active plan with no error at all.
+    expect(inserts[0][1]).toContain('status');
+    expect(inserts[0][2]).not.toContain("'active'");
+    expect(WRITER).toMatch(/status: string;/);
     for (const source of [USER_MEMBERSHIPS, MEMBERSHIP_PLANS]) {
-      const inserts = [...source.matchAll(
-        /INSERT INTO user_memberships\s*\(([^)]*)\)[\s\S]*?VALUES \(([^)]*)\)/g,
-      )];
-      expect(inserts.length).toBeGreaterThan(0);
-      for (const insert of inserts) {
-        // The column still DEFAULTs to 'active' (migration 001), so a path that
-        // simply left it out would create an Active plan with no error at all.
-        expect(insert[1]).toContain('status');
-        // And a path writing `'active'` straight into the VALUES list would skip
-        // the Draft state for whichever screen assigns through it.
-        expect(insert[2]).not.toContain("'active'");
+      expect(source).not.toMatch(/INSERT INTO user_memberships/);
+      const calls = [...source.matchAll(/insertAssignment\(tx, \{([\s\S]*?)\}\);/g)];
+      expect(calls.length).toBeGreaterThan(0);
+      for (const call of calls) {
+        // A path writing `'active'` would skip the Draft state for whichever screen assigns through it.
+        expect(call[1]).toContain('status: ASSIGNMENT_CREATION_STATUS');
       }
     }
   });
