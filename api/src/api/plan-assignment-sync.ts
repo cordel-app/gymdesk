@@ -227,6 +227,64 @@ export async function lockAssignmentAnchor(exec: Exec, gymId: string, userMember
   return anchor;
 }
 
+/** What a writer reads of the assignment it has locked (`lockAssignmentRecord()`). */
+export interface LockedAssignment {
+  /** The legacy id the routes name. */
+  id: number;
+  anchor_id: number;
+  member_id: number;
+  membership_plan_id: number | null;
+  status: string;
+  /** `YYYY-MM-DD`, from the assignment's current snapshot (its anchor's when no Product Set links one). */
+  starts_at: string;
+  /** `YYYY-MM-DD`, the assignment's own end date (`assignment_ends_at`). */
+  ends_at: string | null;
+}
+
+/**
+ * #2125 M6b-51d-2 — the one lock a writer of an assignment takes, and what it reads while holding it.
+ * Locks the assignment's anchor snapshot (`assignment_id = id`) `FOR UPDATE` and answers its owner,
+ * plan and lifecycle off it (`assignment_status`, `assignment_ends_at`, which `writeAssignmentLifecycle()`
+ * keeps exactly in step, M6b-51c-4), with the start date of its current snapshot. Replaces the
+ * `SELECT … FROM user_memberships … FOR UPDATE` every writer took first: the anchor is the
+ * assignment's record now, so it is what serialises two writers of one assignment. `null` when no
+ * snapshot names the id (an unknown assignment), or when its status is outside `statusIn` / inside
+ * `statusNotIn` (the guard the legacy read spelled in its WHERE; the row stays locked either way).
+ */
+export async function lockAssignmentRecord(
+  exec: Exec, gymId: string, userMembershipId: number | string,
+  guard: { statusIn?: readonly string[]; statusNotIn?: readonly string[] } = {},
+): Promise<LockedAssignment | null> {
+  const id = Number(userMembershipId);
+  if (!Number.isSafeInteger(id) || id < 1) return null;
+  const { rows } = await exec.query<{
+    anchor_id: number; member_id: number; membership_plan_id: number | null; status: string | null;
+    ends_at: string | null; anchor_starts_at: string | null;
+  }>(
+    `SELECT a.id AS anchor_id, DATE_FORMAT(a.starts_at, '%Y-%m-%d') AS anchor_starts_at, a.member_id, a.membership_plan_id, a.assignment_status AS status,
+            DATE_FORMAT(a.assignment_ends_at, '%Y-%m-%d') AS ends_at
+       FROM plan_snapshots a
+      WHERE a.gym_id = ? AND a.source_user_membership_id = ? AND a.assignment_id = a.id
+      ORDER BY a.id LIMIT 1 FOR UPDATE`, [gymId, id]);
+  const anchor = rows[0];
+  if (!anchor || anchor.status == null) return null;
+  const status = String(anchor.status);
+  if (guard.statusIn && !guard.statusIn.includes(status)) return null;
+  if (guard.statusNotIn && guard.statusNotIn.includes(status)) return null;
+  const { rows: current } = await exec.query<{ starts_at: string | null }>(
+    `SELECT DATE_FORMAT(pa.starts_at, '%Y-%m-%d') AS starts_at FROM plan_snapshots pa
+      WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?')} LIMIT 1`, [gymId, id]);
+  return {
+    id,
+    anchor_id: Number(anchor.anchor_id),
+    member_id: Number(anchor.member_id),
+    membership_plan_id: anchor.membership_plan_id == null ? null : Number(anchor.membership_plan_id),
+    status,
+    starts_at: String(current[0]?.starts_at ?? anchor.anchor_starts_at),
+    ends_at: anchor.ends_at,
+  };
+}
+
 /** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
 export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembershipId: number | null): Promise<number | null> {
   if (userMembershipId == null) return null;

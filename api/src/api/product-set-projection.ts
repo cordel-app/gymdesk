@@ -1,7 +1,7 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import {
-  lockAssignmentAnchor, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, writeAssignmentPurchasedAt,
+  lockAssignmentRecord, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, writeAssignmentPurchasedAt,
 } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -70,16 +70,14 @@ export async function closeAssignment(
   /** `superseded` when a successor takes the plan over, `cancelled` when the member is left with none (#1991). */
   closedAs: 'cancelled' | 'superseded' = 'cancelled',
 ): Promise<string | null> {
-  const { rows: before } = await tx.query<{ status: string; member_id: number; ends_at: Date | string | null }>(
-    `SELECT status, member_id, ends_at FROM user_memberships
-      WHERE id = ? AND gym_id = ? AND status IN ('active','to_be_canceled','paused','pending_payment','in_cart') FOR UPDATE`,
-    [id, gymId]);
-  if (!before[0]) return null;
-  await lockAssignmentAnchor(tx, gymId, id);
+  // #2125 M6b-51d-2: locked and read on the assignment's anchor snapshot.
+  const locked = await lockAssignmentRecord(tx, gymId, id,
+    { statusIn: ['active', 'to_be_canceled', 'paused', 'pending_payment', 'in_cart'] });
+  if (!locked) return null;
   // #2659 stage 2: a member's cancellation keeps the plan running to its last
   // paid day (`ends_at`) as `active_cancel_at_period_end` when that day is today
   // or later; the end-of-period sweep moves it to `cancelled` afterwards.
-  const current = dateOnly(before[0].ends_at);
+  const current = dateOnly(locked.ends_at);
   const newEndsAt = current != null && current < endsAt ? current : endsAt;
   const status = closedAs === 'superseded'
     ? 'superseded'
@@ -91,8 +89,8 @@ export async function closeAssignment(
   // A transition is an audit row (#1325 PR 3, A4), whichever path made it.
   const { recordStatusChange } = await import('./billing-events');
   await recordStatusChange(tx, {
-    gymId, userMembershipId: id, memberId: Number(before[0].member_id),
-    previousStatus: before[0].status, newStatus: status, source: 'system', actorUserId: null,
+    gymId, userMembershipId: id, memberId: Number(locked.member_id),
+    previousStatus: locked.status, newStatus: status, source: 'system', actorUserId: null,
   });
   return status;
 }
@@ -157,10 +155,9 @@ export async function projectActiveProductSet(
     previousUmId = prev[0]?.user_membership_id != null ? Number(prev[0].user_membership_id) : null;
   }
   if (previousUmId != null) {
-    const { rows: um } = await tx.query<{ membership_plan_id: number | null }>(
-      'SELECT membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE', [previousUmId, gymId]);
-    if (um[0]) await lockAssignmentAnchor(tx, gymId, previousUmId);
-    previousPlanId = um[0]?.membership_plan_id != null ? Number(um[0].membership_plan_id) : null;
+    // #2125 M6b-51d-2: the predecessor is locked and read on its anchor snapshot.
+    const prevAssignment = await lockAssignmentRecord(tx, gymId, previousUmId);
+    previousPlanId = prevAssignment?.membership_plan_id ?? null;
   }
   const startsAt = dateOnly(set.starts_at) as string;
 

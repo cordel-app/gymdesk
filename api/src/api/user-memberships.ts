@@ -9,7 +9,7 @@ import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, writeDiscountOnVersion, writeDraftAssignmentDates } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { lockAssignmentAnchor, writeAssignmentReplacement } from './plan-assignment-sync';
+import { lockAssignmentRecord, writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, setBillingCadence as psSetBillingCadence, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember, setPlanBeneficiaries as psSetPlanBeneficiaries } from './product-set-draft';
@@ -83,7 +83,7 @@ import {
 } from './one-active-plan';
 import { LINKED_READ_ONLY_ERROR, MEMBER_MEMBERSHIP_SQL, assignmentRelationship, AssignmentRelationship } from '../domain/assignmentRelationship';
 import {
-  ASSIGNMENT_STATUSES, AssignmentStatus, CANCELLED_ASSIGNMENT_STATUSES_SQL, CANCELS_AT_PERIOD_END_STATUS,
+  ASSIGNMENT_STATUSES, AssignmentStatus, CANCELLED_ASSIGNMENT_STATUSES, CANCELLED_ASSIGNMENT_STATUSES_SQL, CANCELS_AT_PERIOD_END_STATUS,
 } from '../domain/assignmentStatus';
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
@@ -1032,14 +1032,10 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
     // Ledger row (P1.6): status flips emit status_changed in the same
     // transaction as the update. FOR UPDATE pins the previous status.
     const result = await db.transaction(async (tx) => {
-      const { rows: current } = await tx.query(
-        'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [req.params.id, gymId],
-      );
-      if (current.length === 0) return { kind: 'not_found' } as const;
-      // #2125 M6b-51b: the assignment's anchor snapshot is locked beside the legacy row (after it,
-      // the order every writer has), as the commit, the close and the projection do since M6b-51a.
-      await lockAssignmentAnchor(tx, gymId, Number(req.params.id));
+      // #2125 M6b-51d-2: the assignment is locked and read on its anchor snapshot.
+      const locked = await lockAssignmentRecord(tx, gymId, Number(req.params.id));
+      if (!locked) return { kind: 'not_found' } as const;
+      const current = [locked];
       // #511 §10 — validate any direct status flip against the transition table,
       // same as the dedicated /close, /pause and /reactivate actions.
       if (status && status !== current[0].status
@@ -1124,11 +1120,10 @@ userMembershipsRouter.delete('/:id/draft', requireModuleWrite('PAYMENTS'), async
   const { gymId } = getTenantContext(req);
   try {
     const outcome = await db.transaction(async (tx) => {
-      const { rows } = await tx.query(
-        'SELECT id, status, member_id, membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [req.params.id, gymId],
-      );
-      if (rows.length === 0) return { kind: 'not_found' } as const;
+      // #2125 M6b-51d-2: the assignment is locked and read on its anchor snapshot.
+      const locked = await lockAssignmentRecord(tx, gymId, Number(req.params.id));
+      if (!locked) return { kind: 'not_found' } as const;
+      const rows = [locked];
       if (rows[0].status !== ASSIGNMENT_CREATION_STATUS) return { kind: 'not_draft', status: rows[0].status as string } as const;
       // #1325 PR 3e: the Draft's version goes with it — left behind it would be
       // the owner's one in-flight version and lock them out of another.
@@ -1156,11 +1151,11 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   if (await redirectRetireToProductSet(req, res, { userMembershipId: Number(req.params.id), respond: null, legacyAuditAction: 'cancel' })) return;
   // Ledger row (P1.6): cancellation emits status_changed in the same transaction.
   const found = await db.transaction(async (tx) => {
-    const { rows: current } = await tx.query(
-      `SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? AND status NOT IN (${CANCELLED_ASSIGNMENT_STATUSES_SQL}, 'superseded') FOR UPDATE`,
-      [req.params.id, gymId],
-    );
-    if (current.length === 0) return false;
+    // #2125 M6b-51d-2: the assignment is locked and read on its anchor snapshot.
+    const locked = await lockAssignmentRecord(tx, gymId, Number(req.params.id),
+      { statusNotIn: [...CANCELLED_ASSIGNMENT_STATUSES, 'superseded'] });
+    if (!locked) return false;
+    const current = [locked];
     await writeAssignmentLifecycle(tx, gymId, Number(req.params.id), {
       status: 'cancelled', closedAt: 'keep_or_now', endsAt: 'today_if_null',
       actor: resolveRequestActor(getTenantContext(req)),
@@ -1526,11 +1521,10 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
 
   try {
     const outcome = await db.transaction(async (tx) => {
-      const { rows: current } = await tx.query(
-        'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [req.params.id, gymId],
-      );
-      if (current.length === 0) return { kind: 'not_found' as const };
+      // #2125 M6b-51d-2: the assignment is locked and read on its anchor snapshot.
+      const locked = await lockAssignmentRecord(tx, gymId, Number(req.params.id));
+      if (!locked) return { kind: 'not_found' as const };
+      const current = [locked];
       const prev = current[0];
 
       // #1108 stage 1: the successor is created as a **Draft**, so nothing is
@@ -1623,10 +1617,8 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
   const actorText = resolveRequestActor(getTenantContext(req));
   try {
     const outcome = await db.transaction(async (tx) => {
-      const { rows } = await tx.query<any>(
-        'SELECT id, member_id, membership_plan_id, starts_at, ends_at, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [req.params.id, gymId]);
-      const um = rows[0];
+      // #2125 M6b-51d-2: the assignment is locked and read on its anchor snapshot.
+      const um = await lockAssignmentRecord(tx, gymId, Number(req.params.id));
       if (!um) return { kind: 'not_found' as const };
       if (um.status === 'in_cart') return { kind: 'created' as const, id: Number(um.id), reused: true };
       if (!['active', 'paused'].includes(um.status)) return { kind: 'invalid' as const, status: String(um.status) };
@@ -1692,11 +1684,10 @@ async function transitionMembership(
 ) {
   const { gymId, userId, role } = getTenantContext(req);
   const result = await db.transaction(async (tx) => {
-    const { rows: current } = await tx.query(
-      'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-      [req.params.id, gymId],
-    );
-    if (current.length === 0) return { kind: 'not_found' } as const;
+    // #2125 M6b-51d-2: the assignment is locked and read on its anchor snapshot.
+    const locked = await lockAssignmentRecord(tx, gymId, Number(req.params.id));
+    if (!locked) return { kind: 'not_found' } as const;
+    const current = [locked];
     const prev = current[0];
     if (!allowedFrom.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
     await writeAssignmentLifecycle(tx, gymId, Number(prev.id), {
@@ -1882,12 +1873,9 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   if (pendingSetId != null) await reconcileSetPayments(gymId, pendingSetId, logger);
 
   const result = await db.transaction(async (tx) => {
-    const { rows: locked } = await tx.query(
-      'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-      [req.params.id, gymId],
-    );
-    if (locked.length === 0) return { kind: 'not_found' } as const;
-    const prev = locked[0];
+    // #2125 M6b-51d-2: the assignment is locked and read on its anchor snapshot.
+    const prev = await lockAssignmentRecord(tx, gymId, Number(req.params.id));
+    if (!prev) return { kind: 'not_found' } as const;
     if (!CLOSEABLE_FROM.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
     // #1325 PR 3b: a pending assignment's version goes with it (or the close is
     // refused while a payment on it is unresolved or settled).

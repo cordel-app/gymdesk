@@ -44,16 +44,15 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
 const LEGACY_STATEMENTS: Record<string, number> = {
-  'api/assignment-commit.ts': 2,
+  'api/assignment-commit.ts': 1, // M6b-51d-2: the pending-conflict read (several rows)
   'api/assignment-draft-set.ts': 2,
   // M6b-51c-3: every UPDATE of the table; M6b-51d-1: and its one INSERT, under a registry id.
   'api/assignment-lifecycle-writer.ts': 2,
   'api/one-active-plan.ts': 1,
   'api/plan-assignment-drift.ts': 5, // M6b-51c-4: the report compares the anchor's lifecycle with the legacy row
   'api/plan-assignment-sync.ts': 2, // M6b-51c-4: the anchor lifecycle's seed and repair share one statement
-  'api/product-set-projection.ts': 2, // M6b-51c-1: the predecessor's purchase time is read off its snapshot
   'api/product-sets.ts': 2,
-  'api/user-memberships.ts': 9,
+  'api/user-memberships.ts': 2, // M6b-51d-2: a Draft's DELETE and the edit Draft's owner join
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -67,6 +66,17 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       if (n > 0) found[file.slice(API_SRC.length + 1).split('\\').join('/')] = n;
     }
     expect(found).toEqual(LEGACY_STATEMENTS);
+  });
+
+  it('M6b-51d-2: a writer locks and reads its assignment on the anchor snapshot', () => {
+    // One assignment's lock (the multi-row conflict reads are the next stage's).
+    const LOCK = /FROM\s+user_memberships\s+WHERE\s+id\s*=\s*\?[^`'"]*FOR UPDATE/;
+    for (const file of ['api/assignment-commit.ts', 'api/product-set-projection.ts', 'api/user-memberships.ts']) {
+      const source = code(readFileSync(join(API_SRC, file), 'utf8'));
+      expect(source).toContain('lockAssignmentRecord(');
+      expect(source).not.toMatch(LOCK);
+      expect(source).not.toContain('lockAssignmentAnchor(');
+    }
   });
 
   it('the access readers read the assignment from plan_snapshots', () => {
@@ -247,7 +257,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   });
 
   it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
-    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(2);
+    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBeUndefined(); // M6b-51d-2 moved its locks
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
     expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
       .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
