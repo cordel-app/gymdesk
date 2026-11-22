@@ -17,7 +17,7 @@
 import React, { type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { alertTextColor, cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
-import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/components/listChrome';
+import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR, LIST_HEADER_BACKGROUND } from '@/components/listChrome';
 import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
@@ -112,6 +112,37 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
   );
 }
 
+/**
+ * #3188 — the Summary of a cart being reviewed: one panel on the Theme's app background, the
+ * Total Initial Payment large at its upper right, the full breakdown and the contracted items
+ * below. The headline is `payment.total`, the very figure the breakdown's last row prints, so the
+ * two cannot disagree; it re-renders with the read whenever the cart changes. The header wraps,
+ * so on a narrow screen the amount drops under the title rather than covering the breakdown.
+ */
+export function CheckoutSummaryPanel({ payment, contracted }: {
+  payment: InitialPaymentLike | null | undefined;
+  contracted: ContractedItemLike[] | null | undefined;
+}) {
+  const t = useTranslations('members');
+  const total = payment?.total ?? null;
+  return (
+    <div data-checkout-summary style={panel}>
+      <div style={panelHeader}>
+        <div style={cardSubLabelStyle}>{t('checkout_initial_payment')}</div>
+        {total != null && (
+          <div data-initial-payment-headline style={headline}>
+            <div style={headlineLabel}>{t('checkout_total_initial_payment')}</div>
+            <div style={headlineAmount}>{money(total)}</div>
+          </div>
+        )}
+      </div>
+      <InitialPaymentSection payment={payment} />
+      <div style={{ ...cardSubLabelStyle, marginTop: 12 }}>{t('checkout_contracted')}</div>
+      <ContractedItemsSection items={contracted} />
+    </div>
+  );
+}
+
 function TotalRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontWeight: strong ? 700 : 400 }} data-total-row>
@@ -179,3 +210,13 @@ const thNum: CSSProperties = { ...th, textAlign: 'right' };
 const td: CSSProperties = { ...listCellStyle, padding: '6px 8px', fontSize: 13, borderTop: `1px solid ${LIST_DIVIDER_COLOR}` };
 const tdNum: CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap' };
 const totals: CSSProperties = { marginTop: 8, marginLeft: 'auto', maxWidth: 360, fontSize: 13, display: 'grid', gap: 2 };
+const panel: CSSProperties = {
+  background: LIST_HEADER_BACKGROUND, border: `1px solid ${LIST_DIVIDER_COLOR}`, borderRadius: 8,
+  padding: '12px 14px', marginTop: 8, marginBottom: 12,
+};
+const panelHeader: CSSProperties = {
+  display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '4px 16px', marginBottom: 8,
+};
+const headline: CSSProperties = { marginLeft: 'auto', textAlign: 'right' };
+const headlineLabel: CSSProperties = { ...cardSubLabelStyle, margin: 0 };
+const headlineAmount: CSSProperties = { fontSize: 28, fontWeight: 700, lineHeight: 1.15, whiteSpace: 'nowrap' };
