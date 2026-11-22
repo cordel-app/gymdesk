@@ -8,6 +8,7 @@ import {
   TEST_AUTH_HEADER, activateTestAssignment, cleanupTestGyms, createTestDraftAssignment, createTestGym,
   createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let seq = 0;
@@ -59,7 +60,7 @@ describe('mark / discard (#3007 stage 2b)', () => {
     expect(await status(umId)).toBe('active');
     expect((await authed(request.post(`/user-memberships/${umId}/unmark-cancel`))).status).toBe(409);
     await db.query(`UPDATE plan_snapshots SET status = 'paused' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, umId]);
-    await db.query(`UPDATE user_memberships SET status = 'paused' WHERE id = ?`, [umId]);
+    await testAssignmentWrite(`UPDATE user_memberships SET status = 'paused' WHERE id = ?`, [umId]);
     expect((await authed(request.post(`/user-memberships/${umId}/mark-cancel`))).status).toBe(409);
   });
 

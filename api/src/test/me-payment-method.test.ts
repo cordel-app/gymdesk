@@ -11,6 +11,7 @@ import {
   createTestMembership,
   request, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery, syncTestAssignmentSnapshots } from './helpers';
 import { syncPlanSnapshotsForAssignment } from '../api/plan-snapshot-sync';
+import { testAssignmentWrite } from './assignmentFixture';
 
 // A card replacement asks the provider for a zero-amount verification. The stub
 // takes no amount at all — `createCardVerificationRequest` has no such
@@ -93,7 +94,7 @@ beforeAll(async () => {
 
 /** #2125 M6b-8: the card-removal check reads the plan snapshot, which follows the row as the real writers make it. */
 async function setMembershipStatus(status: 'active' | 'cancelled'): Promise<void> {
-  await db.query('UPDATE user_memberships SET status = ? WHERE id = ?', [status, membershipId]);
+  await testAssignmentWrite('UPDATE user_memberships SET status = ? WHERE id = ?', [status, membershipId]);
   await syncTestAssignmentSnapshots(membershipId);
 }
 

@@ -6,6 +6,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, syncTestAssignmentSnapshots,
   createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -126,7 +127,7 @@ describe('GET /members/:memberId/centers/effective-access', () => {
     const m = await member();
     const um = await assign(m, await plan('specific_centers', [centerA]));
     expect((await read(m)).body.specific_centers).toHaveLength(1);
-    await db.query(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [um]);
+    await testAssignmentWrite(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [um]);
     await syncTestAssignmentSnapshots(um);
     expect((await read(m)).body.specific_centers).toEqual([]);
   });

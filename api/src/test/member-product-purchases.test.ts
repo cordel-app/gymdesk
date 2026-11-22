@@ -29,6 +29,7 @@ vi.mock('../payments', async (importOriginal) => {
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment, legacyChildQuery } from './helpers';
 import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
 import { legacyProductInsert } from './legacyProductFixture';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const SECRET = 'test-1521-webhook';
 let gymId: string;
@@ -235,7 +236,7 @@ describe('the price: stacked Promotions then the Admin’s direct discount (deci
     expect(fresh.body.items.find((i: any) => i.id === p).promotions).toHaveLength(1);
     // …a member with a live plan is not.
     const planId = await plan(30);
-    const { insertId: liveId } = await db.query(
+    const { insertId: liveId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
        VALUES (?, ?, ?, 'active', ?)`, [gymId, m, planId, day(-10)]);
     await snapshotTestAssignment(Number(liveId));

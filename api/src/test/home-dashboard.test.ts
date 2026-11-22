@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { dayWindow, todayInZone, resolveTimeZone, completedWeekWindows } from '../domain/homeDashboard';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, ensureTestProductSet, request, snapshotTestAssignment } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymA: string;
 let gymB: string;
@@ -153,7 +154,7 @@ describe('attendance KPIs (#1754)', () => {
     const at = await db.query(`INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Yoga', 10, 'active')`, [gym]);
     const mk = async (name: string) => {
       const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gym, name, `${name}-${Date.now()}@example.com`]);
-      const ums = await db.query(
+      const ums = await testAssignmentWrite(
         `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'active', '2020-01-01')`,
         [gym, m.insertId],
       );

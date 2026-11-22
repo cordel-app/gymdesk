@@ -7,6 +7,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const createCardVerificationRequest = vi.fn().mockResolvedValue({ providerOrderId: 'monei-verif-m6b18' });
 vi.mock('../payments', async (importOriginal) => ({
@@ -98,7 +99,7 @@ describe('a card replacement is recorded against the assignment plan_snapshots s
     const other = await run(m, await plan());
     // The snapshot says the second plan was cancelled; its legacy row still says active.
     await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [other]);
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [running]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [running], { mirror: false });
     expect(await cardRequestAssignment(m)).toBe(running);
   });
 
@@ -116,7 +117,7 @@ describe('the Members App Product Set view reports the plan status plan_snapshot
     const m = await member();
     const um = await run(m, await plan());
     await db.query("UPDATE plan_snapshots SET status = 'paused' WHERE source_user_membership_id = ?", [um]);
-    await db.query("UPDATE user_memberships SET status = 'active' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'active' WHERE id = ?", [um]);
     const { rows } = await db.query<{ id: number }>(
       "SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active'", [gymId, m]);
     const view = must(await asMember(request.get(`/me/product-sets/${rows[0].id}`), m), 'me/product-sets/:id').body;

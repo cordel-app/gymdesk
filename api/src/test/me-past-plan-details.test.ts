@@ -19,6 +19,7 @@ import {
   request,
   resyncTestAssignmentPromotions,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -33,7 +34,7 @@ async function createCallingMember(gymId: string): Promise<number> {
     [gymId, `past-plan-${uniq()}@test.com`, TEST_USER_ID],
   );
   const { rows } = await db.query<{ id: number }>('SELECT id FROM members WHERE clerk_user_id = ?', [TEST_USER_ID]);
-  await db.query(
+  await testAssignmentWrite(
     "UPDATE user_memberships SET status = 'cancelled' WHERE member_id = ? AND status IN ('active', 'paused')",
     [rows[0].id],
   );

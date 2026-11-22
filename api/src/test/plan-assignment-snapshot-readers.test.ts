@@ -8,6 +8,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { loadAssignedPlanSnapshot, loadPlanBenefitsForSimulation } from '../api/assigned-plan-snapshot';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -43,7 +44,7 @@ async function running(): Promise<{ um: number; productId: number }> {
 
 /** Makes the legacy row unreachable from the gym, leaving every plan snapshot as it is. */
 const moveLegacyRowAway = (um: number) =>
-  db.query('UPDATE user_memberships SET gym_id = ? WHERE id = ?', [otherGymId, um]);
+  testAssignmentWrite('UPDATE user_memberships SET gym_id = ? WHERE id = ?', [otherGymId, um]);
 
 beforeAll(async () => {
   gymId = await createTestGym('Assignment Snapshot Readers Gym');

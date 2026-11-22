@@ -8,6 +8,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { membersShareCoverage } from '../api/duo-booking';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -131,7 +132,7 @@ describe('the Member card\'s Products badge counts running plans from plan_snaps
 
   it('the snapshot is the record: a user_memberships row that disagrees does not move the count', async () => {
     const { m, um } = await running();
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     expect(await plansBadge(m)).toBe(1);
   });
 });

@@ -28,6 +28,7 @@ import {
   activateAssignment,
   proratedToNextFirst,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -301,7 +302,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
 
   it('forecasts nothing for an assignment that is no longer billing', async () => {
     const umId = await assignPlan(gymId, await createPlan(gymId, { price: 70 }));
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [umId]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [umId]);
     // #2125 M6b-17: the simulation reads the assignment's status from its snapshot.
     await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
     const forecast = await forecastOf(gymId, umId);

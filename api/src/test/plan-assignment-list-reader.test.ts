@@ -11,6 +11,7 @@ import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -72,10 +73,10 @@ describe('LIST_SELECT reads plan_snapshots', () => {
 
   it('follows the snapshot when the legacy row disagrees, in the list and the single read', async () => {
     const { owner, um } = await activePlan();
-    await db.query(
+    await testAssignmentWrite(
       `UPDATE user_memberships SET status = 'cancelled', starts_at = '2001-01-01', modified_by = 'Legacy Only',
               purchased_at = '2001-01-01 00:00:00'
-        WHERE id = ?`, [um]);
+        WHERE id = ?`, [um], { mirror: false });
 
     const list = await auth(request.get(`/user-memberships?member_id=${owner}`));
     expect(list.status).toBe(200);

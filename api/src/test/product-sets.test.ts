@@ -5,6 +5,7 @@ import { cleanupTestGyms, createTestGym, linkTestSetToAssignment } from './helpe
 import {
   activate, addCoverage, cancelInFlight, createDraft, expireDrafts, submitForPayment, touchDraft,
 } from '../api/product-sets';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let memberId: number;
@@ -120,7 +121,7 @@ describe('ProductSet versioning (#1325)', () => {
     const draft = await db.transaction((tx) => createDraft(tx, {
       gymId, ownerMemberId: owner, membershipPlanId: null, startsAt: today(), actor }));
     if (draft.kind !== 'created') throw new Error('expected created');
-    const { insertId: umId } = await db.query(
+    const { insertId: umId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'in_cart', ?)`,
       [gymId, owner, today()]);
     // #2125 M6b-45: the cancel reads the link off the set's anchor, so the fixture links as the writers do.
