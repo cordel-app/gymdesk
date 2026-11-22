@@ -1,33 +1,34 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { newMemberChipStyle, profileInlineValueStyle } from '../app/[locale]/members/MemberProfileLayout';
-import { listNameBadgeAccentStyle } from '../components/listChrome';
-import { formValueStyle } from '../components/formChrome';
+import { newMemberChipStyle, statusChipRowStyle } from '../app/[locale]/members/MemberProfileLayout';
+import { listNameBadgeAccentStyle, listNameBadgeStyle } from '../components/listChrome';
 
-// Regression tests for #2807 — the Profile's `Welcomed` value is regular text,
-// not the yellow badge; the `New Member` chip keeps its look. No component-test
-// infra exists for apps/admin, so the structure is asserted on the source.
+// #3174 (reversing #2807's plain text) — the Profile's `Welcomed` value is a chip in the New
+// Member chip's own style, directly below the New Member chip. No component-test infra exists for
+// apps/admin, so the structure is asserted on the source.
 const layoutSrc = readFileSync(join(__dirname, '../app/[locale]/members/MemberProfileLayout.tsx'), 'utf8');
+const rowSrc = readFileSync(join(__dirname, '../app/[locale]/members/MemberExpandedRow.tsx'), 'utf8');
 const start = layoutSrc.indexOf('export function WelcomedValue');
 const welcomedSrc = layoutSrc.slice(start, layoutSrc.indexOf('\n}\n', start));
 
-describe('Members: Welcomed is plain profile text (#2807)', () => {
-  it('wears no badge style', () => {
+describe('Members: Welcomed is a chip below New Member (#3174)', () => {
+  it('draws the value with the New Member chip style, and its sentence for a screen reader', () => {
     expect(start).toBeGreaterThan(-1);
-    expect(welcomedSrc).not.toContain('listNameBadge');
-    expect(welcomedSrc).not.toContain('background');
-    expect(welcomedSrc).toContain('profileInlineValueStyle');
+    expect(welcomedSrc).toContain('newMemberChipStyle(welcomed)');
+    expect(welcomedSrc).toContain('aria-label={announce}');
+    expect(rowSrc).toContain('welcomed={!!member.welcomed_at}');
   });
 
-  it('takes the Profile value text and no background', () => {
-    expect(profileInlineValueStyle.fontSize).toBe(formValueStyle.fontSize);
-    expect(profileInlineValueStyle.color).toBe(formValueStyle.color);
-    expect(profileInlineValueStyle.background).toBeUndefined();
+  it('stacks the two chips, Welcomed below New Member', () => {
+    expect(statusChipRowStyle.flexDirection).toBe('column');
+    const cell = rowSrc.slice(rowSrc.indexOf('renderCalculated={() => ('));
+    expect(cell.indexOf('<NewMemberValue')).toBeLessThan(cell.indexOf('<WelcomedValue'));
   });
 
-  it('leaves the New Member chip as it was', () => {
+  it('keeps the chip looks: accent for Yes, neutral for No', () => {
     expect(newMemberChipStyle(true).background).toBe(listNameBadgeAccentStyle.background);
     expect(newMemberChipStyle(true).color).toBe(listNameBadgeAccentStyle.color);
+    expect(newMemberChipStyle(false).background).toBe(listNameBadgeStyle.background);
   });
 });
