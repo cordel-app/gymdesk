@@ -12,15 +12,19 @@
 //
 // #2747 stage 2: the same rows list such a version once it was cancelled
 // (`status="cancelled"`, under Past), dated by the day it was cancelled.
+//
+// #2966 stage 8: an added cart plan's row lists the Promotions applied to it
+// (`addedPlanPromotionNames()`), as the list's accent badges.
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
-import { listCellStyle, listRowDividerStyle, listSurfaceStyle } from '@/components/listChrome';
+import { listCellStyle, listNameBadgeAccentStyle, listRowDividerStyle, listSurfaceStyle } from '@/components/listChrome';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDateOnly } from '@/lib/gymFormat';
 import { secondaryBtnSmall } from '@/components/formChrome';
 import type { ProductSetRow } from './membershipConfiguration';
+import { addedPlanPromotionNames } from './membershipPlansView';
 
 export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment', onRemove }: {
   sets: ProductSetRow[];
@@ -47,7 +51,17 @@ export function PendingPaymentPlans({ sets, spaced, status = 'pending_payment', 
             display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
           }}
         >
-          <strong style={{ flex: 1, minWidth: 0 }}>{ps.plan_name ?? t('product_set_no_plan')}</strong>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <strong>{ps.plan_name ?? t('product_set_no_plan')}</strong>
+            {status === 'in_cart' && addedPlanPromotionNames(ps).length > 0 && (
+              // #2966 stage 8: the Promotions applied to a plan added to the cart.
+              <div data-added-plan-promotions style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                {addedPlanPromotionNames(ps).map((name, j) => (
+                  <span key={j} style={listNameBadgeAccentStyle} title={t('added_plan_promotion_title', { name })}>{name}</span>
+                ))}
+              </div>
+            )}
+          </div>
           {status === 'cancelled'
             ? ps.cancelled_at && <span>{formatGymDateOnly(ps.cancelled_at, gymFmt)}</span>
             : ps.starts_at && <span>{formatGymDateOnly(ps.starts_at, gymFmt)}</span>}

@@ -971,7 +971,8 @@
     "draft_line_delete_confirm": "Delete {product} from the draft? It is removed from this Product Set; nothing has been charged for it.",
     "draft_line_delete_error": "The product could not be deleted from the draft.",
     "add_product_error_promotion_requires_products": "This promotion requires other products. Add them first, then apply the promotion.",
-    "added_plan_remove": "Remove"
+    "added_plan_remove": "Remove",
+    "added_plan_promotion_title": "Promotion applied to this plan: {name}"
   },
   "member_payments": {
     "title": "Member Payments",

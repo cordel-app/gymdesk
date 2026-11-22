@@ -111,7 +111,17 @@ export function addedCartPlans(productSets: readonly ProductSetRow[]): Array<Pro
       amount_due: null,
       expired: ps.expired,
       created_by: ps.created_by,
+      // #2966 stage 8: the Promotions applied to this added plan, as the API reported them.
+      promotions: a.promotions ?? [],
     })));
+}
+
+/**
+ * #2966 stage 8 — the names an added plan's Promotions are listed under on its row, in the order
+ * they were applied. A Promotion whose catalogue row is gone has no name to show and is skipped.
+ */
+export function addedPlanPromotionNames(row: { promotions?: ReadonlyArray<{ promotion_name: string | null }> | null }): string[] {
+  return (row.promotions ?? []).map((p) => p.promotion_name).filter((n): n is string => !!n && n.trim() !== '');
 }
 
 /**
