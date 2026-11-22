@@ -184,8 +184,9 @@ export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembersh
  * the assignments they name. Called by `syncPlanSnapshot()`, so every path that re-derives a set's
  * snapshots re-derives these too.
  *
- * Identity is stamped on every snapshot the set links. The facts (`replace_on_activation`, `replaces_assignment_id`, `deleted_at`/`deleted_by` and, since M6b-30,
- * `modified_at`/`modified_by`) are copied only onto a
+ * Identity is stamped on every snapshot the set links. The facts (`replace_on_activation`,
+ * `replaces_assignment_id`, `deleted_at`/`deleted_by` and, since M6b-30, `modified_at`/`modified_by`;
+ * `purchased_at` since M6b-51c-1 is its writers', `writeAssignmentPurchasedAt()`) are copied only onto a
  * snapshot no other Product Set links, like every other write of the sync: a shared snapshot is
  * immutable to the sets that link it. A lifecycle change on a shared snapshot is copied first
  * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own.
@@ -212,8 +213,7 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
     await tx.query(
       `UPDATE plan_snapshots s
          JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
-          SET s.purchased_at = um.purchased_at,
-              s.replace_on_activation = um.replace_on_activation,
+          SET s.replace_on_activation = um.replace_on_activation,
               s.replaces_assignment_id = ?,
               s.deleted_at = um.deleted_at,
               s.deleted_by = um.deleted_by,
