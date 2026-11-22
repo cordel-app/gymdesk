@@ -50,7 +50,9 @@
     "logout": "Tanca la sessió",
     "logout_confirm_title": "Vols tancar la sessió?",
     "logout_confirm_body": "Es tancarà la sessió d'aquest compte en aquest dispositiu.",
-    "logout_cancel": "Cancel·la"
+    "logout_cancel": "Cancel·la",
+    "family": "Família",
+    "family_owner": "Titular"
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
