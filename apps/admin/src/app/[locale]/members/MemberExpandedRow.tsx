@@ -546,7 +546,7 @@ export function MemberExpandedRow({
             current={configuration.current_product_set}
             loading={productSetDetail.loading}
             error={productSetDetail.error}
-            onDraftExpired={reloadConfiguration}
+            onDraftExpired={reloadProducts}
           />
           <Section label={t('members.section_membership_plan')} divider={false}>
             <span id="member-membership-plans-section" />
@@ -632,13 +632,15 @@ export function MemberExpandedRow({
                 productSets={configuration.product_sets}
                 canWrite={canWriteMembers && canManagePackages}
                 review={draftReview}
-                onChanged={reloadConfiguration}
+                onChanged={reloadProducts}
               />
               <ProductsWorkflowActions
                 current={configuration.current_product_set}
                 workflow={workflow}
                 canWrite={canWriteMembers && canManagePackages}
-                onDiscarded={reloadConfiguration}
+                // #3164 — cancelling the cart also re-reads the Products table, so the cancelled cart's
+                // rows do not stay on screen as In Cart beside the restored Active ProductSet.
+                onDiscarded={reloadProducts}
                 busy={cartPaying}
                 onSaveAndPay={() => {
                   const target = saveAndPayTarget(workflow);
