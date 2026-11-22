@@ -43,8 +43,8 @@ const LEGACY_STATEMENT = /\b(?:FROM|JOIN|UPDATE|INTO)\s+user_memberships\b/g;
 const statements = (source: string): number => (code(source).match(LEGACY_STATEMENT) ?? []).length;
 
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
-// M6b-51d-7c-1: empty. An assignment is created by allocating its id in `plan_assignment_ids` and
-// naming its plan snapshots; nothing inserts, updates, deletes or reads the table.
+// M6b-51d-7c-1: empty. An assignment is opened on its own plan snapshot (#2125 N1, its id is that
+// snapshot's); nothing inserts, updates, deletes or reads the table.
 const LEGACY_STATEMENTS: Record<string, number> = {};
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -270,16 +270,19 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(readFileSync(join(API_SRC, 'api/assignment-lifecycle-writer.ts'), 'utf8')).toMatch(/UPDATE plan_snapshots SET \$\{sets\.join/);
   });
 
-  it('M6b-51d-1: an assignment is created only by the writer, under a plan_assignment_ids id', () => {
+  it('N1: an assignment is created only by opening it on its own plan snapshot', () => {
     const INSERT = /\bINTO\s+user_memberships\b/g;
     const creators = sourceFiles(API_SRC)
       .filter((f) => (code(readFileSync(f, 'utf8')).match(INSERT) ?? []).length > 0)
       .map((f) => f.slice(API_SRC.length + 1));
-    // M6b-51d-7c-1: no row is created any more; allocating the id is the whole of the INSERT.
+    // M6b-51d-7c-1: no row is created any more; N1: the id is the plan snapshot's own, so there is
+    // no allocator either.
     expect(creators).toEqual([]);
-    const writer = readFileSync(join(API_SRC, 'api/assignment-lifecycle-writer.ts'), 'utf8');
-    expect(writer).toContain('INSERT INTO plan_assignment_ids');
-    expect(writer).not.toContain('insertAssignment');
+    const opened = sourceFiles(API_SRC)
+      .filter((f) => /\bplan_assignment_ids\b|\ballocateAssignmentId\b/.test(code(readFileSync(f, 'utf8'))))
+      .map((f) => f.slice(API_SRC.length + 1));
+    expect(opened).toEqual([]);
+    expect(readFileSync(join(API_SRC, 'api/plan-assignment-sync.ts'), 'utf8')).toContain('export async function openAssignmentOnSet(');
   });
 
   it('M6b-47: the end-of-period sweep and both dunning pauses pick their assignment from plan_snapshots', () => {

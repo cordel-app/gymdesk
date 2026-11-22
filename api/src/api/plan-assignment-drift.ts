@@ -1,7 +1,7 @@
 /**
  * #2125 M6b-1 — the read-only consistency check of Membership Plan assignments. An assignment is its
- * plan snapshots (migration 458 dropped `user_memberships`): its id comes from the
- * `plan_assignment_ids` registry and its anchor snapshot carries its identity and lifecycle.
+ * plan snapshots (migration 458 dropped `user_memberships`): its id is its anchor snapshot's own
+ * (#2125 N1, migration 461), and the anchor carries its identity and lifecycle.
  *
  * It writes nothing and decides nothing: each check is one SELECT that lists the inconsistent rows.
  * `npm run plan-assignments:validate` prints it and exits 1 while any check has rows.
@@ -65,15 +65,14 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       GROUP BY s.assignment_id, s.gym_id HAVING COUNT(DISTINCT s.source_user_membership_id) > 1
       ORDER BY s.assignment_id`);
 
-  // #2125 M6b-51d-7c-1: an assignment is its plan snapshots and its id lives in `plan_assignment_ids`;
-  // `user_memberships` is no longer written, so the two checks against it are replaced by this one.
-  await add('snapshot_names_unregistered_assignment',
-    'A plan snapshot naming an assignment id the plan_assignment_ids registry never handed out.',
-    `SELECT s.id AS plan_snapshot_id, s.gym_id, s.source_user_membership_id AS user_membership_id
+  // #2125 N1: an assignment's id is its anchor's own (migration 461 dropped the `plan_assignment_ids`
+  // registry), so a snapshot naming an id other than its anchor's is drift.
+  await add('assignment_id_is_not_anchor_id',
+    'A plan snapshot naming an assignment id other than its own anchor snapshot id.',
+    `SELECT s.id AS plan_snapshot_id, s.gym_id, s.source_user_membership_id AS user_membership_id, s.assignment_id
        FROM plan_snapshots s
       WHERE s.source_user_membership_id IS NOT NULL${scope('s')}
-        AND NOT EXISTS (SELECT 1 FROM plan_assignment_ids r
-                         WHERE r.id = s.source_user_membership_id AND r.gym_id = s.gym_id)
+        AND NOT (s.source_user_membership_id <=> s.assignment_id)
       ORDER BY s.id`);
 
   // #2125 M6b-51d-7b: the lifecycle, start date, purchase time, replacement and modifier are no longer

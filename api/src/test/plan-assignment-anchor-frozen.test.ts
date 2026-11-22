@@ -7,8 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, createTestMembership } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
-import { nameAssignmentSnapshot, planAssignmentIdOf, stampAssignmentIds } from '../api/plan-assignment-sync';
-import { allocateAssignmentId } from '../api/assignment-lifecycle-writer';
+import { nameAssignmentSnapshot, openAssignmentOnSet, planAssignmentIdOf, stampAssignmentIds } from '../api/plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from '../api/plan-snapshot-add';
 import { createDraft } from '../api/product-sets';
 import { snapshotProductSetFromPlan } from '../api/product-set-configuration';
@@ -46,13 +45,9 @@ async function draftSet(): Promise<{ set: number; snapshot: number }> {
   const { rows } = await db.query<any>('SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ?', [set]);
   return { set, snapshot: Number(rows[0].id) };
 }
-/** Allocates an assignment id and names the set's snapshot after it, as the creation paths do. */
+/** Opens an assignment on the set's own plan snapshot, as the creation paths do (#2125 N1). */
 async function assign(set: number): Promise<number> {
-  return db.transaction(async (tx) => {
-    const id = await allocateAssignmentId(tx, gymId);
-    await nameAssignmentSnapshot(tx, gymId, set, id);
-    return id;
-  });
+  return db.transaction((tx) => openAssignmentOnSet(tx, gymId, set));
 }
 const assignmentIdOf = async (snapshotId: number) => {
   const { rows } = await db.query<any>('SELECT assignment_id FROM plan_snapshots WHERE id = ?', [snapshotId]);
@@ -94,7 +89,7 @@ describe('an assignment anchor never moves', () => {
     const copy = await db.transaction((tx) => copyPlanSnapshotToVersion(tx, gymId, a.snapshot, b.set, { keepAssignment: true }));
     expect(await assignmentIdOf(copy)).toBe(a.snapshot);
 
-    const other = await db.transaction((tx) => allocateAssignmentId(tx, gymId));
+    const other = await assign((await draftSet()).set);
     await expect(db.transaction((tx) => nameAssignmentSnapshot(tx, gymId, a.set, other)))
       .rejects.toThrow(/anchors assignment/);
 
