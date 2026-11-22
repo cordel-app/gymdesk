@@ -129,8 +129,7 @@ describe('Product first, then a Membership Plan, in one cart (#2966 stage 11)', 
     const um = await createTestDraftAssignment(gymId, owner, running);
     await activateTestAssignment(gymId, um);
     const cancel = await staff('post', `/user-memberships/${um}/close`).send({ end_of_period: true, at_period_end: true });
-    // Whatever the close answers, the cart flow below must still list the added plan.
-    console.log("CLOSE", cancel.status, JSON.stringify(cancel.body).slice(0,200));
+    expect(cancel.status, JSON.stringify(cancel.body)).toBeLessThan(300);
     const productId = await product('20.00');
     const buy = await staff('post', `/members/${owner}/product-purchases`).send({ product_id: productId });
     expect(buy.status, JSON.stringify(buy.body)).toBe(201);
