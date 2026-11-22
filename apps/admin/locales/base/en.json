@@ -972,6 +972,10 @@
     "draft_line_delete_error": "The product could not be deleted from the draft.",
     "add_product_error_promotion_requires_products": "This promotion requires other products. Add them first, then apply the promotion.",
     "added_plan_remove": "Remove",
+    "added_plan_edit": "Edit",
+    "added_plan_edit_done": "Done",
+    "added_plan_load_error": "The plan could not be loaded.",
+    "added_plan_not_editable": "This plan can no longer be edited here: the cart was committed, or the plan belongs to a running version.",
     "added_plan_promotion_title": "Promotion applied to this plan: {name}"
   },
   "member_payments": {

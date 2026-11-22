@@ -138,3 +138,47 @@ describe('editing an added plan of the cart (#2966 stage 9)', () => {
     expect((await auth(request.put(`/product-sets/${setId}/plans/${addedId}/billing-duration`)).send({ paid_periods: 3 })).status).toBe(409);
   });
 });
+
+describe('reading an added plan of the cart for its editor (#2966 stage 10)', () => {
+  it('answers the named plan\'s whole configuration, editable while the cart is open', async () => {
+    const { setId, addedId } = await cartWithAddedPlan();
+    const locker = await product('Locker');
+    await auth(request.put(`/product-sets/${setId}/plans/${addedId}/benefits/periodical`))
+      .send({ items: [{ product_id: locker, quantity: 2 }] });
+    await auth(request.put(`/product-sets/${setId}/plans/${addedId}/fee-benefit`)).send({ action: 'percentage_discount', value: 15 });
+
+    const res = await auth(request.get(`/product-sets/${setId}/plans/${addedId}`));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ product_set_id: setId, plan_snapshot_id: addedId, editable: true });
+    expect(res.body.snapshot).toMatchObject({
+      paid_periods: 6,
+      recurring_billing_interval: 1,
+      recurring_billing_unit: 'month',
+      personal_fee_benefit: { action: 'percentage_discount', value: 15 },
+      oneoff_benefits: [],
+      session_benefits: [],
+    });
+    expect(res.body.snapshot.periodical_benefits).toEqual([expect.objectContaining({ product_id: locker, quantity: 2 })]);
+  });
+
+  it('is not editable once the plan is shared with another version or the cart is committed', async () => {
+    const { setId, addedId } = await cartWithAddedPlan();
+    const { insertId: other } = await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at)
+       SELECT gym_id, owner_member_id, 'superseded', starts_at FROM product_sets WHERE id = ?`, [setId]);
+    await db.query('INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [other, addedId]);
+    expect((await auth(request.get(`/product-sets/${setId}/plans/${addedId}`))).body.editable).toBe(false);
+    await db.query('DELETE FROM product_set_plan_snapshots WHERE product_set_id = ?', [other]);
+    expect((await auth(request.get(`/product-sets/${setId}/plans/${addedId}`))).body.editable).toBe(true);
+    await db.query(`UPDATE product_sets SET status = 'superseded' WHERE id = ?`, [setId]);
+    expect((await auth(request.get(`/product-sets/${setId}/plans/${addedId}`))).body.editable).toBe(false);
+  });
+
+  it('answers 404 for a plan the cart does not hold, another gym\'s cart, and 401 unauthenticated', async () => {
+    const a = await cartWithAddedPlan();
+    const b = await cartWithAddedPlan();
+    expect((await auth(request.get(`/product-sets/${a.setId}/plans/${b.addedId}`))).status).toBe(404);
+    expect((await auth(request.get(`/product-sets/${a.setId}/plans/${a.addedId}`), otherGymId)).status).toBe(404);
+    expect((await request.get(`/product-sets/${a.setId}/plans/${a.addedId}`)).status).toBe(401);
+  });
+});

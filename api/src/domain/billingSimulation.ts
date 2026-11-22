@@ -1415,7 +1415,10 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
   const base = service.billingFrequency ? cadenceForProduct(service.billingFrequency) : null;
   if (!base) return null;
 
-  const start = maxDate(a.startsAt, service.startsOn);
+  // #3167: an ad-hoc recurring Product is its own line, independent of the Membership Plan, so it
+  // bills from its own start date even when the plan starts later; only a line with no date of its
+  // own follows the plan's.
+  const start = service.startsOn || a.startsAt;
   const end = a.endsAt != null && service.endsOn != null
     ? minDate(a.endsAt, service.endsOn)
     : (a.endsAt ?? service.endsOn);
@@ -1426,7 +1429,7 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
   const scheduleCadence = cadenceForFrequency(service.billingFrequency);
   // #3046 — a yearly Product keeps its own contract anniversary: charged in full, never prorated.
   const joinDate = service.alignTo && scheduleCadence && !isYearlyCadence(scheduleCadence)
-    ? nextAlignedDate(service.alignTo, start, base.advance)
+    ? nextAlignedDate(rewindAnchor(service.alignTo, start, scheduleCadence), start, base.advance)
     : null;
   const proration = joinDate && scheduleCadence ? prorate(1, scheduleCadence, start, joinDate) : null;
   const cadence: Cadence = joinDate
@@ -1471,6 +1474,20 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
         ? { prorated_days: proration.proratedDays, period_days: proration.periodDays } : null,
     }),
   };
+}
+
+/**
+ * #3167 — a line that starts before its schedule's anchor (a Product added today to a plan whose
+ * shared schedule opens on a later date) joins the same schedule: the anchor is stepped back by the
+ * schedule's cadence to the last date of it on or before the line's start, so the line still bills
+ * a prorated first stretch up to the schedule's next date. An anchor on or before `start` is kept.
+ */
+export function rewindAnchor(anchor: string, start: string, cadence: { interval: number; unit: string }): string {
+  let cursor = anchor;
+  for (let i = 0; i < MAX_OCCURRENCE_SCAN && cursor > start; i++) {
+    cursor = advanceBillingDate(cursor, -cadence.interval, cadence.unit as any);
+  }
+  return cursor;
 }
 
 /**
