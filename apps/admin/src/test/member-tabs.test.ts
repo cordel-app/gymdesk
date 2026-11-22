@@ -90,7 +90,6 @@ describe('Member card tabs: the declaration (#961)', () => {
       'section_membership_plan',
       'section_additional_services',
       'section_billing_event_simulation',
-      'section_billing_events',
     ]);
     // #2123: the Family tab, between Profile and Products.
     expect(sectionsForTab('family')).toEqual(['section_family']);
