@@ -967,7 +967,7 @@
     "booking_status_cancelled": "Cancel·lat",
     "booking_status_unknown": "—",
     "booking_event_cancelled": "Esdeveniment cancel·lat",
-    "draft_line_save": "Desa els canvis",
+    "draft_line_save": "Desa",
     "draft_line_quantity": "Quantitat",
     "draft_line_delete": "Elimina",
     "draft_line_delete_confirm": "Vols eliminar {product} de l'esborrany? Es treu d'aquest Product Set; no s'hi ha cobrat res.",
