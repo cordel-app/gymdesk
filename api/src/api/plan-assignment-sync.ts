@@ -199,6 +199,25 @@ async function refuseRenamingAnAnchor(exec: Exec, gymId: string, planSnapshotId:
   }
 }
 
+/**
+ * #2125 N1 — opens a new assignment on the Product Set's primary plan snapshot: the assignment's id is
+ * that snapshot's own id, which anchors itself (`assignment_id = id`) and is named with it
+ * (`source_user_membership_id`, equal to the anchor id until N2 drops the column). This is the one way
+ * an assignment id comes into being; there is no allocator. The snapshot must be the set's own (a
+ * fresh snapshot, or one `ownPrimaryPlanSnapshot()` copied for the set), since a snapshot another
+ * Product Set links belongs to an assignment already. A Draft discarded with its set takes the
+ * snapshot, and with it the id, along: an unconfirmed Draft leaves no identity behind.
+ */
+export async function openAssignmentOnSet(exec: Exec, gymId: string, productSetId: number): Promise<number> {
+  const primary = await primaryPlanSnapshotId(exec, gymId, productSetId);
+  if (primary == null) throw new Error(`Product Set ${productSetId} has no plan snapshot to open an assignment on`);
+  if (await isPlanSnapshotShared(exec, productSetId, primary)) {
+    throw new Error(`plan snapshot ${primary} is shared with another Product Set; own it before opening an assignment on it`);
+  }
+  await nameAssignmentSnapshot(exec, gymId, productSetId, primary);
+  return primary;
+}
+
 export async function nameAssignmentSnapshot(
   exec: Exec, gymId: string, productSetId: number, userMembershipId: number,
 ): Promise<void> {

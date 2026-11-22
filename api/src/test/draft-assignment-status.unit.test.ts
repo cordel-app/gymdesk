@@ -123,14 +123,15 @@ describe('every assignment path creates a Draft', () => {
     expect(USER_MEMBERSHIPS).toContain("export const ASSIGNMENT_CREATION_STATUS = 'in_cart';");
   });
 
-  it('creates an assignment by allocating its id and recording a Draft, never an INSERT INTO user_memberships', () => {
-    // #2125 M6b-51d-7c-1: the assignment is its Draft version's plan snapshot (`in_cart`); the
-    // creation paths allocate the id and record the creation status they hand the Draft.
+  it('creates an assignment by opening it on its Draft plan snapshot and recording a Draft, never an INSERT INTO user_memberships', () => {
+    // #2125 M6b-51d-7c-1: the assignment is its Draft version's plan snapshot (`in_cart`); since N1
+    // its id is that snapshot's (`createDraftSetForAssignment()` answers it), and the creation paths
+    // record the creation status they hand the Draft.
     const WRITER = code(API_SRC, 'api', 'assignment-lifecycle-writer.ts');
     expect(WRITER).not.toMatch(/INSERT INTO user_memberships/);
     for (const source of [USER_MEMBERSHIPS, MEMBERSHIP_PLANS]) {
       expect(source).not.toMatch(/INSERT INTO user_memberships/);
-      expect(source).toMatch(/allocateAssignmentId\(tx, gymId\)/);
+      expect(source).toMatch(/assignmentId: insertId \} = await createDraftSetForAssignment\(tx, \{/);
       // A path recording `'active'` would skip the Draft state for whichever screen assigns through it.
       expect(source).toMatch(/newStatus: ASSIGNMENT_CREATION_STATUS/);
     }
