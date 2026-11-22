@@ -77,12 +77,20 @@ async function moveLegacyProductApplications(knex) {
        AND NOT EXISTS (SELECT 1 FROM product_promotion_snapshots x WHERE x.source_application_id = ump.id)
        AND NOT EXISTS (SELECT 1 FROM product_promotion_snapshots q
                         WHERE q.product_periodical_snapshot_id = par.id AND q.product_set_id = ump.product_set_id
-                          AND q.promotion_id = ump.promotion_id AND q.status = 'applied' AND ump.status = 'applied')`);
+                          AND q.promotion_id = ump.promotion_id AND q.status = 'applied' AND ump.status = 'applied')
+       -- Two standing line-less rows of one Promotion on one set: only the first is attached.
+       AND NOT EXISTS (SELECT 1 FROM (SELECT id, product_set_id, promotion_id, status, recurrent_snapshot_id
+                                        FROM user_membership_promotions) d
+                        WHERE d.product_set_id = ump.product_set_id AND d.promotion_id = ump.promotion_id
+                          AND d.recurrent_snapshot_id IS NULL AND d.status = 'applied' AND ump.status = 'applied'
+                          AND d.id < ump.id)`);
   counts.lineless_attached = Number(lineless.affectedRows ?? 0);
 
   // 3. The grants each moved application froze.
   counts.grants_moved = 0;
   for (const [kind, source] of GRANTS) {
+    // A retry after a partial drop: a grant table already gone has nothing left to copy.
+    if (!(await knex.schema.hasTable(source))) continue;
     const [g] = await knex.raw(`
       INSERT INTO product_promotion_grant_snapshots
         (gym_id, product_promotion_snapshot_id, grant_kind, source_id, product_id, product_name, quantity,
@@ -101,6 +109,10 @@ async function moveLegacyProductApplications(knex) {
   counts.dropped_unrepresented_product = await scalar(knex, `
     SELECT COUNT(*) FROM user_membership_promotions ump
      WHERE ${PRODUCT_ROW}
+       AND NOT EXISTS (SELECT 1 FROM product_promotion_snapshots x WHERE x.source_application_id = ump.id)`);
+  counts.dropped_unrepresented_product_applied = await scalar(knex, `
+    SELECT COUNT(*) FROM user_membership_promotions ump
+     WHERE ${PRODUCT_ROW} AND ump.status = 'applied'
        AND NOT EXISTS (SELECT 1 FROM product_promotion_snapshots x WHERE x.source_application_id = ump.id)`);
   counts.dropped_unrepresented_plan = await scalar(knex, `
     SELECT COUNT(*) FROM user_membership_promotions ump
