@@ -7,7 +7,6 @@ import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
-import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
@@ -135,11 +134,5 @@ describe('LIST_SELECT reads plan_snapshots', () => {
           AND entity_id = ? AND action = 'status_change'
           AND JSON_UNQUOTE(JSON_EXTRACT(new_values, '$.status')) = 'cancelled'`, [gymId, String(um)]);
     expect(Number(audits[0].n)).toBe(1);
-
-    const report = await findPlanAssignmentDrift(db as any, gymId);
-    for (const name of ['assignment_without_snapshot']) {
-      const check = report.checks.find((c) => c.name === name)!;
-      expect(check.sample.some((r: any) => Number(r.user_membership_id) === um)).toBe(false);
-    }
   });
 });

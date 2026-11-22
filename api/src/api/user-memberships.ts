@@ -88,7 +88,7 @@ import {
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { loadPlanAccessEntries } from './plan-center-access';
-import { deleteDraftAssignments, insertAssignment, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { allocateAssignmentId, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -918,12 +918,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     // Ledger row (P1.6): membership creation is a NULL -> draft transition,
     // written in the same transaction as the insert.
     const outcome = await db.transaction(async (tx) => {
-      const insertId = await insertAssignment(tx, {
-        gymId, memberId: Number(member_id), membershipPlanId: Number(membership_plan_id),
-        startsAt: starts_at, endsAt: ends_at ?? null,
-        status: ASSIGNMENT_CREATION_STATUS,
-        createdBy: actorText,
-      });
+      const insertId = await allocateAssignmentId(tx, gymId);
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: Number(member_id),
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
@@ -1119,7 +1114,6 @@ userMembershipsRouter.delete('/:id/draft', requireModuleWrite('PAYMENTS'), async
       // #1325 PR 3e: the Draft's version goes with it — left behind it would be
       // the owner's one in-flight version and lock them out of another.
       await deleteLinkedDraftSet(tx, gymId, Number(req.params.id));
-      await deleteDraftAssignments(tx, gymId, [Number(req.params.id)]);
       return { kind: 'deleted', previous: rows[0] } as const;
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1525,16 +1519,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       // live assignment covering this member, answers the 409 or supersedes
       // them. That moved #956's whole enforcement, including this route's
       // `confirm`, onto one transition instead of four insert paths.
-      const insertId = await insertAssignment(tx, {
-        gymId, memberId: Number(prev.member_id), membershipPlanId: Number(membership_plan_id),
-        startsAt: starts_at, endsAt: ends_at ?? null,
-        status: ASSIGNMENT_CREATION_STATUS,
-        // #2125 stage 20: the plan whose row this was raised from is the one a Replace cancels.
-        replacesUserMembershipId: Number(req.params.id),
-        // #958 — the successor is a new Assigned Plan, so it records who
-        // assigned *it*; the superseded row keeps its own.
-        createdBy: actorText,
-      });
+      const insertId = await allocateAssignmentId(tx, gymId);
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: prev.member_id,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
@@ -1629,11 +1614,7 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
       const adopt = plain && plain.user_membership_id == null && plain.previous_product_set_id === active.id
         ? plain.id : null;
       const dateOnly = (v: any) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
-      const insertId = await insertAssignment(tx, {
-        gymId, memberId: Number(um.member_id), membershipPlanId: Number(um.membership_plan_id),
-        startsAt: dateOnly(um.starts_at)!, endsAt: dateOnly(um.ends_at),
-        status: ASSIGNMENT_CREATION_STATUS, createdBy: actorText,
-      });
+      const insertId = await allocateAssignmentId(tx, gymId);
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: um.member_id,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
