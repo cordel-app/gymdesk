@@ -467,6 +467,8 @@ export interface MemberSetLine {
   status?: string;
   /** #2781 — the last day of a removed line that runs to its end date. */
   ends_at?: string | null;
+  /** #3154 — the line's applied Promotions (`loadRecurringLinePromotions()`), with their descriptions. */
+  promotions?: import('./memberCart').CartPromotion[];
 }
 
 /** The member's current version (Draft, else Active) as `GET /me/product-sets/:id` answers it. */
@@ -507,6 +509,8 @@ export interface MemberSetPlan {
   /** #3099 — the access the plan grants each beneficiary. */
   plan_access?: { member_id: number; member_name: string | null; all_centers: boolean; centers: { id: number; name: string }[]; online: boolean }[];
   benefits?: { category: string; product_id: number; name: string; quantity: number; billing_frequency: string | null; unit_price: number; mandatory?: boolean; assigned_member_id?: number | null; member_name?: string | null; image_url?: string | null; image_thumbnail_url?: string | null }[];
+  /** #3154 — the plan's standing Promotions: name, picture, description and main terms. */
+  promotions?: import('./memberCart').CartPromotion[];
 }
 
 /** A row of `GET /me/product-sets`. */

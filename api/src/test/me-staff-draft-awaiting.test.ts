@@ -62,6 +62,7 @@ async function setStatus(setId: number): Promise<string> {
 
 beforeAll(async () => {
   gymId = await createTestGym('Me Staff Draft Gym');
+  await createTestMembership(gymId, 'admin');
 });
 
 afterAll(async () => { await cleanupTestGyms(); await db.end(); });
@@ -144,5 +145,43 @@ describe('#2895 a staff assignment Draft in the Members App', () => {
     const other = await member();
     const res = await as(other.clerk, 'post', `/me/product-sets/${owner.setId}/save-and-pay`);
     expect(res.status).toBe(404);
+  });
+
+  it('#3154: reports the plan\'s applied Promotion with its terms, and the review gives the Initial Payment', async () => {
+    const m = await member();
+    const planId = await plan();
+    const umId = await createTestDraftAssignment(gymId, m.id, planId);
+    const { insertId: promoId } = await db.query(
+      `INSERT INTO promotions (gym_id, name, description, starts_at, ends_at, lifecycle_status, stackable,
+                               only_applicable_for_new_members, free_months, paid_months, bonus_months)
+       VALUES (?, ?, 'Half price to start', '2026-01-01', '2099-12-31', 'active', 1, 0, 0, 3, 0)`, [gymId, `Welcome-${uniq()}`]);
+    await db.query('INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+      [gymId, promoId, planId]);
+    await db.query(`INSERT INTO promotion_membership_fee_benefits (gym_id, promotion_id, enabled, action, value, duration_months)
+                    VALUES (?, ?, 1, 'percentage_discount', 50, 2)`, [gymId, promoId]);
+    // An earlier `as()` call may have queued a member identity its request never consumed; the
+    // staff call must authenticate as the admin, so drop any leftover before it.
+    vi.mocked(verifyToken).mockReset().mockResolvedValue({ sub: 'test-user-id' } as any);
+    const apply = await request.post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ promotion_id: promoId });
+    expect(apply.status).toBeLessThan(300);
+    const { rows } = await db.query<{ id: number }>(
+      `SELECT id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')}`, [gymId, umId]);
+    const setId = Number(rows[0].id);
+
+    const view = await as(m.clerk, 'get', `/me/product-sets/${setId}`);
+    expect(view.status).toBe(200);
+    expect(view.body.awaiting_staff_setup).toBe(true);
+    const promos = view.body.plans[0].promotions;
+    expect(promos).toHaveLength(1);
+    expect(promos[0]).toMatchObject({
+      promotion_id: Number(promoId), description: 'Half price to start', paid_months: 3,
+      membership_fee_benefit: { action: 'percentage_discount', value: 50, duration_months: 2 },
+    });
+
+    const review = await as(m.clerk, 'get', `/me/product-sets/${setId}/review`);
+    expect(review.status).toBe(200);
+    expect(typeof review.body.amount_due).toBe('number');
+    expect(await setStatus(setId)).toBe('in_cart');
   });
 });

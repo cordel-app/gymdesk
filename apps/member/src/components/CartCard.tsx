@@ -35,8 +35,6 @@ export interface CartCardProps {
   items: CartCardItem[];
   /** Full translation keys of the explanatory lines under the total. */
   hintKeys?: string[];
-  /** A cart staff are still editing: says so (#2895). */
-  staffEditing?: boolean;
   /** Extra lines (countdown, …) under the hints. */
   extra?: ReactNode;
   /** Rendered between the lines and the items (the Summary). */
@@ -65,7 +63,6 @@ export function CartCard(p: CartCardProps) {
           <h2 style={cartHeadingStyle}>{t(p.headingKey as any)}</h2>
           <span style={cartMutedStyle}>{p.counts}</span>
           {p.total && <span style={cartTotalStyle} data-cart-total>{p.total}</span>}
-          {p.staffEditing && <span style={cartMutedStyle} data-cart-staff-editing>{t('membership.cart_staff_editing')}</span>}
           {(p.hintKeys ?? []).map((k) => <span key={k} style={cartMutedStyle}>{t(k as any)}</span>)}
           {p.extra}
         </div>

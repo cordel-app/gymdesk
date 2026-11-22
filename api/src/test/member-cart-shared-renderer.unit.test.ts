@@ -36,11 +36,18 @@ describe('shared cart renderer', () => {
     expect(page.indexOf('<MemberCart')).toBeLessThan(page.indexOf('{renderCartAddButtons(phase'));
   });
 
-  it('says when staff are editing (locale keys exist)', () => {
-    expect(read('src/components/MemberCart.tsx')).toContain('staffEditing');
+  it('#3154: the preparing-change card says one thing, lists plans and Products, and shows the Initial Payment', () => {
+    const cart = read('src/components/MemberCart.tsx');
+    const card = read('src/components/PreparingCartCard.tsx');
+    expect(cart).toContain('<PreparingCartCard');
+    expect(card).toContain('cart_staff_purchasing_disabled');
+    expect(card).toContain('preparing_initial_payment');
+    expect(card).toContain('data-preparing-products');
     for (const l of ['en', 'es', 'ca']) {
       const msgs = JSON.parse(read(`locales/base/${l}.json`));
-      expect(msgs.membership.cart_staff_editing).toBeTruthy();
+      expect(msgs.membership.cart_staff_purchasing_disabled).toBeTruthy();
+      expect(msgs.membership.cart_staff_editing).toBeUndefined();
+      expect(msgs.membership.cart_staff_hint).toBeUndefined();
       expect(msgs.home.cart_open).toBeUndefined();
     }
   });
