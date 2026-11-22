@@ -123,6 +123,8 @@ export interface InitialCharge {
    * start date (a Product added to a Draft later). Absent means the start date.
    */
   billingDate?: string;
+  /** #3167: every date whose engine events this charge covers (the forecast shows them once, here). */
+  coveredDates?: string[];
 }
 
 /**
@@ -166,7 +168,13 @@ export async function initialCharge(
   // native snapshots; what it owes now is the added plan alone, never the plans already paid.
   const addsAPlan = opts.previousProductSetId == null && await carriesInheritedNativePlans(gymId, productSetId, exec);
   const planned = await planScheduledEvents(gymId, productSetId, startsAt, 1, exec, { newPlansOnly: addsAPlan });
-  let first = firstCycleEvents(planned, startsAt, todayUtc());
+  const today = todayUtc();
+  let first = firstCycleEvents(planned, startsAt, today);
+  // #3167: a recurring Product added to a first version whose plan starts later starts today, on
+  // its own; its first stretch (prorated, or a whole year) is due now, beside the plan's first cycle.
+  if (opts.previousProductSetId == null && !addsAPlan) {
+    first = [...await linesDueBeforeStart(exec, gymId, productSetId, startsAt, today), ...first];
+  }
 
   if (opts.previousProductSetId != null) {
     // #2899: the fee of a plan this version *adds* (one the previous version does not carry) is
@@ -237,10 +245,37 @@ export async function initialCharge(
     simulationLines: [...first.flatMap((e) => e.lines), ...purchases.map((p) => p.simulation)],
     scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null,
     cartPurchases: cart.map((p) => ({ id: p.id, amount: p.amount, product_name: p.product_name })),
-    ...(first.length > 0 && first.every((e) => e.date !== startsAt)
-      ? { billingDate: first.map((e) => e.date).sort()[0] } : {}),
+    ...(earliestDate(first) != null && earliestDate(first) !== startsAt ? { billingDate: earliestDate(first)! } : {}),
+    coveredDates: [...new Set(first.map((e) => e.date))].sort(),
   };
 }
+
+const earliestDate = (events: Array<{ date: string }>): string | null =>
+  events.length > 0 ? events.map((e) => e.date).sort()[0] : null;
+
+/**
+ * #3167 — the events of a first version dated before its own start date and due by today: the
+ * first stretch of a recurring Product line that starts before the plan does. Lines start today
+ * (`addService()`), so this is that stretch alone; a later date of the line's schedule is a
+ * scheduled obligation, never part of the initial payment.
+ */
+async function linesDueBeforeStart(exec: Exec, gymId: string, productSetId: number, startsAt: string, today: string) {
+  const { rows } = await exec.query<{ earliest: unknown }>(
+    `SELECT MIN(s.starts_at) AS earliest
+       FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+      WHERE s.gym_id = ? AND lnk.product_set_id = ? AND s.ends_at IS NULL`,
+    [gymId, productSetId]);
+  const raw = rows[0]?.earliest;
+  if (raw == null) return [];
+  const earliest = (raw instanceof Date ? raw.toISOString() : String(raw)).slice(0, 10);
+  if (earliest >= startsAt) return [];
+  const planned = await planScheduledEvents(gymId, productSetId, earliest, MAX_EARLY_CYCLES, exec);
+  return planned.filter((e) => e.date < startsAt && e.date <= today);
+}
+
+/** Enough cycles for the stretch before a plan's start to be projected in full. */
+const MAX_EARLY_CYCLES = 60;
 
 export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[], productSetId: number | null = null) {
   await writeEventLines(tx, gymId, eventId, productSetId, lines);

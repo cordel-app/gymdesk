@@ -973,6 +973,10 @@
     "draft_line_delete_error": "No s'ha pogut eliminar el producte de l'esborrany.",
     "add_product_error_promotion_requires_products": "Aquesta promoció requereix altres productes. Afegeix-los primer i després aplica la promoció.",
     "added_plan_remove": "Treure",
+    "added_plan_edit": "Edita",
+    "added_plan_edit_done": "Fet",
+    "added_plan_load_error": "No s'ha pogut carregar el pla.",
+    "added_plan_not_editable": "Aquest pla ja no es pot editar aquí: la cistella s'ha confirmat o el pla pertany a una versió en curs.",
     "added_plan_promotion_title": "Promoció aplicada a aquest pla: {name}"
   },
   "member_payments": {
