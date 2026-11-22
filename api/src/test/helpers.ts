@@ -437,26 +437,18 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
     (_m, alias, list) => `${alias}${keyColumn} IN (${list.split(',').map(() => keyExpr('?')).join(', ')})`);
   // #3026 stage 3d-1: a Plan application is its plan snapshot's own row. A fixture that edits
   // "the assignment's applications" by hand (`UPDATE user_membership_promotions … WHERE
-  // user_membership_id = ?`) edits the rows of the assignment's current plan snapshot; the legacy
-  // statement still runs as well, for a fixture that seeded the application in the legacy shape,
-  // whose plan snapshot rows are then re-derived.
-  const update = out.match(/^(\s*UPDATE user_membership_promotions\b[\s\S]*?)\bWHERE\b([\s\S]*)$/i);
-  if (update) {
-    const whereParams = queue.slice((update[1].match(/\?/g) ?? []).length);
-    const { rows: touched } = await db.query<{ product_set_id: number }>(
-      `SELECT DISTINCT product_set_id FROM user_membership_promotions WHERE ${update[2]}`, whereParams);
-    const written = await db.query(out, queue);
-    for (const t of touched) if (t.product_set_id != null) await syncFixtureSnapshot(Number(t.product_set_id));
-    const native = sql.match(/^(\s*UPDATE) user_membership_promotions\b([\s\S]*?\bWHERE\b[\s\S]*)$/i);
-    if (native && /\buser_membership_id\s*=\s*\?/.test(native[2])) {
-      const onSnapshot = `${native[1]} plan_promotion_snapshots${native[2]}`.replace(
-        /\b(?:\w+\.)?user_membership_id\s*=\s*\?/,
-        `plan_snapshot_id = (SELECT x.id FROM (SELECT pa.id FROM plan_snapshots pa
-            WHERE ${assignmentOfLegacyIdSql('?', 'pa')}) x)`);
-      const { rowCount } = await db.query(`${onSnapshot} AND source_id IS NULL`, params);
-      if (rowCount > 0) return { ...written, rowCount: written.rowCount + rowCount };
+  // user_membership_id = ?`) edits the rows of the assignment's current plan snapshot (the legacy
+  // table is dropped since stage 3d-3d).
+  const native = sql.match(/^(\s*UPDATE) user_membership_promotions\b([\s\S]*?\bWHERE\b[\s\S]*)$/i);
+  if (native) {
+    if (!/\buser_membership_id\s*=\s*\?/.test(native[2])) {
+      throw new Error('legacy child fixture: an UPDATE of the applications must name user_membership_id = ?');
     }
-    return written;
+    const onSnapshot = `${native[1]} plan_promotion_snapshots${native[2]}`.replace(
+      /\b(?:\w+\.)?user_membership_id\s*=\s*\?/,
+      `plan_snapshot_id = (SELECT x.id FROM (SELECT pa.id FROM plan_snapshots pa
+          WHERE ${assignmentOfLegacyIdSql('?', 'pa')}) x)`);
+    return db.query(onSnapshot, params as any[]);
   }
   return db.query(out, queue);
 }
@@ -803,10 +795,6 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM gym_personal_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM professional_services WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM billing_events WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM user_membership_promotion_session_snapshot WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM user_membership_promotion_oneoff_snapshot WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM user_membership_promotion_periodical_snapshot WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM user_membership_promotions WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotion_membership_fee_benefits WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotion_session WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotion_oneoff WHERE gym_id IN (${marks})`, ids);
@@ -924,10 +912,8 @@ export async function confirmTestDraftPromotions(gymId: string, umId: number): P
   const { rows } = await db.query<{ id: number }>(
     `SELECT DISTINCT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.status = 'in_cart'
-        AND (${productSetOfLegacyAssignmentSql('?', 'ps')}
-             OR ps.id IN (SELECT ump.product_set_id FROM user_membership_promotions ump
-                           WHERE ump.gym_id = ? AND ump.user_membership_id = ?))`,
-    [gymId, umId, gymId, umId]);
+        AND ${productSetOfLegacyAssignmentSql('?', 'ps')}`,
+    [gymId, umId]);
   for (const r of rows) {
     await db.transaction((tx) => confirmDraftPromotionSnapshots(tx, gymId, Number(r.id)));
   }

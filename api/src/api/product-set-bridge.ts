@@ -91,40 +91,7 @@ async function copyApplications(
   // #3026 stage 3d-3c: a line-owned application is its line's Product snapshot row, copied onto the
   // successor's line (matched on `line_ref`) as the successor's own row, with the Products it froze.
   await copyProductApplications(tx, gymId, from.productSetId, to.productSetId);
-  // Only an application owned by no line (none written since #1865) is still a legacy row, copied as one
-  // until stage 3d-3d moves or drops it.
-  const { rows } = await tx.query<any>(
-    `SELECT id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
-            modified_at, modified_by, snapshot_confirmed_at
-       FROM user_membership_promotions ump WHERE gym_id = ? AND product_set_id = ? AND recurrent_snapshot_id IS NULL
-        AND EXISTS (SELECT 1 FROM promotions pr WHERE pr.id = ump.promotion_id AND pr.applies_to = 'product')`,
-    [gymId, from.productSetId]);
-  for (const app of rows) {
-    const { insertId } = await tx.query(
-      `INSERT INTO user_membership_promotions
-         (gym_id, product_set_id, recurrent_snapshot_id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
-          modified_at, modified_by, snapshot_confirmed_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, to.productSetId, app.promotion_id, app.created_by, app.applied_at, app.consumed_at, app.status,
-        app.snapshot == null ? null : (typeof app.snapshot === 'string' ? app.snapshot : JSON.stringify(app.snapshot)),
-        // #2624 stage 4: a copy keeps its source's confirmation, so a confirmed
-        // (historical) snapshot is never re-captured by the successor's Save & Pay.
-        app.revoked_at, app.modified_at, app.modified_by, app.snapshot_confirmed_at ?? null]);
-    for (const table of [
-      'user_membership_promotion_session_snapshot',
-      'user_membership_promotion_oneoff_snapshot',
-      'user_membership_promotion_periodical_snapshot',
-    ]) {
-      await tx.query(
-        `INSERT INTO ${table}
-           (gym_id, user_membership_promotion_id, product_id, product_name, quantity, item_type,
-            item_billing_frequency, unit_price, currency, \`action\`, \`value\`, requirement)
-         SELECT gym_id, ?, product_id, product_name, quantity, item_type,
-                item_billing_frequency, unit_price, currency, \`action\`, \`value\`, requirement
-           FROM ${table} WHERE gym_id = ? AND user_membership_promotion_id = ?`,
-        [insertId, gymId, app.id]);
-    }
-  }
+  // #3026 stage 3d-3d: `user_membership_promotions` is gone; there is no application owned by no line.
 }
 
 
@@ -510,32 +477,9 @@ export function revokePromotionMutator(promotionId: number, actor: string | null
     // (a Draft's reference deleted, a confirmed application revoked and kept).
     const onSnapshot = await removePlanPromotion(tx, draft.gym_id, draft.id, promotionId, actor);
     // #3026 stage 3d-3c: a Product-target application is its line's Product snapshot row, removed there
-    // by the same rule; only one owned by no line (none written since #1865) is still a legacy row.
+    // by the same rule.
     const onLines = await removeProductPromotion(tx, draft.gym_id, draft.id, promotionId, actor);
-    if (onLines === 'deleted') return { ok: true };
-    const { draftReferenceApplicationSql } = await import('../domain/draftPromotionApplication');
-    const { rows: standingRef } = await tx.query<{ id: number }>(
-      `SELECT ump.id FROM user_membership_promotions ump
-        WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ? AND ump.status = 'applied'
-          AND ump.recurrent_snapshot_id IS NULL AND ${draftReferenceApplicationSql('ump')}
-        FOR UPDATE`,
-      [draft.gym_id, draft.id, promotionId]);
-    if (standingRef.length > 0) {
-      await tx.query(
-        `DELETE ump FROM user_membership_promotions ump
-          WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.promotion_id = ? AND ump.recurrent_snapshot_id IS NULL
-            AND ump.status IN ('applied', 'revoked') AND ump.snapshot_confirmed_at IS NULL`,
-        [draft.gym_id, draft.id, promotionId]);
-      return { ok: true };
-    }
-    const { rowCount } = await tx.query(
-      `UPDATE user_membership_promotions
-          SET status = 'revoked', revoked_at = UTC_TIMESTAMP(),
-              modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ? AND status = 'applied'
-          AND recurrent_snapshot_id IS NULL`,
-      [actor, draft.gym_id, draft.id, promotionId]);
-    if (rowCount === 0 && onSnapshot === 'none' && onLines === 'none') return { kind: 'not_found' };
+    if (onSnapshot === 'none' && onLines === 'none') return { kind: 'not_found' };
     return { ok: true };
   };
 }
