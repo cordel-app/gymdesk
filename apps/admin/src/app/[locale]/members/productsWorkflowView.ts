@@ -85,6 +85,19 @@ export interface ContractedItemLike {
   included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: ContractedMemberLike[] }>;
 }
 
+/**
+ * #3162 — what the cancel-cart confirmation lists: the cart's plan names and Product names, from the
+ * review's `contracted_items` (the server's own list of what the In Cart ProductSet contracts), in its
+ * order. A section with nothing to list is empty and the dialog omits it.
+ */
+export function cartCancelContents(review: Pick<ReviewSummary, 'contracted_items'> | null): { plans: string[]; products: string[] } {
+  const items = review?.contracted_items ?? [];
+  return {
+    plans: items.filter((i) => i.kind === 'plan').map((i) => i.name),
+    products: items.filter((i) => i.kind === 'product').map((i) => i.name),
+  };
+}
+
 /** Recurring items (plans first, as the server lists them) apart from one-off ones. */
 export function splitContracted(items: ContractedItemLike[]): { recurring: ContractedItemLike[]; oneOff: ContractedItemLike[] } {
   return {
