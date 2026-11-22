@@ -143,13 +143,25 @@ export async function syncProductSetAssignmentIds(
  * Draft assignment, one the projection opens) is named here. A snapshot another Product Set links is
  * left alone, as the sync always left it, and the set's `plan_assignment_id` is re-derived after.
  */
+/**
+ * #2125 M6b-51c-2 — the assignment-level facts a plan snapshot drops when it stops naming the
+ * assignment it named (`replace_on_activation`, `replaces_assignment_id`, `deleted_at`/`deleted_by`).
+ * They are written by the assignment's own writers, never copied from `user_memberships` by the sync.
+ */
+export const RESET_ASSIGNMENT_FACTS_SQL =
+  'replace_on_activation = 0, replaces_assignment_id = NULL, deleted_at = NULL, deleted_by = NULL';
+
 export async function nameAssignmentSnapshot(
   exec: Exec, gymId: string, productSetId: number, userMembershipId: number,
 ): Promise<void> {
   const primary = await primaryPlanSnapshotId(exec, gymId, productSetId);
   if (primary != null && !(await isPlanSnapshotShared(exec, productSetId, primary))) {
+    // #2125 M6b-51c-2: a snapshot that comes to name another assignment drops the facts of the one
+    // it named before (a copy made for an edit carries its source's); the new assignment's writers
+    // write its own afterwards (`writeAssignmentReplacement()`). The facts are reset before the name
+    // moves, since MySQL applies the assignments of one UPDATE left to right.
     await exec.query(
-      `UPDATE plan_snapshots SET source_user_membership_id = ?
+      `UPDATE plan_snapshots SET ${RESET_ASSIGNMENT_FACTS_SQL}, source_user_membership_id = ?
         WHERE id = ? AND gym_id = ? AND NOT (source_user_membership_id <=> ?)`,
       [userMembershipId, primary, gymId, userMembershipId]);
     await stampAssignmentIds(exec, gymId, [primary]);
@@ -184,20 +196,22 @@ export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembersh
  * the assignments they name. Called by `syncPlanSnapshot()`, so every path that re-derives a set's
  * snapshots re-derives these too.
  *
- * Identity is stamped on every snapshot the set links. The facts (`replace_on_activation`,
- * `replaces_assignment_id`, `deleted_at`/`deleted_by` and, since M6b-30, `modified_at`/`modified_by`;
+ * Identity is stamped on every snapshot the set links. The facts (since M6b-30, `modified_at`/`modified_by`;
  * `purchased_at` since M6b-51c-1 is its writers', `writeAssignmentPurchasedAt()`) are copied only onto a
  * snapshot no other Product Set links, like every other write of the sync: a shared snapshot is
  * immutable to the sets that link it. A lifecycle change on a shared snapshot is copied first
- * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own.
+ * (`settleSharedPlanLifecycle()`, M6b-2), and the copy is then this set's own. M6b-51c-2: the
+ * replacement (`replace_on_activation`, `replaces_assignment_id`) is written only by
+ * `writeAssignmentReplacement()` and the deletion pair by nothing (no assignment is soft-deleted), so
+ * neither is copied from `user_memberships` any more; a snapshot that changes assignment drops them
+ * (`RESET_ASSIGNMENT_FACTS_SQL`).
  */
 export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: number): Promise<void> {
-  const { rows } = await tx.query<{ id: number; um_id: number | null; replaces: number | null; shared: number }>(
-    `SELECT s.id, s.source_user_membership_id AS um_id, um.replaces_user_membership_id AS replaces,
+  const { rows } = await tx.query<{ id: number; um_id: number | null; shared: number }>(
+    `SELECT s.id, s.source_user_membership_id AS um_id,
             ${planSnapshotSharedSql('s.id', 'psj.product_set_id')} AS shared
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ?
-       LEFT JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
       WHERE psj.product_set_id = ?`, [gymId, productSetId]);
   if (rows.length === 0) {
     await syncProductSetAssignmentIds(tx, gymId, [productSetId]);
@@ -207,20 +221,15 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
   const umIds = rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number);
   await syncPaymentRequestAssignmentIds(tx, gymId, umIds);
   await syncProductSetAssignmentIds(tx, gymId, [productSetId], umIds);
-  const replaced = await anchorsOf(tx, gymId, rows.filter((r) => r.replaces != null).map((r) => Number(r.replaces)));
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;
     await tx.query(
       `UPDATE plan_snapshots s
          JOIN user_memberships um ON um.id = s.source_user_membership_id AND um.gym_id = s.gym_id
-          SET s.replace_on_activation = um.replace_on_activation,
-              s.replaces_assignment_id = ?,
-              s.deleted_at = um.deleted_at,
-              s.deleted_by = um.deleted_by,
-              s.modified_at = um.modified_at,
+          SET s.modified_at = um.modified_at,
               s.modified_by = um.modified_by
         WHERE s.id = ? AND s.gym_id = ?`,
-      [r.replaces != null ? (replaced.get(Number(r.replaces)) ?? null) : null, r.id, gymId]);
+      [r.id, gymId]);
   }
 }
 
