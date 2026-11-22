@@ -12,7 +12,7 @@ import { SimulationService, ProductFrequency } from '../domain/billingSimulation
 /**
  * #631 — Additional Periodic Services on an Assigned Plan.
  *
- * Recurring Products attached directly to a `user_memberships` row
+ * Recurring Products attached directly to an assignment
  * (migration 164). They belong to the Assigned Plan, never to the Membership
  * Plan and never to a Promotion (#631 §4/§7): adding one changes nothing about
  * the Plan itself, and nothing here touches `promotion_*` or the Plan's

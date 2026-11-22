@@ -1,13 +1,12 @@
 /**
- * Read-only drift check of the #2125 M6b dual-write (migration 419).
+ * Read-only consistency check of Membership Plan assignments (#2125, migration 419).
  *
  *   npm run plan-assignments:validate            every gym
  *   npm run plan-assignments:validate -- <gymId> one gym
  *
- * Writes nothing. While `user_memberships` and `plan_snapshots` both record a Membership Plan
- * assignment, this lists where they disagree: identity (`assignment_id`) and lifecycle (status,
- * dates, owner, the replace target). Exit code 1 while any check has rows, so it can gate dropping
- * `user_memberships` in M6b-4. Against a deployed database it runs from the VPS as the compiled
+ * Writes nothing. An assignment is its plan snapshots (migration 458 dropped `user_memberships`);
+ * this lists snapshots whose identity (`assignment_id`, the `plan_assignment_ids` registry) or
+ * re-keyed links are inconsistent. Exit code 1 while any check has rows. Against a deployed database it runs from the VPS as the compiled
  * `node dist/scripts/validate-plan-assignments.js`.
  */
 import 'dotenv/config';

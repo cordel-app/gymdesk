@@ -1,14 +1,12 @@
 /**
- * #2125 M6b-1 — the read-only comparison of the two records of a Membership Plan assignment while
- * both exist: the `user_memberships` row (still the source of truth) and the plan snapshot that is
- * its contract (`assignmentPlanSnapshotId()`), which takes over in M6b-4.
+ * #2125 M6b-1 — the read-only consistency check of Membership Plan assignments. An assignment is its
+ * plan snapshots (migration 458 dropped `user_memberships`): its id comes from the
+ * `plan_assignment_ids` registry and its anchor snapshot carries its identity and lifecycle.
  *
- * It writes nothing and decides nothing: each check is one SELECT that lists the rows on which the
- * two sides disagree. `npm run plan-assignments:validate` prints it and exits 1 while any check has
- * rows; dropping `user_memberships` (M6b-4) requires it to be clean.
+ * It writes nothing and decides nothing: each check is one SELECT that lists the inconsistent rows.
+ * `npm run plan-assignments:validate` prints it and exits 1 while any check has rows.
  *
- * Since M6b-51d-7b it compares only identity and the re-keyed links; the lifecycle has no second
- * record to compare with.
+ * It checks identity and the re-keyed links; the lifecycle has a single record, so nothing to compare.
  */
 
 type Exec = { query: <T = any>(sql: string, params?: any[]) => Promise<{ rows: T[] }> };
@@ -43,7 +41,7 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       WHERE s.assignment_id IS NULL${scope('s')} ORDER BY s.id`);
 
   await add('assignment_identity_split',
-    'A plan snapshot whose assignment_id is not the first snapshot naming its user_memberships row.',
+    'A plan snapshot whose assignment_id is not the first snapshot naming its assignment id.',
     `SELECT s.id AS plan_snapshot_id, s.gym_id, s.source_user_membership_id AS user_membership_id,
             s.assignment_id, a.anchor_id AS expected_assignment_id
        FROM plan_snapshots s
@@ -54,8 +52,8 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       WHERE NOT (s.assignment_id <=> a.anchor_id)${scope('s')} ORDER BY s.id`);
 
   await add('assignment_id_names_two_assignments',
-    'One assignment_id carried by snapshots that name different user_memberships rows.',
-    `SELECT s.assignment_id, s.gym_id, COUNT(DISTINCT s.source_user_membership_id) AS user_memberships
+    'One assignment_id carried by snapshots that name different assignment ids.',
+    `SELECT s.assignment_id, s.gym_id, COUNT(DISTINCT s.source_user_membership_id) AS assignments
        FROM plan_snapshots s
       WHERE s.assignment_id IS NOT NULL AND s.source_user_membership_id IS NOT NULL${scope('s')}
       GROUP BY s.assignment_id, s.gym_id HAVING COUNT(DISTINCT s.source_user_membership_id) > 1

@@ -42,9 +42,9 @@ function checkInternalSecret(req: Request, res: Response): boolean {
  * Moves every due `active_cancel_at_period_end` assignment to `cancelled`; answers how many moved.
  *
  * #2125 M6b-47: the due assignments are picked from `plan_snapshots` (each assignment's current
- * snapshot, `isCurrentAssignmentSnapshotSql()`), never from `user_memberships`. The legacy row is
- * still dual-written, by an UPDATE guarded on the status it is moving away from, so a row another
- * writer moved in between is left alone and gets no second audit row; `recordStatusChange()`
+ * snapshot, `isCurrentAssignmentSnapshotSql()`), never from `user_memberships`. The move is written
+ * on the anchor by `writeAssignmentLifecycle()`, guarded on the status it is moving away from, so an
+ * assignment another writer moved in between is left alone and gets no second audit row; `recordStatusChange()`
  * re-syncs the snapshot.
  */
 export async function endCancelledAtPeriodEnd(): Promise<number> {

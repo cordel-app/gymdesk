@@ -244,9 +244,9 @@ async function syncLinkedAssignmentToPendingPayment(
   tx: Tx, gymId: string, userMembershipId: number, actor: string | null, source: 'admin' | 'member' = 'admin',
 ) {
   // #2125 M6b-48: the assignment's owner is read off its current plan snapshot
-  // (`assignmentOfLegacyIdSql()`), never from `user_memberships`; the legacy row is still
-  // dual-written, by an UPDATE guarded on `in_cart`, which is what decides whether it moves
-  // and serialises two Save & Pays (it replaces the `FOR UPDATE` read of the legacy row).
+  // (`assignmentOfLegacyIdSql()`), never from `user_memberships`; the move is written on the
+  // anchor (`writeAssignmentLifecycle()`), guarded on `in_cart`, which is what decides whether it
+  // moves and serialises two Save & Pays (it replaces the `FOR UPDATE` read of the legacy row).
   const { rows } = await tx.query<{ member_id: number }>(
     `SELECT pa.member_id FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
     [gymId, userMembershipId],

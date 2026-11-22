@@ -1,18 +1,18 @@
 /**
  * #2125 M6b-1 — the assignment's identity and assignment-level facts on `plan_snapshots`
- * (migration 419), dual-written while `user_memberships` is still the source of truth.
+ * (migration 419). Since migration 458 dropped `user_memberships`, the plan snapshots are the
+ * assignment's only record.
  *
  * `plan_snapshots.assignment_id` is the stable identity of the logical Membership Plan assignment:
  * the id of the assignment's first snapshot. It is decided here and nowhere else:
  *
- *   - a snapshot naming a `user_memberships` row (`source_user_membership_id`) takes the lowest
- *     snapshot id naming that row, so one legacy assignment is exactly one `assignment_id` for as
- *     long as both exist (which is what lets M6b-3 re-key every reference through the pair);
+ *   - a snapshot naming an assignment id (`source_user_membership_id`) takes the lowest
+ *     snapshot id naming that id, so one assignment id is exactly one `assignment_id` (which is
+ *     what let M6b-3 re-key every reference through the pair);
  *   - a snapshot naming none keeps the assignment it was given (a copy is given its source's by
  *     `copyPlanSnapshotToVersion()`), else it is its own.
  *
- * Nothing reads these columns yet. `npm run plan-assignments:validate` reports where the two
- * sides disagree, and M6b-4 may only drop `user_memberships` once that is clean.
+ * `npm run plan-assignments:validate` reports snapshots whose identity is inconsistent.
  */
 import type { Tx } from '../infra/db';
 import { isPlanSnapshotShared, planSnapshotSharedSql, primaryPlanSnapshotId } from './plan-snapshot-lines';
@@ -22,7 +22,7 @@ import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 type Exec = { query: Tx['query'] };
 
 /**
- * The lowest snapshot id naming each of the given `user_memberships` rows. Asked per assignment (the
+ * The lowest snapshot id naming each of the given assignment ids. Asked per assignment (the
  * `source_user_membership_id` index), never as a scan of the gym's snapshots: the sync runs on every
  * Draft edit.
  */
@@ -159,7 +159,7 @@ export async function syncProductSetAssignmentIds(
 /**
  * #2125 M6b-44 — names a Product Set's primary plan snapshot after the assignment the set is linked
  * to, so the assignment's anchor exists as soon as the link does. Called by every writer that links a
- * set to a `user_memberships` row, once the set's primary snapshot is the one it will keep (after it
+ * set to an assignment, once the set's primary snapshot is the one it will keep (after it
  * was frozen, cloned or owned), and before the set is synced. Until M6b-43 the snapshot sync named it
  * from `product_sets.user_membership_id`; since M6b-44 the sync reads the set's anchor, which only
  * exists once a snapshot names the assignment, so a link to an assignment no snapshot names yet (a new
@@ -195,10 +195,8 @@ export async function nameAssignmentSnapshot(
 
 /**
  * #2125 M6b-51a — locks the assignment's anchor snapshot (`FOR UPDATE`), the row the assignment's
- * identity lives on. It is taken **after** the legacy row's own lock, the order every writer already
- * has (a legacy write, then the snapshot sync), so the two cannot deadlock; while `user_memberships`
- * is still the source of truth the legacy lock stays and this one is added beside it, so no writer
- * that locks only one of them stops excluding the others. Answers the anchor id, or null when no
+ * identity lives on (since migration 458 there is no `user_memberships` row to lock beside it).
+ * Answers the anchor id, or null when no
  * snapshot names the assignment yet (nothing to lock).
  */
 export async function lockAssignmentAnchor(exec: Exec, gymId: string, userMembershipId: number): Promise<number | null> {
@@ -447,8 +445,8 @@ export async function assignmentReplacementOf(
  * #2125 M6b-35 — writes an assignment's replacement on its own plan snapshots (those no other
  * Product Set links, the rule every write of the sync keeps): `replaces_assignment_id` as the anchor
  * of the replaced assignment, `replace_on_activation` as given. A field left `undefined` is not
- * written. `user_memberships` still carries both columns (dual-written until the table goes); this
- * is the writer the reader above depends on, so it does not wait for a later sync.
+ * written. The plan snapshots are the only record of both columns (migration 458 dropped
+ * `user_memberships`); this is the writer the reader above depends on, so it does not wait for a later sync.
  */
 export async function writeAssignmentReplacement(
   exec: Exec, gymId: string, userMembershipId: number,
@@ -482,8 +480,7 @@ export async function writeAssignmentReplacement(
  * #2125 M6b-51c-1 — writes the assignment's `purchased_at` on its plan snapshots, the record readers
  * take it from (`OWNED_ASSIGNMENT_ROWS_SQL`, `ASSIGNMENT_HISTORY_ROWS_SQL`). The sync no longer copies
  * it from `user_memberships`: the writers that stamp it (the commit, the projection) write it here, in
- * their own transaction, and the legacy column is only dual-written for `plan-assignments:validate`
- * until the table goes. Written on the snapshots naming the assignment that no other Product Set links
+ * their own transaction (there is no legacy column since migration 458). Written on the snapshots naming the assignment that no other Product Set links
  * (the rule every write of the sync keeps; a shared snapshot already carries the value it was written
  * with). `'fill'` stamps the current time where none is stored and leaves a stored one alone, skipping
  * a snapshot whose own status says the plan is over; a date sets that value.

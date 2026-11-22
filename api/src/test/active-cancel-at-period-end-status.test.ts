@@ -57,13 +57,17 @@ describe('user_memberships.status — active_cancel_at_period_end (#2659 stage 1
   it('the CHECK accepts exactly the declared statuses', async () => {
     // #2125 M6b-51d-7c-2: an assignment's status is stated on its plan snapshot, whose CHECK mirrors
     // the declaration (`user_memberships_status_check` went with the table, migration 458).
-    const { rows: checks } = await db.query(
-      `SELECT cc.CHECK_CLAUSE AS clause
-         FROM information_schema.CHECK_CONSTRAINTS cc
-        WHERE cc.CONSTRAINT_SCHEMA = DATABASE() AND cc.CONSTRAINT_NAME = 'chk_plan_snapshots_status'`,
-    );
-    const values = [...String(checks[0].clause).replace(/\\/g, '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
-    expect(values).toEqual([...ASSIGNMENT_STATUSES].sort());
+    // #2125 M7b: the anchor's `assignment_status` (migration 460) mirrors the same declaration.
+    for (const name of ['chk_plan_snapshots_status', 'chk_plan_snapshots_assignment_status']) {
+      const { rows: checks } = await db.query(
+        `SELECT cc.CHECK_CLAUSE AS clause
+           FROM information_schema.CHECK_CONSTRAINTS cc
+          WHERE cc.CONSTRAINT_SCHEMA = DATABASE() AND cc.CONSTRAINT_NAME = ?`, [name],
+      );
+      expect(checks).toHaveLength(1);
+      const values = [...String(checks[0].clause).replace(/\\/g, '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+      expect(values).toEqual([...ASSIGNMENT_STATUSES].sort());
+    }
   });
 
   it('reads Cancels on End Date until ends_at, then Cancelled; a cancelled row no longer derives it (#2659 stage 2)', async () => {

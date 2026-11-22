@@ -1,6 +1,6 @@
 /**
  * #2659 stage 1 (#2125 lifecycle) — the stored statuses of a Membership Plan
- * assignment (`user_memberships.status`), declared once.
+ * assignment (`plan_snapshots.status`, and the anchor's `assignment_status`), declared once.
  *
  * `active_cancel_at_period_end` is the persisted form of what
  * `LIFECYCLE_STATUS_SQL` derived as *Cancels on End Date* since #2625: a plan
@@ -10,8 +10,9 @@
  * moves. Stage 2 makes the cancel paths write it, moves the existing rows and
  * transitions it to `cancelled` once `ends_at` has passed.
  *
- * A new status goes in **two** places: `ASSIGNMENT_STATUSES` and the
- * `user_memberships_status_check` CHECK (current definition: migration 395).
+ * A new status goes in **three** places: `ASSIGNMENT_STATUSES`, the
+ * `chk_plan_snapshots_status` CHECK (current definition: migration 447) and the anchor's
+ * `chk_plan_snapshots_assignment_status` (migration 460).
  */
 export const CANCELS_AT_PERIOD_END_STATUS = 'active_cancel_at_period_end' as const;
 

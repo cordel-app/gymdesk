@@ -395,8 +395,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
 
     // #639: `created_at` is the ledger row's own creation instant (ISO datetime,
     // UTC). `next_payment_date` is when the next payment is scheduled to run for
-    // the membership the event belongs to — i.e. `user_memberships.next_billing_date`,
-    // the same value the nightly billing run charges on. It is null (rendered as
+    // the membership the event belongs to — i.e. its next billing date, derived
+    // from the ledger (`loadDerivedBilling()`), the date the nightly run charges on. It is null (rendered as
     // "—") when the event has no membership, or the membership is no longer active,
     // or nothing is scheduled. It is a DATE column, so it carries no time of day.
     type BillingEventRow = {

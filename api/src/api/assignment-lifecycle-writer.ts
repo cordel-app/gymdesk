@@ -57,8 +57,8 @@ function setList(change: AssignmentLifecycleChange, clock: { now: string; today:
  *
  * M6b-51c-4 put the lifecycle on the anchor (`assignment_status`, `assignment_closed_at`,
  * `assignment_ends_at`, `assignment_modified_*`); M6b-51d-6 judged the guards (`from`, `notFrom`,
- * `onlyIfEndsAtNull`) there. Since M6b-51d-7b the anchor is the only record written: the
- * `user_memberships` row keeps the values it was created with and nothing reads them. The start date,
+ * `onlyIfEndsAtNull`) there. Since M6b-51d-7b the anchor is the only record written (migration 458
+ * dropped `user_memberships`). The start date,
  * the purchase time and the replacement are the plan snapshot's and have their own writers
  * (`writeDraftAssignmentDates()`, `writeAssignmentPurchasedAt()`, `writeAssignmentReplacement()`).
  */

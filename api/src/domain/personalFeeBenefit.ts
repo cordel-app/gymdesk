@@ -54,8 +54,8 @@ export function isPersonalFeeBenefitAction(v: unknown): v is PersonalFeeBenefitA
  * the resolver needs it.
  *
  * Defensive in the same way `toPlanDuration()` is, and for the same reason:
- * `user_memberships` carries no CHECK for these columns (migration 192 — an
- * `ADD CONSTRAINT` would rebuild the busiest table in the schema), so a row
+ * these columns carry no CHECK (migration 192 declined one on `user_memberships`,
+ * and the plan snapshot that holds them now has none either), so a row
  * that somehow held an unknown action, a missing percentage or one outside
  * 0..100 must still price to something sane rather than to a negative fee. An
  * unusable pair reads as no benefit; a percentage is clamped to 0..100.
