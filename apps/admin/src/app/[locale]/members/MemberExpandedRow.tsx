@@ -7,7 +7,7 @@ import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
-import { formatGymDate, formatGymDateOnly } from '@/lib/gymFormat';
+import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { clerkStatusLine, clerkInvitationLine, type ClerkAccountFields, type ClerkAccountLine } from '@/lib/clerkAccountLines';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -87,23 +87,6 @@ interface MemberCenter {
   center_id: number;
   name: string;
   is_default: boolean | number;
-}
-
-interface BillingEvent {
-  id: number;
-  event_type: string;
-  previous_status: string | null;
-  new_status: string | null;
-  charge_type_code: string | null;
-  amount: string | null;
-  notes: string | null;
-  source: string;
-  created_at: string;
-  receipt_number: string | null;
-  /** The date the event is due (a ProductSet event's own billing date). A
-   * Scheduled obligation is created today for a later cycle, so its creation
-   * date would list next month's charge beside today's payment. */
-  billing_date?: string | null;
 }
 
 export function MemberExpandedRow({
@@ -210,8 +193,6 @@ export function MemberExpandedRow({
   const [nutritionExpanded, setNutritionExpanded] = useState<Set<number>>(new Set());
   const [nutritionHierarchies, setNutritionHierarchies] = useState<Record<number, Hierarchy>>({});
 
-  const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
-  const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
   // #1118 §12 — the Products this Member bought from the Members App, each with
   // the Promotion snapshot it was bought under.
   const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
@@ -276,7 +257,7 @@ export function MemberExpandedRow({
     setError(null);
     try {
       const [
-        config, memberTrainingPlans, nutrition, events, clerk, memberCenters, purchases,
+        config, memberTrainingPlans, nutrition, clerk, memberCenters, purchases,
       ] = await Promise.all([
         apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`)
           .catch(() => EMPTY_CONFIGURATION),
@@ -284,7 +265,6 @@ export function MemberExpandedRow({
           ? apiFetch<TrainingPlanAssignment[]>(`/members/${memberId}/member-training-plans`).catch(() => [])
           : Promise.resolve([]),
         apiFetch<NutritionPlan[]>(`/member-nutrition-plans?member_id=${memberId}`).catch(() => []),
-        apiFetch<{ items: BillingEvent[] }>(`/billing-events/member/${memberId}?limit=50`).catch(() => ({ items: [] })),
         apiFetch<{ status: string } & ClerkAccountFields>(`/members/${memberId}/clerk-status`).catch(() => null),
         apiFetch<MemberCenter[]>(`/members/${memberId}/centers`).catch(() => []),
         apiFetch<{ items: PurchasedProduct[] }>(`/members/${memberId}/products`)
@@ -296,7 +276,6 @@ export function MemberExpandedRow({
       setClerkStatus(clerk);
       setTrainingPlans(memberTrainingPlans);
       setNutritionPlans(nutrition);
-      setBillingEvents(events.items ?? []);
       setCenters(memberCenters);
     } catch {
       setError(t('members.expanded_error'));
@@ -369,13 +348,6 @@ export function MemberExpandedRow({
     }
   }
 
-  function toggleEvent(id: number) {
-    setExpandedEventIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
 
   if (loading) {
     return <div style={panel}><p style={dim}>{t('members.expanded_loading')}</p></div>;
@@ -613,7 +585,7 @@ export function MemberExpandedRow({
           {/* #1613 — one billing section. While billing-affecting changes are
               pending (the server's review diff, a version awaiting payment or a
               pending one-off) it is the proposed configuration's simulation;
-              the ledger is the separate Actual Billing Events section at the foot of the tab (#1867). */}
+              the persisted ledger is on the Payments tab (#2099; #3241 removed it here). */}
           {billingSectionMode === 'simulation' && (
             <Section label={t('members.section_billing_event_simulation')}>
               <ProposedSetForecast productSetId={inFlightSetId} reloadKey={configuration} />
@@ -652,72 +624,6 @@ export function MemberExpandedRow({
             </Section>
           )}
 
-          {/* #1867 — Actual Billing Events: the real ledger, always shown and
-              last on the tab, strictly separate from the simulation above. */}
-          <Section label={t('members.section_billing_events')}>
-            {billingEvents.length === 0 ? (
-              <p style={dim}>{t('members.no_billing_events')}</p>
-            ) : (
-              <div>
-                {billingEvents.map((ev) => {
-                  const isExpanded = expandedEventIds.has(ev.id);
-                  return (
-                    <div key={ev.id} style={eventRow}>
-                      <button
-                        onClick={() => toggleEvent(ev.id)}
-                        aria-expanded={isExpanded}
-                        aria-label={isExpanded ? 'Collapse event' : 'Expand event'}
-                        style={chevronBtn}
-                      >
-                        <span style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
-                      </button>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
-                          onClick={() => toggleEvent(ev.id)}
-                        >
-                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{ev.billing_date ? formatGymDateOnly(ev.billing_date, gymFmt) : formatGymDate(ev.created_at, gymFmt)}</span>
-                          <span style={{ fontSize: 13, flex: 1 }}>{eventTypeLabel(ev.event_type, t)}</span>
-                          {ev.amount && (
-                            <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                              €{parseFloat(ev.amount).toFixed(2)}
-                            </span>
-                          )}
-                        </div>
-                        {isExpanded && (
-                          <div style={eventDetail}>
-                            {ev.event_type === 'status_changed' ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                <span style={{ color: '#888', fontSize: 12 }}>{t('members.event_status_changed')}:</span>
-                                <StatusBadge status={ev.previous_status ?? 'inactive'} label={ev.previous_status ?? '—'} />
-                                <span style={{ color: '#888' }}>→</span>
-                                <StatusBadge status={ev.new_status ?? 'inactive'} label={ev.new_status ?? '—'} />
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
-                                {ev.charge_type_code && (
-                                  <span><span style={{ color: '#888' }}>{t('members.event_type_label')}:</span> {ev.charge_type_code}</span>
-                                )}
-                                {ev.notes && (
-                                  <span><span style={{ color: '#888' }}>{t('members.event_notes')}:</span> {ev.notes}</span>
-                                )}
-                                {ev.source && (
-                                  <span><span style={{ color: '#888' }}>{t('members.event_source')}:</span> {ev.source}</span>
-                                )}
-                                {ev.receipt_number && (
-                                  <span><span style={{ color: '#888' }}>{t('members.event_receipt')}:</span> {ev.receipt_number}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Section>
         </>
       )}
 
@@ -1106,26 +1012,13 @@ function PlanCard({
   );
 }
 
-function eventTypeLabel(type: string, t: ReturnType<typeof useTranslations>): string {
-  switch (type) {
-    case 'charge_created': return t('members.event_charge_created');
-    case 'payment_recorded': return t('members.event_payment_recorded');
-    case 'adjustment': return t('members.event_adjustment');
-    case 'status_changed': return t('members.event_status_changed_label');
-    // #635 stage 11 — a cycle the assignment's Free Period, Bonus Duration or
-    // an applied Promotion covered: recorded at €0, never charged.
-    case 'waived_billing': return t('members.event_waived_billing');
-    default: return type;
-  }
-}
-
 /** #797: the empty-value convention of the Members screens (see the list columns). */
 const EMPTY_VALUE = '\u2014';
 
 // #929: the card's chrome is `components/formChrome.ts` — this file aliases the
 // shared objects rather than restating them, so the Member card, the Edit form
 // above it and every other card share one look. Only what is genuinely this
-// card's own (the body inset, the Billing Events ledger rows) is declared here.
+// card's own (the body inset) is declared here.
 const panel: React.CSSProperties = { padding: '16px 24px' };
 const dim = cardMutedTextStyle;
 const card = innerCardStyle;
@@ -1147,14 +1040,3 @@ function InactiveToggle({ label, open, onToggle }: { label: string; open: boolea
 }
 const fieldLabelStyle = formFieldLabelStyle;
 const retryBtn = cardTextLinkStyle;
-const eventRow: React.CSSProperties = {
-  display: 'flex', alignItems: 'flex-start', gap: 6,
-  borderBottom: '1px solid var(--gd-card-border, #e8e8ed)', paddingBottom: 8, marginBottom: 8,
-};
-const chevronBtn: React.CSSProperties = {
-  background: 'none', border: 'none', cursor: 'pointer', color: '#888',
-  fontSize: 10, padding: '2px 4px', lineHeight: 1, flexShrink: 0, marginTop: 2,
-};
-const eventDetail: React.CSSProperties = {
-  marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--gd-card-border, #e8e8ed)',
-};

@@ -5,12 +5,12 @@ import { join } from 'path';
 // #635 stage 11 — the nightly billing run records a `waived_billing` event for
 // a cycle nothing was owed on (a Free Period, a Bonus Duration, or an applied
 // Promotion's own free month). Every surface that names a billing event type
-// therefore has to know the new one, or a member's free month reads as a raw
+// therefore has to know the new one (#3241 removed the Member card's own
+// ledger, so the memberships ledger is the surface left here), or a member's free month reads as a raw
 // `waived_billing` string — or, on a `t()` call with no key behind it, as a
 // missing-message error.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const MEMBER_EXPANDED_ROW = join(__dirname, '..', 'app', '[locale]', 'members', 'MemberExpandedRow.tsx');
 const LEDGER_MODAL = join(__dirname, '..', 'app', '[locale]', 'memberships', 'MembershipLedgerModal.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
@@ -23,21 +23,10 @@ function stripComments(src: string): string {
 }
 
 describe('waived_billing — admin labels', () => {
-  it.each(LOCALE_CODES)('%s has the members-page label', (code) => {
-    const label = loadLocale(code)?.members?.event_waived_billing;
-    expect(typeof label).toBe('string');
-    expect(label.length).toBeGreaterThan(0);
-  });
-
   it.each(LOCALE_CODES)('%s has the ledger label alongside the other event types', (code) => {
     const events = loadLocale(code)?.memberships?.event;
     expect(Object.keys(events)).toContain('waived_billing');
     expect(typeof events.waived_billing).toBe('string');
-  });
-
-  it('maps the type in the Member expanded row rather than falling through to the raw code', () => {
-    const src = stripComments(readFileSync(MEMBER_EXPANDED_ROW, 'utf-8'));
-    expect(src).toMatch(/case 'waived_billing':\s*return t\('members\.event_waived_billing'\)/);
   });
 
   it('accepts the type in the ledger modal\'s event union', () => {

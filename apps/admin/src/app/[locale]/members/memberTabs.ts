@@ -56,7 +56,6 @@ export type MemberSectionKey =
   | 'section_pt_slots'
   | 'section_bookings'
   | 'section_professional_services'
-  | 'section_billing_events'
   | 'section_nutrition_plans'
   | 'section_personal_goals'
   | 'section_training_plans'
@@ -90,11 +89,10 @@ export const MEMBER_TABS: readonly MemberTab[] = [
       'section_membership_plan',
       // #1537 — the recurring configuration (Active / Draft) and its one Save & Pay.
       'section_additional_services',
-      // #1613 — one billing section: BILLING EVENT SIMULATION while billing-
-      // affecting changes are pending, else the persisted BILLING EVENTS.
+      // #1613 — BILLING EVENT SIMULATION while billing-affecting changes are pending.
+      // #3241 — the Actual Billing Events ledger (#1867) is no longer shown
+      // here; the Payments tab (#2099) is where a Member's events are read.
       'section_billing_event_simulation',
-      // #1867 — Actual Billing Events, last on the tab.
-      'section_billing_events',
     ],
   },
   // #2720 — the Member's bookings, between Products and Professional Services.
