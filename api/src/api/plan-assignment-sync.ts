@@ -52,6 +52,48 @@ export async function stampAssignmentIds(exec: Exec, gymId: string, planSnapshot
       await exec.query('UPDATE plan_snapshots SET assignment_id = ? WHERE id = ? AND gym_id = ?', [wanted, r.id, gymId]);
     }
   }
+  const anchorIds = rows
+    .filter((r) => r.um_id != null && (anchors.get(Number(r.um_id)) ?? Number(r.id)) === Number(r.id))
+    .map((r) => Number(r.id));
+  await seedAnchorLifecycle(exec, gymId, anchorIds);
+}
+
+/**
+ * #2125 M6b-51c-4 — an anchor that carries no assignment lifecycle yet (a new assignment's first
+ * snapshot) takes it from the `user_memberships` row it names; from then on `writeAssignmentLifecycle()`
+ * keeps it in step. This is the dual-write's seed, gone with the table (the creating writer will set
+ * the values itself then).
+ */
+const ANCHOR_LIFECYCLE_FROM_LEGACY = `
+  UPDATE plan_snapshots a
+    JOIN user_memberships um ON um.id = a.source_user_membership_id AND um.gym_id = a.gym_id
+     SET a.assignment_status = um.status, a.assignment_closed_at = um.closed_at,
+         a.assignment_ends_at = um.ends_at, a.assignment_modified_at = um.modified_at,
+         a.assignment_modified_by = um.modified_by
+   WHERE a.assignment_id = a.id`;
+
+async function seedAnchorLifecycle(exec: Exec, gymId: string, anchorIds: number[]): Promise<void> {
+  if (anchorIds.length === 0) return;
+  await exec.query(
+    `${ANCHOR_LIFECYCLE_FROM_LEGACY}
+       AND a.gym_id = ? AND a.id IN (${anchorIds.map(() => '?').join(',')}) AND a.assignment_status IS NULL`,
+    [gymId, ...anchorIds]);
+}
+
+/**
+ * #2125 M6b-51c-4 — the repair for anchors that fell out of step with their `user_memberships` row
+ * (a change made by code deployed before the one writer mirrored it, e.g. between migration 453 and
+ * the deploy). Run by `npm run plan-assignments:settle -- --execute`; answers how many it repaired.
+ * The migration's own backfill does the same once (`backfillAssignmentLifecycle()`).
+ */
+export async function repairAnchorLifecycles(exec: Exec, gymId?: string): Promise<number> {
+  const { rowCount } = await exec.query(
+    `${ANCHOR_LIFECYCLE_FROM_LEGACY}
+       AND (NOT (a.assignment_status <=> um.status) OR NOT (a.assignment_closed_at <=> um.closed_at)
+            OR NOT (a.assignment_ends_at <=> um.ends_at) OR NOT (a.assignment_modified_at <=> um.modified_at)
+            OR NOT (a.assignment_modified_by <=> um.modified_by))${gymId ? ' AND a.gym_id = ?' : ''}`,
+    gymId ? [gymId] : []);
+  return rowCount;
 }
 
 export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotId: number): Promise<void> {

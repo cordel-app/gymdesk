@@ -50,9 +50,9 @@ const LEGACY_STATEMENTS: Record<string, number> = {
   'api/assignment-lifecycle-writer.ts': 1,
   'api/membership-plans.ts': 1,
   'api/one-active-plan.ts': 1,
-  'api/plan-assignment-drift.ts': 4,
+  'api/plan-assignment-drift.ts': 5, // M6b-51c-4: the report compares the anchor's lifecycle with the legacy row
   'api/plan-assignment-lifecycle.ts': 1,
-  'api/plan-assignment-sync.ts': 1,
+  'api/plan-assignment-sync.ts': 2, // M6b-51c-4: the anchor lifecycle's seed and repair share one statement
   'api/plan-snapshot-sync.ts': 1,
   'api/product-set-projection.ts': 3, // M6b-51c-1: the predecessor's purchase time is read off its snapshot
   'api/product-sets.ts': 2,
