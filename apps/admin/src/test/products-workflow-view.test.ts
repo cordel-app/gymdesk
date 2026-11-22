@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
+  billingMode, cancelRequestFor, cartCancelContents, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
 } from '@/app/[locale]/members/productsWorkflowView';
 
 const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
@@ -133,5 +133,17 @@ describe('#2965 the standalone cart', () => {
   });
   it('a version awaiting payment keeps its own review', () => {
     expect(saveAndPayTarget({ current: set('pending_payment'), review: null, pendingOneOffs: 0, cartPurchases: 1 })).toBe('review');
+  });
+});
+
+describe('#3162 cancel-cart confirmation contents', () => {
+  const item = (kind: 'plan' | 'product', name: string) => ({ kind, name, period: 'recurring' as const, billing_frequency: null, cadence: null, quantity: 1, members: [], included: [] });
+  it('names the plans and the Products of the cart, apart, in the server order', () => {
+    const review = { contracted_items: [item('plan', 'Gold'), item('product', 'Locker'), item('plan', 'Kids'), item('product', 'Towel')] };
+    expect(cartCancelContents(review)).toEqual({ plans: ['Gold', 'Kids'], products: ['Locker', 'Towel'] });
+  });
+  it('leaves a section empty (omitted by the dialog) and copes with no review', () => {
+    expect(cartCancelContents({ contracted_items: [item('product', 'Locker')] })).toEqual({ plans: [], products: ['Locker'] });
+    expect(cartCancelContents(null)).toEqual({ plans: [], products: [] });
   });
 });
