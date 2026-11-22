@@ -8,6 +8,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment,
   createTestGym, createTestMembership, request, snapshotTestAssignment } from './helpers';
 import { CANCELS_AT_PERIOD_END_STATUS, cancellationStatusFor } from '../domain/assignmentStatus';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const SECRET = 'test-billing-secret-2659';
 let gymId: string;
@@ -97,7 +98,7 @@ describe('cancelling a projected plan', () => {
   it('writes cancelled when nothing is left to run', async () => {
     const m = await member();
     const um = await assign(m);
-    await db.query('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [um]);
+    await testAssignmentWrite('UPDATE user_memberships SET starts_at = CURDATE() - INTERVAL 30 DAY WHERE id = ?', [um]);
     await snapshotTestAssignment(um); // #2125 M6b-27: the bridge reads the plan snapshot
     expect((await cancel(um)).status).toBe(204);
     expect((await stored(um)).status).toBe('cancelled');
@@ -115,7 +116,7 @@ describe('access until ends_at', () => {
     expect(await centers(m)).toHaveLength(1);
     // Past its end date but before the sweep has run: no access. #2125 M6b-3: the access readers
     // ask the assignment's plan snapshot, so the date is moved there as well as on the legacy row.
-    await db.query('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [um]);
+    await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [um]);
     await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [um]);
     expect(await centers(m)).toEqual([]);
   });
@@ -130,10 +131,10 @@ describe('POST /assignment-lifecycle/run', () => {
     const m = await member();
     const due = await assign(m);
     const running = await assign(m);
-    await db.query(
+    await testAssignmentWrite(
       `UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?`,
       [CANCELS_AT_PERIOD_END_STATUS, due]);
-    await db.query(
+    await testAssignmentWrite(
       `UPDATE user_memberships SET status = ?, ends_at = UTC_DATE() WHERE id = ?`,
       [CANCELS_AT_PERIOD_END_STATUS, running]);
     // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.

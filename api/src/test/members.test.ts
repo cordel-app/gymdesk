@@ -10,6 +10,7 @@ import {
   request,
   snapshotTestAssignment,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -44,7 +45,7 @@ async function createUserMembership(
   memberId: number,
   status: string,
 ): Promise<void> {
-  const { insertId } = await db.query(
+  const { insertId } = await testAssignmentWrite(
     `INSERT INTO user_memberships (gym_id, member_id, status, starts_at)
      VALUES (?, ?, ?, CURDATE())`,
     [gymId, memberId, status],
@@ -650,7 +651,7 @@ async function getChargeTypeId(): Promise<number> {
 }
 
 async function createUserMembershipForPayment(gymId: string, memberId: number): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await testAssignmentWrite(
     `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'active', CURDATE())`,
     [gymId, memberId],
   );
@@ -1176,13 +1177,13 @@ describe('GET /members — is_new_member (#927)', () => {
 
   /** A terminal assignment that stopped covering the Member `monthsAgo` ago. */
   async function createLapsedMembership(memberId: number, monthsAgo: number): Promise<void> {
-    const { insertId } = await db.query(
+    const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at, ends_at)
        VALUES (?, ?, 'expired', CURDATE() - INTERVAL 36 MONTH, CURDATE() - INTERVAL ? MONTH)`,
       [gymId, memberId, monthsAgo],
     );
     // Created long ago too, so nothing dates it by a successor.
-    await db.query(
+    await testAssignmentWrite(
       'UPDATE user_memberships SET created_at = CURDATE() - INTERVAL 36 MONTH WHERE id = ?',
       [insertId],
     );
@@ -1263,7 +1264,7 @@ describe('GET /members — is_new_member (#927)', () => {
     // gym_id — this is the regression test for that filter).
     const otherGym = await createTestGym('Members New Member Other Gym');
     const memberId = await createMember(gymId);
-    const { insertId } = await db.query(
+    const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at)
        VALUES (?, ?, 'active', CURDATE())`,
       [otherGym, memberId],

@@ -8,6 +8,7 @@ import {
   createTestGym,
   createTestMembership,
   request, ensureTestProductSet, seedScheduledEvent, legacyAssignmentQuery } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -309,7 +310,7 @@ describe('GET /payments/billing-events — created_at / next_payment_date (#639)
     // must not be reported as an upcoming payment.
     const expiredMemberId = await createMember(gymId);
     const expiredMembershipId = await createUserMembership(gymId, expiredMemberId, planId, nextBillingDateStr);
-    await db.query(`UPDATE user_memberships SET status = 'expired' WHERE id = ?`, [expiredMembershipId]);
+    await testAssignmentWrite(`UPDATE user_memberships SET status = 'expired' WHERE id = ?`, [expiredMembershipId]);
     expiredEventId = await insertBillingEventForMembership(gymId, expiredMemberId, expiredMembershipId);
   });
 

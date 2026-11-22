@@ -11,6 +11,7 @@ import {
   request,
   snapshotTestAssignment,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 const mockGetUser = vi.hoisted(() =>
   vi.fn().mockResolvedValue({
@@ -98,7 +99,7 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
       [gymId, centerId, memberId, sessionId],
     );
 
-    const { insertId: umId } = await db.query(
+    const { insertId: umId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'active', CURDATE())`,
       [gymId, memberId],
     );

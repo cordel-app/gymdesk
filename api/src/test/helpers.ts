@@ -5,6 +5,7 @@ import { app } from '../app';
 import { db } from '../infra/db';
 import { syncPlanSnapshot } from '../api/plan-snapshot-sync';
 import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
+import { testAssignmentWrite } from './assignmentFixture';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 
@@ -505,7 +506,7 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
       const need = (token.match(/\?/g) ?? []).length;
       for (let n = 0; n < need; n += 1) keptParams.push(queue.shift());
     });
-    const result = await db.query(
+    const result = await testAssignmentWrite(
       `INSERT INTO user_memberships (${keptCols.join(', ')}) VALUES (${keptTokens.join(', ')})`, keptParams);
     if (Object.keys(config).length > 0) await setAssignmentConfig(result.insertId, config);
     // A running assignment has its Active version (its Promotions, services and
@@ -548,9 +549,8 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
     const { rows } = await db.query<{ id: number }>(`SELECT id FROM user_memberships WHERE ${where}`, whereParams);
     for (const r of rows) await setAssignmentConfig(Number(r.id), config);
     if (kept.length > 0) {
-      const out = await db.query(`UPDATE user_memberships SET ${kept.join(', ')} WHERE ${where}`, [...keptParams, ...whereParams]);
-      await repairAnchorLifecycles(db); // #2125 M6b-51c-5: the anchor follows the hand-written row.
-      return out;
+      // #2125 M6b-51d-5: the door mirrors the hand-written change onto the anchors it touched.
+      return testAssignmentWrite(`UPDATE user_memberships SET ${kept.join(', ')} WHERE ${where}`, [...keptParams, ...whereParams]);
     }
     return { rows: [], rowCount: rows.length, insertId: 0 };
   }
@@ -852,10 +852,11 @@ export async function createTestDraftAssignment(
   const { createDraftSetForAssignment } = await import('../api/assignment-draft-set');
   const startsAt = opts.startsAt ?? new Date().toISOString().slice(0, 10);
   const umId = await db.transaction(async (tx) => {
-    const { insertId } = await tx.query(
+    const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, ends_at, status, created_by)
        VALUES (?, ?, ?, ?, ?, 'in_cart', ?)`,
       [memberId, gymId, planId, startsAt, opts.endsAt ?? null, 'Test fixture'],
+      { exec: tx },
     );
     await createDraftSetForAssignment(tx, {
       gymId, userMembershipId: Number(insertId), ownerMemberId: memberId, membershipPlanId: planId,

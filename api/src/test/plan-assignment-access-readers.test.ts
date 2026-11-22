@@ -9,6 +9,7 @@ import {
 import { loadMemberCenterAccessInputs } from '../api/plan-center-access';
 import { CANCELS_AT_PERIOD_END_STATUS } from '../domain/assignmentStatus';
 import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let otherGymId: string;
@@ -131,7 +132,7 @@ describe('center access is read from the assignment\'s current plan snapshot', (
 
   it('the snapshot is the record: a user_memberships row that disagrees does not move the answer', async () => {
     const { m, um } = await running();
-    await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
     expect(await centerCount(m)).toBe(1);
   });
 });

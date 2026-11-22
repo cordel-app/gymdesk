@@ -11,6 +11,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 vi.mock('@clerk/backend', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@clerk/backend')>();
@@ -92,7 +93,7 @@ describe('GET /me/membership reads the member\'s plans from plan_snapshots', () 
     const first = await run(m, await plan());
     await cancel(first);
     // The cancellation leaves a later end date when the plan was paid through; end it today's past.
-    await db.query('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [first]);
+    await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [first]);
     await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [first]);
     // M6b-51c-5: and the assignment's own end date on its anchor, which the sync reads.
     await db.query(
@@ -108,7 +109,7 @@ describe('GET /me/membership reads the member\'s plans from plan_snapshots', () 
   it('the snapshot is the record: a user_memberships row that disagrees does not move it', async () => {
     const m = await member();
     const um = await run(m, await plan());
-    await db.query("UPDATE user_memberships SET status = 'cancelled', ends_at = '2020-01-31' WHERE id = ?", [um]);
+    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled', ends_at = '2020-01-31' WHERE id = ?", [um]);
 
     const body = await membership(m);
     expect(body.membership).toMatchObject({ id: um, status: 'active' });

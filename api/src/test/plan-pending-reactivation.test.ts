@@ -8,6 +8,7 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
+import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
 let centerId: number;
@@ -98,7 +99,7 @@ describe('mark / discard (#3114)', () => {
     expect((await snap(umId)).status).toBe('active_cancel_at_period_end');
     expect((await authed(request.post(`/user-memberships/${umId}/unmark-reactivate`))).status).toBe(409);
     await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, umId]);
-    await db.query(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [umId]);
+    await testAssignmentWrite(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [umId]);
     expect((await authed(request.post(`/user-memberships/${umId}/mark-reactivate`))).status).toBe(409);
   });
 
