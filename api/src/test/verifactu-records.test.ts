@@ -158,7 +158,10 @@ describe('VERI*FACTU Alta records at invoice issue', () => {
   });
 
   it('keeps an independent chain per gym and never forks under concurrent issues', async () => {
-    const evs = await Promise.all([makeEvent(gymOther), makeEvent(gymOther), makeEvent(gymOther)]);
+    // The fixtures are built one at a time (each re-syncs the gym's plan snapshots, and concurrent
+    // ones deadlock); the concurrency under test is the three issues below.
+    const evs: Awaited<ReturnType<typeof makeEvent>>[] = [];
+    for (let i = 0; i < 3; i += 1) evs.push(await makeEvent(gymOther));
     const results = await Promise.all(evs.map((ev) =>
       request.post(`/payments/billing-events/${ev}/invoices`).set(auth(gymOther)).send({ invoice_type: 'simplified' })));
     expect(results.map((x) => x.status)).toEqual([201, 201, 201]);
