@@ -43,7 +43,7 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
   };
 
   // #2125 N2: `assignment_id` is the only record of a snapshot's assignment (migration 462 dropped
-  // `source_user_membership_id`); NULL means the snapshot names none (an unconfirmed Draft's), so the
+  // its legacy twin column); NULL means the snapshot names none (an unconfirmed Draft's), so the
   // one identity check left is that a named snapshot points at a snapshot that anchors itself.
   await add('assignment_identity_split',
     'A plan snapshot whose assignment_id names a snapshot that is not an anchor.',
