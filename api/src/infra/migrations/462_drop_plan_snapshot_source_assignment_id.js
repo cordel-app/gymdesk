@@ -13,7 +13,9 @@
  *
  *   1. refuses, listing them, while a named snapshot's two values differ (`plan-assignments:validate`
  *      reports it as `assignment_id_is_not_anchor_id`);
- *   2. clears the identity and the anchor lifecycle columns of every snapshot that names no assignment;
+ *   2. refuses while a snapshot naming no assignment is anchored on a named one, clears the links
+ *      (`product_sets` / `payment_requests.plan_assignment_id`, `replaces_assignment_id`) to a snapshot
+ *      naming none, and clears the identity and anchor lifecycle columns of every such snapshot;
  *   3. drops `source_user_membership_id` and its index.
  *
  * `down` re-adds the column and fills it from `assignment_id`; the self-anchors of unnamed snapshots
@@ -33,6 +35,26 @@ exports.up = async (knex) => {
       + drift.map((r) => `${r.id} (gym ${r.gym_id}, names ${r.um}, anchored on ${r.assignment_id})`).join(', ')
       + '. Run `npm run plan-assignments:validate` and correct them first.');
   }
+
+  // A snapshot naming no assignment that is nevertheless anchored on a named one would silently leave
+  // that assignment below; refuse it rather than guess which it belongs to.
+  const [orphaned] = await knex.raw(
+    `SELECT s.id, s.gym_id, s.assignment_id FROM plan_snapshots s
+       JOIN plan_snapshots a ON a.id = s.assignment_id
+      WHERE s.source_user_membership_id IS NULL AND a.source_user_membership_id IS NOT NULL
+      ORDER BY s.id LIMIT 20`);
+  if (orphaned.length > 0) {
+    throw new Error(
+      'migration 462: unnamed plan snapshot(s) anchored on a named assignment: '
+      + orphaned.map((r) => `${r.id} (gym ${r.gym_id}, anchored on ${r.assignment_id})`).join(', '));
+  }
+
+  // A link to a snapshot that names no assignment names nothing once the self-anchor goes: cleared in
+  // the same step (all three are ON DELETE SET NULL, so the FK would not catch it).
+  const UNNAMED = 'SELECT id FROM plan_snapshots WHERE source_user_membership_id IS NULL';
+  await knex.raw(`UPDATE product_sets SET plan_assignment_id = NULL WHERE plan_assignment_id IN (SELECT id FROM (${UNNAMED}) u)`);
+  await knex.raw(`UPDATE payment_requests SET plan_assignment_id = NULL WHERE plan_assignment_id IN (SELECT id FROM (${UNNAMED}) u)`);
+  await knex.raw(`UPDATE plan_snapshots s JOIN (${UNNAMED}) u ON u.id = s.replaces_assignment_id SET s.replaces_assignment_id = NULL`);
 
   await knex.raw(
     `UPDATE plan_snapshots
