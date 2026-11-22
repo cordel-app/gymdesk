@@ -6,6 +6,7 @@ import {
   LiveAssignmentStatus,
 } from '../domain/oneActivePlan';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
+import { lockAssignmentsCovering } from './plan-assignment-sync';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
@@ -45,40 +46,12 @@ export async function findLiveAssignmentsForMembers(
 ): Promise<LiveAssignment[]> {
   if (memberIds.length === 0) return [];
   const idPlaceholders = memberIds.map(() => '?').join(',');
-  const statusPlaceholders = LIVE_ASSIGNMENT_STATUSES.map(() => '?').join(',');
-  const params: any[] = [
-    gymId,
-    ...LIVE_ASSIGNMENT_STATUSES,
-    ...memberIds,
-    gymId,
-    ...memberIds,
-  ];
-  let sql =
-    `SELECT um.id, um.member_id, um.membership_plan_id, um.status,
-            DATE_FORMAT(um.starts_at, '%Y-%m-%d') AS starts_at,
-            DATE_FORMAT(um.ends_at, '%Y-%m-%d') AS ends_at
-     FROM user_memberships um
-     WHERE um.gym_id = ?
-       AND um.status IN (${statusPlaceholders})
-       AND (um.member_id IN (${idPlaceholders})
-            OR EXISTS (SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
-                       WHERE umm.user_membership_id = um.id AND umm.gym_id = ?
-                         AND umm.member_id IN (${idPlaceholders})))`;
-  if (opts?.excludeUserMembershipId != null) {
-    sql += ' AND um.id <> ?';
-    params.push(opts.excludeUserMembershipId);
-  }
-  // Ordered so `current_plan` in the 409 body, and the audit trail of a
-  // multi-member assignment, are deterministic rather than MySQL's choice.
-  sql += ' ORDER BY um.starts_at DESC, um.id DESC FOR UPDATE';
-  const { rows } = await tx.query<{
-    id: number;
-    member_id: number;
-    membership_plan_id: number | null;
-    status: LiveAssignmentStatus;
-    starts_at: string;
-    ends_at: string | null;
-  }>(sql, params);
+  // #2125 M6b-51d-3: read and locked on the assignments' anchor snapshots, the lock every writer of
+  // an assignment takes (`lockAssignmentRecord()`), never on `user_memberships`.
+  const rows = await lockAssignmentsCovering(tx, gymId, memberIds, LIVE_ASSIGNMENT_STATUSES, opts) as Array<{
+    id: number; member_id: number; membership_plan_id: number | null; status: LiveAssignmentStatus;
+    starts_at: string; ends_at: string | null;
+  }>;
   if (rows.length === 0) return [];
 
   // The names the confirmation dialog shows. Read after the lock and without

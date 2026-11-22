@@ -20,7 +20,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment } from './helpers';
 
 const SECRET = 'test-productset-webhook';
 let gymId: string;
@@ -245,13 +245,16 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     const { insertId } = await db.query(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at) VALUES (?, ?, ?, 'active', ?)`,
       [gymId, memberId, planId, TODAY]);
+    // #2125 M6b-51d-3: the one-plan check reads the assignment's anchor snapshot.
+    await snapshotTestAssignment(Number(insertId));
     const res = await auth(request.post('/product-sets')).send({
       member_id: memberId, membership_plan_id: planId, starts_at: TODAY, confirm: true,
     });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('active_plan_exists');
     expect(res.body.current_plan.id).toBe(insertId);
-    const { rows } = await db.query('SELECT id FROM product_sets WHERE owner_member_id = ?', [memberId]);
+    // The fixture's own superseded record set aside, nothing was created.
+    const { rows } = await db.query("SELECT id FROM product_sets WHERE owner_member_id = ? AND status <> 'superseded'", [memberId]);
     expect(rows.length).toBe(0);
   });
 
