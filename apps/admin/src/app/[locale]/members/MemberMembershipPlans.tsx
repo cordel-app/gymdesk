@@ -61,7 +61,7 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { addedCartPlans, addedPlanRemovePath, canEditLivePlan, pastPlans, pendingPaymentPlanSets, visiblePlans } from './membershipPlansView';
+import { addedCartPlans, addedPlanRemovePath, canEditLivePlan, pastPlans, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from './membershipPlansView';
 import { PendingPaymentPlans } from './PendingPaymentPlans';
 
 
@@ -220,19 +220,22 @@ export function MemberMembershipPlans({
           ? [{ label: t('action_delete_draft_plan'), onClick: () => onCancelPlan(plan), danger: true }]
           : plan.status === 'to_be_canceled'
             ? [{ label: t('action_undo_cancel_plan'), onClick: () => onCancelPlan(plan) }]
-          // #3114: a plan cancelling at its period end can be marked for reactivation in the open In
-          // Cart (nothing changes until Save & Pay); a marked one can be un-marked again.
-          : plan.status === 'active_cancel_at_period_end' && plan.is_current
-            ? [{ label: t('action_reactivate_plan'), onClick: () => onReactivatePlan(plan, 'mark') }]
-          : plan.status === 'to_be_reactivated'
-            ? [{ label: t('action_undo_reactivate_plan'), onClick: () => onReactivatePlan(plan, 'unmark') }]
           : plan.status !== 'cancelled' && plan.status !== 'active_cancel_at_period_end'
             ? [{ label: t('action_cancel_live_plan'), onClick: () => onCancelPlan(plan), danger: true }]
             : []),
       ]
       : [];
+    // #3114: a plan cancelling at its period end is not live, so its Reactivate (and the Undo of a
+    // marked one) is decided outside the live plan's actions; nothing changes until Save & Pay.
+    const reactivation = canWrite ? planReactivationAction(plan) : null;
+    const reactivationItems: ContextMenuItem[] = reactivation === 'mark'
+      ? [{ label: t('action_reactivate_plan'), onClick: () => onReactivatePlan(plan, 'mark') }]
+      : reactivation === 'unmark'
+        ? [{ label: t('action_undo_reactivate_plan'), onClick: () => onReactivatePlan(plan, 'unmark') }]
+        : [];
     return [
       ...lifecycleItems,
+      ...reactivationItems,
       { label: t('action_details'), onClick: () => setDetailsPlanId(plan.id) },
       // #2553: shared with the Assigned Plans page.
       {
