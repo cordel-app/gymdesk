@@ -23,8 +23,8 @@ export interface TestAssignmentWriteOptions {
   /** The connection or transaction to write on; the pool by default. */
   exec?: Exec;
   /**
-   * `false` writes the legacy row alone, for a test of the drift report that needs the two records to
-   * disagree. Every other fixture mirrors.
+   * `false` writes the legacy row alone, for a test that proves a reader ignores it (the two records
+   * must disagree). Every other fixture mirrors.
    */
   mirror?: boolean;
 }
