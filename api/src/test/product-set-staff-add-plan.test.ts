@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestFamily, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
 // #2966 stage 2 — staff adds further Membership Plans to the member's in-cart ProductSet as plan snapshots.
 let gymId: string;
@@ -15,11 +15,11 @@ async function member(): Promise<number> {
     [gymId, 'AP Member', `ap-${uniq()}@test.com`]);
   return insertId;
 }
-async function plan(price: number, gym = gymId): Promise<number> {
+async function plan(price: number, gym = gymId, memberLimit = '1'): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods)
-     VALUES (?, ?, 'active', 'public', '1', NULL, 6, 0, 0)`, [gym, `AP-Plan-${uniq()}`]);
+     VALUES (?, ?, 'active', 'public', ?, NULL, 6, 0, 0)`, [gym, `AP-Plan-${uniq()}`, memberLimit]);
   await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status) VALUES (?, ?, ?, '2020-01-01', 'active')`,
     [gym, insertId, price]);
   await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit) VALUES (?, ?, 1, 'month')`,
@@ -116,5 +116,59 @@ describe('staff adds a plan to the in-cart ProductSet (#2966 stage 2)', () => {
     expect((await auth(request.post(`/product-sets/${setId}/plans`), otherGymId).send({ membership_plan_id: p })).status).toBe(404);
     await db.query(`UPDATE product_sets SET status = 'superseded' WHERE id = ?`, [setId]);
     expect((await auth(request.post(`/product-sets/${setId}/plans`)).send({ membership_plan_id: p })).status).toBe(409);
+  });
+});
+
+describe('beneficiaries and Promotions of an added plan (#2966 stage 6)', () => {
+  const beneficiaries = async (snapshotId: number) => (await db.query<any>(
+    'SELECT member_id FROM plan_snapshot_beneficiaries WHERE plan_snapshot_id = ? ORDER BY member_id', [snapshotId]))
+    .rows.map((r: any) => Number(r.member_id));
+
+  it('covers the family members staff picked, not only the owner', async () => {
+    const owner = await member();
+    const child = await member();
+    await createTestFamily(gymId, owner, [child]);
+    const setId = await draft(await plan(30), owner);
+    const res = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50, gymId, '2'), beneficiary_member_ids: [owner, child] });
+    expect(res.status).toBe(200);
+    expect(await beneficiaries(res.body.plan_snapshot_id)).toEqual([owner, child].sort((a, b) => a - b));
+  });
+
+  it('lets the payer stay out of the added plan when not picked', async () => {
+    const owner = await member();
+    const child = await member();
+    await createTestFamily(gymId, owner, [child]);
+    const setId = await draft(await plan(30), owner);
+    const res = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50), beneficiary_member_ids: [child] });
+    expect(res.status).toBe(200);
+    expect(await beneficiaries(res.body.plan_snapshot_id)).toEqual([child]);
+  });
+
+  it('refuses a beneficiary outside the family or a wrong count, adding nothing', async () => {
+    const owner = await member();
+    const stranger = await member();
+    const setId = await draft(await plan(30), owner);
+    const outside = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50, gymId, '2'), beneficiary_member_ids: [owner, stranger] });
+    expect(outside.status).toBe(400);
+    expect(outside.body.code).toBe('beneficiary_not_in_family');
+    const count = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50, gymId, '2'), beneficiary_member_ids: [owner] });
+    expect(count.status).toBe(400);
+    expect(count.body.code).toBe('beneficiary_count');
+    expect(await planRows(setId)).toHaveLength(1);
+  });
+
+  it('refuses selected Promotions rather than dropping them', async () => {
+    const setId = await draft(await plan(30), await member());
+    const res = await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50), promotion_ids: [1] });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('promotions_not_supported_on_added_plan');
+    expect(await planRows(setId)).toHaveLength(1);
+    expect((await auth(request.post(`/product-sets/${setId}/plans`))
+      .send({ membership_plan_id: await plan(50), promotion_ids: [] })).status).toBe(200);
   });
 });
