@@ -1,3 +1,4 @@
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, legacyAssignmentQuery, linkTestSetToAssignment, snapshotTestAssignment } from './helpers';
@@ -158,13 +159,13 @@ describe('executing persisted Billing Events (#1325 PR 2c)', () => {
     await snapshotTestAssignment(Number(um.insertId));
 
     await executeDueScheduledEvents({ today: TODAY });
-    let status = (await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [um.insertId])).rows[0].status;
+    let status = (await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um.insertId])).rows[0].status;
     expect(status).toBe('active'); // one failed day: not yet
 
     await db.query('UPDATE payment_requests SET created_at = DATE_SUB(created_at, INTERVAL 1 DAY) WHERE billing_event_id = ?', [eventId]);
     const s = await executeDueScheduledEvents({ today: TODAY });
     expect(s.paused).toBe(1);
-    status = (await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [um.insertId])).rows[0].status;
+    status = (await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um.insertId])).rows[0].status;
     expect(status).toBe('paused');
     const { rows: audit } = await db.query<any>(
       `SELECT action, previous_values, new_values, source FROM audit_logs

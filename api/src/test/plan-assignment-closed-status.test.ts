@@ -2,6 +2,7 @@
 // snapshot that states the assignment. Where a cancelled plan's snapshot is shared by older Product
 // Sets, the owner's Active set carries a copy for the record; where one superseded set alone links
 // it, the status is kept in place.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { repairAnchorLifecycles } from '../api/plan-assignment-sync';
@@ -101,7 +102,7 @@ async function linksTo(snapshotId: number): Promise<Link[]> {
 }
 async function assignment(um: number) {
   const { rows } = await db.query<any>(
-    "SELECT status, closed_at, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at FROM user_memberships WHERE id = ?", [um]);
+    `SELECT status, closed_at, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
   return { status: String(rows[0].status), closedAt: rows[0].closed_at, endsAt: rows[0].ends_at as string | null };
 }
 const lastWeek = () => new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);

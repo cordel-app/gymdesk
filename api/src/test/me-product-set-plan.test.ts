@@ -1,6 +1,7 @@
 // #2496 stage 4 — Add Plan on the member's shared Draft (`/me/product-sets/:id/plans`).
 // Integration: the member's first plan joins the Draft their Products are on, judged by the
 // immediate purchase's own checks; one Draft is one purchase, and nothing is charged.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { verifyToken } from '@clerk/backend';
@@ -86,7 +87,7 @@ describe('POST /me/product-sets/:id/plans', () => {
     // Committing the Draft activates the plan and the Product together.
     await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: draft.id, today: TODAY }));
     const { rows: um } = await db.query<any>(
-      `SELECT um.status FROM user_memberships um JOIN product_sets ps ON ${productSetOfLegacyAssignmentSql('um.id', 'ps')}
+      `SELECT um.status FROM ${TEST_ASSIGNMENTS} um JOIN product_sets ps ON ${productSetOfLegacyAssignmentSql('um.id', 'ps')}
         WHERE ps.id = ?`, [draft.id]);
     expect(um[0]?.status).toBe('active');
     const { rows: lines } = await db.query<any>(

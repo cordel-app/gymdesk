@@ -17,6 +17,7 @@
 // Save & Pay, the Pending Payment state and the consolidation of the forecast
 // into real Billing Events are stage 2's; nothing here anticipates them.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -55,7 +56,7 @@ async function createPlan(gymId: string, name: string, memberLimit = '1'): Promi
 
 async function readStatus(umId: number): Promise<string> {
   const { rows } = await db.query<{ status: string }>(
-    'SELECT status FROM user_memberships WHERE id = ?', [umId],
+    `SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId],
   );
   return rows[0].status;
 }
@@ -183,7 +184,7 @@ describe('#1108 stage 1 — a Draft is not the member\'s Membership Plan', () =>
     await assignPlan(gymId, memberId, planId);
 
     const { rows } = await db.query<{ status: string }>(
-      `SELECT um.status FROM user_memberships um
+      `SELECT um.status FROM ${TEST_ASSIGNMENTS} um
         WHERE um.gym_id = ? AND um.member_id = ? AND um.status <> 'in_cart'`,
       [gymId, memberId],
     );
@@ -267,7 +268,7 @@ describe('#1108 stage 1 — committing a Draft', () => {
     // #956 Q3: the two plans meet at one date — the new one's `starts_at`.
     const { rows } = await db.query<{ ends_at: string; closed_at: string | null }>(
       `SELECT DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at, closed_at
-         FROM user_memberships WHERE id = ?`,
+         FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`,
       [live.id],
     );
     expect(rows[0].ends_at).toBe('2026-09-01');

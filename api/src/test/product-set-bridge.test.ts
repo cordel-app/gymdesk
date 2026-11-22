@@ -1,3 +1,4 @@
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import crypto from 'crypto';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -55,7 +56,7 @@ async function setsOf(memberId: number) {
   return rows;
 }
 async function um(id: number) {
-  const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [id]);
+  const { rows } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [id]);
   const config = await getAssignmentConfig(id);
   return { ...rows[0], personal_fee_benefit_value: config.personal_fee_benefit_value ?? null };
 }
@@ -210,7 +211,7 @@ describe('an edit of a projected assignment is a new version (#1325 PR 5)', () =
 
     expect((await auth(request.post(`/user-memberships/${umId}/close`)).send({ confirm: true })).status).toBe(200);
 
-    const { rows } = await db.query<any>('SELECT status, ends_at FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query<any>(`SELECT status, ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     // #2659 stage 2: paid past today, so it cancels at its period end.
     expect(rows[0].status).toBe('active_cancel_at_period_end');
     // Entitled past today (the cash payment covered the first period), and no

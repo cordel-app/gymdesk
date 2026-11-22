@@ -1,6 +1,7 @@
 // #2125 M6b-51c-4 (migration 453): an assignment's lifecycle — status, closed time, end date and
 // last modifier — is dual-written onto its anchor snapshot by the one writer, so the two records agree
 // through every transition, and the anchor is the only snapshot that carries it.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -34,7 +35,7 @@ async function plan(): Promise<number> {
 /** The assignment's legacy row and its anchor's lifecycle columns, side by side. */
 async function both(um: number) {
   const { rows: legacy } = await db.query<any>(
-    'SELECT status, closed_at, ends_at, modified_at, modified_by FROM user_memberships WHERE id = ?', [um]);
+    `SELECT status, closed_at, ends_at, modified_at, modified_by FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
   const { rows: anchor } = await db.query<any>(
     `SELECT assignment_status AS status, assignment_closed_at AS closed_at, assignment_ends_at AS ends_at,
             assignment_modified_at AS modified_at, assignment_modified_by AS modified_by
