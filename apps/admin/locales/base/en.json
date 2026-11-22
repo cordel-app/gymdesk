@@ -560,6 +560,7 @@
     "pt_slots_over_allowance": "{service}: {scheduled} weekly sessions are scheduled, but the member's plan includes {included} per week. The scheduled sessions exceed the member's weekly allowance.",
     "pt_entries_title": "Schedule entries",
     "pt_entries_none": "No schedule entries yet.",
+    "pt_entries_no_slots": "No slot can be added: no Activity offers this member's Professional Services in the next 2 months. Add a schedule rule to an Activity that offers the service (Calendar → Activities), then add the entry here.",
     "pt_entries_add": "+ Add schedule entry",
     "pt_entries_edit": "Edit",
     "pt_entries_save": "Save entry",

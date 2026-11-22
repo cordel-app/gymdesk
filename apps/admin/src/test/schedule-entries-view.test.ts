@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   entrySlotOptions, entrySlotKey, toggleEntryMember, updateEntryBody, entryErrorKey,
+  canAddScheduleEntry,
 } from '../app/[locale]/members/scheduleEntriesView';
 
 const slot = (weekday: number, start: string, extra: Record<string, unknown> = {}) => ({
@@ -28,5 +29,10 @@ describe('schedule entries view', () => {
   it('words the API refusals it knows', () => {
     expect(entryErrorKey('participants_below_minimum')).toBe('pt_entries_error_minimum');
     expect(entryErrorKey('other')).toBeNull();
+  });
+
+  it('offers Add only when the grid offers a slot (#3090 stage 6)', () => {
+    expect(canAddScheduleEntry([{ slots: [] }, { slots: [] }])).toBe(false);
+    expect(canAddScheduleEntry([{ slots: [] }, { slots: [slot(2, '18:00')] }])).toBe(true);
   });
 });

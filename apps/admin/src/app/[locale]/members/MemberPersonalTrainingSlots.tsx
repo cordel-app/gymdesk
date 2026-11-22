@@ -283,11 +283,6 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
         {data.professional_services.map((s) => `${s.name} (${s.sessions})`).join(', ')}
       </p>
 
-      {canWrite && !editing && hasAnySlot && (
-        <div style={actions}>
-          <SectionEditButton label={t('pt_slots_edit')} onClick={() => setEditing(true)} />
-        </div>
-      )}
 
       {unmatched.length > 0 && (
         <p style={warn}>
@@ -307,6 +302,12 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
         family={family}
         editing={editing}
         canWrite={canWrite}
+        /* #3090 stage 6: the one entry into Edit mode sits beside the entries'
+           title and is offered whenever the role may write, slots or not, so
+           the schedule can always be managed from here. */
+        headerAction={canWrite && !editing
+          ? <SectionEditButton label={t('pt_slots_edit')} onClick={() => setEditing(true)} />
+          : null}
         onChanged={async () => {
           apply(await apiFetch<PersonalTrainingSlots>(`/members/${memberId}/personal-training-slots`));
         }}
@@ -319,7 +320,18 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
       ))}
 
       {!hasAnySlot ? (
-        <p style={dim}>{t('pt_slots_none')}</p>
+        <>
+          <p style={dim}>{t('pt_slots_none')}</p>
+          {/* #3090 stage 6: with no slot to pick there is nothing to save, but
+              Edit mode must still be leavable. */}
+          {editing && (
+            <div style={actions}>
+              <button type="button" onClick={cancelEdit} style={secondaryButton}>
+                {t('pt_slots_cancel')}
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <div style={grid}>

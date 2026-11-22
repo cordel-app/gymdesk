@@ -560,6 +560,7 @@
     "pt_slots_over_allowance": "{service}: hay {scheduled} sesiones semanales programadas, pero el plan del miembro incluye {included} por semana. Las sesiones programadas superan la asignación semanal del miembro.",
     "pt_entries_title": "Entradas del horario",
     "pt_entries_none": "Aún no hay entradas en el horario.",
+    "pt_entries_no_slots": "No se puede añadir ninguna franja: ninguna Actividad ofrece los Servicios Profesionales de este miembro en los próximos 2 meses. Añade una regla de horario a una Actividad que ofrezca el servicio (Calendario → Actividades) y luego añade aquí la entrada.",
     "pt_entries_add": "+ Añadir entrada al horario",
     "pt_entries_edit": "Editar",
     "pt_entries_save": "Guardar entrada",
