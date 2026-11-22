@@ -2,6 +2,7 @@
 // `plans`) takes each assignment from its current plan snapshot instead of the `user_memberships`
 // row: the status and dates from the current snapshot, the creator from the anchor snapshot and the
 // last modifier from the latest snapshot that recorded one (M6b-30's dual-write).
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -58,7 +59,7 @@ describe('the Member card plan history reads plan_snapshots', () => {
     const { owner, um } = await activePlan();
     expect((await auth(request.put(`/user-memberships/${um}`)).send({ status: 'paused' })).status).toBe(200);
     const { rows } = await db.query<any>(
-      'SELECT status, created_by, modified_by FROM user_memberships WHERE id = ?', [um]);
+      `SELECT status, created_by, modified_by FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
     const row = await historyRow(owner, um);
     expect(row.status).toBe(rows[0].status);
     expect(row.created_by).toBe(rows[0].created_by);

@@ -8,6 +8,7 @@
 // its own Save & Pay (`POST /me/product-sets/:id/save-and-pay`), or, owing
 // nothing, its free activation.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -124,7 +125,7 @@ async function moneyRowsOf(setId: number): Promise<{ events: number; requests: n
 }
 
 async function status(umId: number): Promise<string> {
-  const { rows } = await db.query<{ status: string }>('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+  const { rows } = await db.query<{ status: string }>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
   return rows[0].status;
 }
 
@@ -214,7 +215,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect(apps[0].snapshot).toBeNull();
     // No Billing Event, no Payment Request, no assignment.
     expect(await moneyRowsOf(res.body.id)).toEqual({ events: 0, requests: 0 });
-    const { rows: um } = await db.query<any>('SELECT id FROM user_memberships WHERE member_id = ?', [member.id]);
+    const { rows: um } = await db.query<any>(`SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ?`, [member.id]);
     expect(um).toHaveLength(0);
 
     // The Draft is listed as the member's own version; nothing awaits payment yet.
@@ -276,7 +277,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     // `confirm` no longer opens a replacement.
     expect((await assign(member.userId, planId, { confirm: true })).status).toBe(409);
     const { rows: created } = await db.query<any>(
-      'SELECT id FROM user_memberships WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?', [gymId, member.id, planId],
+      `SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?`, [gymId, member.id, planId],
     );
     expect(created).toHaveLength(0);
     expect(await status(liveId)).toBe('active');

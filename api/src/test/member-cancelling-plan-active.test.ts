@@ -1,5 +1,6 @@
 // #2777 — in the Members App a plan that cancels on its end date is the member's plan until that
 // date (My Plans, under its Admin status), and Past once the date has passed. Integration.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -56,7 +57,7 @@ async function cancellingPlan() {
   // A future end date, so the cancellation keeps it running rather than ending it today.
   await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() + INTERVAL 20 DAY WHERE id = ?', [um]);
   expect((await asAdmin('delete', `/user-memberships/${um}`)).status).toBe(204);
-  const { rows } = await db.query<{ status: string }>('SELECT status FROM user_memberships WHERE id = ?', [um]);
+  const { rows } = await db.query<{ status: string }>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
   expect(rows[0].status).toBe(CANCELS_AT_PERIOD_END_STATUS);
   const { rows: set } = await db.query<{ id: number }>(
     `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active'`, [gymId, m.id]);

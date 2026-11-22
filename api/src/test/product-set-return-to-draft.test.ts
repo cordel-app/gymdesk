@@ -1,3 +1,4 @@
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 import { expirePendingPayments } from '../api/product-sets';
@@ -96,7 +97,7 @@ describe('Pending Payment returns to Draft (#1991 stage 4)', () => {
     expect(await eventCount(p.id)).toBe(0);
     const { rows: pr } = await db.query<any>('SELECT id FROM payment_requests WHERE id = ?', [p.requestId]);
     expect(pr).toHaveLength(0);
-    const { rows: um } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [p.umId]);
+    const { rows: um } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [p.umId]);
     expect(um[0].status).toBe('in_cart');
     // It is a real Draft again: it can be paid once more, or discarded for good.
     const again = await auth(request.post(`/product-sets/${p.id}/save-and-pay`)).send({});

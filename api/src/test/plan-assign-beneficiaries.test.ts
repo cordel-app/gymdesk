@@ -5,6 +5,7 @@
 // the plan's Members per Membership (`member_limit`), at least one for a family
 // plan. The owner need not be a beneficiary.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -93,7 +94,7 @@ describe('POST /membership-plans/:id/assign — family beneficiaries (#2879)', (
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('beneficiary_not_in_family');
     expect(res.body.member_ids).toEqual([stranger]);
-    const { rows } = await db.query('SELECT COUNT(*) AS n FROM user_memberships WHERE member_id = ?', [parent]);
+    const { rows } = await db.query(`SELECT COUNT(*) AS n FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ?`, [parent]);
     expect(Number(rows[0].n)).toBe(0);
   });
 

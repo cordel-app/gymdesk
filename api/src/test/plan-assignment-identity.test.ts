@@ -2,6 +2,7 @@
 // assignment, the assignment-level facts are dual-written beside `user_memberships`, an assignment's
 // anchor snapshot is not deletable while another snapshot of it survives, and the read-only drift check
 // reports where the two records disagree.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -115,7 +116,7 @@ describe('assignment identity', () => {
     await activate(um);
     const [bought] = await snapshotsOf(um);
     expect(bought.purchasedAt).not.toBeNull();
-    const { rows } = await db.query<any>('SELECT purchased_at FROM user_memberships WHERE id = ?', [um]);
+    const { rows } = await db.query<any>(`SELECT purchased_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
     expect(new Date(bought.purchasedAt).getTime()).toBe(new Date(rows[0].purchased_at).getTime());
 
     // A legacy value the writers did not write is not what the snapshot holds: a later sync (a pause

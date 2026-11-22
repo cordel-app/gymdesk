@@ -14,6 +14,7 @@
 // the arithmetic behind `upcoming_payments` is unit-tested in
 // `me-upcoming-payments.test.ts`.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -419,7 +420,7 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
               cfg.free_periods, cfg.paid_periods, cfg.bonus_periods,
               p.free_periods AS plan_free_periods, p.paid_periods AS plan_paid_periods,
               p.bonus_periods AS plan_bonus_periods, 1 AS has_billing_snapshot
-       FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+       FROM ${TEST_ASSIGNMENTS} um${ASSIGNMENT_CONFIG_JOIN()}
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        WHERE um.id = ?`,
       [umId],

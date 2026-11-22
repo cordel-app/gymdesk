@@ -5,6 +5,7 @@
 // by `validatePromotionSelection()` before the Draft is created, and
 // `GET /promotions?for_member_id=` reports which of them the owner may take.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, snapshotTestAssignment, legacyChildQuery } from './helpers';
@@ -69,7 +70,7 @@ async function appliedPromotionIds(userMembershipId: number): Promise<number[]> 
 
 async function assignmentCount(gymId: string, memberId: number): Promise<number> {
   const { rows } = await db.query(
-    'SELECT COUNT(*) AS n FROM user_memberships WHERE gym_id = ? AND member_id = ?',
+    `SELECT COUNT(*) AS n FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ?`,
     [gymId, memberId],
   );
   return Number(rows[0].n);

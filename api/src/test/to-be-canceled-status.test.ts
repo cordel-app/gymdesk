@@ -2,6 +2,7 @@
 // every reader gives it the answer it gives `active`. The value is stored directly (the way the
 // next stage's writer will) and read against an `active` twin.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -61,7 +62,7 @@ describe('to_be_canceled in the database and the readers (#3007 stage 2a)', () =
   it('both CHECKs accept the value', async () => {
     const memberId = await createMember();
     const id = await createAssignment(memberId, PENDING_CANCELLATION_STATUS);
-    const { rows: um } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [id]);
+    const { rows: um } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [id]);
     const { rows: snap } = await db.query('SELECT status FROM plan_snapshots WHERE source_user_membership_id = ?', [id]);
     expect(um[0].status).toBe(PENDING_CANCELLATION_STATUS);
     expect(snap[0].status).toBe(PENDING_CANCELLATION_STATUS);
@@ -93,7 +94,7 @@ describe('to_be_canceled in the database and the readers (#3007 stage 2a)', () =
     const active = await createAssignment(memberId, 'active');
     const put = await authed(request.put(`/user-memberships/${active}`).send({ status: PENDING_CANCELLATION_STATUS }));
     expect(put.status).toBe(400);
-    const { rows: after } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [active]);
+    const { rows: after } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [active]);
     expect(after[0].status).toBe('active');
   });
 });

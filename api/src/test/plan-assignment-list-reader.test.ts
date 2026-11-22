@@ -3,6 +3,7 @@
 // `ASSIGNMENT_HISTORY_ROWS_SQL`, the Member card's plan history's own source (M6b-31), instead of the
 // `user_memberships` row: the lifecycle, the creator and the last modifier, plus the three facts the
 // list read off `um.*` (`purchased_at`, `replace_on_activation`, `replaces_user_membership_id`).
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -59,7 +60,7 @@ describe('LIST_SELECT reads plan_snapshots', () => {
     const put = await auth(request.put(`/user-memberships/${um}`)).send({ status: 'paused' });
     expect(put.status).toBe(200);
     const { rows } = await db.query<any>(
-      'SELECT status, created_by, modified_by FROM user_memberships WHERE id = ?', [um]);
+      `SELECT status, created_by, modified_by FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
     expect(put.body.status).toBe('paused');
     expect(put.body.modified_by).toBe(rows[0].modified_by);
 

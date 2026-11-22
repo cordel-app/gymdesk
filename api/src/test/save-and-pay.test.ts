@@ -9,6 +9,7 @@
 // webhook and a staff cash payment are the two things that move the row on,
 // and each writes the money and the status in one transaction.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import crypto from 'crypto';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -76,7 +77,7 @@ async function assignDraft(memberId: number, planId: number, startsAt = '2026-03
 }
 
 async function status(umId: number): Promise<string> {
-  const { rows } = await db.query<{ status: string }>('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+  const { rows } = await db.query<{ status: string }>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
   return rows[0].status;
 }
 

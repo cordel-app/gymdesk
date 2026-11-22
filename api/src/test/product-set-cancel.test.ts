@@ -3,6 +3,7 @@
 // Integration: the set is kept as `cancelled`, its events are cancelled, its open
 // attempts closed with the provider's status untouched, its assignment and one-time
 // purchases cancelled, and a late payment never reactivates it.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import crypto from 'crypto';
 
@@ -130,7 +131,7 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     const pr = await one('SELECT status, provider_status FROM payment_requests WHERE id = ?', [p.request.id]);
     expect(pr.status).toBe('expired');
     expect(pr.provider_status).toBe('PENDING');
-    const um = await one('SELECT status, closed_at FROM user_memberships WHERE id = ?', [p.umId]);
+    const um = await one(`SELECT status, closed_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [p.umId]);
     expect(um.status).toBe('cancelled');
     expect(um.closed_at).not.toBeNull();
     // The snapshots are kept, and the owner's in-flight slot is free again.
@@ -188,7 +189,7 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     });
     expect(hook.status).toBe(200);
     expect((await one('SELECT status FROM product_sets WHERE id = ?', [p.id])).status).toBe('cancelled');
-    expect((await one('SELECT status FROM user_memberships WHERE id = ?', [p.umId])).status).toBe('cancelled');
+    expect((await one(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [p.umId])).status).toBe('cancelled');
     const pr = await one('SELECT status FROM payment_requests WHERE id = ?', [p.request.id]);
     expect(pr.status).toBe('completed');
   });

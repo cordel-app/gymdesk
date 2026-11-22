@@ -6,6 +6,7 @@
 // on an assignment: a request naming another value is refused). The Plan is never touched,
 // and a confirmed assignment refuses the edit.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -103,7 +104,7 @@ describe('Draft beneficiaries (#2879 stage 2)', () => {
     expect(sorted(res.body.beneficiary_member_ids)).toEqual(sorted([kidA, kidB]));
     // The owner is no longer a beneficiary but stays the payer.
     expect(await beneficiariesOf(assignmentId)).toEqual(sorted([kidA, kidB]));
-    const { rows: um } = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [assignmentId]);
+    const { rows: um } = await db.query(`SELECT member_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [assignmentId]);
     expect(Number(um[0].member_id)).toBe(parent);
     const { rows: plan } = await db.query('SELECT member_limit FROM membership_plans WHERE id = ?', [planId]);
     expect(plan[0].member_limit).toBe('2');

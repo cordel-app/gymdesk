@@ -1,6 +1,7 @@
 // #2659 stage 2: a cancellation writes `active_cancel_at_period_end` while the
 // plan still runs (its last paid day is today or later), the plan keeps its
 // access until `ends_at`, and the end-of-period sweep moves it to `cancelled`.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -50,7 +51,7 @@ const centers = async (memberId: number) =>
 async function stored(umId: number) {
   const { rows } = await db.query<{ status: string; ends_at: string; today: string }>(
     `SELECT status, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at, DATE_FORMAT(UTC_DATE(), '%Y-%m-%d') AS today
-       FROM user_memberships WHERE id = ?`, [umId]);
+       FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
   return rows[0];
 }
 const sweep = (secret = SECRET) => request.post('/assignment-lifecycle/run').set('X-Internal-Secret', secret);

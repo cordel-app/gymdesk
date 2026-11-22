@@ -7,6 +7,7 @@
 // Product to prove none of them moved. Fixtures are inserted directly;
 // the HTTP API is only used for the action under test (CLAUDE.md).
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -193,7 +194,7 @@ describe('PUT /user-memberships/:id/billing-duration', () => {
 
   it('is what the Billing Simulation then reads (stage 3 reads the snapshot)', async () => {
     const { rows } = await db.query(
-      'SELECT member_id FROM user_memberships WHERE id = ?', [umId],
+      `SELECT member_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId],
     );
     const res = await request
       .get(`/user-memberships/member/${rows[0].member_id}/billing-simulation`)

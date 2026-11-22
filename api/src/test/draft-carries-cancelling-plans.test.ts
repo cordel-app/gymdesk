@@ -2,6 +2,7 @@
 // their period end, for entitlement only — linked (never copied), never billed,
 // never projected, never re-opened — and stops carrying them once the sweep has
 // moved them to `cancelled`.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -47,7 +48,7 @@ const sweep = () => request.post('/assignment-lifecycle/run').set('X-Internal-Se
 
 async function assignment(um: number) {
   const { rows } = await db.query<{ status: string; ends_at: string }>(
-    `SELECT status, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at FROM user_memberships WHERE id = ?`, [um]);
+    `SELECT status, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
   return rows[0];
 }
 /** The set's plan links in link order: which assignment each snapshot is the contract of, and the flag. */

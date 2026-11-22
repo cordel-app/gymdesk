@@ -3,6 +3,7 @@
 // assignment once, from its current plan snapshot. Each test makes the legacy `user_memberships`
 // row unreachable from the gym (moved to another gym) and asserts the plan still sees the
 // assignment through its snapshot.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -123,7 +124,7 @@ describe('the Plan reprice picks its candidates from plan_snapshots', () => {
     const planId = await plan();
     const um = await running(planId);
     await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, um]);
-    const { rows: legacy } = await db.query<{ status: string }>('SELECT status FROM user_memberships WHERE id = ?', [um]);
+    const { rows: legacy } = await db.query<{ status: string }>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
     expect(legacy[0].status).toBe('active');
     const res = await applyPrice(planId, 46);
     expect(res.body.updated).toBe(0);

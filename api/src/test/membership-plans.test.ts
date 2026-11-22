@@ -1,5 +1,6 @@
 // Tests for membership-plans.ts router
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -1543,7 +1544,7 @@ describe('POST /membership-plans/:id/assign', () => {
     const userMembershipId = res.body.id;
 
     const { rows: umRows } = await db.query(
-      'SELECT * FROM user_memberships WHERE id = ?',
+      `SELECT * FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`,
       [userMembershipId],
     );
     expect(umRows).toHaveLength(1);
@@ -1591,7 +1592,7 @@ describe('POST /membership-plans/:id/assign', () => {
     const userMembershipId = res.body.id;
 
     const { rows: umRows } = await db.query(
-      'SELECT member_id FROM user_memberships WHERE id = ?',
+      `SELECT member_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`,
       [userMembershipId],
     );
     expect(umRows[0].member_id).toBe(owner);
@@ -1641,7 +1642,7 @@ describe('POST /membership-plans/:id/assign', () => {
 
     // Nothing is cancelled until the admin confirms the replacement.
     const { rows } = await db.query(
-      'SELECT status FROM user_memberships WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?',
+      `SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?`,
       [gymId, memberId, existingPlanId],
     );
     expect(rows.map((r: any) => r.status)).toEqual(['active']);

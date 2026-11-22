@@ -2,6 +2,7 @@
 // restored when the cart is discarded, and reactivated (billed, audited) only when the cart is committed.
 // A plan marked `to_be_canceled` just has its cancellation undone.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -45,7 +46,7 @@ const snap = async (umId: number) => (await db.query<any>(
           closed_at FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1`,
   [gymId, umId])).rows[0];
 const legacy = async (umId: number) => (await db.query<any>(
-  `SELECT status, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at, closed_at FROM user_memberships WHERE id = ?`, [umId])).rows[0];
+  `SELECT status, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at, closed_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId])).rows[0];
 const statusAudits = async (umId: number) => Number((await db.query<any>(
   `SELECT COUNT(*) AS n FROM audit_logs WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'`,
   [gymId, String(umId)])).rows[0].n);
@@ -132,7 +133,7 @@ describe('commit (#3114)', () => {
     expect(await legacy(umId)).toEqual(expect.objectContaining({ status: 'active', ends_at: null, closed_at: null }));
     expect(await snap(umId)).toEqual(expect.objectContaining({ status: 'active', ends_at: null, closed_at: null, previous_end_date: null }));
     // The same assignment: no second one was created.
-    const { rows: ums } = await db.query<any>('SELECT COUNT(*) AS n FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, memberId]);
+    const { rows: ums } = await db.query<any>(`SELECT COUNT(*) AS n FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ?`, [gymId, memberId]);
     expect(Number(ums[0].n)).toBe(1);
     expect(await statusAudits(umId)).toBe(auditsBefore + 1);
     // Its scheduled obligations are back: the two cycles the engine keeps scheduled.

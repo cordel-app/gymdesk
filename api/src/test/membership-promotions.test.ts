@@ -7,6 +7,7 @@
 // to be spread over — `promotion_charge_benefits` and
 // `promotion_period_benefits` — are gone.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { confirmDraftPromotionSnapshots } from '../api/membership-promotions';
@@ -231,7 +232,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     await backdateAppliedAt(umId, promoId, 120);
     const { promoId: promoId2 } = await setup();
     // re-target the same membership/plan for the trivial trigger promo
-    await db.query('UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?', [umId, promoId2]);
+    await db.query(`UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?) WHERE promotion_id = ?`, [umId, promoId2]);
     const res = await apply(umId, promoId2);
     expect(res.status).toBe(201);
     expect(Number(res.body.membership_fee)).toBe(100);
@@ -248,7 +249,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     // Trigger a fresh recompute via a second stackable promotion targeting
     // the same plan.
     const { promoId: promoId2 } = await setup();
-    await db.query('UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?', [umId, promoId2]);
+    await db.query(`UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?) WHERE promotion_id = ?`, [umId, promoId2]);
     const res = await apply(umId, promoId2);
     expect(res.status).toBe(201);
     expect(Number(res.body.membership_fee)).toBe(100);
@@ -273,7 +274,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     const { promoId: promoId2 } = await setup();
     await setMembershipFeeBenefit(gymId, promoId2, 'percentage_discount', 50);
     await db.query(
-      'UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?',
+      `UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?) WHERE promotion_id = ?`,
       [umId, promoId2],
     );
     const res = await apply(umId, promoId2);
@@ -551,7 +552,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
       [memberId],
     );
     const { rows: lapsed } = await db.query<{ id: number }>(
-      "SELECT id FROM user_memberships WHERE member_id = ? AND status = 'expired'", [memberId]);
+      `SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ? AND status = 'expired'`, [memberId]);
     for (const r of lapsed) await snapshotTestAssignment(Number(r.id));
     const umId = await createDraft(memberId);
 

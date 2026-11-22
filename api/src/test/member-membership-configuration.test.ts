@@ -19,6 +19,7 @@
 // holds zero or one live Assigned Plan again (migration 213), so what has to
 // come back is the whole history with `is_live` true on at most one row.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -412,7 +413,7 @@ describe('GET /user-memberships/member/:memberId/configuration — a replaced pl
 
   it('keeps both rows in the database, with exactly one of them live', async () => {
     const { rows } = await db.query(
-      `SELECT id, status FROM user_memberships WHERE gym_id = ? AND member_id = ?`,
+      `SELECT id, status FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ?`,
       [gymId, memberId],
     );
     expect(rows.map((r: any) => r.id).sort(byNumber)).toEqual([standardUm, premiumUm].sort(byNumber));

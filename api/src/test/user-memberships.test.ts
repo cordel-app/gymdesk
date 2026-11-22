@@ -1,5 +1,6 @@
 // Tests for user-memberships.ts router
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -507,7 +508,7 @@ describe('POST /user-memberships', () => {
     expect(res.body.error).toBe('active_plan_exists');
 
     const { rows } = await db.query(
-      `SELECT membership_plan_id, status FROM user_memberships
+      `SELECT membership_plan_id, status FROM ${TEST_ASSIGNMENTS} um
        WHERE gym_id = ? AND member_id = ? ORDER BY id ASC`,
       [gymId, memberId],
     );
@@ -977,7 +978,7 @@ describe('DELETE /user-memberships/:id', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(204);
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(rows[0].status).toBe('cancelled');
   });
 
@@ -992,7 +993,7 @@ describe('DELETE /user-memberships/:id', () => {
     await testAssignmentWrite('UPDATE user_memberships SET ends_at = NULL WHERE id = ?', [umId]);
     await snapshotTestAssignment(umId); // #2125 M6b-27: the bridge reads the plan snapshot
     await request.delete(`/user-memberships/${umId}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
-    const { rows } = await db.query('SELECT status, ends_at FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT status, ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(rows[0].status).toBe('cancelled');
     expect(rows[0].ends_at).not.toBeNull();
 
@@ -1005,7 +1006,7 @@ describe('DELETE /user-memberships/:id', () => {
     const ended = await db.query(
       `SELECT DATE_FORMAT(ends_at, '%Y-%m-%d') AS d,
               DATE_FORMAT(UTC_DATE() - INTERVAL 1 DAY, '%Y-%m-%d') AS yesterday
-         FROM user_memberships WHERE id = ?`,
+         FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`,
       [other],
     );
     expect(ended.rows[0].d).toBe(ended.rows[0].yesterday);
@@ -1158,7 +1159,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     // running while it is configured — the replacement is what the Draft is for.
     expect(res.body.status).toBe('in_cart');
     expect(res.body.membership_plan_id).toBe(newPlanId);
-    const { rows: stillLive } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    const { rows: stillLive } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [oldUmId]);
     expect(stillLive[0].status).toBe('active');
 
     // Committing it is where #956's supersede happens, and it needs the same
@@ -1166,7 +1167,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     await activateAssignment(gymId, res.body.id, { confirm: true });
 
     // #956 Q3: a superseded row is cancelled with its dates stamped, not expired.
-    const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    const { rows: oldRows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [oldUmId]);
     expect(oldRows[0].status).toBe('superseded');
 
     // The new membership gets its own owner row in user_membership_members,
@@ -1208,7 +1209,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     // `paused` counts as the one plan (#956 Q2), so the commit still confirms.
     await activateAssignment(gymId, res.body.id, { confirm: true });
 
-    const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    const { rows: oldRows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [oldUmId]);
     expect(oldRows[0].status).toBe('superseded');
   });
 
@@ -1229,11 +1230,11 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
 
     // Nothing is live, so the commit needs no confirmation at all.
     await activateAssignment(gymId, res.body.id);
-    const { rows: newRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [res.body.id]);
+    const { rows: newRows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [res.body.id]);
     expect(newRows[0].status).toBe('active');
 
     // The terminal old row is left exactly as it was -- never flipped to 'expired'.
-    const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    const { rows: oldRows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [oldUmId]);
     expect(oldRows[0].status).toBe('cancelled');
   });
 
@@ -1303,7 +1304,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
 
     // Validated up front: the plan must not have been assigned (#628).
     const { rows } = await db.query(
-      'SELECT id FROM user_memberships WHERE member_id = ? AND membership_plan_id = ?',
+      `SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ? AND membership_plan_id = ?`,
       [memberId, newPlanId],
     );
     expect(rows).toHaveLength(0);
@@ -1347,7 +1348,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
 
     // Nothing was persisted: the superseded plan is still active and no new row exists.
     const { rows } = await db.query(
-      'SELECT id, status FROM user_memberships WHERE member_id = ? AND gym_id = ?',
+      `SELECT id, status FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ? AND gym_id = ?`,
       [memberId, gymId],
     );
     expect(rows).toHaveLength(1);
@@ -1659,7 +1660,7 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(204);
-    const { rows } = await db.query('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT member_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(Number(rows[0].member_id)).toBe(owner);
     const list = await request.get(`/user-memberships/${umId}/members`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
@@ -1754,7 +1755,7 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/status must be one of/);
     expect(res.body.error).not.toMatch(/awaiting_payment/);
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(rows[0].status).toBe('active');
   });
 
@@ -1765,7 +1766,7 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
     const { res, umId } = await seedAndPut('active', 'in_cart');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Cannot transition/);
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(rows[0].status).toBe('active');
   });
 
@@ -1788,7 +1789,7 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
   it('leaves the stored status unchanged after a rejected transition', async () => {
     const { res, umId } = await seedAndPut('expired', 'paused');
     expect(res.status).toBe(400);
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(rows[0].status).toBe('expired');
   });
 });
@@ -1818,7 +1819,7 @@ describe('retired pre-activation statuses (#786)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(rows[0].status).toBe('active');
   });
 
@@ -2048,7 +2049,7 @@ describe('POST /user-memberships/:id/close', () => {
 
   // #1325 PR 3c: what is pending is a scheduled event of the member's ProductSet.
   async function setNextBillingDate(umId: number, dateExpr: string | null) {
-    const { rows } = await db.query<{ member_id: number }>('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query<{ member_id: number }>(`SELECT member_id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     await clearScheduledEvents(gymId, rows[0].member_id);
     if (dateExpr !== null) await seedScheduledEvent(gymId, rows[0].member_id, umId, dateExpr);
   }
@@ -2127,7 +2128,7 @@ describe('POST /user-memberships/:id/close', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('cancelled');
 
-    const { rows } = await db.query('SELECT status, closed_at FROM user_memberships WHERE id = ?', [umId]);
+    const { rows } = await db.query(`SELECT status, closed_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     expect(rows[0].status).toBe('cancelled');
     expect(rows[0].closed_at).not.toBeNull();
 

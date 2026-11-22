@@ -4,6 +4,7 @@
 // reports the end date of the assignment each version projects (`GET
 // /user-memberships/member/:id/configuration`). Each test makes the snapshot and the legacy row
 // disagree and asserts the reader follows the snapshot.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -83,7 +84,7 @@ describe('a superseded same-plan predecessor is clamped to its plan snapshot\'s 
     const { rows: snap } = await db.query<any>(
       'SELECT MIN(starts_at) AS starts_at FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, first]);
     expect(dateOnly(snap[0].starts_at)).toBe(TODAY);
-    const { rows } = await db.query<any>('SELECT status, ends_at FROM user_memberships WHERE id = ?', [first]);
+    const { rows } = await db.query<any>(`SELECT status, ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [first]);
     expect(rows[0].status).toBe('superseded');
     expect(dateOnly(rows[0].ends_at)).toBe(TODAY);
   });

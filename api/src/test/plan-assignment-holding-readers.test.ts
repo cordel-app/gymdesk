@@ -3,6 +3,7 @@
 // Both ask only for running, paused or awaiting-payment plans. The assignment is its current
 // snapshot (the one the owner's Active Product Set links), and coverage is that snapshot's own
 // beneficiaries.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -124,7 +125,7 @@ describe('One per Member reads the plans a Member holds from plan_snapshots', ()
     // A replacement does not count the plan it supersedes.
     expect((await activate(second, { on_conflict: 'replace' })).status).toBeLessThan(300);
     expect(await holdsLocker(m.id)).toBe(true);
-    const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [first]);
+    const { rows } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [first]);
     expect(rows[0].status).toBe('superseded');
   });
 

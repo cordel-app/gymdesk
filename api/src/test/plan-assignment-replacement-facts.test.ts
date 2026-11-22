@@ -1,6 +1,7 @@
 // #2125 M6b-51c-2: an assignment's replacement (`replace_on_activation`, `replaces_assignment_id`) and
 // deletion pair live on its plan snapshot. The snapshot sync no longer copies them from
 // `user_memberships`, and a snapshot that comes to name another assignment drops the previous one's.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -104,7 +105,7 @@ describe('an assignment\'s replacement is its plan snapshot\'s', () => {
 
     const { insertId } = await testAssignmentWrite(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, status, created_by)
-       SELECT member_id, gym_id, membership_plan_id, starts_at, 'in_cart', 'Test' FROM user_memberships WHERE id = ?`,
+       SELECT member_id, gym_id, membership_plan_id, starts_at, 'in_cart', 'Test' FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`,
       [first]);
     const second = Number(insertId);
     await db.transaction(async (tx) => {
