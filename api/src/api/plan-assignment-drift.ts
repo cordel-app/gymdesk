@@ -61,20 +61,15 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       GROUP BY s.assignment_id, s.gym_id HAVING COUNT(DISTINCT s.source_user_membership_id) > 1
       ORDER BY s.assignment_id`);
 
-  await add('assignment_without_snapshot',
-    'A user_memberships row no plan snapshot names.',
-    `SELECT um.id AS user_membership_id, um.gym_id, um.status FROM user_memberships um
-      WHERE NOT EXISTS (SELECT 1 FROM plan_snapshots s
-                         WHERE s.source_user_membership_id = um.id AND s.gym_id = um.gym_id)${scope('um')}
-      ORDER BY um.id`);
-
-  await add('snapshot_names_missing_assignment',
-    'A plan snapshot naming a user_memberships row that does not exist.',
+  // #2125 M6b-51d-7c-1: an assignment is its plan snapshots and its id lives in `plan_assignment_ids`;
+  // `user_memberships` is no longer written, so the two checks against it are replaced by this one.
+  await add('snapshot_names_unregistered_assignment',
+    'A plan snapshot naming an assignment id the plan_assignment_ids registry never handed out.',
     `SELECT s.id AS plan_snapshot_id, s.gym_id, s.source_user_membership_id AS user_membership_id
        FROM plan_snapshots s
       WHERE s.source_user_membership_id IS NOT NULL${scope('s')}
-        AND NOT EXISTS (SELECT 1 FROM user_memberships um
-                         WHERE um.id = s.source_user_membership_id AND um.gym_id = s.gym_id)
+        AND NOT EXISTS (SELECT 1 FROM plan_assignment_ids r
+                         WHERE r.id = s.source_user_membership_id AND r.gym_id = s.gym_id)
       ORDER BY s.id`);
 
   // #2125 M6b-51d-7b: the lifecycle, start date, purchase time, replacement and modifier are no longer

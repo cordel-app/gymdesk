@@ -37,7 +37,7 @@ import {
 import { ProductFrequency } from '../domain/billingSimulation';
 import { BillingDateUnit } from '../domain/billingDate';
 import { DEFAULT_PLAN_DURATION_CADENCE, toPlanDuration } from '../domain/planDuration';
-import { insertAssignment } from './assignment-lifecycle-writer';
+import { allocateAssignmentId } from './assignment-lifecycle-writer';
 import {
   describeAcceptedPlanCadences,
   isAcceptedPlanCadence,
@@ -953,10 +953,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   // selected member, and that one assignment is committed, or not, as a whole.
   try {
     const outcome = await db.transaction(async (tx) => {
-      const insertId = await insertAssignment(tx, {
-        gymId, memberId: Number(ownerId), membershipPlanId: Number(req.params.id), startsAt: starts_at,
-        status: ASSIGNMENT_CREATION_STATUS, createdBy: actorText,
-      });
+      const insertId = await allocateAssignmentId(tx, gymId);
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: ownerId,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,

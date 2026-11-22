@@ -9,7 +9,7 @@ import { supersedeApplications } from './one-active-plan';
 import { CANCELS_AT_PERIOD_END_STATUS, cancellationStatusFor } from '../domain/assignmentStatus';
 import { linkCancellingPlan } from './entitlement-plan-links';
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { insertAssignment, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { allocateAssignmentId, writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -227,11 +227,7 @@ export async function projectActiveProductSet(
                        WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}), UTC_TIMESTAMP()) AS purchased_at`,
     [gymId, previousUmId]);
   const purchasedAt = bought[0].purchased_at;
-  const umId = await insertAssignment(tx, {
-    gymId, memberId: Number(set.owner_member_id), membershipPlanId: Number(set.membership_plan_id),
-    startsAt, endsAt: dateOnly(set.ends_at), status: 'active',
-    purchasedAt, createdBy: set.created_by,
-  });
+  const umId = await allocateAssignmentId(tx, gymId);
 
   // #3026 stage 3d-2: the plan's Promotion applications are its plan snapshot's own rows, which the
   // assignment reads through that snapshot; there is nothing to attach.
