@@ -5271,7 +5271,6 @@
     "add_period_benefit": "+ Afegir Benefici Periòdic",
     "promo_created_at": "Aplicada el {at}",
     "promo_created_by": "per {by}",
-    "draft_available_promotions": "Promocions disponibles",
     "draft_available_promotions_loading": "Carregant promocions…",
     "draft_available_promotions_none": "Cap promoció s'aplica avui a aquest pla.",
     "promo_toggle_label": "Promoció {promotion} aplicada",
