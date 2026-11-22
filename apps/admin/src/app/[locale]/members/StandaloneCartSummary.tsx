@@ -8,8 +8,8 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
-import { cardHintStyle, cardSubLabelStyle } from '@/components/formChrome';
-import { ContractedItemsSection, InitialPaymentSection } from './CheckoutSummarySections';
+import { cardHintStyle } from '@/components/formChrome';
+import { CheckoutSummaryPanel } from './CheckoutSummarySections';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
 
 interface CartSummary {
@@ -38,15 +38,8 @@ export function StandaloneCartSummary({ memberId, reloadKey, paymentLink }: {
   }, [memberId, reloadKey]);
 
   return (
-    <div data-checkout-summary data-standalone-cart style={{ marginBottom: 12 }}>
-      {summary && (
-        <>
-          <div style={cardSubLabelStyle}>{t('checkout_initial_payment')}</div>
-          <InitialPaymentSection payment={summary.initial_payment} />
-          <div style={{ ...cardSubLabelStyle, marginTop: 12 }}>{t('checkout_contracted')}</div>
-          <ContractedItemsSection items={summary.contracted_items} />
-        </>
-      )}
+    <div data-standalone-cart style={{ marginBottom: 12 }}>
+      {summary && <CheckoutSummaryPanel payment={summary.initial_payment} contracted={summary.contracted_items} />}
       {paymentLink && (
         <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{paymentLink}</code></div>
       )}
