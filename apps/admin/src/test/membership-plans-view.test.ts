@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addedCartPlans, addedPlanRemovePath, pendingPaymentPlanSets, visiblePlans } from '../app/[locale]/members/membershipPlansView';
+import { addedCartPlans, addedPlanRemovePath, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, status: string, is_live = true, membership_plan_id = id) => ({ id, status, is_live, membership_plan_id } as any);
 
@@ -118,5 +118,23 @@ describe('#2966 stage 5 addedPlanRemovePath', () => {
   });
   it('offers nothing for a version past the Draft', () => {
     expect(addedPlanRemovePath({ id: 12 * 1_000_000 + 345, status: 'pending_payment' })).toBeNull();
+  });
+});
+
+describe('#3114 planReactivationAction — Reactivate on a plan cancelling at its period end', () => {
+  // Regression: the configuration read reports such a plan with is_live false, and the item was
+  // only built inside the live plan's actions, so it never showed.
+  it('offers Reactivate on a current Cancels at End Date plan that is not live', () => {
+    expect(planReactivationAction({ status: 'active_cancel_at_period_end', is_current: true, assignment_relationship: 'primary' } as any)).toBe('mark');
+  });
+  it('offers the undo on a plan marked for reactivation', () => {
+    expect(planReactivationAction({ status: 'to_be_reactivated', is_current: true, assignment_relationship: 'primary' } as any)).toBe('unmark');
+  });
+  it('offers nothing once the end date has passed, on a Linked plan, or on any other status', () => {
+    expect(planReactivationAction({ status: 'active_cancel_at_period_end', is_current: false, assignment_relationship: 'primary' } as any)).toBeNull();
+    expect(planReactivationAction({ status: 'active_cancel_at_period_end', is_current: true, assignment_relationship: 'linked' } as any)).toBeNull();
+    for (const status of ['active', 'to_be_canceled', 'cancelled', 'in_cart', 'paused']) {
+      expect(planReactivationAction({ status, is_current: true, assignment_relationship: 'primary' } as any)).toBeNull();
+    }
   });
 });
