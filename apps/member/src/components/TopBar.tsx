@@ -15,6 +15,7 @@ const SECTION_TITLE_KEYS: Record<string, string> = {
   nutrition: 'nav.nutrition',
   membership: 'nav.membership',
   profile: 'nav.profile',
+  family: 'nav.family',
   notifications: 'nav.alerts',
   goals: 'nav.goals',
   packages: 'packages.title',

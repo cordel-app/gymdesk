@@ -1056,5 +1056,10 @@
     "title": "Acceso revocado",
     "message": "Tu acceso a la Members App ha sido revocado. Ponte en contacto con {gymName} para obtener más información.",
     "message_no_gym": "Tu acceso a la Members App ha sido revocado. Ponte en contacto con tu gimnasio para obtener más información."
+  },
+  "family": {
+    "title": "Mi familia",
+    "loading": "Cargando…",
+    "empty": "No hay miembros de la familia que mostrar."
   }
 }
