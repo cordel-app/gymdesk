@@ -1,3 +1,4 @@
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { insertRecurringLine } from '../api/recurring-line-writer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
@@ -119,7 +120,7 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     const first = await draftFrom(owner);
     await db.transaction(async (tx) => { await cancelInFlight(tx, gymId, first); });
     expect(await names(um)).toEqual([promo]);
-    const { rows: st } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [um]);
+    const { rows: st } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
     expect(st[0].status).toBe('active');
     const second = await draftFrom(owner);
     const { rows: copies } = await legacyChildQuery(
@@ -149,7 +150,7 @@ describe('a Membership Plan Promotion application is the assignment\'s (#1995)',
     const { rows: kept } = await legacyChildQuery(
       'SELECT promotion_id, status, user_membership_id, snapshot IS NOT NULL AS has_snapshot FROM user_membership_promotions WHERE product_set_id = ?', [v1]);
     expect(kept.map((r: any) => [Number(r.promotion_id), r.status, Number(r.user_membership_id), Number(r.has_snapshot)])).toEqual([[promo, 'applied', umV1, 1]]);
-    const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [umV1]);
+    const { rows } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umV1]);
     expect(rows[0].status).toBe('active');
   });
 

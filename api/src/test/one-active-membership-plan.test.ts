@@ -24,6 +24,7 @@
 // The Draft state in its own right — that a Draft bills nothing, is not
 // bookable and is not the member's plan — is `draft-membership-assignment.test.ts`.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
@@ -131,7 +132,7 @@ async function assignmentsOf(memberId: number) {
     `SELECT id, membership_plan_id, status, closed_at,
             DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at,
             DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at
-     FROM user_memberships WHERE member_id = ? ORDER BY id ASC`,
+     FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ? ORDER BY id ASC`,
     [memberId],
   );
   return rows;
@@ -423,7 +424,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
 
     expect((await commit(assigned.body.id, { confirm: true })).status).toBe(200);
     for (const id of [aPlan, bPlan]) {
-      const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [id]);
+      const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [id]);
       expect(rows[0].status).toBe('superseded');
     }
   });
@@ -442,7 +443,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
 
     const added = await post(`/user-memberships/${assigned.body.id}/members`, { member_id: joiner });
     expect(added.status).toBe(201);
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [joinersOwn]);
+    const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [joinersOwn]);
     expect(rows[0].status).toBe('active');
   });
 
@@ -466,7 +467,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     // Both assignments stay live: nothing was cancelled.
     const rows = await assignmentsOf(memberId);
     expect(liveRows(rows)).toHaveLength(2);
-    const { rows: old } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [live]);
+    const { rows: old } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [live]);
     expect(old[0].status).toBe('active');
 
     // One active version holds both plans; the first one is carried as an inherited copy.
@@ -506,7 +507,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
 
     const submitted = await post(`/user-memberships/${draft}/save-and-pay`, { on_conflict: 'add' });
     expect(submitted.status).toBe(200);
-    const { rows: pending } = await db.query<any>("SELECT status FROM user_memberships WHERE id = ?", [draft]);
+    const { rows: pending } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [draft]);
     expect(pending[0].status).toBe('pending_payment');
     const { rows: initial } = await db.query<any>(
       `SELECT be.amount, be.product_set_id FROM billing_events be
@@ -516,7 +517,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(Number(initial[0].amount)).toBe(30);
 
     // The first plan is untouched while the payment is outstanding.
-    const { rows: still } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [live]);
+    const { rows: still } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [live]);
     expect(still[0].status).toBe('active');
 
     const paid = await post(`/user-memberships/${draft}/record-payment`, {});
@@ -614,7 +615,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     const created = await post(`/user-memberships/${umB}/assign-new-plan`, { membership_plan_id: c, starts_at: '2026-04-01' });
     expect(created.status).toBe(201);
     const { rows: remembered } = await db.query<any>(
-      'SELECT replaces_user_membership_id AS r FROM user_memberships WHERE id = ?', [created.body.id]);
+      `SELECT replaces_user_membership_id AS r FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [created.body.id]);
     expect(Number(remembered[0].r)).toBe(umB);
 
     // The dialog names only the plan it would cancel.
@@ -626,7 +627,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
 
     const rows = await assignmentsOf(memberId);
     const { rows: statuses } = await db.query<any>(
-      'SELECT id, status FROM user_memberships WHERE id IN (?, ?, ?)', [umA, umB, created.body.id]);
+      `SELECT id, status FROM ${TEST_ASSIGNMENTS} um WHERE id IN (?, ?, ?)`, [umA, umB, created.body.id]);
     const byId = Object.fromEntries(statuses.map((r: any) => [r.id, r.status]));
     expect(byId[umA]).toBe('active');
     expect(byId[umB]).toBe('superseded');
@@ -674,7 +675,7 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(asked.body.conflicts.map((x: any) => x.id)).toEqual([umB]);
     expect((await commit(created.body.id, { on_conflict: 'replace' })).status).toBe(200);
     const { rows: statuses } = await db.query<any>(
-      'SELECT id, status FROM user_memberships WHERE id IN (?, ?)', [umA, umB]);
+      `SELECT id, status FROM ${TEST_ASSIGNMENTS} um WHERE id IN (?, ?)`, [umA, umB]);
     const byId = Object.fromEntries(statuses.map((r: any) => [r.id, r.status]));
     expect(byId[umA]).toBe('active');
     expect(byId[umB]).toBe('superseded');

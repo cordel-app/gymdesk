@@ -3,6 +3,7 @@
 // `cancelled` row. These tests store the value directly (the way stage 2's
 // writers will) and check the readers against a `cancelled` twin.
 
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -99,13 +100,13 @@ describe('user_memberships.status — active_cancel_at_period_end (#2659 stage 1
     const ending = await createAssignment(memberId, CANCELS_AT_PERIOD_END_STATUS, '2026-01-01', '2099-12-31');
     const del = await authed(request.delete(`/user-memberships/${ending}`));
     expect(del.status).toBe(404);
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [ending]);
+    const { rows } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [ending]);
     expect(rows[0].status).toBe(CANCELS_AT_PERIOD_END_STATUS);
 
     const active = await createAssignment(memberId, 'active', '2026-01-01', null);
     const put = await authed(request.put(`/user-memberships/${active}`).send({ status: CANCELS_AT_PERIOD_END_STATUS }));
     expect(put.status).toBe(400);
-    const { rows: after } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [active]);
+    const { rows: after } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [active]);
     expect(after[0].status).toBe('active');
   });
 });

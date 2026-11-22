@@ -2,6 +2,7 @@
 // dual-written onto its plan snapshot beside `user_memberships`, on the rule the other
 // assignment-level facts follow (an unshared snapshot; a copy carries its source's), and the
 // migration's backfill converges on the legacy row.
+import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
@@ -32,7 +33,7 @@ async function plan(): Promise<number> {
   return Number(insertId);
 }
 async function legacy(um: number) {
-  const { rows } = await db.query<any>('SELECT modified_at, modified_by FROM user_memberships WHERE id = ?', [um]);
+  const { rows } = await db.query<any>(`SELECT modified_at, modified_by FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
   return rows[0];
 }
 /** The snapshot of the owner's Active set naming the assignment. */

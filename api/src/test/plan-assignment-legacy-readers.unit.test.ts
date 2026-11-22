@@ -334,4 +334,21 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('deleteDraftAssignments(');
     }
   });
+
+  it('M6b-51d-4: a test asserts an assignment off its plan snapshots, never off the legacy row', () => {
+    // A `FROM` / `JOIN` of the table in a test (a `DELETE FROM` is a fixture's clean-up, not a read).
+    // The fixture machinery still reads the hand-written rows it translates; migration 297's test
+    // checks what that migration did to the table itself; the source gates name it in assertions.
+    const ALLOWED = new Set([
+      'helpers.ts', 'assignmentIdFixture.ts', 'cancelled-assignment-cleanup.test.ts',
+      'plan-assignment-legacy-readers.unit.test.ts', 'member-enrollment.unit.test.ts',
+      'draft-assignment-status.unit.test.ts',
+    ]);
+    const READ = /(?<!DELETE\s)\b(?:FROM|JOIN)\s+user_memberships\b/g;
+    const testDir = join(API_SRC, 'test');
+    const readers = readdirSync(testDir)
+      .filter((f) => f.endsWith('.ts') && !ALLOWED.has(f))
+      .filter((f) => (code(readFileSync(join(testDir, f), 'utf8')).match(READ) ?? []).length > 0);
+    expect(readers).toEqual([]);
+  });
 });
