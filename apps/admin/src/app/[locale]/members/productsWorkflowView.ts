@@ -98,6 +98,14 @@ export function cartCancelContents(review: Pick<ReviewSummary, 'contracted_items
   };
 }
 
+/**
+ * #3162 — the cancel-cart confirmation's opening sentence: it announces the lists under it, or, for a
+ * cart with nothing to list, stands alone (no dangling "which includes:").
+ */
+export function cartCancelIntroKey(contents: { plans: string[]; products: string[] }): 'ps_cancel_intro' | 'ps_cancel_intro_empty' {
+  return contents.plans.length + contents.products.length > 0 ? 'ps_cancel_intro' : 'ps_cancel_intro_empty';
+}
+
 /** Recurring items (plans first, as the server lists them) apart from one-off ones. */
 export function splitContracted(items: ContractedItemLike[]): { recurring: ContractedItemLike[]; oneOff: ContractedItemLike[] } {
   return {
