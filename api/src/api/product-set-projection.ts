@@ -1,12 +1,15 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
-import { lockAssignmentAnchor, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import {
+  lockAssignmentAnchor, nameAssignmentSnapshot, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, writeAssignmentPurchasedAt,
+} from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { supersedeApplications } from './one-active-plan';
 import { CANCELS_AT_PERIOD_END_STATUS, cancellationStatusFor } from '../domain/assignmentStatus';
 import { linkCancellingPlan } from './entitlement-plan-links';
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -81,14 +84,9 @@ export async function closeAssignment(
   const status = closedAs === 'superseded'
     ? 'superseded'
     : cancellationStatusFor(newEndsAt, new Date().toISOString().slice(0, 10));
-  await tx.query(
-    `UPDATE user_memberships
-        SET status = ?, closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
-            ends_at = ?,
-            modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE id = ? AND gym_id = ?`,
-    [status, newEndsAt, actor, id, gymId],
-  );
+  await writeAssignmentLifecycle(tx, gymId, id, {
+    status, closedAt: 'keep_or_now', endsAt: { set: newEndsAt }, actor,
+  });
   if (closedAs === 'superseded') await supersedeApplications(tx, gymId, id, actor);
   // A transition is an audit row (#1325 PR 3, A4), whichever path made it.
   const { recordStatusChange } = await import('./billing-events');
@@ -191,15 +189,15 @@ export async function projectActiveProductSet(
     && await reusesPredecessorsContract(tx, gymId, set, previousUmId) ? previousUmId : null;
   if (set.user_membership_id != null || continuedUmId != null) {
     const umId = Number(set.user_membership_id ?? continuedUmId);
-    await tx.query(
-      `UPDATE user_memberships
-          SET ends_at = ?, status = IF(status IN ('active_cancel_at_period_end','cancelled','expired','superseded'), status, 'active'),
-              purchased_at = IF(status IN ('active_cancel_at_period_end','cancelled','expired','superseded'), purchased_at, COALESCE(purchased_at, UTC_TIMESTAMP())),
-              modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE id = ? AND gym_id = ?`,
-      [dateOnly(set.ends_at), actor, umId, gymId],
-    );
+    // The end date always moves; a plan that is over keeps its status and its purchase time.
+    await writeAssignmentLifecycle(tx, gymId, umId, { endsAt: { set: dateOnly(set.ends_at) }, actor });
+    await writeAssignmentLifecycle(tx, gymId, umId, {
+      status: 'active', purchasedAt: 'fill', actor,
+      notFrom: ['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'],
+    });
     if (continuedUmId != null) await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
+    // #2125 M6b-51c-1: the purchase time is the plan snapshot's own; the legacy column is a dual-write.
+    await writeAssignmentPurchasedAt(tx, gymId, umId, 'fill');
     return umId;
   }
 
@@ -224,13 +222,21 @@ export async function projectActiveProductSet(
     }
     await closeAssignment(tx, gymId, previousUmId, endsAt, actor, 'superseded');
   }
+  // #2125 M6b-51c-1: the new assignment keeps its predecessor's purchase time, read off the
+  // predecessor's current plan snapshot (never `user_memberships`), else it is bought now. One value,
+  // so the legacy dual-write and the snapshot cannot differ by a clock tick.
+  const { rows: bought } = await tx.query<{ purchased_at: Date | string }>(
+    `SELECT COALESCE((SELECT pa.purchased_at FROM plan_snapshots pa
+                       WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}), UTC_TIMESTAMP()) AS purchased_at`,
+    [gymId, previousUmId]);
+  const purchasedAt = bought[0].purchased_at;
   const { insertId } = await tx.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
         purchased_at, created_by)
-     VALUES (?, ?, ?, ?, ?, 'active', COALESCE((SELECT um0.purchased_at FROM user_memberships um0 WHERE um0.id = ? AND um0.gym_id = ?), UTC_TIMESTAMP()), ?)`,
+     VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
     [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at),
-      previousUmId, gymId, set.created_by],
+      purchasedAt, set.created_by],
   );
   const umId = Number(insertId);
 
@@ -239,6 +245,7 @@ export async function projectActiveProductSet(
   await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
   // #2125 M6b-44: the assignment just opened is named on the set's plan snapshot now, so it has an anchor.
   await nameAssignmentSnapshot(tx, gymId, productSetId, umId);
+  await writeAssignmentPurchasedAt(tx, gymId, umId, purchasedAt);
   return umId;
 }
 
@@ -266,11 +273,8 @@ export async function syncDraftAssignment(
   // row's modification); one that does not is re-deriving the cache of a row it
   // has just created, which is not a modification of anything.
   const touched = actor !== undefined;
-  await tx.query(
-    `UPDATE user_memberships
-        SET starts_at = ?, ends_at = ?,
-            modified_at = IF(?, UTC_TIMESTAMP(), modified_at), modified_by = IF(?, ?, modified_by)
-      WHERE id = ? AND gym_id = ?`,
-    [dateOnly(set.starts_at), dateOnly(set.ends_at), touched ? 1 : 0, touched ? 1 : 0, actor ?? null, umId, gymId],
-  );
+  await writeAssignmentLifecycle(tx, gymId, umId, {
+    startsAt: dateOnly(set.starts_at), endsAt: { set: dateOnly(set.ends_at) },
+    actor: touched ? (actor ?? null) : undefined,
+  });
 }

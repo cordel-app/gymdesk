@@ -109,6 +109,23 @@ describe('assignment identity', () => {
     }
   });
 
+  it('M6b-51c-1: the purchase time is the snapshot\'s own, written at activation and never copied back from user_memberships', async () => {
+    const um = await createTestDraftAssignment(gymId, await member(), await plan());
+    await activate(um);
+    const [bought] = await snapshotsOf(um);
+    expect(bought.purchasedAt).not.toBeNull();
+    const { rows } = await db.query<any>('SELECT purchased_at FROM user_memberships WHERE id = ?', [um]);
+    expect(new Date(bought.purchasedAt).getTime()).toBe(new Date(rows[0].purchased_at).getTime());
+
+    // A legacy value the writers did not write is not what the snapshot holds: a later sync (a pause
+    // re-syncs the owner's Active set) leaves the snapshot's own purchase time alone.
+    await db.query("UPDATE user_memberships SET purchased_at = '2001-01-01 00:00:00' WHERE id = ?", [um]);
+    expect((await auth(request.put(`/user-memberships/${um}`)).send({ status: 'paused' })).status).toBe(200);
+    const [after] = await snapshotsOf(um);
+    expect(after.status).toBe('paused');
+    expect(new Date(after.purchasedAt).getTime()).toBe(new Date(bought.purchasedAt).getTime());
+  });
+
   it('a second plan of the same member is a second assignment, and no key limits the member to one', async () => {
     const m = await member();
     const first = await createTestDraftAssignment(gymId, m, await plan());

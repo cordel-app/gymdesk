@@ -44,24 +44,19 @@ const statements = (source: string): number => (code(source).match(LEGACY_STATEM
 
 /** The statements left on `user_memberships`, per file. Lower a count or delete a line; never raise one. */
 const LEGACY_STATEMENTS: Record<string, number> = {
-  'api/assignment-commit.ts': 4,
+  'api/assignment-commit.ts': 2,
   'api/assignment-draft-set.ts': 2,
-  'api/assignment-lifecycle.ts': 1,
+  // M6b-51c-3: every UPDATE of the table, the one writer of an assignment after its creation.
+  'api/assignment-lifecycle-writer.ts': 1,
   'api/membership-plans.ts': 1,
-  'api/one-active-plan.ts': 2,
-  'api/plan-assignment-drift.ts': 4,
+  'api/one-active-plan.ts': 1,
+  'api/plan-assignment-drift.ts': 5, // M6b-51c-4: the report compares the anchor's lifecycle with the legacy row
   'api/plan-assignment-lifecycle.ts': 1,
-  'api/plan-pending-cancellation.ts': 1, // #3007: the one dual-write of the to_be_canceled status
-  'api/plan-pending-reactivation.ts': 1, // #3114: the one dual-write of the to_be_reactivated status
-  'api/plan-assignment-sync.ts': 2,
+  'api/plan-assignment-sync.ts': 2, // M6b-51c-4: the anchor lifecycle's seed and repair share one statement
   'api/plan-snapshot-sync.ts': 1,
-  'api/product-set-cancellation.ts': 1,
-  'api/product-set-projection.ts': 7,
-  'api/product-sets-router.ts': 1,
-  'api/product-sets.ts': 3,
-  'api/scheduled-event-execution.ts': 1,
-  'api/user-memberships.ts': 17,
-  'domain/billingEventPayments.ts': 1,
+  'api/product-set-projection.ts': 3, // M6b-51c-1: the predecessor's purchase time is read off its snapshot
+  'api/product-sets.ts': 2,
+  'api/user-memberships.ts': 12,
 };
 
 /** The access readers moved in M6b-3: none of them may name the table again. */
@@ -181,8 +176,8 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     const payments = readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8');
     expect(payments).toContain("assignmentOfLegacyIdSql(eventAssignmentSql(), 'ps_pa')");
     expect(payments).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
-    // The statement left in billingEventPayments.ts is the dunning pause's dual-write (M6b-47 moved its read).
-    expect(LEGACY_STATEMENTS['domain/billingEventPayments.ts']).toBe(1);
+    // The dunning pause's dual-write went to the one writer (M6b-51c-3).
+    expect(LEGACY_STATEMENTS['domain/billingEventPayments.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8')).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
     // M6b-17 moved the one statement left in me.ts (`GET /me/membership`'s pending-payment plan read).
     expect(readFileSync(join(API_SRC, 'api/me.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
@@ -255,7 +250,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   });
 
   it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
-    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(7);
+    expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBe(3);
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
     expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
       .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
@@ -267,6 +262,14 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(config).toContain('FROM ${ASSIGNMENT_HISTORY_ROWS_SQL} um');
   });
 
+  it('M6b-51c-3: an assignment is updated only by the one lifecycle writer', () => {
+    const UPDATE = /\bUPDATE\s+user_memberships\b/g;
+    const writers = sourceFiles(API_SRC)
+      .filter((f) => (code(readFileSync(f, 'utf8')).match(UPDATE) ?? []).length > 0)
+      .map((f) => f.slice(API_SRC.length + 1));
+    expect(writers).toEqual(['api/assignment-lifecycle-writer.ts']);
+  });
+
   it('M6b-47: the end-of-period sweep and both dunning pauses pick their assignment from plan_snapshots', () => {
     const sweep = readFileSync(join(API_SRC, 'api/assignment-lifecycle.ts'), 'utf8');
     expect(sweep).toContain("isCurrentAssignmentSnapshotSql('pa')");
@@ -274,17 +277,19 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
     expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8'))
       .toContain("assignmentOfLegacyIdSql('?', 'pa')");
-    // What is left in each is the dual-write itself, guarded on the status it moves away from.
+    // The dual-write each kept, guarded on the status it moves away from, is the one writer's (M6b-51c-3).
     for (const file of ['api/assignment-lifecycle.ts', 'api/scheduled-event-execution.ts', 'domain/billingEventPayments.ts']) {
-      expect(LEGACY_STATEMENTS[file]).toBe(1);
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('writeAssignmentLifecycle(');
     }
   });
 
   it('M6b-48: the Save & Pay link sync and the Pending Payment cancel read the owner from plan_snapshots', () => {
     for (const file of ['api/product-sets-router.ts', 'api/product-set-cancellation.ts']) {
       expect(readFileSync(join(API_SRC, file), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
-      // What is left in each is the dual-write itself, guarded on the status it moves away from.
-      expect(LEGACY_STATEMENTS[file]).toBe(1);
+      // The dual-write each kept is the one writer's (M6b-51c-3).
+      expect(LEGACY_STATEMENTS[file]).toBeUndefined();
+      expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('writeAssignmentLifecycle(');
     }
   });
 

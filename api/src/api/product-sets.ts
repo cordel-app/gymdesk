@@ -1,3 +1,4 @@
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 import { db, Tx } from '../infra/db';
 import { restorePendingCancellations } from './plan-pending-cancellation';
 import { restorePendingReactivations } from './plan-pending-reactivation';
@@ -315,10 +316,11 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
   await tx.query(
     `UPDATE product_sets SET status = 'in_cart', payment_request_id = NULL, pending_at = NULL, last_activity_at = UTC_TIMESTAMP()
       WHERE id = ? AND status = 'pending_payment'`, [id]);
-  await tx.query(
-    `UPDATE user_memberships um JOIN product_sets ps ON ${productSetLegacyAssignmentIdSql()} = um.id AND ps.gym_id = um.gym_id
-        SET um.status = 'in_cart', um.modified_at = UTC_TIMESTAMP(), um.modified_by = ?
-      WHERE ps.id = ? AND um.status = 'pending_payment'`, [actor, id]);
+  const { rows: linked } = await tx.query<{ um_id: number | null }>(
+    `SELECT ${productSetLegacyAssignmentIdSql()} AS um_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [id, gymId]);
+  if (linked[0]?.um_id != null) {
+    await writeAssignmentLifecycle(tx, gymId, Number(linked[0].um_id), { status: 'in_cart', from: 'pending_payment', actor });
+  }
   await syncPlanSnapshot(tx, gymId, id);
   return { kind: 'cancelled' };
 }

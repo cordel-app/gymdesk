@@ -11,6 +11,7 @@ import { classifyProviderStatus, normaliseProviderStatus } from '../domain/provi
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordStatusChange } from './billing-events';
 import { payerMemberSql } from './payer-resolution';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
  * #1325 PR 2c — executing a ProductSet's persisted Billing Events.
@@ -112,11 +113,9 @@ async function pauseAfterFailedDays(tx: Tx, event: DueEvent): Promise<boolean> {
   const um = rows[0];
   if (!um || um.id == null || !isRunningAssignmentStatus(um.status)) return false;
   // A pause the nightly run decided is the system's act (#1182).
-  const { rowCount } = await tx.query(
-    `UPDATE user_memberships
-        SET status = 'paused', modified_at = UTC_TIMESTAMP(), modified_by = ?
-      WHERE id = ? AND gym_id = ? AND status = 'active'`,
-    [SYSTEM_ACTOR, um.id, event.gym_id]);
+  const rowCount = await writeAssignmentLifecycle(tx, event.gym_id, Number(um.id), {
+    status: 'paused', from: 'active', actor: SYSTEM_ACTOR,
+  });
   if (rowCount === 0) return false;
   await recordStatusChange(tx, {
     gymId: event.gym_id, userMembershipId: Number(um.id), memberId: Number(um.member_id),

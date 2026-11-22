@@ -9,12 +9,16 @@
  * M6b-7: and a superseded Product Set whose own snapshot is the last one of an ended plan and lacks
  * the plan's closed status, `closed_at` or end date (written in place by the sync, no copy).
  *
+ * M6b-51c-4: and every assignment anchor whose lifecycle columns (migration 453) are out of step with
+ * the `user_memberships` row, the gap a deploy leaves after the migration (`repairAnchorLifecycles()`).
+ *
  * It decides nothing of its own: each listed set is re-synced (`syncPlanSnapshot()`), which is what
  * a new lifecycle change does. One transaction per set, so a failure leaves the others settled.
  */
 import { db } from '../infra/db';
 import { findUnsettledActiveSets } from './plan-assignment-lifecycle';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
+import { repairAnchorLifecycles } from './plan-assignment-sync';
 
 export interface SettleReport { found: number; settled: number; remaining: number }
 
@@ -26,6 +30,8 @@ export async function settlePlanAssignmentLifecycles(
   for (const set of sets) {
     await db.transaction((tx) => syncPlanSnapshot(tx, set.gymId, set.productSetId));
   }
+  // M6b-51c-4: and every anchor whose lifecycle is out of step with its assignment's legacy row.
+  await repairAnchorLifecycles(db, opts.gymId);
   const remaining = (await findUnsettledActiveSets(db, opts.gymId)).length;
   return { found: sets.length, settled: sets.length - remaining, remaining };
 }

@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { Tx, db } from '../infra/db';
 import { advanceBillingDate } from './billingDate';
 import { recordStatusChange } from '../api/billing-events';
+import { writeAssignmentLifecycle } from '../api/assignment-lifecycle-writer';
 import { ASSIGNMENT_CADENCE } from '../api/assigned-plan-snapshot';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
@@ -371,11 +372,9 @@ export async function retryBillingEventPayment(
         [gymId, event.user_membership_id],
       );
       if (current.length === 0 || current[0].status !== 'active') return;
-      const { rowCount } = await tx.query(
-        `UPDATE user_memberships
-            SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND gym_id = ? AND status = 'active'`,
-        ['paused', actor, current[0].id, gymId]);
+      const rowCount = await writeAssignmentLifecycle(tx, gymId, Number(current[0].id), {
+        status: 'paused', from: 'active', actor,
+      });
       if (rowCount === 0) return;
       await recordStatusChange(tx, {
         gymId, userMembershipId: current[0].id, memberId: current[0].member_id,

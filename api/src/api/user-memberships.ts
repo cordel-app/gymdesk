@@ -88,6 +88,7 @@ import {
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 import { ASSIGNMENT_BENEFICIARIES } from '../domain/assignmentBeneficiaries';
 import { loadPlanAccessEntries } from './plan-center-access';
+import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -1045,30 +1046,18 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
         startsAt: starts_at ?? null,
         endsAt: 'ends_at' in req.body ? { value: ends_at ?? null } : null,
       });
-      await tx.query(
-        `UPDATE user_memberships SET
-          starts_at            = COALESCE(?, starts_at),
-          ends_at              = IF(?, ?, ends_at),
-          status               = COALESCE(?, status),
-          modified_at          = UTC_TIMESTAMP(),
-          modified_by          = ?
-         WHERE id = ? AND gym_id = ?`,
-        [
-          starts_at ?? null,
-          'ends_at' in req.body ? 1 : 0, ends_at ?? null,
-          status ?? null,
-          resolveRequestActor(getTenantContext(req)),
-          req.params.id, gymId,
-        ],
-      );
+      await writeAssignmentLifecycle(tx, gymId, Number(req.params.id), {
+        startsAt: starts_at ?? null,
+        ...('ends_at' in req.body ? { endsAt: { set: ends_at ?? null } } : {}),
+        status: status ?? null,
+        actor: resolveRequestActor(getTenantContext(req)),
+      });
       // #1694: a cancelled assignment always carries an end date, whatever the
       // body set (status flip, or an explicit ends_at: null on a cancelled row).
-      await tx.query(
-        `UPDATE user_memberships
-            SET ends_at = UTC_DATE(), modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND gym_id = ? AND status = 'cancelled' AND ends_at IS NULL`,
-        [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
-      );
+      await writeAssignmentLifecycle(tx, gymId, Number(req.params.id), {
+        endsAt: 'today_if_null', from: 'cancelled', onlyIfEndsAtNull: true,
+        actor: resolveRequestActor(getTenantContext(req)),
+      });
       if (status && status !== current[0].status) {
         await recordStatusChange(tx, {
           gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
@@ -1166,14 +1155,10 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
       [req.params.id, gymId],
     );
     if (current.length === 0) return false;
-    await tx.query(
-      `UPDATE user_memberships
-          SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
-              ends_at = COALESCE(ends_at, UTC_DATE()),
-              modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE id = ? AND gym_id = ?`,
-      [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
-    );
+    await writeAssignmentLifecycle(tx, gymId, Number(req.params.id), {
+      status: 'cancelled', closedAt: 'keep_or_now', endsAt: 'today_if_null',
+      actor: resolveRequestActor(getTenantContext(req)),
+    });
     await recordStatusChange(tx, {
       gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
       previousStatus: current[0].status, newStatus: 'cancelled',
@@ -1714,12 +1699,9 @@ async function transitionMembership(
     if (current.length === 0) return { kind: 'not_found' } as const;
     const prev = current[0];
     if (!allowedFrom.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
-    await tx.query(
-      `UPDATE user_memberships
-          SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE id = ? AND gym_id = ?`,
-      [targetStatus, resolveRequestActor(getTenantContext(req)), prev.id, gymId],
-    );
+    await writeAssignmentLifecycle(tx, gymId, Number(prev.id), {
+      status: targetStatus, actor: resolveRequestActor(getTenantContext(req)),
+    });
     await recordStatusChange(tx, {
       gymId, userMembershipId: prev.id, memberId: prev.member_id,
       previousStatus: prev.status, newStatus: targetStatus,
@@ -1922,14 +1904,10 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
         transitionRecorded = out.kind === 'cancelled';
       }
     }
-    await tx.query(
-      `UPDATE user_memberships
-          SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
-              ends_at = COALESCE(ends_at, UTC_DATE()),
-              modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE id = ? AND gym_id = ?`,
-      [resolveRequestActor(getTenantContext(req)), prev.id, gymId],
-    );
+    await writeAssignmentLifecycle(tx, gymId, Number(prev.id), {
+      status: 'cancelled', closedAt: 'keep_or_now', endsAt: 'today_if_null',
+      actor: resolveRequestActor(getTenantContext(req)),
+    });
     if (transitionRecorded) {
       await syncPlanSnapshotsForAssignment(tx, gymId, Number(prev.id));
     } else {
