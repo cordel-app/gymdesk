@@ -985,13 +985,13 @@ export function MemberExpandedRow({
       <ConfirmDialog
         open={cancelling !== null}
         title={cancelling && cancelling.status !== 'in_cart' ? (cancelling.status === 'to_be_canceled' ? t('members.action_undo_cancel_plan') : t('members.cancel_plan_title')) : undefined}
-        message={cancelling?.status === 'in_cart' ? t('members.confirm_discard_draft')
+        message={cancelling?.status === 'in_cart' ? t('members.confirm_remove_cart_plan')
           : cancelling?.status === 'to_be_canceled' ? t('members.confirm_undo_cancel_plan')
           : cancelling?.status === 'active' ? t('members.confirm_mark_cancel_plan')
           : cancelEndsOn ? t('members.confirm_cancel_plan_until', { date: formatGymDateOnly(cancelEndsOn, gymFmt) })
           : t('members.confirm_cancel_plan')}
-        confirmLabel={cancelling?.status === 'in_cart' ? t('members.action_discard_draft_confirm') : cancelling?.status === 'to_be_canceled' ? t('members.action_undo_cancel_plan') : t('members.action_cancel_plan')}
-        cancelLabel={cancelling?.status === 'in_cart' ? t('members.action_discard_draft_dismiss') : t('members.cancel_plan_go_back')}
+        confirmLabel={cancelling?.status === 'in_cart' ? t('members.action_remove_cart_plan_confirm') : cancelling?.status === 'to_be_canceled' ? t('members.action_undo_cancel_plan') : t('members.action_cancel_plan')}
+        cancelLabel={cancelling?.status === 'in_cart' ? t('members.action_remove_cart_plan_keep') : t('members.cancel_plan_go_back')}
         onConfirm={handleCancelPlan}
         onCancel={() => setCancelling(null)}
       />
