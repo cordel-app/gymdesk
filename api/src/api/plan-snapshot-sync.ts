@@ -60,7 +60,7 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
     `SELECT ${productSetLegacyAssignmentIdSql('ps')} AS um_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
     [productSetId, gymId]);
   const linkedUmId = linkRows[0]?.um_id != null ? Number(linkRows[0].um_id) : null;
-  // #2125 M6b-51c-5: the assignment's lifecycle is read off its anchor snapshot (`asg`, migration 452),
+  // #2125 M6b-51c-5: the assignment's lifecycle is read off its anchor snapshot (`asg`, migration 453),
   // never `user_memberships`.
   // Status and closed_at of every snapshot the version links and no other set does. M6b-7: and the
   // day an assignment that is over ended, on the snapshot of its superseded set (the last snapshot
@@ -94,9 +94,14 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
         SET s.member_id = ps.owner_member_id, s.membership_plan_id = COALESCE(ps.membership_plan_id, s.membership_plan_id),
             s.starts_at = ps.starts_at,
             s.ends_at = IF(ps.status IN ('superseded','cancelled') AND s.closed_at IS NOT NULL, s.ends_at, ps.ends_at),
+            s.replace_on_activation = IF(? IS NOT NULL AND NOT (s.source_user_membership_id <=> ?), 0, s.replace_on_activation),
+            s.replaces_assignment_id = IF(? IS NOT NULL AND NOT (s.source_user_membership_id <=> ?), NULL, s.replaces_assignment_id),
             s.source_user_membership_id = COALESCE(?, s.source_user_membership_id)
       WHERE s.id = ?`,
-    [productSetId, linkedUmId, snapshotId]);
+    // #2125 M6b-51c-2: a snapshot renamed after another assignment drops the previous one's replacement
+    // (reset before the name moves: one UPDATE assigns left to right). `nameAssignmentSnapshot()` names
+    // it first on every path today, so this is the guard for a path that would not.
+    [productSetId, linkedUmId, linkedUmId, linkedUmId, linkedUmId, linkedUmId, snapshotId]);
   const { rows: snap } = await tx.query<{ id: number; member_id: number }>(
     'SELECT s.id, s.member_id FROM plan_snapshots s WHERE s.id = ? AND s.gym_id = ?', [snapshotId, gymId]);
 

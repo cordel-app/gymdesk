@@ -48,7 +48,9 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
         AND (par.status <> ps.status OR par.member_id <> ps.owner_member_id)`,
     [gymId, productSetId]);
 
-  // Product-target applications owned by a line of this version.
+  // Product-target applications owned by a line of this version. #3026 stage 3d-3a: the copy carries
+  // the application's confirmation (`snapshot_confirmed_at`, migration 453) so a reader can later
+  // tell a Draft's reference from a confirmed application on the snapshot row alone.
   const owned = `SELECT ump.id FROM user_membership_promotions ump
                    JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
                   WHERE ump.gym_id = ? AND ump.product_set_id = ? AND ump.recurrent_snapshot_id IS NOT NULL`;
@@ -64,13 +66,14 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
     `INSERT INTO product_promotion_snapshots
        (gym_id, member_id, product_periodical_snapshot_id, source_application_id, promotion_id, promotion_name,
         status, snapshot, applied_at, applied_by, consumed_at, revoked_at, created_at, created_by,
-        modified_at, modified_by, promotion_image_url, promotion_image_thumbnail_url)
+        modified_at, modified_by, promotion_image_url, promotion_image_thumbnail_url, snapshot_confirmed_at)
      SELECT ump.gym_id, par.member_id, par.id, ump.id, ump.promotion_id,
             COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.name')), pr.name), ump.status, ump.snapshot, ump.applied_at,
             ump.applied_by, ump.consumed_at, ump.revoked_at, ump.applied_at, ump.created_by, ump.modified_at,
             ump.modified_by,
             COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.image_url')), pr.image_url),
-            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.image_thumbnail_url')), pr.image_thumbnail_url)
+            COALESCE(JSON_UNQUOTE(JSON_EXTRACT(ump.snapshot, '$.image_thumbnail_url')), pr.image_thumbnail_url),
+            ump.snapshot_confirmed_at
        FROM user_membership_promotions ump
        JOIN promotions pr ON pr.id = ump.promotion_id AND pr.applies_to = 'product'
        JOIN product_periodical_snapshots par ON par.source_id = ump.recurrent_snapshot_id AND par.gym_id = ump.gym_id
@@ -81,6 +84,7 @@ export async function syncProductSnapshotsOfVersion(tx: Conn, gymId: string, pro
        promotion_image_url = COALESCE(promotion_image_url, VALUES(promotion_image_url)),
        promotion_image_thumbnail_url = COALESCE(promotion_image_thumbnail_url, VALUES(promotion_image_thumbnail_url)),
        consumed_at = VALUES(consumed_at), revoked_at = VALUES(revoked_at),
+       snapshot_confirmed_at = VALUES(snapshot_confirmed_at),
        modified_at = VALUES(modified_at), modified_by = VALUES(modified_by)`,
     [gymId, productSetId]);
 

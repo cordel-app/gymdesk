@@ -59,7 +59,7 @@ const CLOSED_SQL = CLOSED_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(',');
 
 /**
  * The assignment the plan snapshot `s` is the contract of, as its anchor (`asg`) states it: the
- * lifecycle columns migration 452 put there (`assignment_status`, …), written only by
+ * lifecycle columns migration 453 put there (`assignment_status`, …), written only by
  * `writeAssignmentLifecycle()` (#2125 M6b-51c-5; until then this read `user_memberships`).
  */
 const ASSIGNMENT_OF_SNAPSHOT = `JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.assignment_id = asg.id

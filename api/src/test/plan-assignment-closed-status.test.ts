@@ -248,7 +248,7 @@ describe('the repair of plans that ended before this stage', () => {
   it('a plan a changed plan took over is stated as superseded', async () => {
     const { um, active, original } = await endedBeforeThisStage();
     await db.query("UPDATE user_memberships SET status = 'superseded' WHERE id = ?", [um]);
-    // The history this stands for is on the anchor too, as migration 452's backfill put it (M6b-51c-5).
+    // The history this stands for is on the anchor too, as migration 453's backfill put it (M6b-51c-5).
     await repairAnchorLifecycles(db, gymId);
     expect(await unsettled()).toContain(active);
 

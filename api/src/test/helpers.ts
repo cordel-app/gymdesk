@@ -527,7 +527,7 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
           WHERE s.source_user_membership_id = ?`, [result.insertId]);
     }
     // #2125 M6b-51c-5: the sync reads an assignment's lifecycle off its anchor, which a hand-written
-    // row has no writer to fill; this is what migration 452's backfill does for history.
+    // row has no writer to fill; this is what migration 453's backfill does for history.
     if (row) await repairAnchorLifecycles(db, row.gym_id);
     return result;
   }
@@ -888,7 +888,7 @@ export async function syncTestAssignmentSnapshots(umId: number): Promise<void> {
   const { rows } = await db.query<{ gym_id: string }>('SELECT gym_id FROM user_memberships WHERE id = ?', [umId]);
   if (!rows[0]) throw new Error(`syncTestAssignmentSnapshots: no assignment ${umId}`);
   // #2125 M6b-51c-5: the sync reads the lifecycle off the anchor; a hand-written row is mirrored onto
-  // it first, as the one writer does for a real change (migration 452's backfill for history).
+  // it first, as the one writer does for a real change (migration 453's backfill for history).
   await repairAnchorLifecycles(db, rows[0].gym_id);
   await db.transaction((tx) => syncPlanSnapshotsForAssignment(tx, rows[0].gym_id, umId));
 }
