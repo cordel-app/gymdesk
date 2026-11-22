@@ -15,6 +15,7 @@ import {
   reviewBeneficiary,
   reviewLineDiscount,
   reviewSections,
+  reviewContractedGroups,
   reviewPendingDeletions,
   type MemberSetReview,
 } from '@/lib/memberProducts';
@@ -23,11 +24,13 @@ import { formatPaymentAmount, prepaidPaymentKey } from '@/lib/memberPayments';
 export function CartSummary({ review, defaultOpen = false }: { review: MemberSetReview; defaultOpen?: boolean }) {
   const t = useTranslations();
   const gymFmt = useGymFormatSettings();
-  const { contracted, cancelled } = reviewSections(review);
+  const { cancelled } = reviewSections(review);
+  // #2973 stage 8 — plans with their included Products nested beneath, then the standalone Products.
+  const groups = reviewContractedGroups(review);
   const pendingDeletions = reviewPendingDeletions(review);
   const currency = review.currency ?? 'EUR';
   const money = (n: number | null | undefined) => (n == null ? '—' : formatPaymentAmount(n, currency, gymFmt));
-  const itemRow = (i: typeof contracted[number], k: string) => {
+  const itemRow = (i: typeof cancelled[number], k: string) => {
     const freqKey = reviewFrequencyKey(i.billing_frequency);
     const price = i.final_price ?? i.regular_price;
     const beneficiary = reviewBeneficiary(review, i);
@@ -48,10 +51,52 @@ export function CartSummary({ review, defaultOpen = false }: { review: MemberSet
       defaultOpen={defaultOpen}
       bodyStyle={S.body}
     >
-      <p style={S.label}>{t('membership.summary_contracted')}</p>
-      {contracted.length === 0
-        ? <p style={S.hint}>{t('membership.summary_none')}</p>
-        : <ul style={S.list}>{contracted.map((i, n) => itemRow(i, `c-${n}`))}</ul>}
+      {groups.plans.length === 0 && groups.products.length === 0 && (<>
+        <p style={S.label}>{t('membership.summary_contracted')}</p>
+        <p style={S.hint}>{t('membership.summary_none')}</p>
+      </>)}
+      {groups.plans.length > 0 && (<>
+        <p style={S.label}>{t('membership.summary_plans')}</p>
+        <ul style={S.list} data-summary-plans>
+          {groups.plans.map((g, n) => (
+            <li key={`p-${n}`} style={S.group}>
+              <ul style={S.list}>{itemRow(g.plan, `p-${n}-plan`)}</ul>
+              {g.included.length > 0 && (
+                <ul style={S.nested} data-summary-included>
+                  {g.included.map((b, m) => {
+                    const freqKey = reviewFrequencyKey(b.billing_frequency);
+                    return (
+                      <li key={`p-${n}-i-${m}`} style={S.item}>
+                        <span style={S.text}>{b.name}</span>
+                        <span style={S.meta}>· {'family' in b.beneficiary ? t('membership.summary_beneficiary_family') : b.beneficiary.name}</span>
+                        {b.quantity > 1 && <span style={S.meta}>× {b.quantity}</span>}
+                        {freqKey && <span style={S.meta}>· {t(freqKey as any)}</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      </>)}
+      {groups.products.length > 0 && (<>
+        <p style={S.label}>{t('membership.summary_products')}</p>
+        <ul style={S.list} data-summary-products>
+          {groups.products.map((i, n) => {
+            const freqKey = reviewFrequencyKey(i.billing_frequency);
+            return (
+              <li key={`s-${n}`} style={S.item}>
+                <span style={S.text}>{i.name}</span>
+                {i.beneficiary && <span style={S.meta}>· {'family' in i.beneficiary ? t('membership.summary_beneficiary_family') : i.beneficiary.name}</span>}
+                {i.quantity != null && i.quantity > 1 && <span style={S.meta}>× {i.quantity}</span>}
+                {i.price != null && <span style={S.meta}>· {money(i.price)}{freqKey ? ` / ${t(freqKey as any)}` : ''}</span>}
+                {i.promotions.length > 0 && <span style={S.meta}>· {i.promotions.join(', ')}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      </>)}
       {cancelled.length > 0 && (<>
         <p style={S.label}>{t('membership.summary_cancelled')}</p>
         <ul style={S.list}>{cancelled.map((i, n) => itemRow(i, `x-${n}`))}</ul>
@@ -111,6 +156,8 @@ const S: Record<string, CSSProperties> = {
   list: { listStyle: 'none', padding: 0, margin: 0 },
   item: { padding: '5px 0', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' },
   line: { padding: '5px 0' },
+  group: { padding: '2px 0' },
+  nested: { listStyle: 'none', margin: '0 0 4px', padding: '0 0 0 12px', borderLeft: `2px solid ${memberTheme.separator}` },
   text: { fontSize: 13, color: memberTheme.text },
   meta: { fontSize: 11.5, color: memberTheme.textMuted },
   amount: { fontSize: 13, fontVariantNumeric: 'tabular-nums', color: memberTheme.text },

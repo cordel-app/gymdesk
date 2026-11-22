@@ -30,6 +30,8 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
         changes: r.changes ?? [], amount_due: r.amount_due ?? null,
         // #2860 — the Summary's two sections.
         initial_payment: r.initial_payment, contracted_items: r.contracted_items,
+        // #3114 stage 3 — a cart that only reactivates or cancels a plan is still a change.
+        plans_to_reactivate: r.plans_to_reactivate ?? [], plans_to_cancel: r.plans_to_cancel ?? [],
       }); })
       .catch(() => { if (!cancelled) setReview(null); });
     return () => { cancelled = true; };

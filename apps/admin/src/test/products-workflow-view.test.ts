@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, cartCancelContents, cartCancelIntroKey, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
+  billingMode, cancelRequestFor, inFlightSetTitle, pendingPlanChangeCount, cartCancelContents, cartCancelIntroKey, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
 } from '@/app/[locale]/members/productsWorkflowView';
+import { displayedEndsAt } from '@/components/assignedPlan/assignedPlanProfile';
 
 const set = (status: string, expired = false) => ({ id: 1, status, plan_name: null, starts_at: null, ends_at: null, created_at: null, created_by: null, expired });
 const changed = { changes: [{}], amount_due: 10 };
@@ -153,5 +154,30 @@ describe('#3162 cancel-cart opening sentence', () => {
     expect(cartCancelIntroKey({ plans: ['Gold'], products: [] })).toBe('ps_cancel_intro');
     expect(cartCancelIntroKey({ plans: [], products: ['Locker'] })).toBe('ps_cancel_intro');
     expect(cartCancelIntroKey({ plans: [], products: [] })).toBe('ps_cancel_intro_empty');
+  });
+});
+
+describe('#3114 stage 3 — a cart that only reactivates (or cancels) a plan', () => {
+  const reactivating = {
+    changes: [], amount_due: 0,
+    plans_to_reactivate: [{ user_membership_id: 7, plan_name: 'Gold' }], plans_to_cancel: [],
+  };
+  it('is a change: simulation, Save & Pay through the review', () => {
+    const w = { current: set('in_cart'), review: reactivating, pendingOneOffs: 0 };
+    expect(pendingPlanChangeCount(reactivating)).toBe(1);
+    expect(billingMode(w)).toBe('simulation');
+    expect(saveAndPayTarget(w)).toBe('review');
+    expect(saveAndPayEnabled({ ...w, canWrite: true })).toBe(true);
+    const cancelling = { changes: [], amount_due: 0, plans_to_cancel: [{ user_membership_id: 8, plan_name: 'Silver' }] };
+    expect(billingMode({ current: set('in_cart'), review: cancelling, pendingOneOffs: 0 })).toBe('simulation');
+  });
+  it('titles the Summary with the reactivated plan rather than "Products only"', () => {
+    expect(inFlightSetTitle({ plan_name: null }, reactivating)).toBe('Gold');
+    expect(inFlightSetTitle({ plan_name: 'Own' }, reactivating)).toBe('Own');
+    expect(inFlightSetTitle({ plan_name: null }, null)).toBeNull();
+  });
+  it('reads open-ended in the plan list while the stored end date stays', () => {
+    expect(displayedEndsAt({ ends_at: '2026-12-06', lifecycle_status: 'to_be_reactivated' })).toBeNull();
+    expect(displayedEndsAt({ ends_at: '2026-12-06', lifecycle_status: 'cancels_on_end_date' })).toBe('2026-12-06');
   });
 });

@@ -49,6 +49,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu';
 import { DataTable, type Column } from '@/components/DataTable';
 import { AssignedPlanExpandedRow } from '@/components/assignedPlan/AssignedPlanExpandedRow';
+import { displayedEndsAt } from '@/components/assignedPlan/assignedPlanProfile';
 
 /** Which list this is, and therefore which column identifies a row. */
 export type AssignedPlansScope = 'gym' | 'member';
@@ -143,7 +144,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
   );
   const endsCell = (row: T) => (
     <span style={{ whiteSpace: 'nowrap' }}>
-      {row.ends_at ? fmtDate(row.ends_at, gymFmt) : row.lifecycle_status === 'cancelled' ? '—' : t('open_ended')}
+      {displayedEndsAt(row) ? fmtDate(displayedEndsAt(row)!, gymFmt) : row.lifecycle_status === 'cancelled' ? '—' : t('open_ended')}
     </span>
   );
   const relationshipCell = (row: T) => (

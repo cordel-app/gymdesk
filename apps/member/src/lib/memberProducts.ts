@@ -762,6 +762,80 @@ export function reviewSections(review: MemberSetReview | null): { contracted: Me
   };
 }
 
+/** #2973 stage 8 — one Product a contracted plan includes, as its Summary row nests it. */
+export interface ReviewIncludedProduct {
+  name: string;
+  quantity: number;
+  billing_frequency: string | null;
+  /** Who it is for: one named member, else the family (a Shared line, or several members). */
+  beneficiary: { family: true } | { name: string };
+}
+
+/** #2973 stage 8 — a contracted plan with the Products it includes, nested beneath it. */
+export interface ReviewPlanGroup {
+  plan: MemberSetReviewItem;
+  included: ReviewIncludedProduct[];
+}
+
+/** #2973 stage 8 — a Product contracted on its own, outside any plan. */
+export interface ReviewStandaloneProduct {
+  name: string;
+  quantity: number | null;
+  billing_frequency: string | null;
+  price: number | null;
+  promotions: string[];
+  beneficiary: { family: true } | { name: string } | null;
+}
+
+type ContractedEntry = NonNullable<MemberSetReview['contracted_items']>[number] & {
+  included?: Array<{ name: string; quantity: number; billing_frequency: string | null; members: { member_id: number; name: string | null }[] }>;
+  period?: 'one_off' | 'recurring';
+};
+
+const beneficiaryOf = (members: { name: string | null }[]): { family: true } | { name: string } =>
+  members.length === 1 && members[0].name ? { name: members[0].name } : { family: true };
+
+/**
+ * #2973 stage 8 — the contracted half of the Members App Summary, grouped the way the
+ * 22 Nov clarification asks: each contracted plan with the Products it includes nested
+ * beneath it (the plan's own frozen lines, the server's `contracted_items[].included`),
+ * and a separate list of the Products contracted on their own — the Draft's recurring
+ * lines and its one-time purchases. A plan-included Product never reaches the standalone
+ * list, and two items with one name stay where they belong: nothing is merged or
+ * deduplicated across the two relationships. Presentation only; no amount is computed.
+ */
+export function reviewContractedGroups(review: MemberSetReview | null): { plans: ReviewPlanGroup[]; products: ReviewStandaloneProduct[] } {
+  const contracted = reviewSections(review).contracted;
+  const entries = (review?.contracted_items ?? []) as ContractedEntry[];
+  const usedPlans = new Set<number>();
+  const plans: ReviewPlanGroup[] = contracted.filter((i) => i.type === 'plan').map((plan) => {
+    const at = entries.findIndex((e, n) => !usedPlans.has(n) && e.kind === 'plan' && e.name === plan.name);
+    if (at >= 0) usedPlans.add(at);
+    const included = (at >= 0 ? entries[at].included ?? [] : []).map((b) => ({
+      name: b.name, quantity: Number(b.quantity), billing_frequency: b.billing_frequency ?? null,
+      beneficiary: beneficiaryOf(b.members ?? []),
+    }));
+    return { plan, included };
+  });
+  const products: ReviewStandaloneProduct[] = contracted.filter((i) => i.type === 'product').map((i) => ({
+    name: i.name, quantity: i.quantity, billing_frequency: i.billing_frequency,
+    price: i.final_price ?? i.regular_price, promotions: i.promotions.filter(Boolean),
+    beneficiary: review ? reviewBeneficiary(review, i) : null,
+  }));
+  // A one-time purchase the review's items do not list (the Product Set's own and its
+  // standalone cart purchases) is contracted too; one the items already list (the standalone
+  // cart's own Summary) is matched once by name rather than listed twice.
+  const listed = new Map<string, number>();
+  for (const p of products) listed.set(p.name, (listed.get(p.name) ?? 0) + 1);
+  for (const e of entries) {
+    if (e.kind !== 'product' || e.period !== 'one_off' || e.pending_deletion) continue;
+    const left = listed.get(e.name) ?? 0;
+    if (left > 0) { listed.set(e.name, left - 1); continue; }
+    products.push({ name: e.name, quantity: null, billing_frequency: null, price: null, promotions: [], beneficiary: beneficiaryOf(e.members) });
+  }
+  return { plans, products };
+}
+
 export type SetCommitAction = 'save_and_pay' | 'activate';
 
 /**

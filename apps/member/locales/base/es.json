@@ -564,6 +564,8 @@
     "plan_entitlement_only": "Hasta su fecha de fin",
     "summary_heading": "Resumen",
     "summary_contracted": "Productos contratados",
+    "summary_plans": "Planes de membresía",
+    "summary_products": "Productos",
     "summary_cancelled": "Productos cancelados",
     "summary_deleted": "Cancelación pendiente",
     "summary_deleted_chip": "Eliminado",

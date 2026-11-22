@@ -115,6 +115,11 @@ export interface MemberProductSetPlan {
   /** The assignment's own lifecycle status, else the version's status for a plan no assignment holds yet. */
   status: string;
   entitlement_only: boolean;
+  /**
+   * #3114 stage 3 — an In Cart set carries this plan's pending reactivation (`to_be_reactivated`):
+   * it is part of what the cart contracts and reads open-ended, as Save & Pay will leave it.
+   */
+  pending_reactivation: boolean;
   starts_at: string | null;
   ends_at: string | null;
   /** #3007 stage 4 — the plan is marked `to_be_canceled` in this Draft; `ends_at` is then the date it would end on. */
@@ -332,10 +337,12 @@ export async function loadMemberProductSetView(
         status: r.lifecycle_status ?? String(set.status),
         entitlement_only: Number(r.entitlement_only) === 1,
         starts_at: dateOnly(r.um_starts_at ?? r.snapshot_starts_at),
-        ends_at: r.lifecycle_status === 'to_be_canceled' && set.status === 'in_cart'
+        ends_at: r.lifecycle_status === 'to_be_reactivated' && set.status === 'in_cart' ? null
+          : r.lifecycle_status === 'to_be_canceled' && set.status === 'in_cart'
           ? cancellationEndDate({ paidThrough, today: todayIso, assignmentStart: dateOnly(r.um_starts_at ?? r.snapshot_starts_at) ?? todayIso })
           : dateOnly(r.um_ends_at ?? r.snapshot_ends_at),
         pending_deletion: r.lifecycle_status === 'to_be_canceled' && set.status === 'in_cart',
+        pending_reactivation: r.lifecycle_status === 'to_be_reactivated' && set.status === 'in_cart',
         membership_fee: fee == null ? null : round2(fee),
         membership_fee_scope: toMembershipFeeScope(r.membership_fee_scope),
         membership_fee_units: membershipFeeUnits(
@@ -352,7 +359,9 @@ export async function loadMemberProductSetView(
     // #2777: an entitlement-only link is a plan still running to its end date. Once that date has
     // passed it reads `cancelled` (`LIFECYCLE_STATUS_SQL`) and belongs to Past Membership Plans
     // (`past_memberships`), not My Plans — the link itself is only re-derived for the next set.
-    .filter((p) => !p.entitlement_only || p.status === 'cancels_on_end_date');
+    // #3114: a plan marked for reactivation is still running to its end date (and, in a cart, is
+    // contracted again), so it stays too.
+    .filter((p) => !p.entitlement_only || p.status === 'cancels_on_end_date' || p.status === 'to_be_reactivated');
 
   return {
     expires_in_seconds: expiresIn,
