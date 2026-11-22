@@ -923,6 +923,8 @@ export async function removeMemberPlanFromDraft(tx: Tx, draft: LockedDraft, plan
 export async function addStaffPlanToDraft(tx: Tx, draft: LockedDraft, input: {
   membershipPlanId: number; membershipFeePrice: number | null; startsAt: string; ownerIsBeneficiary: boolean;
   declinedBenefits: Array<{ section: string; product_id: number }>; actor: string | null;
+  /** #2966 stage 6: the judged beneficiaries (caller: `judgeMemberBeneficiaries()`); absent = `ownerIsBeneficiary`. */
+  beneficiaryIds?: readonly number[];
 }): Promise<{ ok: true; plan_snapshot_id: number } | DraftRefusal> {
   const { addPlanSnapshotToVersion } = await import('./plan-snapshot-add');
   const first = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
@@ -936,7 +938,17 @@ export async function addStaffPlanToDraft(tx: Tx, draft: LockedDraft, input: {
     await tx.query('UPDATE product_sets SET membership_plan_id = ? WHERE id = ? AND gym_id = ?',
       [input.membershipPlanId, draft.id, draft.gym_id]);
   }
-  if (!input.ownerIsBeneficiary) await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, false);
+  if (input.beneficiaryIds !== undefined) {
+    const owner = draft.owner_member_id;
+    if (!input.beneficiaryIds.includes(owner)) await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, false);
+    const { addCoverage } = await import('./product-sets');
+    for (const memberId of input.beneficiaryIds) {
+      if (memberId === owner) continue;
+      await addCoverage(tx, { gymId: draft.gym_id, productSetId: draft.id, memberId, isOwner: false, planSnapshotId: snapshotId });
+    }
+  } else if (!input.ownerIsBeneficiary) {
+    await setOwnerIsBeneficiary(tx, draft.gym_id, snapshotId, false);
+  }
   await touch(tx, draft);
   return { ok: true, plan_snapshot_id: snapshotId };
 }
