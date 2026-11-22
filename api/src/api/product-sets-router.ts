@@ -52,6 +52,8 @@ import { AssigneeRefused } from './product-assignee';
 import { cancelPendingProductSet, cancelPendingResponse, reconcileSetPayments } from './product-set-cancellation';
 import { logger } from '../lib/logger';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
+import { loadAppliedPromotionLists } from './member-product-promotions';
+import { withPromotionDescriptions } from './cart-promotion-terms';
 
 /**
  * #1325 PR 2d — the ProductSet-keyed commercial API.
@@ -897,7 +899,12 @@ meProductSetsRouter.get('/:id', async (req, res, next) => {
     }, { memberId: owned.memberId, ownerMemberId: Number(owned.set.owner_member_id) });
     // #2746: the one-time Products in the cart, and what the cart holds, for the owner only.
     const isOwner = Number(owned.set.owner_member_id) === owned.memberId;
-    const purchases = isOwner ? (await loadSetPurchases(db, gymId, Number(owned.set.id))).map(({ snapshot_id, snapshot_table, member_id, validity_days, ...p }) => p) : [];
+    const purchaseRows = isOwner ? (await loadSetPurchases(db, gymId, Number(owned.set.id))).map(({ snapshot_id, snapshot_table, member_id, validity_days, ...p }) => p) : [];
+    // #3154: each one-time Product's applied Promotions (its own frozen applications), with their
+    // descriptions, so the cart can show them beside the Product and open their detail modal.
+    const purchasePromotions = await loadAppliedPromotionLists(gymId, purchaseRows.map((p) => p.id));
+    await withPromotionDescriptions(gymId, [...purchasePromotions.values()]);
+    const purchases = purchaseRows.map((p) => ({ ...p, promotions: purchasePromotions.get(p.id) ?? [] }));
     // #2746 stage 3: a version awaiting payment says what the cart's Pay charges —
     // the initial event Save & Pay wrote, never a figure re-priced for the read.
     const pending_amount = isOwner && owned.set.status === 'pending_payment'
