@@ -363,3 +363,18 @@ export function isPurchaseExpiredError(err: any): boolean {
 export function productTypeLabelKey(type: string | null | undefined): string | null {
   return type && (PRODUCT_TYPES as readonly string[]).includes(type) ? `type_${type}` : null;
 }
+
+/**
+ * #3189 — what a purchase's End date cell reads: its last valid day (or, for
+ * a cancelled purchase with no defined validity, the day it was cancelled,
+ * #1693) as a date; with neither, `open_ended` — except for a Merchandise
+ * Product, which has no lifecycle to be open-ended and reads `dash`.
+ * Display only: no date is changed or derived.
+ */
+export function purchaseEndDisplay(
+  item: Pick<PurchasedProduct, 'product_type' | 'valid_until' | 'cancelled_on'>,
+): { kind: 'date'; value: string } | { kind: 'open_ended' } | { kind: 'dash' } {
+  if (item.product_type === 'merchandise') return { kind: 'dash' };
+  const end = item.valid_until ?? item.cancelled_on ?? null;
+  return end ? { kind: 'date', value: end } : { kind: 'open_ended' };
+}
