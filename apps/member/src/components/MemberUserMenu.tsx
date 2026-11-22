@@ -5,13 +5,19 @@ import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { MemberAvatar } from '@/components/MemberAvatar';
-import { userMenuItems } from '@/lib/memberUserMenu';
-import { memberTheme, rowDividerStyle } from '@/lib/memberChrome';
+import { useApiClient } from '@/lib/apiClient';
+import {
+  familyMemberPreviewSrc, familySectionMembers, userMenuItems, type FamilyMenuMember,
+} from '@/lib/memberUserMenu';
+import { memberTheme, rowDividerStyle, statusPillStyle } from '@/lib/memberChrome';
 import { LogoutConfirmDialog } from '@/components/LogoutConfirmDialog';
+import { ImagePreviewButton } from '@/components/ImagePreview';
 
 /**
- * #1282 — the avatar in the top bar, as a menu: the member's email, **Profile**
- * and **Log out** (which asks first).
+ * #1282 — the avatar in the top bar, as a menu: **Profile**, the **Family**
+ * section (#3156: the caller's Family with each member's thumbnail, name and an
+ * Owner chip, a thumbnail opening the 1080 × 1080 picture in the app's one image
+ * preview) and **Log out** (which asks first). The email is no longer shown.
  *
  * Presentation and the one sequence it triggers: which entries exist and where a
  * logout lands are `lib/memberUserMenu.ts`'s, the logout itself is
@@ -23,7 +29,9 @@ export function MemberUserMenu() {
   const router = useRouter();
   const locale = useLocale();
   const { member } = useApp();
+  const { apiFetch } = useApiClient();
   const [open, setOpen] = useState(false);
+  const [family, setFamily] = useState<FamilyMenuMember[]>([]);
   const [confirming, setConfirming] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
@@ -31,7 +39,11 @@ export function MemberUserMenu() {
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // #3156: the image preview is portalled into `document.body`; a click in it
+      // must not close the menu, which would unmount the preview with it.
+      if (target instanceof Element && target.closest('[role="dialog"]')) return;
+      if (wrapperRef.current && !wrapperRef.current.contains(target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', onPointerDown);
@@ -43,6 +55,17 @@ export function MemberUserMenu() {
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  // #3156: the Family is read each time the menu opens, so a change staff made
+  // is shown without a reload. A failed read lists nobody: the section is absent.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    apiFetch('/me/family')
+      .then((body) => { if (!cancelled) setFamily(familySectionMembers(body)); })
+      .catch(() => { if (!cancelled) setFamily([]); });
+    return () => { cancelled = true; };
+  }, [open, apiFetch]);
 
   const items = userMenuItems();
 
@@ -65,7 +88,6 @@ export function MemberUserMenu() {
 
       {open && (
         <div id={menuId} role="menu" style={styles.menu}>
-          {member?.email && <div style={styles.email} title={member.email}>{member.email}</div>}
           {items.includes('profile') && (
             <button
               type="button"
@@ -75,6 +97,28 @@ export function MemberUserMenu() {
             >
               {t('nav.profile')}
             </button>
+          )}
+          {items.includes('family') && family.length > 0 && (
+            <div role="group" aria-label={t('nav.family')} style={styles.family}>
+              <div style={styles.familyTitle}>{t('nav.family')}</div>
+              {family.map((m) => (
+                <div key={m.member_id} style={styles.familyRow}>
+                  <ImagePreviewButton
+                    src={familyMemberPreviewSrc(m)}
+                    alt={m.name}
+                    title={m.name}
+                    style={styles.thumbButton}
+                  >
+                    <MemberAvatar
+                      member={{ id: m.member_id, name: m.name, image_url: m.image_url, image_thumbnail_url: m.image_thumbnail_url, modified_at: m.modified_at }}
+                      size={28}
+                    />
+                  </ImagePreviewButton>
+                  <span style={styles.familyName} title={m.name}>{m.name}</span>
+                  {m.is_owner && <span style={styles.ownerChip}>{t('nav.family_owner')}</span>}
+                </div>
+              ))}
+            </div>
           )}
           {items.includes('logout') && (
             <button
@@ -108,10 +152,18 @@ const styles: Record<string, CSSProperties> = {
     border: `1px solid ${memberTheme.cardBorderColor}`, borderRadius: 10,
     boxShadow: '0 8px 24px rgba(0,0,0,0.18)', padding: '4px 0', overflow: 'hidden',
   },
-  email: {
-    ...rowDividerStyle, padding: '10px 14px', fontSize: 12, color: memberTheme.textMuted,
+  family: { ...rowDividerStyle, borderBottom: rowDividerStyle.borderTop, padding: '8px 14px' },
+  familyTitle: {
+    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4,
+    color: memberTheme.textMuted, marginBottom: 6,
+  },
+  familyRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', minWidth: 0 },
+  thumbButton: { width: 28, height: 28, flexShrink: 0, borderRadius: '50%' },
+  familyName: {
+    flex: 1, minWidth: 0, fontSize: 14, color: memberTheme.text,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
+  ownerChip: { ...statusPillStyle('info'), padding: '2px 8px', fontSize: 11, flexShrink: 0 },
   item: {
     display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
     cursor: 'pointer', padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', color: memberTheme.text,
