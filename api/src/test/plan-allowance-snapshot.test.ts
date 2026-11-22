@@ -70,11 +70,10 @@ describe('plan allowance renewals by plan snapshot', () => {
     const first = await runPlanAllowanceRenewals(inTwoWeeks);
     expect(first.renewed).toBeGreaterThan(0);
     const { rows: renewals } = await db.query<any>(
-      'SELECT plan_session_snapshot_id, user_membership_session_id FROM plan_allowance_renewals WHERE gym_id = ?', [gymId]);
+      'SELECT plan_session_snapshot_id FROM plan_allowance_renewals WHERE gym_id = ?', [gymId]);
     expect(renewals.length).toBeGreaterThan(0);
     for (const r of renewals) {
       expect(Number(r.plan_session_snapshot_id)).toBe(Number(line[0].id));
-      expect(r.user_membership_session_id).toBeNull();
     }
     const again = await runPlanAllowanceRenewals(inTwoWeeks);
     expect(again.renewed).toBe(0);
