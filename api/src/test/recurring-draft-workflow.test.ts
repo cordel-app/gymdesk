@@ -24,7 +24,7 @@ vi.mock('../payments', async (importOriginal) => {
 
 import { advanceBillingDate } from '../domain/billingDate';
 import { daysBetween, daysInMonthOf } from '../domain/proration';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, productProratedToNextFirst as proratedToNextFirst } from './helpers';
 import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 const SECRET = 'test-1537-webhook';
