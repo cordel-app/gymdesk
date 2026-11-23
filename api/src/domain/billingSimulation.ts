@@ -423,6 +423,13 @@ export interface SimulationBenefit {
   action: PromotionBenefitAction | 'included';
   value: number | null;
   /**
+   * #3284 — the explicit evidence of a manual adjustment: `direct_discount` on the Direct Discount (%)
+   * of a Plan line (#2490), `personal_fee_benefit` on the Personal Membership Fee Benefit (#772, the
+   * fee's own Direct Discount). Set only by the two functions that apply them, so a reader never
+   * guesses a manual adjustment from a `percentage_discount` action.
+   */
+  code?: 'direct_discount' | 'personal_fee_benefit' | null;
+  /**
    * Which period the charge fell in — only set for Membership Fee lines. A
    * Promotion's own timeline (`free_promotion`, …) for a promotion-sourced
    * benefit, the Plan's (`free_plan`, …) for a plan-sourced one.
@@ -771,7 +778,10 @@ function withPersonalFeeBenefit(resolved: ResolvedCharge, benefit: PersonalFeeBe
     amount: applyPersonalFeeBenefit(resolved.amount, benefit),
     benefits: [
       ...resolved.benefits,
-      { source: 'personal', name: null, action: benefit.action, value: benefit.value, period_status: null },
+      {
+        source: 'personal', name: null, action: benefit.action, value: benefit.value, period_status: null,
+        code: 'personal_fee_benefit',
+      },
     ],
   };
 }
@@ -1617,6 +1627,7 @@ function withLineDirectDiscount<T extends { amount: number; benefits: Simulation
     amount: applyLineDirectDiscount(resolved.amount, percent),
     benefits: [...resolved.benefits, {
       source: 'personal', name: null, action: 'percentage_discount', value: percent, period_status: null,
+      code: 'direct_discount',
     }],
   };
 }
