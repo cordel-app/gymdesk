@@ -25,6 +25,8 @@ import { CART_ITEM_STATUS, CartItemStatus, derivePurchaseStatus } from '../domai
 type Conn = Pick<Tx, 'query'>;
 
 const LINE_TABLES = ['product_session_snapshots', 'product_oneoff_snapshots'] as const;
+/** #3251 stage 2: rows that record the cart they were written in, without being what the cart holds. */
+const STAMPED_TABLES = ['plan_snapshots', 'product_periodical_snapshots', 'billing_events'] as const;
 
 /** The owner's cart now `in_cart`, created when there is none. Locked. */
 export async function openCart(tx: Conn, gymId: string, ownerMemberId: number, actorName: string | null): Promise<number> {
@@ -188,8 +190,54 @@ export async function syncPurchase(tx: Conn, gymId: string, purchaseId: number):
     if (other[0]) {
       const otherId = Number(other[0].id);
       await moveMembers(tx, await loadMembers(tx, gymId, otherId), purchaseId);
+      // #3251 stage 2: what the newer cart wrote (plan snapshots, recurring lines) moves with it.
+      for (const table of STAMPED_TABLES) {
+        await tx.query(`UPDATE ${table} SET purchase_id = ? WHERE gym_id = ? AND purchase_id = ?`, [purchaseId, gymId, otherId]);
+      }
       await tx.query('DELETE FROM purchases WHERE id = ?', [otherId]);
     }
   }
   await writeStatus(tx, purchaseId, status);
+}
+
+/**
+ * #3251 stage 2 — the cart a plan snapshot or a recurring line was written in (`purchase_id`, migration 467).
+ *
+ * Called right after the INSERT of the snapshot `snapshotId` for the Product Set `productSetId`:
+ *   - a new snapshot takes the set's cart (none for a version that is not a checkout: a bridge edit, a
+ *     reprice, a system run);
+ *   - a copy (`copiedFromId`) made for a set that is in the cart or awaiting its payment is that cart's
+ *     change, so it takes that cart; any other copy (a lifecycle copy onto an Active set, a bridge edit's
+ *     copy) continues the checkout that created its source and keeps the source's purchase — never a
+ *     fabricated one (#3251's price-change clarification).
+ * A snapshot linked unchanged by a later set is not written, so it keeps its original purchase.
+ */
+export async function stampSnapshotPurchase(
+  tx: Conn, gymId: string, table: 'plan_snapshots' | 'product_periodical_snapshots',
+  snapshotId: number, productSetId: number, copiedFromId: number | null = null,
+): Promise<void> {
+  if (copiedFromId == null) {
+    await tx.query(
+      `UPDATE ${table} s JOIN product_sets ps ON ps.id = ? AND ps.gym_id = s.gym_id
+          SET s.purchase_id = ps.purchase_id
+        WHERE s.id = ? AND s.gym_id = ?`,
+      [productSetId, snapshotId, gymId]);
+    return;
+  }
+  await tx.query(
+    `UPDATE ${table} s
+       JOIN product_sets ps ON ps.id = ? AND ps.gym_id = s.gym_id
+       LEFT JOIN ${table} src ON src.id = ? AND src.gym_id = s.gym_id
+        SET s.purchase_id = IF(ps.purchase_id IS NOT NULL AND ps.status IN ('in_cart','pending_payment'),
+                               ps.purchase_id, src.purchase_id)
+      WHERE s.id = ? AND s.gym_id = ?`,
+    [productSetId, copiedFromId, snapshotId, gymId]);
+}
+
+/** #3251 stage 2 — a checkout's Billing Event is the cart's (`billing_events.purchase_id`). */
+export async function stampEventPurchase(
+  tx: Conn, gymId: string, billingEventId: number, purchaseId: number | null,
+): Promise<void> {
+  if (purchaseId == null) return;
+  await tx.query('UPDATE billing_events SET purchase_id = ? WHERE id = ? AND gym_id = ?', [purchaseId, billingEventId, gymId]);
 }

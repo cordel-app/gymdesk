@@ -1,4 +1,5 @@
 import { stampAssignmentId } from './plan-assignment-sync';
+import { stampSnapshotPurchase } from './purchases';
 import type { Tx } from '../infra/db';
 import { ensureSchedule } from './product-set-configuration';
 import { copyProductTargetApplications } from './product-set-bridge';
@@ -92,6 +93,8 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
 
   // M6b-1: a plan added to a Product Set is a new logical assignment, anchored on this snapshot.
   await stampAssignmentId(tx, gymId, Number(insertId));
+  // #3251 stage 2: the plan was added in the set's cart.
+  await stampSnapshotPurchase(tx, gymId, 'plan_snapshots', Number(insertId), productSetId);
   await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [productSetId, insertId]);
   await tx.query(
     'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
@@ -157,6 +160,8 @@ export async function copyPlanSnapshotToVersion(
   // M6b-1: the copy is the same logical assignment as its source (same `assignment_id`); #2125 N2: a
   // copy that drops the assignment names none (`assignment_id` NULL) until one is opened on it.
   await stampAssignmentId(tx, gymId, Number(insertId));
+  // #3251 stage 2: a copy made in a cart is the cart's; any other copy keeps its source's purchase.
+  await stampSnapshotPurchase(tx, gymId, 'plan_snapshots', Number(insertId), toSetId, fromSnapshotId);
   if (opts.link !== false) {
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
   }

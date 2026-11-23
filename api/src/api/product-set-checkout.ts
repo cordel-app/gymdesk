@@ -19,6 +19,7 @@ import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 import { cartChargeLine, cartPurchasesForCharge, joinCartPurchasesToEvent } from './cart-checkout';
+import { purchaseOfSet, stampEventPurchase } from './purchases';
 import { writeEventLines } from './billing-event-lines-writer';
 import { initialEventNameFor } from './billing-event-name';
 import { loadInitialChargeTaxRates } from './initial-charge-taxes';
@@ -307,6 +308,8 @@ export async function ensureInitialEvent(tx: Tx, input: {
       ORDER BY be.id DESC LIMIT 1 FOR UPDATE`,
     [input.gymId, input.productSetId]);
   if (existing[0]) {
+    // #3251 stage 2: the checkout's initial event is its cart's.
+    await stampEventPurchase(tx, input.gymId, Number(existing[0].id), await purchaseOfSet(tx, input.gymId, input.productSetId));
     await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, Number(existing[0].id));
     await joinCartPurchasesToEvent(tx, {
       gymId: input.gymId, productSetId: input.productSetId, billingEventId: Number(existing[0].id),
@@ -347,6 +350,8 @@ export async function ensureInitialEvent(tx: Tx, input: {
       scheduleId, input.startsAt, input.charge.billingDate ?? input.startsAt, input.actor],
   );
   await writeLines(tx, input.gymId, insertId, input.charge.lines);
+  // #3251 stage 2: the checkout's initial event is its cart's.
+  await stampEventPurchase(tx, input.gymId, Number(insertId), await purchaseOfSet(tx, input.gymId, input.productSetId));
   // #2746: each one-time Product of the cart reaches its payment through this event.
   await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, insertId);
   // #2949 stage 5: and so does every standalone cart purchase the charge included (pending_payment now).

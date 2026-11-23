@@ -33,7 +33,7 @@
  * The amounts are the purchases' frozen ones (`resolvePurchase()` priced each when it entered the
  * cart): a cart is paid at the price it shows, exactly as a cart Product Set's linked purchases are.
  */
-import { splitOffCheckout } from './purchases';
+import { splitOffCheckout, stampEventPurchase } from './purchases';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -245,7 +245,7 @@ export async function startCartCheckout(input: {
       }
 
       // #3251: the lines paid are one checkout; what stays in the cart keeps the cart.
-      await splitOffCheckout(tx, gymId, memberId, purchases.map((p) => p.id), input.actorName);
+      const checkoutId = await splitOffCheckout(tx, gymId, memberId, purchases.map((p) => p.id), input.actorName);
       const { insertId: paymentRequestId } = await tx.query(
         `INSERT INTO payment_requests
            (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id,
@@ -266,6 +266,8 @@ export async function startCartCheckout(input: {
         [eventId, paymentRequestId, gymId]);
       await recordPaymentAttempt(tx, paymentRequestId);
       await writeLines(tx as Tx, gymId, Number(eventId), purchases.map(purchaseLine));
+      // #3251 stage 2: the checkout's Billing Event is its purchase's.
+      await stampEventPurchase(tx, gymId, Number(eventId), checkoutId);
 
       for (const p of purchases) {
         const moved = await updatePurchase(tx, gymId, p.id, { status: PENDING_PURCHASE_STATUS },

@@ -14,6 +14,7 @@
  */
 import { moveProductApplicationsToLine } from './product-promotion-writer';
 import type { Tx } from '../infra/db';
+import { stampSnapshotPurchase } from './purchases';
 import { isRecurringLineIdShared, recurringLineSharedSql, SharedRecurringLineError } from './recurring-line-sharing';
 
 type Conn = Pick<Tx, 'query'>;
@@ -68,6 +69,8 @@ export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Pro
   if (!insertId) return null;
   const lineId = Number(insertId);
   await tx.query('UPDATE product_periodical_snapshots SET source_id = id, line_ref = id WHERE id = ?', [lineId]);
+  // #3251 stage 2: the line was added in the set's cart.
+  await stampSnapshotPurchase(tx, line.gymId, 'product_periodical_snapshots', lineId, line.productSetId);
 
   await linkToSet(tx, line.productSetId, lineId);
   return lineId;
@@ -152,6 +155,8 @@ async function copyLine(
   if (!insertId) throw new Error(`recurring line ${r.id} could not be copied`);
   const lineId = Number(insertId);
   await tx.query('UPDATE product_periodical_snapshots SET source_id = id WHERE id = ?', [lineId]);
+  // #3251 stage 2: a copy made in a cart is the cart's; any other copy keeps its source's purchase.
+  await stampSnapshotPurchase(tx, gymId, 'product_periodical_snapshots', lineId, toSetId, Number(r.snapshot_id));
   return { lineId, snapshotId: lineId };
 }
 
