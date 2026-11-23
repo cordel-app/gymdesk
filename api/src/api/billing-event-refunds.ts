@@ -35,7 +35,7 @@ export interface ActionFailure { status: number; error: string }
 async function loadOriginalPayment(exec: Exec, gymId: string, billingEventId: number) {
   const { rows } = await exec.query<any>(
     `SELECT id, amount, method, provider, provider_ref, member_id, payer_member_id,
-            user_membership_id, charge_type_id, currency, payment_method_name
+            anchor_plan_snapshot_id, charge_type_id, currency, payment_method_name
        FROM payment_requests
       WHERE billing_event_id = ? AND gym_id = ? AND transaction_type = 'payment'
         AND status = 'completed' AND method IN ('provider', 'cash', 'card_terminal') AND amount > 0

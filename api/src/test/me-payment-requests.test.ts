@@ -114,7 +114,7 @@ async function readRequestRow(id: number) {
     created_by: string | null;
     page_token: string | null;
     provider_order: string;
-  }>('SELECT * FROM payment_requests WHERE id = ?', [id]);
+  }>('SELECT *, anchor_plan_snapshot_id AS user_membership_id FROM payment_requests WHERE id = ?', [id]);
   return rows[0];
 }
 
