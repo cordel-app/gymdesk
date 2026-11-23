@@ -66,7 +66,7 @@ function renderedSections(): string[] {
 describe('Member card tabs: the declaration (#961)', () => {
   it('is the tabs the tickets name, in its order', () => {
     expect(MEMBER_TABS.map((tab) => tab.id)).toEqual([
-      'profile', 'family', 'products_services', 'bookings', 'professional_services', 'nutrition', 'personal_goals', 'training_plan', 'progress', 'payments',
+      'profile', 'family', 'products_services', 'bookings', 'professional_services', 'nutrition', 'personal_goals', 'training_plan', 'progress', 'payments', 'purchases',
     ]);
     expect(MEMBER_TAB_IDS).toEqual(MEMBER_TABS.map((tab) => tab.id));
     // Profile is what a Member opens on (§"Navigation behaviour").
@@ -103,6 +103,9 @@ describe('Member card tabs: the declaration (#961)', () => {
     expect(sectionsForTab('progress')).toEqual(['section_progress']);
     // #2099: Payments sits immediately after Progress.
     expect(sectionsForTab('payments')).toEqual(['section_payments']);
+    // #3273: Purchases sits immediately after Payments, behind the same read access.
+    expect(sectionsForTab('purchases')).toEqual(['section_purchases']);
+    expect(pageSrc).toContain("(tb.id !== 'payments' && tb.id !== 'purchases') || canReadPayments");
   });
 
   it('gives every section exactly one tab', () => {

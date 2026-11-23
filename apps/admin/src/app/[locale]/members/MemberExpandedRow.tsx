@@ -39,6 +39,7 @@ import { StandaloneCartSummary } from './StandaloneCartSummary';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
 import { MemberPayments } from './MemberPayments';
+import { MemberPurchases } from './MemberPurchases';
 import { MemberBookings } from './MemberBookings';
 import { MemberFamily } from './MemberFamily';
 import { NewNutritionPlanDialog } from '../nutrition/NewNutritionPlanDialog';
@@ -884,6 +885,15 @@ export function MemberExpandedRow({
           {/* Payments (#2099) — read-only: actual billing events and their transactions. */}
           <Section label={t('members.section_payments')} divider={false}>
             <MemberPayments memberId={memberId} />
+          </Section>
+        </>
+      )}
+
+      {tab === 'purchases' && (
+        <>
+          {/* Purchases (#3273) — read-only: each checkout, what it contained and how it was paid. */}
+          <Section label={t('members.section_purchases')} divider={false}>
+            <MemberPurchases memberId={memberId} />
           </Section>
         </>
       )}
