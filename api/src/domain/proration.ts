@@ -12,7 +12,12 @@
  *
  * The divisor for a cadence other than a plain month is not stated on the
  * ticket; this uses the cadence's own length in days (31 per month, 7 per week,
- * 372 for a year) so that a full period prorates to exactly its price. Pure.
+ * 372 for a year) so that a full period prorates to exactly its price.
+ *
+ * #3279 narrows decision D for one caller: an independently contracted monthly
+ * recurring Product (`buildServiceStream()`) passes `{ calendarMonth: true }` and
+ * divides by the actual length of its own start month. Every other caller (the
+ * Membership Fee, Plan-included Products) keeps the fixed 31. Pure.
  */
 
 import { Cadence } from './scheduleAllocation';
@@ -42,13 +47,37 @@ export interface Proration {
   amount: number;
 }
 
+export interface ProrateOptions {
+  /**
+   * #3279 — an independently contracted monthly recurring Product prorates its first stretch over
+   * the actual length of the calendar month its own start date falls in (28/29/30/31), not the
+   * fixed 31 of decision D. Only a plain monthly cadence (`1 month`) is affected; weekly, 4-weekly
+   * and yearly cadences, the Membership Fee and Plan-included Products keep `periodDays()`.
+   */
+  calendarMonth?: boolean;
+}
+
+function isPlainMonthly(cadence: Cadence): boolean {
+  return cadence.unit === 'month' && cadence.interval === 1;
+}
+
+/** Days in the calendar month of a `YYYY-MM-DD` date (February 29 in a leap year). */
+export function daysInMonthOf(date: string): number {
+  return new Date(Date.UTC(+date.slice(0, 4), +date.slice(5, 7), 0)).getUTCDate();
+}
+
 /**
  * `price` is the item's price for one full period of `cadence`. The days are
  * capped at the period's own length, so a join one cycle early cannot charge
  * more than the period costs.
  */
-export function prorate(price: number, cadence: Cadence, purchaseDate: string, nextBillingDate: string): Proration {
-  const period = periodDays(cadence);
+export function prorate(
+  price: number, cadence: Cadence, purchaseDate: string, nextBillingDate: string,
+  opts: ProrateOptions = {},
+): Proration {
+  const period = opts.calendarMonth && isPlainMonthly(cadence)
+    ? daysInMonthOf(purchaseDate)
+    : periodDays(cadence);
   const days = Math.min(daysBetween(purchaseDate, nextBillingDate), period);
   const amount = Math.round(((price / period) * days) * 100) / 100;
   return { proratedDays: days, periodDays: period, amount };

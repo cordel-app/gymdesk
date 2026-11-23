@@ -23,8 +23,8 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { advanceBillingDate } from '../domain/billingDate';
-import { daysBetween } from '../domain/proration';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { daysBetween, daysInMonthOf } from '../domain/proration';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, productProratedToNextFirst as proratedToNextFirst } from './helpers';
 import { TEST_RECURRING_LINES } from './productSnapshotReads';
 
 const SECRET = 'test-1537-webhook';
@@ -402,7 +402,10 @@ describe('a recurring Product added mid-cycle (#1867 stage 4)', () => {
     // The plan schedule is anchored on the billing calendar (#2125 M5c): monthly bills on the 1st,
     // so the next schedule date after today is the 1st of next month, whatever the plan's start.
     const next = advanceBillingDate(`${TODAY.slice(0, 8)}01`, 1, 'month');
-    const days = Math.min(daysBetween(TODAY, next), 31);
+    const days = daysBetween(TODAY, next);
+    // #3279: a recurring Product prorates over the actual length of its start month.
+    const period = daysInMonthOf(TODAY);
+    const first = Math.round(31 * days / period * 100) / 100;
     if (TODAY.endsWith('-01')) return; // a line starting on a schedule date is not prorated
     const trainer = await product({ name: 'Trainer Pro', frequency: 'month', amount: '31.00', type: 'service' });
     const buy = await auth(request.post(base(m))).send({ product_id: trainer });
@@ -410,14 +413,14 @@ describe('a recurring Product added mid-cycle (#1867 stage 4)', () => {
 
     const review = await auth(request.get(`${mset(draftId)}/review`));
     expect(review.status).toBe(200);
-    expect(Number(review.body.amount_due)).toBe(days);
+    expect(Number(review.body.amount_due)).toBe(first);
 
     const sim = await auth(request.get(`${mset(draftId)}/billing-event-simulation`));
     expect(sim.status).toBe(200);
     const initial = sim.body.dates.find((d: any) => d.kind === 'initial_payment');
     const line = initial.lines.find((l: any) => l.label === 'Trainer Pro');
-    expect(line.proration).toEqual({ prorated_days: days, period_days: 31 });
-    expect(line.actual_charge).toBe(days);
+    expect(line.proration).toEqual({ prorated_days: days, period_days: period });
+    expect(line.actual_charge).toBe(first);
     expect(line.regular_price).toBe(31);
     // Aligned to the plan: the next charge is on the schedule date, at full price.
     const aligned = sim.body.dates.find((d: any) => d.date === next);
