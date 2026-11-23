@@ -156,7 +156,7 @@ export async function allocatePlanSchedule(tx: Tx, input: {
   gymId: string; productSetId: number; startsAt: string; cadence: Cadence;
 }): Promise<number> {
   const { rows } = await tx.query<any>(
-    `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
+    `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit, opened_by_product_set_id
        FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id FOR UPDATE`, [input.productSetId]);
   const schedules: ExistingSchedule[] = rows.map((r: any) => ({
     id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
@@ -166,7 +166,20 @@ export async function allocatePlanSchedule(tx: Tx, input: {
     gymId: input.gymId, productSetId: input.productSetId, key, anchorDate,
     cadenceInterval: input.cadence.interval, cadenceUnit: input.cadence.unit,
   });
-  if (!schedules.some((s) => s.key === PLAN_SCHEDULE_KEY)) {
+  const planRow = rows.find((r: any) => String(r.schedule_key) === PLAN_SCHEDULE_KEY);
+  const planOfThisChain = planRow != null && planRow.opened_by_product_set_id != null
+    && (await productSetHistoryIds(tx, input.gymId, input.productSetId)).includes(Number(planRow.opened_by_product_set_id));
+  if (planRow && !planOfThisChain) {
+    // A finished chain's `plan` schedule: `ensureSchedule()` decides whether it is the same schedule
+    // (and re-keys it out of the way when not). An off-calendar one is never the same as this plan's.
+    const plan = schedules.find((s) => s.key === PLAN_SCHEDULE_KEY)!;
+    if (!billsOnOwnCalendar(plan, input.cadence, input.startsAt)) {
+      await tx.query('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?',
+        [`${PLAN_SCHEDULE_KEY}-${plan.id}`.slice(0, 40), plan.id]);
+    }
+    return ensure(PLAN_SCHEDULE_KEY, input.startsAt);
+  }
+  if (!planRow) {
     const onCalendar = schedules.find((s) => billsOnOwnCalendar(s, input.cadence, input.startsAt));
     if (onCalendar?.id != null) {
       await tx.query('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?', [PLAN_SCHEDULE_KEY, onCalendar.id]);
