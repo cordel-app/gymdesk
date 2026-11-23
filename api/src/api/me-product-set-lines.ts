@@ -252,7 +252,7 @@ export async function loadMemberProductSetView(
        FROM product_set_plan_snapshots j
        JOIN plan_snapshots s ON s.id = j.plan_snapshot_id AND s.gym_id = ?
        JOIN product_sets ps ON ps.id = j.product_set_id
-       LEFT JOIN ${GYM_ASSIGNMENT_ROWS_SQL} um ON um.id = COALESCE(s.source_user_membership_id, ${productSetLegacyAssignmentIdSql()})
+       LEFT JOIN ${GYM_ASSIGNMENT_ROWS_SQL} um ON um.id = COALESCE(s.assignment_id, ${productSetLegacyAssignmentIdSql()})
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id AND mp.gym_id = s.gym_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = s.membership_plan_id AND bp.gym_id = s.gym_id
       WHERE j.product_set_id = ? ORDER BY j.entitlement_only, j.id`, [gymId, gymId, Number(set.id)]);

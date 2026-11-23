@@ -19,7 +19,7 @@ import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 import { cartChargeLine, cartPurchasesForCharge, joinCartPurchasesToEvent } from './cart-checkout';
-import { writeEventLines } from './billing-line-origins';
+import { writeEventLines } from './billing-event-lines-writer';
 import { initialEventNameFor } from './billing-event-name';
 import { loadInitialChargeTaxRates } from './initial-charge-taxes';
 import { initialLineTaxRate, withLineTax } from '../domain/initialChargeTaxes';
@@ -287,8 +287,8 @@ async function linesDueBeforeStart(exec: Exec, gymId: string, productSetId: numb
 /** Enough cycles for the stretch before a plan's start to be projected in full. */
 const MAX_EARLY_CYCLES = 60;
 
-export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[], productSetId: number | null = null) {
-  await writeEventLines(tx, gymId, eventId, productSetId, lines);
+export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
+  await writeEventLines(tx, gymId, eventId, lines);
 }
 
 /**
@@ -346,7 +346,7 @@ export async function ensureInitialEvent(tx: Tx, input: {
     [input.gymId, input.memberId, name, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
       scheduleId, input.startsAt, input.charge.billingDate ?? input.startsAt, input.actor],
   );
-  await writeLines(tx, input.gymId, insertId, input.charge.lines, input.productSetId);
+  await writeLines(tx, input.gymId, insertId, input.charge.lines);
   // #2746: each one-time Product of the cart reaches its payment through this event.
   await linkSetPurchasesToEvent(tx, input.gymId, input.productSetId, insertId);
   // #2949 stage 5: and so does every standalone cart purchase the charge included (pending_payment now).

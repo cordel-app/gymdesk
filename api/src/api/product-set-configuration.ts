@@ -1,5 +1,5 @@
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { writeEventLines } from './billing-line-origins';
+import { writeEventLines } from './billing-event-lines-writer';
 import { commitPendingCancellations } from './plan-pending-cancellation';
 import { commitPendingReactivations } from './plan-pending-reactivation';
 import { stampAssignmentId } from './plan-assignment-sync';
@@ -217,7 +217,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
          (gym_id, member_id, membership_plan_id, status, starts_at, ends_at,
           schedule_id, membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
           auto_renew, recurring_billing_interval, recurring_billing_unit, origin, membership_fee_scope,
-          member_limit, source_user_membership_id, created_by)
+          member_limit, assignment_id, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
@@ -670,7 +670,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
       [gymId, setRows[0].owner_member_id, name, amount, productSetId, scheduleId,
         event.date, event.periodEnd, event.date, actor],
     );
-    await writeEventLines(tx, gymId, Number(insertId), productSetId, lines);
+    await writeEventLines(tx, gymId, Number(insertId), lines);
     created += 1;
   }
   return { created };

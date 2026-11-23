@@ -40,7 +40,7 @@ async function activate(um: number): Promise<void> {
 async function snapshotOf(um: number) {
   const { rows } = await db.query<any>(
     `SELECT id, assignment_id, replace_on_activation, replaces_assignment_id, deleted_at
-       FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
+       FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
   const r = rows[0];
   return {
     id: Number(r.id), assignmentId: Number(r.assignment_id), replaceOnActivation: Number(r.replace_on_activation),
@@ -52,7 +52,7 @@ async function setOf(um: number): Promise<number> {
   const { rows } = await db.query<any>(
     `SELECT psj.product_set_id AS id FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND s.source_user_membership_id = ? ORDER BY psj.product_set_id DESC LIMIT 1`, [gymId, um]);
+      WHERE s.gym_id = ? AND s.assignment_id = ? ORDER BY psj.product_set_id DESC LIMIT 1`, [gymId, um]);
   return Number(rows[0].id);
 }
 
@@ -103,22 +103,18 @@ describe('an assignment\'s replacement is its plan snapshot\'s', () => {
       'UPDATE plan_snapshots SET replace_on_activation = 1, replaces_assignment_id = ? WHERE id = ?',
       [replacedAnchor, snapshot]);
 
-    const { rows: firstRow } = await db.query<any>(
-      `SELECT member_id, gym_id, membership_plan_id, starts_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [first]);
-    const { insertId } = await testAssignmentWrite(
-      `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, starts_at, status, created_by)
-       VALUES (?, ?, ?, ?, 'in_cart', 'Test')`,
-      [firstRow[0].member_id, firstRow[0].gym_id, firstRow[0].membership_plan_id, firstRow[0].starts_at]);
-    const second = Number(insertId);
+    // #2125 N2: the assignment it comes to name has an anchor of its own (a snapshot names only an
+    // assignment that exists).
+    const second = await createTestDraftAssignment(gymId, await member(), await plan());
     await db.transaction(async (tx) => {
       await nameAssignmentSnapshot(tx, gymId, set, second);
       await syncPlanSnapshot(tx, gymId, set);
     });
 
     const { rows } = await db.query<any>(
-      'SELECT source_user_membership_id, replace_on_activation, replaces_assignment_id FROM plan_snapshots WHERE id = ?',
+      'SELECT assignment_id, replace_on_activation, replaces_assignment_id FROM plan_snapshots WHERE id = ?',
       [snapshot]);
-    expect(Number(rows[0].source_user_membership_id)).toBe(second);
+    expect(Number(rows[0].assignment_id)).toBe(second);
     expect(Number(rows[0].replace_on_activation)).toBe(0);
     expect(rows[0].replaces_assignment_id).toBeNull();
 

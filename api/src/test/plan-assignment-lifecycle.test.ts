@@ -94,7 +94,7 @@ async function linksOf(memberId: number): Promise<Link[]> {
 async function snapshot(id: number) {
   const { rows } = await db.query<any>(
     `SELECT id, assignment_id, status, copied_from_plan_snapshot_id AS copied_from, promotions_plan_snapshot_id AS holder,
-            source_user_membership_id AS um, closed_at, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at
+            assignment_id AS um, closed_at, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at
        FROM plan_snapshots WHERE id = ?`, [id]);
   const r = rows[0];
   if (!r) return undefined;
@@ -268,7 +268,7 @@ describe('cancelling a plan', () => {
     const [before] = await linkOfSet(m, previous);
     const stateBefore = (await snapshot(before.snapshot))!;
     const { rows: countBefore } = await db.query<any>(
-      'SELECT COUNT(*) AS n FROM plan_snapshots WHERE source_user_membership_id = ?', [um]);
+      'SELECT COUNT(*) AS n FROM plan_snapshots WHERE assignment_id = ?', [um]);
 
     await cancel(um);
 
@@ -285,7 +285,7 @@ describe('cancelling a plan', () => {
     expect(cancelled.closedAt).not.toBeNull();
     expect((await linkOfSet(m, previous))[0].snapshot).toBe(before.snapshot);
     const { rows: countAfter } = await db.query<any>(
-      'SELECT COUNT(*) AS n FROM plan_snapshots WHERE source_user_membership_id = ?', [um]);
+      'SELECT COUNT(*) AS n FROM plan_snapshots WHERE assignment_id = ?', [um]);
     expect(Number(countAfter[0].n)).toBe(Number(countBefore[0].n));
     expect(await driftOf(um)).toEqual([]);
   });
@@ -300,10 +300,10 @@ describe('cancelling a plan', () => {
 
     await testAssignmentWrite('UPDATE user_memberships SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE id = ?', [um]);
     // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.
-    await db.query('UPDATE plan_snapshots SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE source_user_membership_id = ?', [um]);
+    await db.query('UPDATE plan_snapshots SET ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE assignment_id = ?', [um]);
     // #2125 M6b-51c-4: and the assignment's own end date on its anchor, which the hand-written change skips.
     await db.query(
-      'UPDATE plan_snapshots SET assignment_ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE source_user_membership_id = ? AND assignment_id = id',
+      'UPDATE plan_snapshots SET assignment_ends_at = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) WHERE assignment_id = ? AND assignment_id = id',
       [um]);
     await sweep();
 

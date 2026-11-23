@@ -146,7 +146,7 @@ describe('PUT /user-memberships/:id dates on a Draft (#2125 M6b-51b)', () => {
     const { rows: ps } = await db.query<any>('SELECT starts_at, ends_at FROM product_sets WHERE id = ?', [set.id]);
     const { rows: snap } = await db.query<any>(
       `SELECT s.starts_at, s.ends_at FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-        WHERE j.product_set_id = ? AND s.source_user_membership_id = ?`, [set.id, umId]);
+        WHERE j.product_set_id = ? AND s.assignment_id = ?`, [set.id, umId]);
     const { rows: um } = await db.query<any>(`SELECT starts_at, ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
     const pair = (r: any) => [day(r?.starts_at), day(r?.ends_at)];
     return { set: pair(ps[0]), snapshot: pair(snap[0]), legacy: pair(um[0]) };

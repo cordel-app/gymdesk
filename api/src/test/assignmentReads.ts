@@ -19,15 +19,15 @@
 import { currentAssignmentSnapshotSql } from '../domain/planAssignments';
 
 export const TEST_ASSIGNMENTS = `(
-  SELECT anc.source_user_membership_id AS id, anc.gym_id, anc.member_id, anc.membership_plan_id,
+  SELECT anc.assignment_id AS id, anc.gym_id, anc.member_id, anc.membership_plan_id,
          anc.assignment_status AS status, COALESCE(pa.starts_at, anc.starts_at) AS starts_at,
          anc.assignment_ends_at AS ends_at, anc.assignment_closed_at AS closed_at,
          anc.created_at, anc.created_by,
          anc.assignment_modified_at AS modified_at, anc.assignment_modified_by AS modified_by,
          pa.deleted_at, pa.deleted_by, pa.purchased_at, pa.replace_on_activation,
-         (SELECT rep.source_user_membership_id FROM plan_snapshots rep
+         (SELECT rep.assignment_id FROM plan_snapshots rep
            WHERE rep.id = pa.replaces_assignment_id AND rep.gym_id = pa.gym_id) AS replaces_user_membership_id
     FROM plan_snapshots anc
     LEFT JOIN plan_snapshots pa
       ON pa.id = ${currentAssignmentSnapshotSql('anc.id', 'anc.gym_id')}
-   WHERE anc.assignment_id = anc.id AND anc.source_user_membership_id IS NOT NULL)`;
+   WHERE anc.assignment_id = anc.id AND anc.assignment_id IS NOT NULL)`;

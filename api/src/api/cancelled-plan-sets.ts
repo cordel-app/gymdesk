@@ -15,7 +15,7 @@ import { planSnapshotInheritedSql } from './plan-snapshot-lines';
  * A cancelled set is therefore a past plan only when it links a plan snapshot
  * the set itself added: not inherited from the previous set
  * (`planSnapshotInheritedSql()`, the one derivation of "carried over") and
- * naming no assignment (`source_user_membership_id`), since an assignment is
+ * naming no assignment (`assignment_id`), since an assignment is
  * already a row of the history. Used by both readers of that list — the Member
  * card's configuration read and the Members App's `GET /me/membership` — so the
  * two cannot disagree. Bind nothing; it expects the set aliased `ps`.
@@ -26,5 +26,5 @@ export const CANCELLED_PLAN_SET_SQL = `ps.status = 'cancelled'
           SELECT 1 FROM product_set_plan_snapshots cpj_
             JOIN plan_snapshots cps_ ON cps_.id = cpj_.plan_snapshot_id
            WHERE cpj_.product_set_id = ps.id
-             AND cps_.source_user_membership_id IS NULL
+             AND cps_.assignment_id IS NULL
              AND NOT ${planSnapshotInheritedSql('cps_', 'ps.id')})`;

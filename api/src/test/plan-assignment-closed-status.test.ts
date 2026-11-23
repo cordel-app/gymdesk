@@ -79,7 +79,7 @@ const toSnapshot = (r: any): Snapshot => ({
 async function snapshotsOf(um: number): Promise<Snapshot[]> {
   const { rows } = await db.query<any>(
     `SELECT ${SNAPSHOT_COLUMNS} FROM plan_snapshots s
-      WHERE s.gym_id = ? AND s.source_user_membership_id = ? ORDER BY s.id`, [gymId, um]);
+      WHERE s.gym_id = ? AND s.assignment_id = ? ORDER BY s.id`, [gymId, um]);
   return rows.map(toSnapshot);
 }
 /** The snapshot that states the assignment now (`currentAssignmentSnapshotSql()`). */

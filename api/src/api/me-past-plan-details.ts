@@ -44,11 +44,11 @@ export async function attachPastPlanDetails(
     const { rows } = await db.query<any>(
       // #2125 M6b-11: grouped off the snapshots themselves rather than `user_memberships`; an
       // assignment no snapshot names had no snapshot to report before either.
-      `SELECT ps0.source_user_membership_id AS id,
-              ${assignmentPlanSnapshotId('ps0.source_user_membership_id', 'ps0.gym_id')} AS plan_snapshot_id
+      `SELECT ps0.assignment_id AS id,
+              ${assignmentPlanSnapshotId('ps0.assignment_id', 'ps0.gym_id')} AS plan_snapshot_id
          FROM plan_snapshots ps0
-        WHERE ps0.gym_id = ? AND ps0.source_user_membership_id IN (${marks(assignmentIds.length)})
-        GROUP BY ps0.source_user_membership_id, ps0.gym_id`,
+        WHERE ps0.gym_id = ? AND ps0.assignment_id IN (${marks(assignmentIds.length)})
+        GROUP BY ps0.assignment_id, ps0.gym_id`,
       [gymId, ...assignmentIds],
     );
     for (const r of rows) if (r.plan_snapshot_id != null) snapshotByAssignment.set(Number(r.id), Number(r.plan_snapshot_id));
