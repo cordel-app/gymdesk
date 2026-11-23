@@ -70,7 +70,7 @@ const LIVE_PRODUCT_COLUMNS = `
 // #2125 M6b-19: the assignment is read from `plan_snapshots` (its current snapshot, named by the
 // legacy id the routes still use), never from `user_memberships`.
 const DISPLAY_SELECT = `
-  SELECT ums.source_id AS id, ums.gym_id, pa.assignment_id AS user_membership_id, ums.product_id,
+  SELECT ums.source_id AS id, ums.gym_id, pa.anchor_plan_snapshot_id AS user_membership_id, ums.product_id,
          ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
          ums.product_name AS snapshot_item_name,
          ums.billing_frequency AS snapshot_billing_frequency,
@@ -80,7 +80,7 @@ const DISPLAY_SELECT = `
          ${LIVE_PRODUCT_COLUMNS}
   FROM plan_snapshots pa
   JOIN product_set_periodical_snapshots lnk
-    ON lnk.product_set_id = ${assignmentLineVersionId('pa.assignment_id')}
+    ON lnk.product_set_id = ${assignmentLineVersionId('pa.anchor_plan_snapshot_id')}
        AND ${isCurrentAssignmentSnapshotSql('pa')}
   JOIN product_periodical_snapshots ums
     ON ums.id = lnk.product_periodical_snapshot_id AND ums.gym_id = pa.gym_id
@@ -162,7 +162,7 @@ function shape(row: any): AssignedPlanServiceRow {
 /** Every service attached to one Assigned Plan, oldest window first. */
 export async function loadAssignedPlanServices(gymId: string, umId: number): Promise<AssignedPlanServiceRow[]> {
   const { rows } = await db.query(
-    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND pa.assignment_id = ? ORDER BY ums.starts_at ASC, ums.source_id ASC`,
+    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND pa.anchor_plan_snapshot_id = ? ORDER BY ums.starts_at ASC, ums.source_id ASC`,
     [gymId, umId],
   );
   return rows.map(shape);
@@ -179,7 +179,7 @@ export async function loadServicesForAssignments(
 ): Promise<AssignedPlanServiceRow[]> {
   if (umIds.length === 0) return [];
   const { rows } = await db.query(
-    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND pa.assignment_id IN (${umIds.map(() => '?').join(',')})
+    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND pa.anchor_plan_snapshot_id IN (${umIds.map(() => '?').join(',')})
      ORDER BY ums.starts_at ASC, ums.source_id ASC`,
     [gymId, ...umIds],
   );
@@ -205,7 +205,7 @@ export async function loadServicesForSimulation(
   if (umIds.length === 0) return byAssignment;
 
   const { rows } = await db.query(
-    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND pa.assignment_id IN (${umIds.map(() => '?').join(',')})
+    `${DISPLAY_SELECT} WHERE ums.gym_id = ? AND pa.anchor_plan_snapshot_id IN (${umIds.map(() => '?').join(',')})
      ORDER BY ums.starts_at ASC, ums.source_id ASC`,
     [gymId, ...umIds],
   );
@@ -250,7 +250,7 @@ async function loadAssignedPlan(gymId: string, id: unknown): Promise<AssignedPla
   const numeric = Number(id);
   if (!Number.isInteger(numeric) || numeric <= 0) return null;
   const { rows } = await db.query(
-    `SELECT pa.assignment_id AS id, pa.status, pa.starts_at, pa.ends_at
+    `SELECT pa.anchor_plan_snapshot_id AS id, pa.status, pa.starts_at, pa.ends_at
        FROM plan_snapshots pa WHERE ${assignmentOfLegacyIdSql('?', 'pa')} AND pa.gym_id = ?`,
     [numeric, gymId],
   );

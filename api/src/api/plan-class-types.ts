@@ -82,7 +82,7 @@ registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
   // mapped plans, either as the owner or as a Member covered by a multi-member
   // Membership (#374)?
   const { rows: matchRows } = await tx.query(
-    `SELECT pa.assignment_id
+    `SELECT pa.anchor_plan_snapshot_id
      FROM plan_snapshots pa
      JOIN class_type_user_memberships ctum
        ON ctum.membership_plan_id = pa.membership_plan_id AND ctum.gym_id = pa.gym_id

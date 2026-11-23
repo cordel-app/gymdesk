@@ -46,7 +46,7 @@ describe('a Product Set finds its assignment through plan_assignment_id (#2125 M
 
   it('matches the current snapshot of the assignment the anchor names', () => {
     expect(assignmentOfAnchorSql('ps.plan_assignment_id', 'pa'))
-      .toBe(`(pa.assignment_id = ps.plan_assignment_id AND ${isCurrentAssignmentSnapshotSql('pa')})`);
+      .toBe(`(pa.anchor_plan_snapshot_id = ps.plan_assignment_id AND ${isCurrentAssignmentSnapshotSql('pa')})`);
   });
 
   // #2125 M6b-39 — the version an assignment is read from is picked by the set's anchor too.
@@ -54,7 +54,7 @@ describe('a Product Set finds its assignment through plan_assignment_id (#2125 M
     for (const sql of [assignmentVersionId('?'), assignmentLineVersionId('?')]) {
       expect(sql).not.toMatch(/p9\.user_membership_id/);
       expect(sql).toMatch(/\.id = p9\.plan_assignment_id|= p9\.plan_assignment_id/);
-      expect(sql).toMatch(/\.assignment_id = \?/);
+      expect(sql).toMatch(/\.anchor_plan_snapshot_id = \?/);
     }
   });
 });

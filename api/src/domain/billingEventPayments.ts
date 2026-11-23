@@ -367,7 +367,7 @@ export async function retryBillingEventPayment(
       // (`assignmentOfLegacyIdSql()`), never from `user_memberships`; the pause is written on the
       // anchor (`writeAssignmentLifecycle()`), guarded on `active`, which serialises two pauses.
       const { rows: current } = await tx.query<{ id: number; member_id: number; status: string }>(
-        `SELECT pa.assignment_id AS id, pa.member_id, pa.status FROM plan_snapshots pa
+        `SELECT pa.anchor_plan_snapshot_id AS id, pa.member_id, pa.status FROM plan_snapshots pa
           WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
         [gymId, event.user_membership_id],
       );

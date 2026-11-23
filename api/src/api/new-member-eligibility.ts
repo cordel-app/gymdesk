@@ -25,15 +25,15 @@ import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL } from '../
 /**
  * #2125 M6b-13 — the Member's assignments are read from `plan_snapshots`: each assignment's
  * current snapshot (`domain/planAssignments.ts`), with the assignment's own creation time. An
- * assignment is still identified by its id (`assignment_id`), because the apply paths
+ * assignment is still identified by its id (`anchor_plan_snapshot_id`), because the apply paths
  * exclude the assignment being configured by that id; a snapshot that names no such id (a plan
  * chosen in the Members App before its first activation) is left out, as it was when this read
  * the legacy table.
  */
 const ASSIGNMENT_COLUMNS =
-  'pa.assignment_id AS id, pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at';
+  'pa.anchor_plan_snapshot_id AS id, pa.status, pa.starts_at, pa.ends_at, pa.closed_at, anc.created_at';
 const OWNED_ASSIGNMENT_FILTER =
-  `pa.assignment_id IS NOT NULL AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}`;
+  `pa.anchor_plan_snapshot_id IS NOT NULL AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}`;
 
 type Queryable = { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> };
 

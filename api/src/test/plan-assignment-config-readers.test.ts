@@ -47,7 +47,7 @@ async function activeSnapshot(um: number): Promise<number> {
     `SELECT s.id FROM plan_snapshots s
        JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = s.id
        JOIN product_sets p ON p.id = j.product_set_id AND p.status = 'active'
-      WHERE s.gym_id = ? AND s.assignment_id = ? ORDER BY s.id LIMIT 1`, [gymId, um]);
+      WHERE s.gym_id = ? AND s.anchor_plan_snapshot_id = ? ORDER BY s.id LIMIT 1`, [gymId, um]);
   return Number(rows[0].id);
 }
 

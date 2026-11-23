@@ -41,10 +41,10 @@ const SERVICE_TASK_MEMBER_CAP = 200;
 
 /**
  * The names of the plans a Member (`m`) owns that are running or paused, newest assignment first.
- * #2125 M6b-8: an assignment is its current plan snapshot, and `assignment_id` (the id of its first
+ * #2125 M6b-8: an assignment is its current plan snapshot, and `anchor_plan_snapshot_id` (the id of its first
  * snapshot) orders assignments by when they were created.
  */
-const MEMBER_PLAN_NAMES_SQL = `(SELECT GROUP_CONCAT(mp.name ORDER BY pa.assignment_id DESC SEPARATOR ', ')
+const MEMBER_PLAN_NAMES_SQL = `(SELECT GROUP_CONCAT(mp.name ORDER BY pa.anchor_plan_snapshot_id DESC SEPARATOR ', ')
           FROM plan_snapshots pa
           JOIN membership_plans mp ON mp.id = pa.membership_plan_id
          WHERE pa.member_id = m.id AND pa.gym_id = m.gym_id
@@ -219,7 +219,7 @@ async function loadPendingPaymentMembers(gymId: string, outstanding: Outstanding
  */
 async function loadUnpaidMandatoryProducts(gymId: string) {
   const { rows } = await db.query<any>(
-    `SELECT pa.id AS snapshot_id, pa.assignment_id, pa.member_id AS owner_id,
+    `SELECT pa.id AS snapshot_id, pa.anchor_plan_snapshot_id, pa.member_id AS owner_id,
             pa.membership_plan_id, mp.name AS plan_name,
             pps.product_id, pps.item_name AS product_name, pps.assigned_member_id,
             be.id AS event_id, be.event_type, be.is_scheduled, be.billing_date, be.created_at,
@@ -234,7 +234,7 @@ async function loadUnpaidMandatoryProducts(gymId: string) {
         AND (be.is_scheduled = 0 OR be.billing_date <= UTC_DATE())
         AND EXISTS (SELECT 1 FROM product_set_plan_snapshots bj
                       JOIN plan_snapshots bs ON bs.id = bj.plan_snapshot_id
-                     WHERE bj.product_set_id = be.product_set_id AND bs.assignment_id = pa.assignment_id)
+                     WHERE bj.product_set_id = be.product_set_id AND bs.anchor_plan_snapshot_id = pa.anchor_plan_snapshot_id)
        JOIN billing_event_lines bel ON bel.billing_event_id = be.id
         AND bel.product_id = pps.product_id AND bel.amount > 0
       WHERE pa.gym_id = ?

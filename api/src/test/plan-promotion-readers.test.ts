@@ -40,7 +40,7 @@ const snapshotRows = async (umId: number) => (await db.query<any>(
   `SELECT pps.id, pps.status, pps.snapshot_confirmed_at, pps.snapshot
      FROM plan_promotion_snapshots pps
      JOIN plan_snapshots s ON s.id = pps.plan_snapshot_id
-    WHERE s.assignment_id = ? AND pps.promotion_id = ?`, [umId, promoId])).rows;
+    WHERE s.anchor_plan_snapshot_id = ? AND pps.promotion_id = ?`, [umId, promoId])).rows;
 
 beforeAll(async () => {
   gymId = await createTestGym('Plan Promo Readers Gym');

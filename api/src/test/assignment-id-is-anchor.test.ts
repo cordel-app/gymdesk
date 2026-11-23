@@ -38,9 +38,9 @@ const assign = async (m: number) => auth(request.post('/user-memberships'))
   .send({ member_id: m, membership_plan_id: await plan(), starts_at: new Date().toISOString().slice(0, 10) });
 async function snapshotsOf(id: number) {
   const { rows } = await db.query<any>(
-    `SELECT id, assignment_id, assignment_id AS um FROM plan_snapshots
-      WHERE gym_id = ? AND (assignment_id = ? OR assignment_id = ?) ORDER BY id`, [gymId, id, id]);
-  return rows.map((r: any) => ({ id: Number(r.id), anchor: Number(r.assignment_id), um: Number(r.um) }));
+    `SELECT id, anchor_plan_snapshot_id, anchor_plan_snapshot_id AS um FROM plan_snapshots
+      WHERE gym_id = ? AND (anchor_plan_snapshot_id = ? OR anchor_plan_snapshot_id = ?) ORDER BY id`, [gymId, id, id]);
+  return rows.map((r: any) => ({ id: Number(r.id), anchor: Number(r.anchor_plan_snapshot_id), um: Number(r.um) }));
 }
 
 describe('an assignment id is its anchor snapshot id (#2125 N1)', () => {

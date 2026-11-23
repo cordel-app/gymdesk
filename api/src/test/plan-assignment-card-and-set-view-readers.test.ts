@@ -98,7 +98,7 @@ describe('a card replacement is recorded against the assignment plan_snapshots s
     const running = await run(m, await plan());
     const other = await run(m, await plan());
     // The snapshot says the second plan was cancelled; its legacy row still says active.
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE assignment_id = ?", [other]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE anchor_plan_snapshot_id = ?", [other]);
     await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [running], { mirror: false });
     expect(await cardRequestAssignment(m)).toBe(running);
   });
@@ -116,7 +116,7 @@ describe('the Members App Product Set view reports the plan status plan_snapshot
   it('reports the snapshot\'s status, whatever the legacy row says', async () => {
     const m = await member();
     const um = await run(m, await plan());
-    await db.query("UPDATE plan_snapshots SET status = 'paused' WHERE assignment_id = ?", [um]);
+    await db.query("UPDATE plan_snapshots SET status = 'paused' WHERE anchor_plan_snapshot_id = ?", [um]);
     await testAssignmentWrite("UPDATE user_memberships SET status = 'active' WHERE id = ?", [um]);
     const { rows } = await db.query<{ id: number }>(
       "SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active'", [gymId, m]);

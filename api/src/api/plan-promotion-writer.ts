@@ -43,7 +43,7 @@ export async function supersedePlanPromotionsOfAssignment(
     `UPDATE plan_promotion_snapshots pps
        JOIN plan_snapshots s ON s.id = pps.plan_snapshot_id AND s.gym_id = pps.gym_id
         SET pps.status = 'superseded', pps.modified_at = UTC_TIMESTAMP(), pps.modified_by = ?
-      WHERE pps.gym_id = ? AND s.assignment_id = ? AND pps.status = 'applied'
+      WHERE pps.gym_id = ? AND s.anchor_plan_snapshot_id = ? AND pps.status = 'applied'
         AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots o
                           JOIN product_sets ops ON ops.id = o.product_set_id
                          WHERE o.plan_snapshot_id = pps.plan_snapshot_id

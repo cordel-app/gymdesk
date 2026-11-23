@@ -102,7 +102,7 @@ describe('the Member card\'s Products badge counts running plans from plan_snaps
     expect(await plansBadge(m)).toBe(2);
   });
 
-  it('does not count a Draft plan, a paused one or a cancelled one', async () => {
+  it('does not count a Draft plan or a paused one; a cancelled-today one still Cancels on its End Date', async () => {
     const draftOnly = await member();
     await createTestDraftAssignment(gymId, draftOnly, await plan());
     expect(await plansBadge(draftOnly)).toBe(0);
@@ -113,7 +113,10 @@ describe('the Member card\'s Products badge counts running plans from plan_snaps
     await setStatus(um, 'active');
     expect(await plansBadge(m)).toBe(1);
     must(await auth(request.delete(`/user-memberships/${um}`)), 'cancel');
-    expect(await plansBadge(m)).toBe(0);
+    // #3243: cancelling today leaves the plan Cancelling on its End Date (today), which still counts.
+    const { rows } = await db.query<{ status: string }>('SELECT status FROM plan_snapshots WHERE id = ?', [um]);
+    expect(rows[0].status).toBe('active_cancel_at_period_end');
+    expect(await plansBadge(m)).toBe(1);
   });
 
   it('counts a plan once while a Draft Product Set links the same snapshot', async () => {
