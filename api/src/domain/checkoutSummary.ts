@@ -34,6 +34,9 @@ export interface ChargeLineLike {
   prepaid_cadence?: { interval: number; unit: string } | null;
   /** #2970 — the prorated stretch and the full prepaid periods of a Membership Fee's first charge. */
   fee_split?: FeeChargeSplit | null;
+  /** #3165 stage 2 — the engine's proration of a partial first period (days charged of the period's days). */
+  prorated_days?: number | null;
+  period_days?: number | null;
 }
 
 /**
@@ -53,7 +56,24 @@ export function chargeLineView(l: any): ChargeLineLike {
     prepaid_periods: l.prepaid_periods ?? null,
     prepaid_cadence: l.prepaid_cadence ?? null,
     fee_split: l.fee_split ?? null,
+    prorated_days: l.prorated_days != null ? Number(l.prorated_days) : null,
+    period_days: l.period_days != null ? Number(l.period_days) : null,
   };
+}
+
+/**
+ * #3165 stage 2 — the proration a line's first charge applied, as the Initial Payment states it
+ * beside the item ("Prorated: 9 of 30 days"): the engine's own `prorated_days` / `period_days`,
+ * and only for a genuinely partial period. A Membership Fee whose first charge is split
+ * (`fee_split`, #2970) already states its prorated stretch, so it gets none here.
+ */
+export function lineProration(l: Pick<ChargeLineLike, 'prorated_days' | 'period_days' | 'fee_split'>):
+  { days: number; period_days: number } | null {
+  if (l.fee_split) return null;
+  const days = l.prorated_days != null ? Number(l.prorated_days) : null;
+  const period = l.period_days != null ? Number(l.period_days) : null;
+  if (days == null || period == null || !(days > 0) || !(period > 0) || days >= period) return null;
+  return { days, period_days: period };
 }
 
 export interface InitialPaymentLine {
@@ -86,6 +106,8 @@ export interface InitialPaymentLine {
    * unless the line has a prorated stretch.
    */
   fee_split: FeeChargeSplit | null;
+  /** #3165 stage 2 — the partial first period this line's charge was prorated to (`lineProration()`). */
+  proration: { days: number; period_days: number } | null;
 }
 
 export interface InitialPaymentTaxRow {
@@ -151,6 +173,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       prepaid_periods: l.prepaid_periods != null && l.prepaid_periods > 0 ? Number(l.prepaid_periods) : null,
       prepaid_cadence: l.prepaid_periods != null && l.prepaid_periods > 0 ? l.prepaid_cadence ?? null : null,
       fee_split: l.fee_split ?? null,
+      proration: lineProration(l),
     };
   });
   const taxRows = [...taxes.values()]

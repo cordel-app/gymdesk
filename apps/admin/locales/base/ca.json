@@ -724,6 +724,7 @@
     "checkout_discount_direct": "descompte",
     "checkout_line_no_charge": "Sense càrrec",
     "checkout_split_prorated": "Període prorratejat {start} – {end}: {days} de {period} dies · {amount}",
+    "checkout_line_prorated": "Prorratejat: {days} de {period} dies",
     "checkout_split_prepaid": "Períodes complets prepagats ({periods}) {start} – {end}, a part del període prorratejat · {amount}",
     "checkout_recurring": "Recurrents",
     "checkout_one_off_products": "Pagament únic",
