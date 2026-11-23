@@ -39,6 +39,7 @@ export const MEMBER_TAB_IDS = [
   'training_plan',
   'progress',
   'payments',
+  'purchases',
 ] as const;
 
 export type MemberTabId = (typeof MEMBER_TAB_IDS)[number];
@@ -60,7 +61,8 @@ export type MemberSectionKey =
   | 'section_personal_goals'
   | 'section_training_plans'
   | 'section_progress'
-  | 'section_payments';
+  | 'section_payments'
+  | 'section_purchases';
 
 export interface MemberTab {
   id: MemberTabId;
@@ -111,6 +113,8 @@ export const MEMBER_TABS: readonly MemberTab[] = [
   { id: 'progress', labelKey: 'tab_progress', sections: ['section_progress'] },
   // #2099 — the member's actual billing events and their payment transactions.
   { id: 'payments', labelKey: 'tab_payments', sections: ['section_payments'] },
+  // #3273 — the Member's purchases (#3251's carts), beside Payments and behind the same read access.
+  { id: 'purchases', labelKey: 'tab_purchases', sections: ['section_purchases'] },
 ] as const;
 
 /** The tab a Member opens on, and the one an unusable `?tab=` falls back to. */

@@ -786,7 +786,7 @@ export default function MembersPage() {
                 the card is a workspace rather than one very long column. */}
             <div style={tabStripWrapStyle}>
               <Tabs
-                tabs={MEMBER_TABS.filter((tb) => tb.id !== 'payments' || canReadPayments)}
+                tabs={MEMBER_TABS.filter((tb) => (tb.id !== 'payments' && tb.id !== 'purchases') || canReadPayments)}
                 active={activeTab}
                 onChange={(tab) => selectTab(m.id, tab)}
                 counts={tabCounts[m.id]}

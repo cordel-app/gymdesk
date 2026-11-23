@@ -1,0 +1,33 @@
+// #3273 — which attempt of a purchase's Billing Event the Purchases tab reads, and its status.
+import { describe, expect, it } from 'vitest';
+import { purchasePayment, type PurchaseAttempt } from '../domain/purchasePayment';
+
+const a = (id: number, status: string, created: string, extra: Partial<PurchaseAttempt> = {}): PurchaseAttempt => ({
+  id, status, provider_status: null, method: 'cash', payment_method_name: `M${id}`, payment_method_code: null,
+  created_at: created, completed_at: status === 'completed' ? created : null, ...extra,
+});
+
+describe('purchasePayment (#3273)', () => {
+  it('reports nothing for an event with no attempt', () => {
+    expect(purchasePayment([])).toMatchObject({ attempt_id: null, payment_status: null, paid_at: null, attempt_count: 0 });
+  });
+
+  it('shows the latest attempt, with no payment date, when none succeeded', () => {
+    const p = purchasePayment([a(1, 'failed', '2026-11-01T10:00:00Z'), a(2, 'expired', '2026-11-02T10:00:00Z')]);
+    expect(p).toMatchObject({ attempt_id: 2, payment_method_name: 'M2', payment_status: 'expired', paid_at: null, attempt_count: 2 });
+  });
+
+  it('prefers the provider\'s normalized status over the row status', () => {
+    const p = purchasePayment([a(1, 'pending', '2026-11-01T10:00:00Z', { provider_status: 'PENDING_PROCESSING' })]);
+    expect(p.payment_status).toBe('pending');
+  });
+
+  it('reads a partial refund of the successful attempt as partially refunded', () => {
+    const p = purchasePayment([a(1, 'completed', '2026-11-01T10:00:00Z')], 'partial');
+    expect(p).toMatchObject({ payment_status: 'partially_refunded', paid_at: '2026-11-01T10:00:00.000Z' });
+  });
+
+  it('does not apply a refund state to an attempt that never succeeded', () => {
+    expect(purchasePayment([a(1, 'failed', '2026-11-01T10:00:00Z')], 'full').payment_status).toBe('failed');
+  });
+});
