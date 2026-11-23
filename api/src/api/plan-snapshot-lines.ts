@@ -52,7 +52,7 @@ export async function planSnapshotOfAssignment(
   if (userMembershipId != null) {
     const { rows } = await exec.query<{ id: number }>(
       `SELECT s.id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-        WHERE s.gym_id = ? AND psj.product_set_id = ? AND s.assignment_id = ? AND psj.entitlement_only = 0
+        WHERE s.gym_id = ? AND psj.product_set_id = ? AND s.anchor_plan_snapshot_id = ? AND psj.entitlement_only = 0
         ORDER BY psj.id LIMIT 1`, [gymId, productSetId, userMembershipId]);
     if (rows[0]) return Number(rows[0].id);
   }

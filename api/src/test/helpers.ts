@@ -148,7 +148,7 @@ async function latestLinkedSet(umId: number): Promise<number | null> {
 async function relinkTestSet(setId: number, umId: number): Promise<void> {
   await db.query(
     `UPDATE product_sets SET plan_assignment_id = (SELECT a.id FROM plan_snapshots a
-                                                    WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.assignment_id = a.id)
+                                                    WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.anchor_plan_snapshot_id = a.id)
       WHERE id = ?`, [umId, setId]);
 }
 
@@ -197,11 +197,11 @@ export async function deleteUnlinkedPlanSnapshots(): Promise<void> {
   const { rows } = await db.query<{ id: number }>(
     `SELECT s.id FROM plan_snapshots s
       WHERE NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = s.id)
-        AND NOT EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.assignment_id = s.id AND o.id <> s.id)`);
+        AND NOT EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.anchor_plan_snapshot_id = s.id AND o.id <> s.id)`);
   if (rows.length === 0) return;
   const marks = rows.map(() => '?').join(',');
   const ids = rows.map((r) => Number(r.id));
-  await db.query(`UPDATE plan_snapshots SET assignment_id = NULL WHERE id IN (${marks}) AND assignment_id = id`, ids);
+  await db.query(`UPDATE plan_snapshots SET anchor_plan_snapshot_id = NULL WHERE id IN (${marks}) AND anchor_plan_snapshot_id = id`, ids);
   await db.query(`DELETE FROM plan_snapshots WHERE id IN (${marks})`, ids);
 }
 
@@ -222,9 +222,9 @@ async function syncFixtureSnapshot(setId: number): Promise<void> {
   // placeholder status; the hand-written row is the assignment, so its lifecycle is mirrored onto the
   // anchor (as the fixture door does) and the sync re-run to carry it.
   const { rows: named } = await db.query<{ um: number }>(
-    `SELECT DISTINCT s.assignment_id AS um FROM product_set_plan_snapshots j
+    `SELECT DISTINCT s.anchor_plan_snapshot_id AS um FROM product_set_plan_snapshots j
        JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-      WHERE j.product_set_id = ? AND s.assignment_id IS NOT NULL`, [setId]);
+      WHERE j.product_set_id = ? AND s.anchor_plan_snapshot_id IS NOT NULL`, [setId]);
   if (named.length > 0) {
     await mirrorLegacyLifecycle(db, named.map((r) => Number(r.um)));
     await syncPlanSnapshot(db as any, rows[0].gym_id, setId);
@@ -358,7 +358,7 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       const { rows } = await db.query<{ id: number }>(
         `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
           WHERE j.product_set_id = ?
-          ORDER BY (s.assignment_id = ?) DESC, j.id LIMIT 1`, [versionId, Number(resolved.user_membership_id)]);
+          ORDER BY (s.anchor_plan_snapshot_id = ?) DESC, j.id LIMIT 1`, [versionId, Number(resolved.user_membership_id)]);
       if (!rows[0]) {
         // A version with no plan snapshot yet (a bare fixture): give it the assignment's own.
         const { rows: um } = await db.query<any>(
@@ -511,12 +511,12 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
       // snapshot, so the snapshot the set carries states the row's, not the set's placeholder date.
       await db.query(
         `UPDATE plan_snapshots s SET s.status = ?, s.starts_at = ?, s.ends_at = ?
-          WHERE s.assignment_id = ?`, [row.status, row.starts_at, row.ends_at ?? null, result.insertId]);
+          WHERE s.anchor_plan_snapshot_id = ?`, [row.status, row.starts_at, row.ends_at ?? null, result.insertId]);
       // #2125 M6b-51d-7b: and so does its anchor, the assignment's record (the set's activation above
       // wrote the lifecycle a real activation would, not the hand-written row's).
       await db.query(
         `UPDATE plan_snapshots a SET a.assignment_status = ?, a.assignment_ends_at = ?, a.assignment_closed_at = ?
-          WHERE a.assignment_id = ? AND a.assignment_id = a.id`,
+          WHERE a.anchor_plan_snapshot_id = ? AND a.anchor_plan_snapshot_id = a.id`,
         [row.status, row.ends_at ?? null, row.closed_at ?? null, result.insertId]);
     }
     // #2125 M6b-51c-5: the sync reads an assignment's lifecycle off its anchor, which a hand-written
@@ -687,8 +687,8 @@ export async function cleanupTestGyms() {
   await db.query(
     `DELETE ps FROM product_sets ps JOIN members m ON m.id = ps.owner_member_id WHERE m.gym_id IN (${marks})`, ids);
   // #2125 M5b: a plan snapshot names no set, so none went with them; `member_id` is RESTRICT.
-  // M6b-1: `assignment_id` is a RESTRICT self FK, so the identities go before the rows.
-  await db.query(`UPDATE plan_snapshots SET assignment_id = NULL WHERE gym_id IN (${marks})`, ids);
+  // M6b-1: `anchor_plan_snapshot_id` is a RESTRICT self FK, so the identities go before the rows.
+  await db.query(`UPDATE plan_snapshots SET anchor_plan_snapshot_id = NULL WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM plan_snapshots WHERE gym_id IN (${marks})`, ids);
   // #1118 / #2126 stage 5d-6: a purchase's frozen Promotions point at `promotions` with ON DELETE
   // RESTRICT, and MySQL does not order the cascades one gym DELETE produces, so they go first.
@@ -1099,15 +1099,15 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
   const um = rows[0];
   if (!um) throw new Error(`snapshotTestAssignment: no assignment ${umId}`);
   const { rows: existing } = await db.query<{ id: number }>(
-    'SELECT id FROM plan_snapshots WHERE assignment_id = ? ORDER BY id LIMIT 1', [umId]);
+    'SELECT id FROM plan_snapshots WHERE anchor_plan_snapshot_id = ? ORDER BY id LIMIT 1', [umId]);
   if (existing[0]) {
     await db.query(
       `UPDATE plan_snapshots SET status = ?, starts_at = ?, ends_at = ?, closed_at = ?, created_at = ?
-        WHERE assignment_id = ?`,
+        WHERE anchor_plan_snapshot_id = ?`,
       [um.status, um.starts_at, um.ends_at, um.closed_at, um.created_at, umId]);
     await db.query(
       `UPDATE plan_snapshots SET assignment_status = ?, assignment_ends_at = ?, assignment_closed_at = ?
-        WHERE assignment_id = ? AND assignment_id = id`, [um.status, um.ends_at, um.closed_at, umId]);
+        WHERE anchor_plan_snapshot_id = ? AND anchor_plan_snapshot_id = id`, [um.status, um.ends_at, um.closed_at, umId]);
     return Number(existing[0].id);
   }
   const { insertId: setId } = await db.query(
@@ -1151,11 +1151,11 @@ export async function createTestFamily(gymId: string, ownerId: number, otherIds:
  */
 export async function linkTestSetToAssignment(productSetId: number, umId: number): Promise<void> {
   const { rows: named } = await db.query<{ id: number }>(
-    'SELECT id FROM plan_snapshots WHERE assignment_id = ? LIMIT 1', [umId]);
+    'SELECT id FROM plan_snapshots WHERE anchor_plan_snapshot_id = ? LIMIT 1', [umId]);
   if (!named[0]) {
     const { rows: own } = await db.query<{ id: number }>(
       `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-        WHERE j.product_set_id = ? AND s.assignment_id IS NULL ORDER BY j.id LIMIT 1`, [productSetId]);
+        WHERE j.product_set_id = ? AND s.anchor_plan_snapshot_id IS NULL ORDER BY j.id LIMIT 1`, [productSetId]);
     if (own[0]) {
       // The snapshot becomes the hand-written assignment's anchor, carrying the row's lifecycle
       // (#2125 M6b-51d-7b: the anchor is the only record the writer reads and writes).
@@ -1167,7 +1167,7 @@ export async function linkTestSetToAssignment(productSetId: number, umId: number
   }
   await db.query(
     `UPDATE product_sets SET plan_assignment_id = (SELECT a.id FROM plan_snapshots a
-                                   WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.assignment_id = a.id)
+                                   WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.anchor_plan_snapshot_id = a.id)
       WHERE id = ?`, [umId, productSetId]);
 }
 

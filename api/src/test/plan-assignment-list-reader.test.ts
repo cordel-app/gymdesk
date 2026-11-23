@@ -93,11 +93,11 @@ describe('LIST_SELECT reads plan_snapshots', () => {
     const { um: replaced } = await activePlan();
     const { um } = await activePlan();
     const { rows } = await db.query<any>(
-      'SELECT assignment_id FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? LIMIT 1',
+      'SELECT anchor_plan_snapshot_id FROM plan_snapshots WHERE gym_id = ? AND anchor_plan_snapshot_id = ? LIMIT 1',
       [gymId, replaced]);
     await db.query(
-      'UPDATE plan_snapshots SET replaces_assignment_id = ? WHERE gym_id = ? AND assignment_id = ?',
-      [rows[0].assignment_id, gymId, um]);
+      'UPDATE plan_snapshots SET replaces_assignment_id = ? WHERE gym_id = ? AND anchor_plan_snapshot_id = ?',
+      [rows[0].anchor_plan_snapshot_id, gymId, um]);
     const one = await auth(request.get(`/user-memberships/${um}`));
     expect(Number(one.body.replaces_user_membership_id)).toBe(replaced);
   });

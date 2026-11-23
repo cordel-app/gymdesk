@@ -63,7 +63,7 @@ describe('to_be_canceled in the database and the readers (#3007 stage 2a)', () =
     const memberId = await createMember();
     const id = await createAssignment(memberId, PENDING_CANCELLATION_STATUS);
     const { rows: um } = await db.query(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [id]);
-    const { rows: snap } = await db.query('SELECT status FROM plan_snapshots WHERE assignment_id = ?', [id]);
+    const { rows: snap } = await db.query('SELECT status FROM plan_snapshots WHERE anchor_plan_snapshot_id = ?', [id]);
     expect(um[0].status).toBe(PENDING_CANCELLATION_STATUS);
     expect(snap[0].status).toBe(PENDING_CANCELLATION_STATUS);
   });
@@ -87,7 +87,7 @@ describe('to_be_canceled in the database and the readers (#3007 stage 2a)', () =
     const memberId = await createMember();
     const running = await createAssignment(memberId, PENDING_CANCELLATION_STATUS);
     const { rows } = await db.query(
-      `SELECT COUNT(*) AS n FROM plan_snapshots pa WHERE pa.assignment_id = ?
+      `SELECT COUNT(*) AS n FROM plan_snapshots pa WHERE pa.anchor_plan_snapshot_id = ?
          AND pa.status IN ('active', 'to_be_canceled')`, [running]);
     expect(Number(rows[0].n)).toBe(1);
 

@@ -85,20 +85,20 @@ afterAll(async () => {
 /** The anchor `stampAssignmentIds()` gives an assignment: the lowest snapshot id naming it. */
 async function anchorOf(um: number): Promise<number> {
   const { rows } = await db.query<any>(
-    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?', [gymId, um]);
+    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND anchor_plan_snapshot_id = ?', [gymId, um]);
   return Number(rows[0].a);
 }
 async function keysOf(setId: number) {
   const { rows } = await legacyChildQuery(
-    'SELECT promotion_id, user_membership_id, assignment_id FROM user_membership_promotions WHERE product_set_id = ? ORDER BY id', [setId]);
+    'SELECT promotion_id, user_membership_id, anchor_plan_snapshot_id FROM user_membership_promotions WHERE product_set_id = ? ORDER BY id', [setId]);
   return rows.map((r: any) => ({
     promotion: Number(r.promotion_id),
     um: r.user_membership_id == null ? null : Number(r.user_membership_id),
-    assignment: r.assignment_id == null ? null : Number(r.assignment_id),
+    assignment: r.anchor_plan_snapshot_id == null ? null : Number(r.anchor_plan_snapshot_id),
   }));
 }
 
-describe('#2125 M6b-33: an application carries its assignment_id beside user_membership_id', () => {
+describe('#2125 M6b-33: an application carries its anchor_plan_snapshot_id beside user_membership_id', () => {
   it('a committed Plan Promotion application takes its assignment\'s anchor', async () => {
     const owner = await member();
     const promo = await promotion();
@@ -106,8 +106,8 @@ describe('#2125 M6b-33: an application carries its assignment_id beside user_mem
     const um = await assignmentOf(setId);
     const anchor = await anchorOf(um);
     expect(await keysOf(setId)).toEqual([{ promotion: promo, um, assignment: anchor }]);
-    const { rows } = await db.query<any>('SELECT assignment_id FROM plan_snapshots WHERE id = ?', [anchor]);
-    expect(Number(rows[0].assignment_id)).toBe(anchor);
+    const { rows } = await db.query<any>('SELECT anchor_plan_snapshot_id FROM plan_snapshots WHERE id = ?', [anchor]);
+    expect(Number(rows[0].anchor_plan_snapshot_id)).toBe(anchor);
   });
 
   it('a successor that leaves the plan unchanged reads the same application, on the assignment\'s snapshot', async () => {

@@ -25,10 +25,10 @@ const SAMPLE_SIZE = 20;
 
 /**
  * #2125 N2 — an assignment's anchor is the snapshot whose id is the assignment's id and that anchors
- * itself; `assignment_id` names it on every snapshot of the assignment. The derived table of every
+ * itself; `anchor_plan_snapshot_id` names it on every snapshot of the assignment. The derived table of every
  * anchor, used by the checks below.
  */
-const ANCHORS_SQL = `(SELECT gym_id, id AS anchor_id FROM plan_snapshots WHERE assignment_id = id)`;
+const ANCHORS_SQL = `(SELECT gym_id, id AS anchor_id FROM plan_snapshots WHERE anchor_plan_snapshot_id = id)`;
 
 /** `a` and `b` name the two sides; NULL-safe, and a DATETIME is compared to the second. */
 const differs = (a: string, b: string) => `NOT (${a} <=> ${b})`;
@@ -42,15 +42,15 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
     checks.push({ name, description, count: rows.length, sample: rows.slice(0, SAMPLE_SIZE) });
   };
 
-  // #2125 N2: `assignment_id` is the only record of a snapshot's assignment (migration 462 dropped
+  // #2125 N2: `anchor_plan_snapshot_id` is the only record of a snapshot's assignment (migration 462 dropped
   // its legacy twin column); NULL means the snapshot names none (an unconfirmed Draft's), so the
   // one identity check left is that a named snapshot points at a snapshot that anchors itself.
   await add('assignment_identity_split',
-    'A plan snapshot whose assignment_id names a snapshot that is not an anchor.',
-    `SELECT s.id AS plan_snapshot_id, s.gym_id, s.assignment_id
+    'A plan snapshot whose anchor_plan_snapshot_id names a snapshot that is not an anchor.',
+    `SELECT s.id AS plan_snapshot_id, s.gym_id, s.anchor_plan_snapshot_id
        FROM plan_snapshots s
-       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = s.gym_id AND a.anchor_id = s.assignment_id
-      WHERE s.assignment_id IS NOT NULL AND a.anchor_id IS NULL${scope('s')} ORDER BY s.id`);
+       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = s.gym_id AND a.anchor_id = s.anchor_plan_snapshot_id
+      WHERE s.anchor_plan_snapshot_id IS NOT NULL AND a.anchor_id IS NULL${scope('s')} ORDER BY s.id`);
 
   // #2125 M6b-51d-7b: the lifecycle, start date, purchase time, replacement and modifier are no longer
   // written on `user_memberships` (the anchor and the plan snapshots are their only record), so the
@@ -76,8 +76,8 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
             a.anchor_id AS expected_plan_assignment_id
        FROM product_sets ps
        JOIN plan_snapshots cur ON cur.id = ps.plan_assignment_id
-       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = cur.gym_id AND a.anchor_id = cur.assignment_id
-      WHERE cur.assignment_id IS NULL OR NOT (ps.plan_assignment_id <=> a.anchor_id)${scope('ps')}
+       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = cur.gym_id AND a.anchor_id = cur.anchor_plan_snapshot_id
+      WHERE cur.anchor_plan_snapshot_id IS NULL OR NOT (ps.plan_assignment_id <=> a.anchor_id)${scope('ps')}
       ORDER BY ps.id`);
 
   return { clean: checks.every((c) => c.count === 0), checks };

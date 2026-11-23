@@ -217,7 +217,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
          (gym_id, member_id, membership_plan_id, status, starts_at, ends_at,
           schedule_id, membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
           auto_renew, recurring_billing_interval, recurring_billing_unit, origin, membership_fee_scope,
-          member_limit, assignment_id, created_by)
+          member_limit, anchor_plan_snapshot_id, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,

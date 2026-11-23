@@ -1,5 +1,5 @@
 // #2125 N2 (migration 462): `plan_snapshots`' legacy assignment id column is dropped and
-// `assignment_id` is the only record of a snapshot's assignment. A query naming the old column
+// `anchor_plan_snapshot_id` is the only record of a snapshot's assignment. A query naming the old column
 // would fail only at runtime, so this fails the build instead.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';

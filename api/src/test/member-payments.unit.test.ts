@@ -26,6 +26,8 @@ import {
   billingEventLineAmount,
   billingEventLineRegularAmount,
   showsRegularPrice,
+  paymentDocumentFileName,
+  paymentDocumentRows,
 } from '../../../apps/member/src/lib/memberPayments';
 import { DEFAULT_GYM_FORMAT } from '../../../apps/member/src/lib/gymFormat';
 
@@ -133,7 +135,8 @@ describe('#2937 — each Past Billing Event is its own row', () => {
     expect(billingEventHasDetails(event({}))).toBe(false);
     expect(billingEventHasDetails(event({ lines: [stored()] }))).toBe(true);
     expect(billingEventHasDetails(event({ payment_method_name: 'Card' }))).toBe(true);
-    expect(billingEventHasDetails(event({ documents: [{ kind: 'receipt', id: 1, number: 'R-1' }] }))).toBe(true);
+    // #3242 — documents are listed in their own section, so they no longer open a row.
+    expect(billingEventHasDetails(event({ documents: [{ kind: 'receipt', id: 1, number: 'R-1' }] }))).toBe(false);
     expect(billingEventHasDetails(event({ notes: 'Manual' }))).toBe(true);
   });
 
@@ -212,5 +215,40 @@ describe('formatting', () => {
 
   it('falls back to the stored day for an unparseable value', () => {
     expect(formatPaymentDate('not-a-date', DEFAULT_GYM_FORMAT)).toBe('not-a-date');
+  });
+});
+
+describe('#3242 — the Documents section', () => {
+  it('lists every document of every payment once, newest first, dated by its own issue time', () => {
+    const rows = paymentDocumentRows([
+      event({
+        id: 1, created_at: '2026-09-15T08:00:00.000Z',
+        documents: [
+          { kind: 'receipt', id: 1, number: '2026-0001', issued_at: '2026-09-15T08:01:00.000Z' },
+          { kind: 'refund_receipt', id: 4, number: 'R-2026-0001', issued_at: '2026-10-20T10:00:00.000Z' },
+        ],
+      }),
+      event({
+        id: 2, created_at: '2026-10-01T08:00:00.000Z',
+        documents: [{ kind: 'simplified_invoice', id: 7, number: 'S-2026-0002', issued_at: null }],
+      }),
+      event({ id: 3, documents: [] }),
+    ]);
+    expect(rows.map((r) => [r.key, r.date])).toEqual([
+      ['refund_receipt:4', '2026-10-20T10:00:00.000Z'],
+      // No recorded issue time: the payment's own date, never an invented one.
+      ['simplified_invoice:7', '2026-10-01T08:00:00.000Z'],
+      ['receipt:1', '2026-09-15T08:01:00.000Z'],
+    ]);
+  });
+
+  it('lists nothing when no payment has a stored document', () => {
+    expect(paymentDocumentRows([event({}), event({ id: 2, documents: [] })])).toEqual([]);
+  });
+
+  it('names the saved file after the document kind and number', () => {
+    expect(paymentDocumentFileName({ kind: 'simplified_invoice', id: 7, number: 'S-2026/0002' }))
+      .toBe('simplified-invoice-S-2026-0002.pdf');
+    expect(paymentDocumentFileName({ kind: 'receipt', id: 9, number: '' })).toBe('receipt-9.pdf');
   });
 });

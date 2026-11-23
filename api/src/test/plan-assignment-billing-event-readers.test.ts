@@ -81,7 +81,7 @@ afterAll(async () => {
 
 /** Close the assignment on its snapshots only, leaving the legacy row active. */
 const closeOnSnapshots = (um: number) =>
-  db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE assignment_id = ?", [um]);
+  db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE anchor_plan_snapshot_id = ?", [um]);
 
 
 /** A plan with a 4-week cadence, to tell apart from `plan()`'s monthly one. */
@@ -109,7 +109,7 @@ const listRow = async (memberId: number, id: number) =>
     .find((r: any) => r.id === id);
 /** Move the assignment onto another plan, or close it, on its snapshots only. */
 const snapshotPlan = (um: number, planId: number) =>
-  db.query('UPDATE plan_snapshots SET membership_plan_id = ? WHERE assignment_id = ?', [planId, um]);
+  db.query('UPDATE plan_snapshots SET membership_plan_id = ? WHERE anchor_plan_snapshot_id = ?', [planId, um]);
 
 describe('the Billing Events list and detail read the assignment from plan_snapshots', () => {
   it('is closed to an unauthenticated caller', async () => {

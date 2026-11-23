@@ -15,6 +15,8 @@ export interface MemberPaymentDocument {
   /** The billing event's id for a receipt, the invoice's or refund receipt's own id otherwise. */
   id: number;
   number: string;
+  /** #3242 — when the document was issued (ISO 8601, UTC); null when not recorded. */
+  issued_at: string | null;
 }
 
 export interface InvoiceCandidate {
@@ -26,11 +28,13 @@ export interface InvoiceCandidate {
   has_document: boolean;
   /** Whether a complete invoice was issued in place of this one (#2648 stage 7). */
   replaced: boolean;
+  issued_at: string | null;
 }
 
 export interface RefundReceiptCandidate {
   id: number;
   receipt_number: string;
+  issued_at: string | null;
 }
 
 /**
@@ -52,19 +56,21 @@ function latestInvoice(invoices: InvoiceCandidate[], type: 'simplified' | 'full'
 export function memberPaymentDocuments(input: {
   billingEventId: number;
   receiptNumber: string | null;
+  /** #3242 — `billing_events.receipt_issued_at`, when the receipt number was issued. */
+  receiptIssuedAt?: string | null;
   invoices: InvoiceCandidate[];
   refundReceipts: RefundReceiptCandidate[];
 }): MemberPaymentDocument[] {
   const out: MemberPaymentDocument[] = [];
   if (input.receiptNumber) {
-    out.push({ kind: 'receipt', id: input.billingEventId, number: input.receiptNumber });
+    out.push({ kind: 'receipt', id: input.billingEventId, number: input.receiptNumber, issued_at: input.receiptIssuedAt ?? null });
   }
   const simplified = latestInvoice(input.invoices, 'simplified');
-  if (simplified) out.push({ kind: 'simplified_invoice', id: simplified.id, number: simplified.fiscal_number! });
+  if (simplified) out.push({ kind: 'simplified_invoice', id: simplified.id, number: simplified.fiscal_number!, issued_at: simplified.issued_at });
   const full = latestInvoice(input.invoices, 'full');
-  if (full) out.push({ kind: 'full_invoice', id: full.id, number: full.fiscal_number! });
+  if (full) out.push({ kind: 'full_invoice', id: full.id, number: full.fiscal_number!, issued_at: full.issued_at });
   let refund: RefundReceiptCandidate | null = null;
   for (const r of input.refundReceipts) if (!refund || r.id > refund.id) refund = r;
-  if (refund) out.push({ kind: 'refund_receipt', id: refund.id, number: refund.receipt_number });
+  if (refund) out.push({ kind: 'refund_receipt', id: refund.id, number: refund.receipt_number, issued_at: refund.issued_at });
   return out;
 }

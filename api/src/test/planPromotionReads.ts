@@ -10,8 +10,8 @@
 const APPLICATION_COLUMNS = (setExpr: string) => `
   pps.id, pps.gym_id, pps.promotion_id, pps.applied_by, pps.applied_at, pps.consumed_at, pps.status,
   pps.snapshot, pps.revoked_at, ${setExpr} AS product_set_id, pps.modified_at, pps.modified_by,
-  pps.created_by, s.assignment_id AS user_membership_id, NULL AS recurrent_snapshot_id,
-  pps.snapshot_confirmed_at, s.assignment_id`;
+  pps.created_by, s.anchor_plan_snapshot_id AS user_membership_id, NULL AS recurrent_snapshot_id,
+  pps.snapshot_confirmed_at, s.anchor_plan_snapshot_id`;
 
 const PRODUCT_APPLICATIONS = `
   SELECT COALESCE(pp.source_application_id, pp.id), pp.gym_id, pp.promotion_id, pp.applied_by, pp.applied_at,

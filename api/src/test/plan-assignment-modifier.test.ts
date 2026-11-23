@@ -41,7 +41,7 @@ async function activeSnapshot(um: number) {
     `SELECT s.id, s.modified_at, s.modified_by FROM plan_snapshots s
        JOIN product_set_plan_snapshots j ON j.plan_snapshot_id = s.id
        JOIN product_sets ps ON ps.id = j.product_set_id AND ps.status = 'active'
-      WHERE s.gym_id = ? AND s.assignment_id = ? ORDER BY s.id DESC LIMIT 1`, [gymId, um]);
+      WHERE s.gym_id = ? AND s.anchor_plan_snapshot_id = ? ORDER BY s.id DESC LIMIT 1`, [gymId, um]);
   return rows[0];
 }
 

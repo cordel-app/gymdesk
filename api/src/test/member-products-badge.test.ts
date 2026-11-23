@@ -74,7 +74,7 @@ async function pay(paymentRequestId: number) {
 const badge = async (m: number, gym = gymId): Promise<number> =>
   Number(must(await auth(request.get(`/members/${m}/tab-counts`), gym), 'tab counts').body.products_services);
 const setPlanStatus = (um: number, status: string) =>
-  db.query('UPDATE plan_snapshots SET status = ?, assignment_status = IF(assignment_id = id, ?, assignment_status) WHERE assignment_id = ?',
+  db.query('UPDATE plan_snapshots SET status = ?, assignment_status = IF(anchor_plan_snapshot_id = id, ?, assignment_status) WHERE anchor_plan_snapshot_id = ?',
     [status, status, um]);
 
 beforeAll(async () => {

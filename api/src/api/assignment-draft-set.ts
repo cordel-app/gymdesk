@@ -60,7 +60,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   // product lines), is left alone and still answers `in_flight`.
   const { rows: stale } = await tx.query<{ id: number; user_membership_id: number }>(
     // #2125 M6b-51d-3: read and locked on the stale Draft's anchor (the set's link), not `user_memberships`.
-    `SELECT ps.id, a.assignment_id AS user_membership_id
+    `SELECT ps.id, a.anchor_plan_snapshot_id AS user_membership_id
        FROM product_sets ps JOIN plan_snapshots a ON a.id = ps.plan_assignment_id AND a.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
         AND a.assignment_status = 'in_cart' FOR UPDATE`,
