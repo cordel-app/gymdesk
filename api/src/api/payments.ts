@@ -21,6 +21,9 @@ import { applyPromotionToMembership } from './membership-promotions';
 import { billingInvoicesRouter, generatePaidRepresentations } from './billing-invoices';
 import { receiptPdf } from './receipt-documents';
 import {
+  MEMBER_PURCHASES_DEFAULT_LIMIT, MEMBER_PURCHASES_MAX_LIMIT, loadMemberPurchases, memberExistsInGym,
+} from './member-purchases';
+import {
   BILLING_EVENT_STATUSES,
   deriveBillingEventStatus,
   isAwaitingAction,
@@ -266,6 +269,28 @@ paymentsRouter.get('/member/:memberId', async (req, res) => {
     [gymId, memberId],
   );
   res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+});
+
+// ── Purchases of a Member (#3273) ─────────────────────────────────────────────
+// The Member card's Purchases tab: one row per `purchases.id` the Member owns or benefits from,
+// read-only, behind the same PAYMENTS read access and flag as the Payments tab.
+paymentsRouter.get('/purchases', async (req, res, next) => {
+  const { gymId, role } = getTenantContext(req);
+  // A staff view: PAYMENTS is `R_OWN` for a member, and this route names any member of the gym.
+  if (role === 'member') return res.status(403).json({ error: 'Forbidden' });
+  const q = parseQuery(req, res, z.object({
+    member_id: z.coerce.number().int().positive(),
+    limit: z.coerce.number().int().min(1).max(MEMBER_PURCHASES_MAX_LIMIT).default(MEMBER_PURCHASES_DEFAULT_LIMIT),
+    offset: z.coerce.number().int().min(0).default(0),
+  }));
+  if (!q) return;
+  try {
+    if (!(await memberExistsInGym(gymId, q.member_id))) return res.status(404).json({ error: 'Member not found' });
+    const { items, total } = await loadMemberPurchases(gymId, q.member_id, q.limit, q.offset);
+    res.json({ items, total, limit: q.limit, offset: q.offset });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── Billing Events (admin view) ───────────────────────────────────────────────
