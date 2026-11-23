@@ -43,11 +43,12 @@ export const entitlingAssignmentSql = (alias = 'pa'): string =>
 /**
  * Predicate: the assignment whose snapshot is `alias` covers a Member (one `?`: the member id).
  * Coverage is the snapshot's own `plan_snapshot_beneficiaries` (#2125 stage 21); the payer is not
- * a beneficiary unless the plan says so (stage 22).
+ * a beneficiary unless the plan says so (stage 22). `memberExpr` defaults to a `?`; a correlated
+ * reader passes a column (#3281's enrollment status).
  */
-export const assignmentCoversMemberSql = (alias = 'pa'): string =>
+export const assignmentCoversMemberSql = (alias = 'pa', memberExpr = '?'): string =>
   `EXISTS (SELECT 1 FROM plan_snapshot_beneficiaries pab
-            WHERE pab.plan_snapshot_id = ${alias}.id AND pab.gym_id = ${alias}.gym_id AND pab.member_id = ?)`;
+            WHERE pab.plan_snapshot_id = ${alias}.id AND pab.gym_id = ${alias}.gym_id AND pab.member_id = ${memberExpr})`;
 
 /**
  * #2125 M6b-10 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
