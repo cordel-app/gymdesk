@@ -125,6 +125,8 @@ export interface MemberPaymentDocument {
   kind: MemberPaymentDocumentKind;
   id: number;
   number: string;
+  /** #3242 — when the document was issued (ISO 8601, UTC); null when not recorded. */
+  issued_at?: string | null;
 }
 
 /** The API path a document is downloaded from; the server re-checks ownership. */
@@ -139,6 +141,50 @@ export function paymentDocumentPath(doc: MemberPaymentDocument): string {
 /** The locale key naming a document kind. */
 export function paymentDocumentLabelKey(kind: MemberPaymentDocumentKind): string {
   return `membership.document_${kind}`;
+}
+
+/** #3242 — one row of the Payments tab's **Documents** section. */
+export interface PaymentDocumentRow {
+  /** Stable across renders: the kind and the document's own id. */
+  key: string;
+  document: MemberPaymentDocument;
+  /** The day the row is dated by: the document's own issue time, else its event's. */
+  date: string;
+}
+
+/** A document's identity, as the download state and the React list key read it. */
+export function paymentDocumentKey(doc: MemberPaymentDocument): string {
+  return `${doc.kind}:${doc.id}`;
+}
+
+/**
+ * #3242 — every downloadable document of the member's payments, one row each,
+ * newest first. Only what the API listed is here: it offers a document only
+ * when it is stored (#2936), so a missing one never becomes a placeholder row.
+ * A document the API repeats on two events (it never does today) is listed once.
+ */
+export function paymentDocumentRows(events: MemberBillingEvent[]): PaymentDocumentRow[] {
+  const seen = new Set<string>();
+  const rows: PaymentDocumentRow[] = [];
+  for (const event of events) {
+    for (const doc of event.documents ?? []) {
+      const key = paymentDocumentKey(doc);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ key, document: doc, date: doc.issued_at || event.created_at });
+    }
+  }
+  const time = (value: string) => {
+    const t = Date.parse(value);
+    return Number.isNaN(t) ? 0 : t;
+  };
+  return rows.sort((a, b) => time(b.date) - time(a.date) || b.document.id - a.document.id);
+}
+
+/** #3242 — the file name a downloaded document is saved under, from its kind and number. */
+export function paymentDocumentFileName(doc: MemberPaymentDocument): string {
+  const number = String(doc.number ?? '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return `${doc.kind.replace(/_/g, '-')}${number ? `-${number}` : `-${doc.id}`}.pdf`;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -242,13 +288,13 @@ export function billingEventLineRegularAmount(line: MemberBillingEventLine): num
 
 /**
  * Whether a past event's row has anything to show when expanded: its lines,
- * its payment method, its documents or its notes. A row with none of them
- * carries no chevron, since opening it would show nothing.
+ * its payment method or its notes. A row with none of them carries no
+ * chevron, since opening it would show nothing. Its documents are not among
+ * them: since #3242 they are listed in the tab's own Documents section.
  */
 export function billingEventHasDetails(event: MemberBillingEvent): boolean {
   return (event.lines?.length ?? 0) > 0
     || Boolean(event.payment_method_name)
-    || (event.documents?.length ?? 0) > 0
     || Boolean(event.notes)
     || (event.event_type === 'status_changed' && Boolean(event.new_status));
 }
