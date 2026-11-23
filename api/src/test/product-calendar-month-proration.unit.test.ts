@@ -96,7 +96,7 @@ describe('unchanged denominators (#3279 regression)', () => {
     expect(rows[0].l.proration ?? null).toBeNull();
     expect(rows[0].l.actual_charge).toBe(60);
   });
-  it('a Membership Fee joining the calendar mid-month keeps the 31-day denominator', () => {
+  it('a Membership Fee joining the calendar mid-month divides by its own month too (#3280)', () => {
     const a: SimulationAssignment = {
       userMembershipId: 1, planName: 'Plan', startsAt: '2026-11-23', endsAt: null,
       membershipFeePrice: 62, recurringInterval: 1, recurringUnit: 'month',
@@ -105,6 +105,7 @@ describe('unchanged denominators (#3279 regression)', () => {
     } as SimulationAssignment;
     const r = computeAssignmentBillingEventSimulation({ assignment: a, from: a.startsAt });
     const fee = r.dates[0].lines.find((l) => l.kind === 'membership_fee')!;
-    expect(fee.proration).toEqual({ prorated_days: 8, period_days: 31 });
+    expect(fee.proration).toEqual({ prorated_days: 8, period_days: 30 });
+    expect(fee.actual_charge).toBe(16.53);
   });
 });

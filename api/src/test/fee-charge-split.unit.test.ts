@@ -31,10 +31,10 @@ describe('Membership Fee first charge split', () => {
   it('states the stretch and the full prepaid periods separately, on distinct dates', () => {
     const line = first(plan({ prepaid: 3 }));
     expect(line.fee_split).toEqual({
-      prorated: { days: 14, period_days: 31, start: '2026-11-17', end: '2026-11-30', amount: 14 },
+      prorated: { days: 14, period_days: 30, start: '2026-11-17', end: '2026-11-30', amount: 14.47 },
       prepaid: { periods: 3, start: '2026-12-01', end: '2027-02-28', amount: 93 },
     });
-    expect(line.fee_split!.prorated.amount + line.fee_split!.prepaid!.amount).toBe(line.actual_charge);
+    expect(Math.round((line.fee_split!.prorated.amount + line.fee_split!.prepaid!.amount) * 100) / 100).toBe(line.actual_charge);
   });
 
   it('has no prepaid part without a Pre-paid Duration', () => {
@@ -45,9 +45,9 @@ describe('Membership Fee first charge split', () => {
 
   it('multiplies both parts by the fee units of a per_member plan', () => {
     const line = first(plan({ prepaid: 2, units: 2 }));
-    expect(line.fee_split!.prorated.amount).toBe(28);
+    expect(line.fee_split!.prorated.amount).toBe(28.94);
     expect(line.fee_split!.prepaid!.amount).toBe(124);
-    expect(line.actual_charge).toBe(152);
+    expect(line.actual_charge).toBe(152.94);
   });
 
   it('has no split when the plan starts on a billing date', () => {
@@ -66,8 +66,8 @@ describe('Summary carries the split', () => {
       prepaid_periods: line.prepaid_periods, prepaid_cadence: line.prepaid_cadence, fee_split: line.fee_split,
     });
     const payment = initialPaymentBreakdown([row], line.actual_charge);
-    expect(payment.total).toBe(107);
-    expect(payment.lines[0].fee_split?.prorated.amount).toBe(14);
+    expect(payment.total).toBe(107.47);
+    expect(payment.lines[0].fee_split?.prorated.amount).toBe(14.47);
     expect(payment.lines[0].fee_split?.prepaid?.amount).toBe(93);
   });
 });
