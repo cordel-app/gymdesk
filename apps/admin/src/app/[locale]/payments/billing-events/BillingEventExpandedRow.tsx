@@ -52,6 +52,8 @@ interface BillingEventDetails {
   plan_name: string | null;
   /** #2940: the event's generated name; null for an event written before it. */
   name?: string | null;
+  /** #3251 stage 3: the cart (`purchases`) whose checkout wrote the event; null otherwise. */
+  purchase_id?: number | null;
   amount: string | null;
   currency: string | null;
   status: string;
@@ -256,6 +258,7 @@ export function ExpandedRow({
               <DetailField label={t('billing_events_page.det_member')}>{details.member_name ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_event_name')}>{details.name ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_plan')}>{details.plan_name ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_purchase')}>{details.purchase_id ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_amount')}>
                 {fmtAmount(details.amount)} {details.currency ?? ''}
               </DetailField>

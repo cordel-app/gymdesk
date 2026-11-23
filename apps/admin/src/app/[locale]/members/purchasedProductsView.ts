@@ -65,6 +65,8 @@ export interface PurchasedProduct {
   payment_status?: string | null;
   /** #1521 — the Billing Event the purchase's payment settles, if any. */
   billing_event_id?: number | null;
+  /** #3251 stage 3: the cart (`purchases`) the purchase or line was put in; null before carts existed. */
+  purchase_id?: number | null;
   /** #1661 — `recurring` for a line of the member's ProductSet (negative `id`). */
   source?: 'one_off' | 'recurring';
   /** #1882 — removed in the open Draft, still Active until Save & Pay. */

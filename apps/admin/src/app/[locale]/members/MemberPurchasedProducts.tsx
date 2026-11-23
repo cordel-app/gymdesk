@@ -651,6 +651,7 @@ function PurchaseFacts({
         value={payKey ? t(`purchase_payment_status_${payKey}` as any) : dash}
       />
       <CardDetailRow label={t('purchase_col_status')} value={t(`purchase_status_${item.status}` as any)} />
+      <CardDetailRow label={t('purchase_cart')} value={item.purchase_id ?? dash} />
       <CardDetailRow label={t('purchase_created_by')} value={item.created_by ?? dash} />
       <CardDetailRow
         label={t('origin_label')}

@@ -105,6 +105,8 @@ function shape(row: any) {
     previous_product_set_id: row.previous_product_set_id != null ? Number(row.previous_product_set_id) : null,
     status: String(row.status),
     membership_plan_id: row.membership_plan_id != null ? Number(row.membership_plan_id) : null,
+    /** #3251 stage 3: the cart (`purchases`) the version belongs to; null for one no checkout made. */
+    purchase_id: row.purchase_id != null ? Number(row.purchase_id) : null,
     starts_at: row.starts_at instanceof Date ? row.starts_at.toISOString().slice(0, 10) : String(row.starts_at).slice(0, 10),
     activated_at: row.activated_at ?? null,
     superseded_at: row.superseded_at ?? null,
@@ -146,7 +148,7 @@ productSetsRouter.get('/:id', async (req, res) => {
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
   const assignment = await loadProductSetSimulationAssignment(gymId, Number(set.id));
   const { rows: events } = await db.query<any>(
-    `SELECT id, event_type, amount, billing_date, period_start, period_end, is_scheduled, schedule_id
+    `SELECT id, event_type, amount, billing_date, period_start, period_end, is_scheduled, schedule_id, purchase_id
        FROM billing_events WHERE gym_id = ? AND product_set_id = ? ORDER BY billing_date, id`,
     [gymId, Number(set.id)]);
   res.json({ ...shape(set), configuration: assignment, billing_events: events });
