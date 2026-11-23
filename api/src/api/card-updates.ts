@@ -5,7 +5,7 @@ import { payerCheckoutUrl } from './checkout-url';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { payerMemberSql } from './payer-resolution';
-import { isCurrentAssignmentSnapshotSql, OWNED_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, isCurrentAssignmentSnapshotSql, OWNED_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
 import {
   CARD_UPDATE_SOURCE,
   cardRemovalBlock,
@@ -36,8 +36,8 @@ export interface CreateCardUpdateInput {
   requestLocale?: string | null;
   memberEmail: string;
   /**
-   * The assignment the row hangs off. `payment_requests.user_membership_id` is
-   * NOT NULL and the hosted page joins it for the gym and plan it renders, so a
+   * The assignment the row hangs off (`payment_requests.anchor_plan_snapshot_id`,
+   * #2125 N3a): the hosted page joins it for the gym and plan it renders, so a
    * card update names one even though the card belongs to the member rather than
    * to any one assignment — `resolveCardUpdateMembership()` picks it.
    */
@@ -130,14 +130,14 @@ export async function createCardUpdateRequest(
     );
     const { insertId: requestId } = await tx.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, created_by, source, billing_event_id)
-       VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei', ?, ?, ?, ?, ${
+       VALUES (?, ${ANCHOR_PLAN_SNAPSHOT_VALUE_SQL}, ?, '0.00', 'EUR', NULL, 'pending', 'monei', ?, ?, ?, ?, ${
          input.stampConsent ? 'UTC_TIMESTAMP()' : 'NULL'
        }, ?, '${CARD_UPDATE_SOURCE}', ?)`,
       [
-        input.gymId, input.userMembershipId, input.memberId,
+        input.gymId, input.userMembershipId, input.gymId, input.memberId,
         orderId, result.providerOrderId, pageToken, pageTokenExpires,
         input.actor, billingEventId,
       ],

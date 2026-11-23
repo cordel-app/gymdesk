@@ -245,7 +245,7 @@ export async function startCartCheckout(input: {
 
       const { insertId: paymentRequestId } = await tx.query(
         `INSERT INTO payment_requests
-           (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id,
+           (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
             consent_given_at, source, created_by)
          VALUES (?, NULL, ?, ?, ?, ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,

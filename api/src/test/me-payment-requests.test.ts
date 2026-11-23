@@ -249,7 +249,7 @@ describe('POST /me/payment-requests — a cycle that owes nothing', () => {
     expect(res.body.error).toMatch(/owes nothing/i);
 
     expect(providerCalls.createPaymentRequest).toHaveLength(0);
-    const { rows } = await db.query('SELECT id FROM payment_requests WHERE user_membership_id = ?', [umId]);
+    const { rows } = await db.query('SELECT id FROM payment_requests WHERE anchor_plan_snapshot_id = ?', [umId]);
     expect(rows).toHaveLength(0);
   });
 });

@@ -126,7 +126,7 @@ async function createFailedEvent(
   if (withTransaction) {
     await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
           billing_event_id, status, provider, provider_order, source, created_at,
           failure_code, failure_message)
        VALUES (?, ?, ?, '40.00', 'EUR', ?, ?, 'failed', 'monei', UUID(), 'billing_run',

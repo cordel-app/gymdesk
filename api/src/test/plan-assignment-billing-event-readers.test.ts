@@ -156,7 +156,7 @@ describe('GET /me/payment-requests reads the plan from plan_snapshots', () => {
     const um = await run(m, await plan());
     await db.query(
       `INSERT INTO payment_requests
-         (gym_id, member_id, user_membership_id, amount, currency, status, provider, source, attempt, method, created_at)
+         (gym_id, member_id, anchor_plan_snapshot_id, amount, currency, status, provider, source, attempt, method, created_at)
        VALUES (?, ?, ?, '10.00', 'EUR', 'completed', 'monei', 'customer', 1, 'provider', UTC_TIMESTAMP())`,
       [gymId, m, um]);
     const before = must(await asMember(request.get('/me/payment-requests'), m), 'history').body;

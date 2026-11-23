@@ -2,7 +2,7 @@ import { resolvePayerFor } from '../api/payer-resolution';
 import { recordPaymentAttempt } from '../api/payment-attempt';
 import { SYSTEM_ACTOR } from './auditActor';
 import { eventAssignmentSql } from './billingEventOwnership';
-import { assignmentOfLegacyIdSql } from './planAssignments';
+import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, assignmentOfLegacyIdSql } from './planAssignments';
 import { chargeGuard } from './chargeGuard';
 import { AttemptMethod, ManualPaymentMethod } from './paymentAttemptMethod';
 import crypto from 'crypto';
@@ -225,15 +225,15 @@ async function insertTransaction(params: {
 }): Promise<number> {
   const { insertId } = await (params.exec ?? db).query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id,
         billing_event_id, status, provider, provider_order, provider_ref,
         source, attempt, created_by, failure_code, failure_message, notes,
         method, provider_status,
         created_at, completed_at, modified_at, modified_by)
-     VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+     VALUES (?, ${ANCHOR_PLAN_SNAPSHOT_VALUE_SQL}, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
              UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)`,
     [
-      params.ev.gym_id, params.ev.user_membership_id, params.ev.member_id, params.payerMemberId ?? null,
+      params.ev.gym_id, params.ev.user_membership_id, params.ev.gym_id, params.ev.member_id, params.payerMemberId ?? null,
       params.amount.toFixed(2), params.chargeTypeId, params.ev.id,
       params.status, params.provider, params.providerOrder, params.providerRef,
       params.source, params.attempt, params.actor,

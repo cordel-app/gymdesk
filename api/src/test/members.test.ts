@@ -668,7 +668,7 @@ async function insertPaymentRequest(
 ): Promise<void> {
   await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires, initiated_by, source)
      VALUES (?, ?, ?, '10.00', 'EUR', ?,
              ?, 'monei', UUID(), UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test', 'admin')`,

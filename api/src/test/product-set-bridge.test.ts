@@ -123,14 +123,14 @@ describe('a committed assignment becomes a ProductSet version (#1325 PR 5)', () 
     expect(pay.status).toBeLessThan(300);
 
     const { rows: pr } = await db.query<any>(
-      'SELECT provider_order FROM payment_requests WHERE user_membership_id = ? ORDER BY id DESC LIMIT 1', [umId]);
+      'SELECT provider_order FROM payment_requests WHERE anchor_plan_snapshot_id = ? ORDER BY id DESC LIMIT 1', [umId]);
     let order = pr[0]?.provider_order as string | undefined;
     if (!order) {
       // Save & Pay of the assignment flow does not raise the request itself: Pay now does.
       const { rows: ct } = await db.query<any>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
       order = crypto.randomUUID();
       await db.query(
-        `INSERT INTO payment_requests (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, status,
+        `INSERT INTO payment_requests (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id, status,
            provider, provider_order, page_token, page_token_expires, source)
          VALUES (?, ?, ?, 40, 'EUR', ?, 'pending', 'monei', ?, UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'admin')`,
         [gymId, umId, memberId, ct[0].id, order]);

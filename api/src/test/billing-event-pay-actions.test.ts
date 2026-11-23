@@ -58,7 +58,7 @@ async function createFailedEvent(gym: string, eventType = 'failed_billing') {
     [gym, await ensureTestProductSet(gym, memberId, membershipId), memberId, eventType, ct[0].id, today()]);
   await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id, billing_event_id,
         status, provider, provider_order, source, created_at, failure_code, failure_message)
      VALUES (?, ?, ?, '40.00', 'EUR', ?, ?, 'failed', 'monei', UUID(), 'billing_run', UTC_TIMESTAMP(), 'E999', 'declined')`,
     [gym, membershipId, memberId, ct[0].id, billingEventId]);

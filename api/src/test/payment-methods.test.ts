@@ -458,7 +458,7 @@ describe('POST /payment-methods/replace-requests', () => {
       status: string;
       provider_ref: string | null;
     }>(
-      `SELECT gym_id, member_id, user_membership_id, source, amount, charge_type_id,
+      `SELECT gym_id, member_id, anchor_plan_snapshot_id AS user_membership_id, source, amount, charge_type_id,
               consent_given_at, created_by, page_token, status, provider_ref
          FROM payment_requests WHERE id = ?`,
       [res.body.id],
@@ -543,7 +543,7 @@ describe('POST /payment-methods/replace-requests', () => {
     expect(res.status).toBe(201);
 
     const { rows } = await db.query<{ user_membership_id: number }>(
-      'SELECT user_membership_id FROM payment_requests WHERE id = ?', [res.body.id],
+      'SELECT anchor_plan_snapshot_id AS user_membership_id FROM payment_requests WHERE id = ?', [res.body.id],
     );
     expect(rows[0].user_membership_id).toBe(activeId);
   });

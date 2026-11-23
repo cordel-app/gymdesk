@@ -303,14 +303,14 @@ export async function refundBillingEvent(
 
     const { insertId } = await tx.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id,
           billing_event_id, status, provider, provider_order, provider_ref, source, attempt,
           created_by, notes, method, transaction_type, refund_of_payment_request_id,
           created_at, completed_at, modified_at, modified_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL, 'manual', 1, ?, ?, ?, 'refund', ?,
                UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)`,
       [
-        gymId, original.user_membership_id, original.member_id, original.payer_member_id,
+        gymId, original.anchor_plan_snapshot_id, original.member_id, original.payer_member_id,
         fromCents(refund.amountCents), original.currency ?? 'EUR', original.charge_type_id,
         viaProvider ? 'pending' : 'completed', viaProvider ? (original.provider ?? 'monei') : 'manual',
         actor, `Refund (${refund.kind}) of payment #${original.id}`, ATTEMPT_METHOD[refund.method], original.id,

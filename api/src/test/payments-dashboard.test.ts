@@ -136,7 +136,7 @@ async function insertTransaction(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires,
         source, billing_event_id, created_at)
      VALUES (?, ?, ?, '49.00', 'EUR', ?, ?, 'monei', UUID(), UUID(),

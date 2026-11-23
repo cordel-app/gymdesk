@@ -8,7 +8,7 @@ import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseNutritionPlanDate, planEffectiveOnSql } from '../domain/nutritionPlanDates';
 import { resolveRequestActor } from '../domain/auditActor';
-import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL, OWNED_ASSIGNMENT_ROWS_SQL, assignmentOfLegacyIdSql, assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
+import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL, OWNED_ASSIGNMENT_ROWS_SQL, assignmentOfLegacyIdSql, assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
 import { promotionHolderSql } from './plan-snapshot-lines';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { payerCheckoutUrl } from './checkout-url';
@@ -2717,13 +2717,13 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
       // page token, but it is a verification and not a payment — it must not
       // appear in the member's payment history, and the return page's "has
       // anything completed?" poll must not read one as a paid fee.
-      `SELECT pr.id, pr.user_membership_id, pr.amount, pr.currency, pr.status,
+      `SELECT pr.id, pr.anchor_plan_snapshot_id AS user_membership_id, pr.amount, pr.currency, pr.status,
               pr.provider, pr.source, pr.created_at, pr.completed_at,
               bp.recurring_billing_interval AS billing_interval,
               bp.recurring_billing_unit AS billing_unit
        FROM payment_requests pr
        -- #2125 M6b-16: the assignment's plan is its current plan snapshot's.
-       LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.anchor_plan_snapshot_id')}
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = pa.membership_plan_id AND bp.gym_id = pr.gym_id
        WHERE pr.gym_id = ? AND pr.member_id = ? AND pr.source <> ?
          -- #2480: a refund is not a payment the member made.
@@ -2850,11 +2850,11 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     const openEventId = openEvent?.eventId ?? null;
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source, created_by)
-       VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
-      [gymId, um.id, memberId, payer.payerMemberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
+       VALUES (?, ${ANCHOR_PLAN_SNAPSHOT_VALUE_SQL}, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
+      [gymId, um.id, gymId, memberId, payer.payerMemberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
     await recordPaymentAttempt(db, insertId);
