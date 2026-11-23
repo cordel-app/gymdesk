@@ -998,7 +998,7 @@ export default function MembershipPage() {
                   <div key={group} style={styles.planLineGroup}>
                     <h3 style={styles.planLineGroupLabel}>{t(`membership.item_group.${group}`)}</h3>
                     <ul style={styles.benefitList}>
-                      {rows.map((b, index) => {
+                      {rows.map((b) => {
                         // #3235 — quantity, frequency and beneficiary; no price, no Mandatory chip.
                         const beneficiary = b.member_name ?? (beneficiaryNames.length > 0 ? beneficiaryNames.join(', ') : null);
                         const meta = [
@@ -1008,7 +1008,7 @@ export default function MembershipPage() {
                         ].filter(Boolean).join(' · ');
                         return (
                           <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`}
-                            style={index === 0 ? styles.planLine : { ...styles.planLine, ...rowDividerStyle }}>
+                            style={styles.planLine}>
                             {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
                             {b.image_thumbnail_url && (
                               <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
@@ -2439,13 +2439,14 @@ const styles: Record<string, React.CSSProperties> = {
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
-  // #2892 — My Plans' expanded lines: hairlines between rows, no card per item.
+  // #2892 — My Plans' expanded lines: no card per item. #3292 — spacing, not
+  // hairlines, separates the items; the Product's name is the line's bold lead.
   planLines: { marginTop: 12 },
-  planLineGroup: { marginBottom: 10 },
+  planLineGroup: { marginBottom: 14 },
   planLineGroupLabel: { margin: '0 0 4px', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: memberTheme.textMuted },
-  planLine: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' },
+  planLine: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', marginBottom: 6 },
   planLineText: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
-  planLineName: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 13, color: memberTheme.text, overflowWrap: 'anywhere' },
+  planLineName: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 13, fontWeight: 700, color: memberTheme.text, overflowWrap: 'anywhere' },
   planLineMeta: { fontSize: 12, color: memberTheme.textMuted },
   viewPaymentRow: { display: 'flex', justifyContent: 'flex-end', marginBottom: 8 },
   benefitThumb: { width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', background: 'none', borderRadius: 8, overflow: 'hidden', display: 'block' },
