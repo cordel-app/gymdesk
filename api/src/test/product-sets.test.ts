@@ -130,11 +130,11 @@ describe('ProductSet versioning (#1325)', () => {
     // snapshot (a plan-less Draft has none) is linked to the set as the writers link it.
     await db.query(
       `INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id)
-       SELECT ?, id FROM plan_snapshots WHERE source_user_membership_id = ?`, [draft.productSet.id, umId]);
+       SELECT ?, id FROM plan_snapshots WHERE assignment_id = ?`, [draft.productSet.id, umId]);
     await db.query(
       `DELETE ps FROM product_sets ps JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id
          JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-        WHERE ps.status = 'superseded' AND s.source_user_membership_id = ?`, [umId]);
+        WHERE ps.status = 'superseded' AND s.assignment_id = ?`, [umId]);
     const out = await db.transaction((tx) => cancelInFlight(tx, gymId, draft.productSet.id));
     expect(out.kind).toBe('cancelled');
     const { rows } = await db.query(`SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);

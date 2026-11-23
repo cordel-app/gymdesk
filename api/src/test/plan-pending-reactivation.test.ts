@@ -43,7 +43,7 @@ async function cancellingPlan(): Promise<{ memberId: number; umId: number }> {
 
 const snap = async (umId: number) => (await db.query<any>(
   `SELECT status, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at, DATE_FORMAT(previous_end_date, '%Y-%m-%d') AS previous_end_date,
-          closed_at FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1`,
+          closed_at FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id DESC LIMIT 1`,
   [gymId, umId])).rows[0];
 const legacy = async (umId: number) => (await db.query<any>(
   `SELECT status, DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at, closed_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId])).rows[0];
@@ -98,7 +98,7 @@ describe('mark / discard (#3114)', () => {
     expect((await authed(request.post(`/user-memberships/${umId}/unmark-reactivate`))).status).toBe(200);
     expect((await snap(umId)).status).toBe('active_cancel_at_period_end');
     expect((await authed(request.post(`/user-memberships/${umId}/unmark-reactivate`))).status).toBe(409);
-    await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, umId]);
+    await db.query(`UPDATE plan_snapshots SET status = 'cancelled' WHERE gym_id = ? AND assignment_id = ?`, [gymId, umId]);
     await testAssignmentWrite(`UPDATE user_memberships SET status = 'cancelled' WHERE id = ?`, [umId]);
     expect((await authed(request.post(`/user-memberships/${umId}/mark-reactivate`))).status).toBe(409);
   });

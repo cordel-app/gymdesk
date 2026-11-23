@@ -85,7 +85,7 @@ describe('GET /me/membership reads the plan awaiting payment from plan_snapshots
     const m = await member();
     const planId = await plan();
     const um = await run(m, planId);
-    await db.query("UPDATE plan_snapshots SET status = 'pending_payment' WHERE source_user_membership_id = ?", [um]);
+    await db.query("UPDATE plan_snapshots SET status = 'pending_payment' WHERE assignment_id = ?", [um]);
 
     const body = await membership(m);
     expect(body.pending_membership).toMatchObject({ id: um, billing_interval: 1, billing_unit: 'month' });
@@ -114,7 +114,7 @@ describe('the Billing Simulation reads its assignments from plan_snapshots', () 
 
     const closed = await member();
     const closedUm = await run(closed, await plan());
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [closedUm]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE assignment_id = ?", [closedUm]);
     expect((await simulation(closed)).available).toBe(false);
   });
 

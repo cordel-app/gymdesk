@@ -9,7 +9,7 @@
  * record of the assignment, so the change has to land on a snapshot, and Oscar's rule says which:
  *
  *   1. the snapshot is shared, so a new one is created for the Product Set being changed;
- *   2. it is the same logical assignment (same `assignment_id`, same `source_user_membership_id`);
+ *   2. it is the same logical assignment (same `assignment_id`, same `assignment_id`);
  *   3. the previous snapshot and the Product Sets that link it are left exactly as they are;
  *   4. the copy reuses the very same Promotion snapshot records (`promotions_plan_snapshot_id`,
  *      migration 420): none is created or copied;
@@ -63,7 +63,7 @@ const CLOSED_SQL = CLOSED_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(',');
  * `writeAssignmentLifecycle()` (#2125 M6b-51c-5; until then this read `user_memberships`).
  */
 const ASSIGNMENT_OF_SNAPSHOT = `JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.assignment_id = asg.id
-                                     AND asg.source_user_membership_id = s.source_user_membership_id`;
+                                     AND asg.assignment_id = s.assignment_id`;
 
 /** The status a snapshot of an Active set, linked by `psj`, holds for its assignment `asg`. */
 const WANTED_STATUS = `IF(asg.assignment_status IN (${MOVED_ON_SQL}) OR (psj.entitlement_only = 1 AND asg.assignment_status = 'superseded'), asg.assignment_status, 'active')`;
@@ -177,7 +177,7 @@ const UNSTATED_CLOSED_FROM = `
   JOIN plan_snapshots s ON s.gym_id = ps.gym_id AND s.member_id = ps.owner_member_id AND s.assignment_id = s.id
   ${ASSIGNMENT_OF_SNAPSHOT} AND asg.assignment_status IN (${CLOSED_SQL})
   JOIN plan_snapshots cur ON cur.gym_id = s.gym_id AND cur.id = ${currentAssignmentSnapshotSql('s.id', 's.gym_id')}
-                         AND cur.source_user_membership_id = asg.source_user_membership_id
+                         AND cur.assignment_id = asg.assignment_id
  WHERE ps.status = 'active' AND NOT (cur.status <=> asg.assignment_status)`;
 
 /**

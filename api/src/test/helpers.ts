@@ -1,4 +1,5 @@
 import supertest from 'supertest';
+import { anchorHandAssignment } from './handAnchor';
 import { legacyProductInsert } from './legacyProductFixture';
 import { app } from '../app';
 import { db } from '../infra/db';
@@ -146,8 +147,8 @@ async function latestLinkedSet(umId: number): Promise<number | null> {
  */
 async function relinkTestSet(setId: number, umId: number): Promise<void> {
   await db.query(
-    `UPDATE product_sets SET plan_assignment_id = (SELECT MIN(a.id) FROM plan_snapshots a
-                                                    WHERE a.gym_id = product_sets.gym_id AND a.source_user_membership_id = ?)
+    `UPDATE product_sets SET plan_assignment_id = (SELECT a.id FROM plan_snapshots a
+                                                    WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.assignment_id = a.id)
       WHERE id = ?`, [umId, setId]);
 }
 
@@ -170,13 +171,14 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
   if (!holder[0]) return;
   const cols = ASSIGNMENT_CONFIG_COLUMNS.join(', ');
   const scols = ASSIGNMENT_CONFIG_COLUMNS.map((c) => `s.${c}`).join(', ');
-  const { insertId: adopted } = await db.query(
+  const { insertId: inserted } = await db.query(
     `INSERT INTO plan_snapshots
-       (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id, ${cols})
+       (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, ${cols})
      SELECT s.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at,
-            ?, ${scols}
-       FROM plan_snapshots s JOIN product_sets ps ON ps.id = ? WHERE s.id = ?`, [umId, setId, holder[0].id]);
-  await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, adopted]);
+            ${scols}
+       FROM plan_snapshots s JOIN product_sets ps ON ps.id = ? WHERE s.id = ?`, [setId, holder[0].id]);
+  await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, inserted]);
+  await anchorHandAssignment(Number(inserted), umId);
   // The Active version is the assignment's now: a holder only existed to carry
   // what the fixture wrote before one did. M5b: its snapshots go by reference.
   await db.query(
@@ -220,9 +222,9 @@ async function syncFixtureSnapshot(setId: number): Promise<void> {
   // placeholder status; the hand-written row is the assignment, so its lifecycle is mirrored onto the
   // anchor (as the fixture door does) and the sync re-run to carry it.
   const { rows: named } = await db.query<{ um: number }>(
-    `SELECT DISTINCT s.source_user_membership_id AS um FROM product_set_plan_snapshots j
+    `SELECT DISTINCT s.assignment_id AS um FROM product_set_plan_snapshots j
        JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-      WHERE j.product_set_id = ? AND s.source_user_membership_id IS NOT NULL`, [setId]);
+      WHERE j.product_set_id = ? AND s.assignment_id IS NOT NULL`, [setId]);
   if (named.length > 0) {
     await mirrorLegacyLifecycle(db, named.map((r) => Number(r.um)));
     await syncPlanSnapshot(db as any, rows[0].gym_id, setId);
@@ -264,11 +266,11 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
   if (snapshotId == null) {
     const { insertId } = await db.query(
       `INSERT INTO plan_snapshots
-         (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, source_user_membership_id)
-       SELECT ps.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at, ?
-         FROM product_sets ps WHERE ps.id = ?`, [umId, setId]);
-    snapshotId = Number(insertId);
-    await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapshotId]);
+         (gym_id, member_id, membership_plan_id, status, starts_at, ends_at)
+       SELECT ps.gym_id, ps.owner_member_id, ps.membership_plan_id, ps.status, ps.starts_at, ps.ends_at
+         FROM product_sets ps WHERE ps.id = ?`, [setId]);
+    await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, Number(insertId)]);
+    snapshotId = await anchorHandAssignment(Number(insertId), umId);
     await relinkTestSet(setId, umId);
   }
   const defined = keys.filter((k) => patch[k] !== undefined);
@@ -356,17 +358,17 @@ export async function legacyChildQuery(sqlIn: string, params: unknown[] = []): P
       const { rows } = await db.query<{ id: number }>(
         `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
           WHERE j.product_set_id = ?
-          ORDER BY (s.source_user_membership_id = ?) DESC, j.id LIMIT 1`, [versionId, Number(resolved.user_membership_id)]);
+          ORDER BY (s.assignment_id = ?) DESC, j.id LIMIT 1`, [versionId, Number(resolved.user_membership_id)]);
       if (!rows[0]) {
         // A version with no plan snapshot yet (a bare fixture): give it the assignment's own.
         const { rows: um } = await db.query<any>(
           `SELECT member_id, membership_plan_id, starts_at, status FROM ${fixtureAssignments()} fa WHERE fa.id = ?`, [Number(resolved.user_membership_id)]);
         const { insertId } = await db.query(
-          `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, origin, source_user_membership_id)
-           VALUES (?, ?, ?, 'in_cart', ?, 'admin', ?)`,
-          [resolved.gym_id, um[0].member_id, um[0].membership_plan_id, um[0].starts_at, Number(resolved.user_membership_id)]);
+          `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, origin)
+           VALUES (?, ?, ?, 'in_cart', ?, 'admin')`,
+          [resolved.gym_id, um[0].member_id, um[0].membership_plan_id, um[0].starts_at]);
         await db.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [versionId, Number(insertId)]);
-        rows.push({ id: Number(insertId) });
+        rows.push({ id: await anchorHandAssignment(Number(insertId), Number(resolved.user_membership_id)) });
       }
       last = await db.query(
         `INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, ?)`,
@@ -509,12 +511,12 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
       // snapshot, so the snapshot the set carries states the row's, not the set's placeholder date.
       await db.query(
         `UPDATE plan_snapshots s SET s.status = ?, s.starts_at = ?, s.ends_at = ?
-          WHERE s.source_user_membership_id = ?`, [row.status, row.starts_at, row.ends_at ?? null, result.insertId]);
+          WHERE s.assignment_id = ?`, [row.status, row.starts_at, row.ends_at ?? null, result.insertId]);
       // #2125 M6b-51d-7b: and so does its anchor, the assignment's record (the set's activation above
       // wrote the lifecycle a real activation would, not the hand-written row's).
       await db.query(
         `UPDATE plan_snapshots a SET a.assignment_status = ?, a.assignment_ends_at = ?, a.assignment_closed_at = ?
-          WHERE a.source_user_membership_id = ? AND a.assignment_id = a.id`,
+          WHERE a.assignment_id = ? AND a.assignment_id = a.id`,
         [row.status, row.ends_at ?? null, row.closed_at ?? null, result.insertId]);
     }
     // #2125 M6b-51c-5: the sync reads an assignment's lifecycle off its anchor, which a hand-written
@@ -1097,30 +1099,28 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
   const um = rows[0];
   if (!um) throw new Error(`snapshotTestAssignment: no assignment ${umId}`);
   const { rows: existing } = await db.query<{ id: number }>(
-    'SELECT id FROM plan_snapshots WHERE source_user_membership_id = ? ORDER BY id LIMIT 1', [umId]);
+    'SELECT id FROM plan_snapshots WHERE assignment_id = ? ORDER BY id LIMIT 1', [umId]);
   if (existing[0]) {
     await db.query(
       `UPDATE plan_snapshots SET status = ?, starts_at = ?, ends_at = ?, closed_at = ?, created_at = ?
-        WHERE source_user_membership_id = ?`,
+        WHERE assignment_id = ?`,
       [um.status, um.starts_at, um.ends_at, um.closed_at, um.created_at, umId]);
     await db.query(
       `UPDATE plan_snapshots SET assignment_status = ?, assignment_ends_at = ?, assignment_closed_at = ?
-        WHERE source_user_membership_id = ? AND assignment_id = id`, [um.status, um.ends_at, um.closed_at, umId]);
+        WHERE assignment_id = ? AND assignment_id = id`, [um.status, um.ends_at, um.closed_at, umId]);
     return Number(existing[0].id);
   }
   const { insertId: setId } = await db.query(
     `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, membership_plan_id)
      VALUES (?, ?, 'superseded', ?, ?)`,
     [um.gym_id, um.member_id, um.starts_at, um.membership_plan_id]);
-  const { insertId: snapId } = await db.query(
-    `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at,
-                                 source_user_membership_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [um.gym_id, um.member_id, um.membership_plan_id, um.status, um.starts_at, um.ends_at, um.closed_at, umId,
-     um.created_at]);
-  await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [snapId]);
+  const { insertId: inserted } = await db.query(
+    `INSERT INTO plan_snapshots (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, closed_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [um.gym_id, um.member_id, um.membership_plan_id, um.status, um.starts_at, um.ends_at, um.closed_at, um.created_at]);
   await db.query(
-    'INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, snapId]);
+    'INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, inserted]);
+  const snapId = await anchorHandAssignment(Number(inserted), umId);
   await db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [snapId, setId]);
   await mirrorLegacyLifecycle(db, [umId]);
   return Number(snapId);
@@ -1151,24 +1151,23 @@ export async function createTestFamily(gymId: string, ownerId: number, otherIds:
  */
 export async function linkTestSetToAssignment(productSetId: number, umId: number): Promise<void> {
   const { rows: named } = await db.query<{ id: number }>(
-    'SELECT id FROM plan_snapshots WHERE source_user_membership_id = ? LIMIT 1', [umId]);
+    'SELECT id FROM plan_snapshots WHERE assignment_id = ? LIMIT 1', [umId]);
   if (!named[0]) {
     const { rows: own } = await db.query<{ id: number }>(
       `SELECT s.id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-        WHERE j.product_set_id = ? AND s.source_user_membership_id IS NULL ORDER BY j.id LIMIT 1`, [productSetId]);
+        WHERE j.product_set_id = ? AND s.assignment_id IS NULL ORDER BY j.id LIMIT 1`, [productSetId]);
     if (own[0]) {
       // The snapshot becomes the hand-written assignment's anchor, carrying the row's lifecycle
       // (#2125 M6b-51d-7b: the anchor is the only record the writer reads and writes).
-      await db.query('UPDATE plan_snapshots SET source_user_membership_id = ?, assignment_id = id WHERE id = ?',
-        [umId, own[0].id]);
+      await anchorHandAssignment(Number(own[0].id), umId);
       await mirrorLegacyLifecycle(db, [umId]);
     } else {
       await snapshotTestAssignment(umId);
     }
   }
   await db.query(
-    `UPDATE product_sets SET plan_assignment_id = (SELECT MIN(a.id) FROM plan_snapshots a
-                                   WHERE a.gym_id = product_sets.gym_id AND a.source_user_membership_id = ?)
+    `UPDATE product_sets SET plan_assignment_id = (SELECT a.id FROM plan_snapshots a
+                                   WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.assignment_id = a.id)
       WHERE id = ?`, [umId, productSetId]);
 }
 

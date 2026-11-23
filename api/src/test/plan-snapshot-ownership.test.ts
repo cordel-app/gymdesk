@@ -212,7 +212,7 @@ describe('discardDraftSet (#2125 M4b-0, M5b)', () => {
 describe('syncPlanSnapshot and a shared plan snapshot (#2125 M4b-1)', () => {
   const state = async (snapId: number) => {
     const { rows } = await db.query<any>(
-      `SELECT status, starts_at, ends_at, closed_at, member_id, source_user_membership_id,
+      `SELECT status, starts_at, ends_at, closed_at, member_id, assignment_id,
               (SELECT COUNT(*) FROM plan_snapshot_beneficiaries b WHERE b.plan_snapshot_id = s.id) AS beneficiaries
          FROM plan_snapshots s WHERE id = ?`, [snapId]);
     return rows[0];
@@ -370,7 +370,7 @@ describe('activating a version that reuses the plan unchanged keeps its assignme
     (await db.query<any>(`SELECT id, status FROM ${TEST_ASSIGNMENTS} um WHERE member_id = ? AND gym_id = ? ORDER BY id`, [owner, gymId])).rows
       .map((r: any) => ({ id: Number(r.id), status: String(r.status) }));
   const snapshotState = async (snapId: number) => {
-    const { rows } = await db.query<any>('SELECT status, source_user_membership_id AS um FROM plan_snapshots WHERE id = ?', [snapId]);
+    const { rows } = await db.query<any>('SELECT status, assignment_id AS um FROM plan_snapshots WHERE id = ?', [snapId]);
     return { status: String(rows[0].status), um: rows[0].um == null ? null : Number(rows[0].um) };
   };
 

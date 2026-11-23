@@ -93,7 +93,7 @@ describe('an assignment anchor never moves', () => {
     await expect(db.transaction((tx) => nameAssignmentSnapshot(tx, gymId, a.set, other)))
       .rejects.toThrow(/anchors assignment/);
 
-    const { rows } = await db.query<any>('SELECT source_user_membership_id AS um FROM plan_snapshots WHERE id = ?', [a.snapshot]);
+    const { rows } = await db.query<any>('SELECT assignment_id AS um FROM plan_snapshots WHERE id = ?', [a.snapshot]);
     expect(Number(rows[0].um)).toBe(um);
     expect(await assignmentIdOf(a.snapshot)).toBe(a.snapshot);
   });

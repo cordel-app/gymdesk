@@ -476,14 +476,14 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
       "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active'", [memberId]);
     expect(sets).toHaveLength(1);
     const { rows: snaps } = await db.query<any>(
-      `SELECT s.membership_plan_id, ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS is_inherited, s.source_user_membership_id
+      `SELECT s.membership_plan_id, ${planSnapshotInheritedSql('s', 'j.product_set_id')} AS is_inherited, s.assignment_id
          FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
         WHERE j.product_set_id = ? ORDER BY j.id`,
       [sets[0].id]);
     expect(snaps.map((r: any) => Number(r.membership_plan_id)).sort()).toEqual([first, second].sort());
     const carried = snaps.find((r: any) => Number(r.membership_plan_id) === first);
     expect(Number(carried.is_inherited)).toBe(1);
-    expect(Number(carried.source_user_membership_id)).toBe(live);
+    expect(Number(carried.assignment_id)).toBe(live);
 
     // The superseded version's future charges were regenerated for both plans, not lost.
     const { rows: billed } = await db.query<any>(
@@ -663,9 +663,9 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(created.status).toBe(201);
     // assign-new-plan writes the target on the Draft's own snapshot, as the anchor of B.
     const { rows: anchorB } = await db.query<any>(
-      'SELECT MIN(id) AS id FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, umB]);
+      'SELECT MIN(id) AS id FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?', [gymId, umB]);
     const { rows: draftSnap } = await db.query<any>(
-      'SELECT replaces_assignment_id AS r FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?',
+      'SELECT replaces_assignment_id AS r FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?',
       [gymId, created.body.id]);
     expect(draftSnap.map((r: any) => Number(r.r))).toEqual([Number(anchorB[0].id)]);
 

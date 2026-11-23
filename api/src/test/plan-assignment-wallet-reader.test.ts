@@ -71,7 +71,7 @@ async function currentSnapshot(um: number) {
   const { rows } = await db.query<any>(
     `SELECT s.id, s.status FROM plan_snapshots a
        JOIN plan_snapshots s ON s.id = ${currentAssignmentSnapshotSql('a.assignment_id', 'a.gym_id')}
-      WHERE a.gym_id = ? AND a.source_user_membership_id = ? LIMIT 1`, [gymId, um]);
+      WHERE a.gym_id = ? AND a.assignment_id = ? LIMIT 1`, [gymId, um]);
   return rows[0];
 }
 /** Records one attended session spent from the member's plan grant, as the attendance writer does. */

@@ -86,7 +86,7 @@ describe('the read-only sub-routes find the assignment through its plan snapshot
     const stranger = await member();
     const um = await running(planId, owner);
     const { rows } = await db.query<{ id: number }>(
-      `SELECT id FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
+      `SELECT id FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
     await db.query(`INSERT IGNORE INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id) VALUES (?, ?, ?)`,
       [gymId, rows[0].id, partner]);
     await moveLegacyRowAway(um);

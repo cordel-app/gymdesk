@@ -38,8 +38,8 @@ const assign = async (m: number) => auth(request.post('/user-memberships'))
   .send({ member_id: m, membership_plan_id: await plan(), starts_at: new Date().toISOString().slice(0, 10) });
 async function snapshotsOf(id: number) {
   const { rows } = await db.query<any>(
-    `SELECT id, assignment_id, source_user_membership_id AS um FROM plan_snapshots
-      WHERE gym_id = ? AND (assignment_id = ? OR source_user_membership_id = ?) ORDER BY id`, [gymId, id, id]);
+    `SELECT id, assignment_id, assignment_id AS um FROM plan_snapshots
+      WHERE gym_id = ? AND (assignment_id = ? OR assignment_id = ?) ORDER BY id`, [gymId, id, id]);
   return rows.map((r: any) => ({ id: Number(r.id), anchor: Number(r.assignment_id), um: Number(r.um) }));
 }
 
@@ -77,9 +77,9 @@ describe('an assignment id is its anchor snapshot id (#2125 N1)', () => {
     expect((await auth(request.get(`/user-memberships/${id}`))).status).toBe(404);
   });
 
-  it('the drift report finds no snapshot naming an id other than its anchor', async () => {
+  it('the drift report finds no snapshot naming a snapshot that is not an anchor', async () => {
     await assign(await member());
-    const check = (await findPlanAssignmentDrift(db, gymId)).checks.find((c) => c.name === 'assignment_id_is_not_anchor_id')!;
+    const check = (await findPlanAssignmentDrift(db, gymId)).checks.find((c) => c.name === 'assignment_identity_split')!;
     expect(check.count).toBe(0);
   });
 });

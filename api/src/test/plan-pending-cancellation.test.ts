@@ -27,7 +27,7 @@ async function runningPlan(): Promise<{ memberId: number; umId: number }> {
 }
 
 const status = async (umId: number) => (await db.query<any>(
-  'SELECT status FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id DESC LIMIT 1',
+  'SELECT status FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id DESC LIMIT 1',
   [gymId, umId])).rows[0]?.status;
 const legacy = async (umId: number) => (await db.query<any>(
   `SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId])).rows[0]?.status;
@@ -59,7 +59,7 @@ describe('mark / discard (#3007 stage 2b)', () => {
     expect((await authed(request.post(`/user-memberships/${umId}/unmark-cancel`))).status).toBe(200);
     expect(await status(umId)).toBe('active');
     expect((await authed(request.post(`/user-memberships/${umId}/unmark-cancel`))).status).toBe(409);
-    await db.query(`UPDATE plan_snapshots SET status = 'paused' WHERE gym_id = ? AND source_user_membership_id = ?`, [gymId, umId]);
+    await db.query(`UPDATE plan_snapshots SET status = 'paused' WHERE gym_id = ? AND assignment_id = ?`, [gymId, umId]);
     await testAssignmentWrite(`UPDATE user_memberships SET status = 'paused' WHERE id = ?`, [umId]);
     expect((await authed(request.post(`/user-memberships/${umId}/mark-cancel`))).status).toBe(409);
   });

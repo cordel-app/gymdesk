@@ -54,7 +54,7 @@ describe('a Product Set finds its assignment through plan_assignment_id (#2125 M
     for (const sql of [assignmentVersionId('?'), assignmentLineVersionId('?')]) {
       expect(sql).not.toMatch(/p9\.user_membership_id/);
       expect(sql).toMatch(/\.id = p9\.plan_assignment_id|= p9\.plan_assignment_id/);
-      expect(sql).toMatch(/\.source_user_membership_id = \?/);
+      expect(sql).toMatch(/\.assignment_id = \?/);
     }
   });
 });
