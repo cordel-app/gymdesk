@@ -634,6 +634,11 @@ by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
   consumes no period, and regular billing starts on the grid. A plan starting on a grid date
   is not prorated. Example: €31/month, 3 pre-paid, starting 17 Nov → €14 + €93 on 17 Nov,
   nothing on 1 Dec, 1 Jan or 1 Feb, €31 from 1 Mar.
+- **A monthly recurring Product's first stretch** (#3279) is prorated over the actual length of
+  the month its own start date falls in (`prorate(…, { calendarMonth: true })`, passed only by
+  `buildServiceStream()`): started 23 Nov 2026 → 8 of 30 days, 21 Feb 2026 → 8 of 28, 21 Feb
+  2024 → 9 of 29. The plan's own fee above and a Product the plan includes keep the fixed 31;
+  weekly (7), 4-weekly (28) and yearly (never prorated) Products are unchanged.
 - **A recurring Product added beside a plan that starts later** (#3167) starts today, on its own:
   the line's `starts_at` is today and the plan keeps its start date. Its first stretch (prorated
   to the next date of the schedule it joins, a whole year for a yearly Product) is due now, so the

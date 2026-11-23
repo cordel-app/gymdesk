@@ -37,7 +37,7 @@ const run = (day: string) => {
 describe('promotion cycle counting for a Monthly line (#3024)', () => {
   it('joined on the 10th: November consumes cycle 1, regular price from 1 Feb', () => {
     expect(run('2026-11-10')).toEqual([
-      ['2026-11-10', 5.08], // 21/31 × 15 × 50%
+      ['2026-11-10', 5.25], // 21/30 × 15 × 50% (#3279: November has 30 days)
       ['2026-12-01', 7.5], ['2027-01-01', 7.5], ['2027-02-01', 15],
     ]);
   });
@@ -46,7 +46,7 @@ describe('promotion cycle counting for a Monthly line (#3024)', () => {
   });
   it('joined on the 15th does not: three full cycles, regular price from 1 Mar', () => {
     const r = run('2026-11-15');
-    expect(r[0]).toEqual(['2026-11-15', 3.87]); // 16/31 × 15 × 50%
+    expect(r[0]).toEqual(['2026-11-15', 4]); // 16/30 × 15 × 50% (#3279)
     expect(r.slice(1, 6)).toEqual([
       ['2026-12-01', 7.5], ['2027-01-01', 7.5], ['2027-02-01', 7.5], ['2027-03-01', 15],
     ]);

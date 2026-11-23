@@ -1448,7 +1448,9 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
   const joinDate = service.alignTo && scheduleCadence && !isYearlyCadence(scheduleCadence)
     ? nextAlignedDate(rewindAnchor(service.alignTo, start, scheduleCadence), start, base.advance)
     : null;
-  const proration = joinDate && scheduleCadence ? prorate(1, scheduleCadence, start, joinDate) : null;
+  // #3279 — a monthly Product's first stretch is prorated over its own start month's actual length.
+  const proration = joinDate && scheduleCadence
+    ? prorate(1, scheduleCadence, start, joinDate, { calendarMonth: true }) : null;
   const cadence: Cadence = joinDate
     ? { ...base, advance: (d) => (d === start ? joinDate : base.advance(d)) }
     : base;

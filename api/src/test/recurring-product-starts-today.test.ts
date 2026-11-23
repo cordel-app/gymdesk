@@ -22,7 +22,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, productProratedToNextFirst as proratedToNextFirst } from './helpers';
 
 const SECRET = 'test-3167-webhook';
 let gymId: string;

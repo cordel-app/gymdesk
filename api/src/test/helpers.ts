@@ -1100,6 +1100,19 @@ export function proratedToNextFirst(monthly: number, today: Date = new Date()): 
 }
 
 /**
+ * #3279 — what a monthly recurring **Product** starting today owes first: the stretch to the next
+ * 1st over the actual length of this month (a Membership Fee keeps `proratedToNextFirst()`'s 31).
+ */
+export function productProratedToNextFirst(monthly: number, today: Date = new Date()): number {
+  if (today.getUTCDate() === 1) return monthly;
+  const start = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const next = Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1);
+  const monthDays = new Date(next - 86_400_000).getUTCDate();
+  const days = Math.round((next - start) / 86_400_000);
+  return Math.round(monthly * days / monthDays * 100) / 100;
+}
+
+/**
  * #2125 M6b-13: gives an assignment a fixture wrote by hand (`INSERT INTO user_memberships`, no
  * Product Set) the plan snapshot the closed-status readers (the New Member rule, the enrollment
  * status) read it from: one superseded Product Set linking one snapshot carrying the row's owner,

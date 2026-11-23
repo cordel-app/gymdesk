@@ -26,7 +26,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { ageTestCart, cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment, legacyChildQuery } from './helpers';
+import { ageTestCart, cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, productProratedToNextFirst as proratedToNextFirst, snapshotTestAssignment, legacyChildQuery } from './helpers';
 import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
 import { legacyProductInsert } from './legacyProductFixture';
 import { testAssignmentWrite } from './assignmentFixture';
