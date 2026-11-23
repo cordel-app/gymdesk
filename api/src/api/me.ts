@@ -3147,7 +3147,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // Payments dashboard calls failed.
     const { rows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.name, be.previous_status, be.new_status,
-              be.amount, be.notes, be.created_at, be.receipt_number, be.cancelled_at,
+              be.amount, be.notes, be.created_at, be.receipt_number, be.receipt_issued_at, be.cancelled_at,
               ct.code AS charge_type_code,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
@@ -3164,7 +3164,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // #2937 — each event's own priced lines (#1474), for the expanded row.
     // Read-only, tenant-scoped, one query for the page; nothing re-prices them.
     const linesByEvent = await loadMemberBillingEventLines(gymId, rows.map((r: any) => Number(r.id)));
-    const items = rows.map(({ latest_tx_status, ...row }) => ({
+    const items = rows.map(({ latest_tx_status, receipt_issued_at: _receiptIssuedAt, ...row }) => ({
       ...row,
       status: deriveBillingEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null),
       documents: documents.get(Number(row.id)) ?? [],

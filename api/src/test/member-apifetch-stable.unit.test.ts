@@ -13,11 +13,12 @@ const src = readFileSync(join(__dirname, '..', '..', '..', 'apps', 'member', 'sr
   .replace(/\/\*[\s\S]*?\*\//g, '');
 
 describe('useApiClient referential stability', () => {
-  it('memoizes apiFetch and uploadFetch on the tenant headers only', () => {
+  it('memoizes apiFetch, uploadFetch and downloadFetch on the tenant headers only', () => {
     expect(src).toMatch(/const apiFetch = useCallback\(/);
     expect(src).toMatch(/const uploadFetch = useCallback\(/);
+    expect(src).toMatch(/const downloadFetch = useCallback\(/);
     const deps = src.match(/\}, \[([^\]]*)\]\);/g) ?? [];
-    expect(deps).toHaveLength(2);
+    expect(deps).toHaveLength(3);
     for (const d of deps) {
       expect(d).toContain('gymId');
       expect(d).toContain('activeCenterId');
