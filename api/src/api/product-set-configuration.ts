@@ -1,5 +1,5 @@
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { writeEventLines } from './billing-line-origins';
+import { writeEventLines } from './billing-event-lines-writer';
 import { commitPendingCancellations } from './plan-pending-cancellation';
 import { commitPendingReactivations } from './plan-pending-reactivation';
 import { stampAssignmentId } from './plan-assignment-sync';
@@ -666,7 +666,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
       [gymId, setRows[0].owner_member_id, name, amount, productSetId, scheduleId,
         event.date, event.periodEnd, event.date, actor],
     );
-    await writeEventLines(tx, gymId, Number(insertId), productSetId, lines);
+    await writeEventLines(tx, gymId, Number(insertId), lines);
     created += 1;
   }
   return { created };
