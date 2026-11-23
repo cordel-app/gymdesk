@@ -1,13 +1,12 @@
 import { stampAssignmentId } from './plan-assignment-sync';
 import { stampSnapshotPurchase } from './purchases';
 import type { Tx } from '../infra/db';
-import { ensureSchedule } from './product-set-configuration';
+import { allocatePlanSchedule } from './product-set-configuration';
 import { copyProductTargetApplications } from './product-set-bridge';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { copyRecurringLines } from './recurring-line-writer';
-import { allocateSchedule, type ExistingSchedule } from '../domain/scheduleAllocation';
+import type { CadenceUnit } from '../domain/scheduleAllocation';
 import { toPlanDurationRepeats } from '../domain/planDuration';
-import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { toPlanMemberLimit } from '../domain/planBeneficiaries';
 import { promotionHolderSql } from './plan-snapshot-lines';
 import { toMembershipFeeScope } from '../domain/membershipFeeScope';
@@ -18,12 +17,10 @@ import { toMembershipFeeScope } from '../domain/membershipFeeScope';
  * plan rides onto each successor version as an inherited copy (`copyPlanSnapshotToVersion()`).
  *
  * Oscar's rule for its calendar: everything with the same periodicity bills on the same day, so the
- * plan joins the schedule of its cadence (`allocateSchedule()`); the engine prorates the stretch
+ * plan joins the schedule of its cadence when that schedule is on the cadence's calendar
+ * (`allocatePlanSchedule()`, #3280); the engine prorates the stretch
  * from its start to that schedule's next date (`SimulationAssignment.alignTo`, stage 8).
  */
-
-const toDateOnly = (v: unknown): string =>
-  v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 
 const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id))";
 const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
@@ -53,26 +50,15 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
   const plan = planRows[0];
   if (!plan) throw new Error('Membership Plan not found');
 
-  // The plan joins the schedule of its periodicity (one rule, `allocateSchedule()`).
+  // #3280: the plan bills on its own cadence's calendar (`allocatePlanSchedule()`): it joins a
+  // schedule of its periodicity only when that schedule is on that calendar, never another plan's
+  // off-calendar one.
   let scheduleId: number | null = null;
   if (plan.recurring_billing_interval != null && plan.recurring_billing_unit != null) {
-    const cadence = { interval: Number(plan.recurring_billing_interval), unit: plan.recurring_billing_unit } as const;
-    const { rows: sched } = await tx.query<any>(
-      `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
-         FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id`, [productSetId]);
-    const schedules: ExistingSchedule[] = sched.map((r: any) => ({
-      id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
-      cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
-    }));
-    const allocation = allocateSchedule({ cadence, purchaseDate: input.startsAt, schedules });
-    if (allocation.kind === 'new') {
-      scheduleId = await ensureSchedule(tx, {
-        gymId, productSetId, key: allocation.key, anchorDate: allocation.anchorDate,
-        cadenceInterval: cadence.interval, cadenceUnit: cadence.unit,
-      });
-    } else {
-      scheduleId = schedules.find((s) => s.key === allocation.key)?.id ?? null;
-    }
+    scheduleId = await allocatePlanSchedule(tx, {
+      gymId, productSetId, startsAt: input.startsAt,
+      cadence: { interval: Number(plan.recurring_billing_interval), unit: plan.recurring_billing_unit as CadenceUnit },
+    });
   }
 
   const { insertId } = await tx.query(

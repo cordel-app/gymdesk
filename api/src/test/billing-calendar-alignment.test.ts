@@ -26,7 +26,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { advanceBillingDate } from '../domain/billingDate';
-import { daysBetween } from '../domain/proration';
+import { daysBetween, daysInMonthOf } from '../domain/proration';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
 const SECRET = 'test-2964-webhook';
@@ -104,7 +104,8 @@ function nextCalendarDate(from: string, grid: 'month' | 'four_week'): string {
 
 /** What the first stretch costs: price ÷ period days × days to the next calendar date. */
 function firstStretch(price: number, grid: 'month' | 'four_week'): { days: number; amount: number } {
-  const period = grid === 'month' ? 31 : 28;
+  // #3280: a monthly stretch divides by the actual length of its own month.
+  const period = grid === 'month' ? daysInMonthOf(TODAY) : 28;
   const days = Math.min(daysBetween(TODAY, nextCalendarDate(TODAY, grid)), period);
   return { days, amount: Math.round((price / period) * days * 100) / 100 };
 }
@@ -202,7 +203,7 @@ describe('the Assigned Plan card forecasts the calendar-aligned charge Save & Pa
       const [first, second] = forecast.body.dates;
       expect(first.date).toBe(TODAY);
       expect(first.lines[0].actual_charge).toBe(amount);
-      expect(first.lines[0].proration).toEqual({ prorated_days: days, period_days: price });
+      expect(first.lines[0].proration).toEqual({ prorated_days: days, period_days: grid === 'month' ? daysInMonthOf(TODAY) : 28 });
       expect(second.date).toBe(next);
       expect(second.lines[0].actual_charge).toBe(price);
 
@@ -242,7 +243,7 @@ describe('a Product a plan includes bills on the plan schedule (#2964)', () => {
     const initial = sim.body.dates.find((d: any) => d.kind === 'initial_payment');
     const lockerLine = initial.lines.find((l: any) => l.label === 'Included Locker');
     expect(lockerLine.actual_charge).toBe(amount);
-    expect(lockerLine.proration).toEqual({ prorated_days: days, period_days: 31 });
+    expect(lockerLine.proration).toEqual({ prorated_days: days, period_days: daysInMonthOf(TODAY) });
 
     const sp = await auth(request.post(`${mset(setId)}/save-and-pay`)).send({});
     expect((await pay(sp.body.payment_request_id)).status).toBe(200);
