@@ -11,10 +11,15 @@
  * Pure.
  */
 
-import type { FeeChargeSplit, SimulationBenefit, SimulationLine } from './billingSimulation';
+import type { FeeChargeSplit, LineSource, SimulationBenefit, SimulationLine } from './billingSimulation';
 
 export interface BillingEventLineRow {
   kind: 'membership_fee' | 'product' | 'service' | 'adjustment';
+  /**
+   * #3254 — `plan` or `product`, the origin the engine's builder gave the line (`lineSource()`);
+   * `null` where neither applies. Persisted once with the line and never rewritten.
+   */
+  source: LineSource | null;
   product_id: number | null;
   item_name: string;
   item_type: string | null;
@@ -55,6 +60,14 @@ export interface LineContext {
   amountExclTax?: number | null;
 }
 
+/**
+ * #3254 — the one place a line's source is read: the builder's own tag, and a Membership Fee is the
+ * Plan's by definition. A line no builder tagged is `null` rather than a guess.
+ */
+export function lineSource(line: Pick<SimulationLine, 'kind' | 'source'>): LineSource | null {
+  return line.source ?? (line.kind === 'membership_fee' ? 'plan' : null);
+}
+
 export function lineFromSimulation(line: SimulationLine, ctx: LineContext = {}): BillingEventLineRow {
   const benefit = primaryBenefit(line.benefits);
   // #1867 stage 4: the engine's own prorated line carries its evidence.
@@ -65,6 +78,7 @@ export function lineFromSimulation(line: SimulationLine, ctx: LineContext = {}):
   }
   return {
     kind: line.kind,
+    source: lineSource(line),
     product_id: line.product_id,
     item_name: line.label,
     item_type: null,

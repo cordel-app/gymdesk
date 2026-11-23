@@ -744,7 +744,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
     // notes; a transaction-level reason (#640) is more specific, so it wins.
     // #1474: the event's priced components, read-only and tenant-scoped.
     const { rows: lineRows } = await db.query<any>(
-      `SELECT id, kind, item_name, quantity, regular_unit_price, promotion_name, amount
+      `SELECT id, kind, source, item_name, quantity, regular_unit_price, promotion_name, amount
          FROM billing_event_lines
         WHERE billing_event_id = ? AND gym_id = ?
         ORDER BY id`,
@@ -794,6 +794,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       lines: lineRows.map((l: any) => ({
         id: l.id,
         kind: l.kind,
+        source: l.source ?? null,
         item_name: l.item_name,
         quantity: l.quantity,
         unit_amount: l.regular_unit_price,

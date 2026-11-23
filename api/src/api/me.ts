@@ -3100,13 +3100,13 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
 // filtered again here, so no other member's or gym's line can be returned.
 async function loadMemberBillingEventLines(gymId: number | string, eventIds: number[]) {
   const byEvent = new Map<number, Array<{
-    id: number; kind: string; item_name: string; quantity: number;
+    id: number; kind: string; source: string | null; item_name: string; quantity: number;
     regular_unit_price: string | null; promotion_name: string | null; amount: string;
   }>>();
   const ids = eventIds.filter((id) => Number.isInteger(id) && id > 0);
   if (ids.length === 0) return byEvent;
   const { rows } = await db.query<any>(
-    `SELECT id, billing_event_id, kind, item_name, quantity, regular_unit_price, promotion_name, amount
+    `SELECT id, billing_event_id, kind, source, item_name, quantity, regular_unit_price, promotion_name, amount
        FROM billing_event_lines
       WHERE gym_id = ? AND billing_event_id IN (${ids.map(() => '?').join(', ')})
       ORDER BY billing_event_id, id`,
@@ -3116,7 +3116,7 @@ async function loadMemberBillingEventLines(gymId: number | string, eventIds: num
     const key = Number(r.billing_event_id);
     const list = byEvent.get(key) ?? [];
     list.push({
-      id: Number(r.id), kind: r.kind, item_name: r.item_name, quantity: Number(r.quantity),
+      id: Number(r.id), kind: r.kind, source: r.source ?? null, item_name: r.item_name, quantity: Number(r.quantity),
       regular_unit_price: r.regular_unit_price, promotion_name: r.promotion_name, amount: r.amount,
     });
     byEvent.set(key, list);
