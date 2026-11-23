@@ -1,4 +1,5 @@
 import { primaryPlanSnapshotId, promotionHolderSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { purchaseOfSet, stampEventPurchase } from './purchases';
 import { generatePaidRepresentations } from './billing-invoices';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
@@ -1368,6 +1369,8 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
            typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
         );
         paidEventId = Number(cashEventId);
+        // #3251 stage 2: the first payment is the checkout's (its set's cart, when it has one).
+        await stampEventPurchase(tx, gymId, paidEventId, await purchaseOfSet(tx, gymId, setId));
         await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
       }
       return committed;

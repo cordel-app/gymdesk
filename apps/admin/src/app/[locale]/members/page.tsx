@@ -42,6 +42,7 @@ import { validateDocumentId } from '@/lib/documentId';
 import { innerCardStyle, inlineActionsRowStyle, formControlStyle } from '@/components/formChrome';
 import { profileGridStyle, profileFieldLabelStyle, PROFILE_ROW_GAP } from './MemberProfileLayout';
 import { INVITATION_ACTION_LABEL_KEYS, initialInvitationState, invitationMenu, type InvitationActionId } from './membersAppInvitation';
+import { API_MUTATION_EVENT, affectsMemberProducts, type ApiMutationDetail } from '@/lib/apiMutations';
 
 interface Plan {
   id: number;
@@ -195,6 +196,29 @@ export default function MembersPage() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countsKey]);
+
+  // #3243 — a write that can move the Products badge (a plan, a Product Set,
+  // a purchase, a payment) re-reads the open cards' counts, so the badge follows
+  // an edit made inside the tab without a page reload.
+  const expandedRef = useRef<Iterable<number>>(expandedMemberIds);
+  expandedRef.current = expandedMemberIds;
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onMutation = (e: Event) => {
+      const detail = (e as CustomEvent<ApiMutationDetail>).detail;
+      if (!detail || !affectsMemberProducts(detail.path)) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        for (const id of expandedRef.current) {
+          apiFetch<Partial<Record<MemberTabId, number>>>(`/members/${id}/tab-counts`)
+            .then((c) => setTabCounts((prev) => ({ ...prev, [id]: c })))
+            .catch(() => { /* a badge is a courtesy */ });
+        }
+      }, 300);
+    };
+    window.addEventListener(API_MUTATION_EVENT, onMutation);
+    return () => { window.removeEventListener(API_MUTATION_EVENT, onMutation); if (timer) clearTimeout(timer); };
+  }, [apiFetch]);
 
   const showCenters = centers.length > 1;
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
