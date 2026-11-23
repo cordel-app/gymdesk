@@ -53,6 +53,7 @@ const ALLOWED_AD_HOC: Record<string, { count: number; why: string }> = {
   'lib/gymFormat.ts': { count: 1, why: 'the formatter itself' },
   'app/[locale]/payments/dashboard/page.tsx': { count: 1, why: 'locale month name of the reported period' },
   'app/[locale]/calendar/page.tsx': { count: 1, why: 'the browser zone the FullCalendar grid renders in' },
+  'lib/purchaseName.ts': { count: 1, why: "#3270: a purchase's name is its creation instant in the browser's locale and zone, by the issue's rule" },
 };
 
 describe('gym format allowlist (#1246 stage 6)', () => {
