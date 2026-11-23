@@ -157,6 +157,9 @@ export async function cancelPendingProductSet(
     `UPDATE product_sets SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(), cancelled_by = ?
       WHERE id = ? AND status = 'pending_payment'`,
     [actor, productSetId]);
+  // #3251: the cart is kept, cancelled, with its Billing Events.
+  const { purchaseOfSet, touchPurchases } = await import('./purchases');
+  await touchPurchases(tx, gymId, [await purchaseOfSet(tx, gymId, productSetId)]);
 
   if (set.user_membership_id != null) {
     // #2125 M6b-48: the assignment's owner is read off its current plan snapshot, never from

@@ -100,9 +100,12 @@ export async function deleteProductSetAndOwnPlanSnapshots(
        JOIN product_sets ps ON ps.id = j.product_set_id AND ps.gym_id = ? AND ps.status = ?
       WHERE j.product_set_id = ?`, [gymId, status, productSetId]);
   // #2746: the one-time Products in a cart go with it (their snapshot would cascade, their record would not).
-  const { rows: setRow } = await tx.query<{ id: number }>(
-    'SELECT id FROM product_sets WHERE id = ? AND gym_id = ? AND status = ? FOR UPDATE', [productSetId, gymId, status]);
+  const { rows: setRow } = await tx.query<{ id: number; purchase_id: number | null }>(
+    'SELECT id, purchase_id FROM product_sets WHERE id = ? AND gym_id = ? AND status = ? FOR UPDATE', [productSetId, gymId, status]);
   if (setRow[0]) {
+    // #3251: the set's cart follows (emptied and unconfirmed, it is deleted with it).
+    const { touchPurchases } = await import('./purchases');
+    await touchPurchases(tx, gymId, [setRow[0].purchase_id]);
     const { deleteSetPurchases } = await import('./set-purchases');
     await deleteSetPurchases(tx, gymId, productSetId, status);
   }

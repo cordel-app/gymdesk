@@ -9,12 +9,18 @@
  * is no longer written at all, and since stage 5d-6 (migration 415) both tables are dropped.
  *
  * The purchase id (`source_id`, what the routes and Promotion snapshots are keyed on) comes from
- * `product_purchase_ids` since stage 5d-3 (`allocatePurchaseId()`): a purchase's snapshot lives in one
- * of two tables, each with its own sequence, so neither can allocate an id unique across both. A
- * Promotion frozen onto a purchase takes its id from its own snapshot row since stage 5d-4.
+ * `product_line_ids` (`allocateLineId()`, `product_purchase_ids` until #3251): a purchase's snapshot
+ * lives in one of two tables, each with its own sequence, so neither can allocate an id unique across
+ * both. A Promotion frozen onto a purchase takes its id from its own snapshot row since stage 5d-4.
+ *
+ * #3251: that id identifies one line. The cart it was bought in is `purchase_id` (`purchases`,
+ * `api/purchases.ts`): a line written `in_cart` joins the owner's open cart, any other starts a
+ * checkout of its own, and every write here marks the cart for its status to follow.
  */
 import type { Tx } from '../infra/db';
 import { PURCHASE_EVENT_JUNCTIONS } from './snapshot-junction-sync';
+import { createPurchase, openCart, purchasesOfLine, touchPurchases } from './purchases';
+import { CART_ITEM_STATUS } from '../domain/purchaseStatus';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -57,16 +63,18 @@ export interface PurchaseValues {
   /** The purchase's payment request and its Billing Event; both NULL for a staff draft. */
   paymentRequestId: number | null;
   billingEventId: number | null;
+  /** #3251: the cart the line belongs to; by default the owner's open cart (`in_cart`) or a new checkout. */
+  cartId?: number | null;
 }
 
 /**
- * #2126 stage 5d-3 — hands out a new purchase id. One row per id in `product_purchase_ids`, whose
- * primary key is what makes a purchase id unique across `product_session_snapshots` and
- * `product_oneoff_snapshots`. In the caller's transaction, so a rolled-back purchase registers nothing
- * (InnoDB does not hand the id out again either).
+ * #2126 stage 5d-3 — hands out a new one-time line id. One row per id in `product_line_ids`
+ * (`product_purchase_ids` until #3251), whose primary key is what makes a line id unique across
+ * `product_session_snapshots` and `product_oneoff_snapshots`. In the caller's transaction, so a
+ * rolled-back purchase registers nothing (InnoDB does not hand the id out again either).
  */
-export async function allocatePurchaseId(tx: Conn, gymId: string): Promise<number> {
-  const { insertId } = await tx.query('INSERT INTO product_purchase_ids (gym_id) VALUES (?)', [gymId]);
+export async function allocateLineId(tx: Conn, gymId: string): Promise<number> {
+  const { insertId } = await tx.query('INSERT INTO product_line_ids (gym_id) VALUES (?)', [gymId]);
   const id = Number(insertId);
   if (!Number.isSafeInteger(id) || id < 1) throw new Error('Purchase id allocation returned no id');
   return id;
@@ -75,22 +83,26 @@ export async function allocatePurchaseId(tx: Conn, gymId: string): Promise<numbe
 /** Writes a purchase (snapshot + event link) and returns the purchase id. */
 export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<number> {
   const now = new Date();
-  const purchaseId = await allocatePurchaseId(tx, v.gymId);
+  const purchaseId = await allocateLineId(tx, v.gymId);
+  const cartId = v.cartId ?? (v.status === 'in_cart'
+    ? await openCart(tx, v.gymId, v.memberId, v.createdBy)
+    : await createPurchase(tx, v.gymId, v.memberId, CART_ITEM_STATUS.line(v.status) ?? 'pending_payment', v.createdBy));
   const table = purchaseSnapshotTable(v.productType);
   const { insertId: snapshotId } = await tx.query(
     `INSERT INTO ${table}
        (gym_id, member_id, product_id, source_id, status, product_name, product_type,
         billing_frequency, units, quantity, currency, unit_price, list_price, direct_discount_percent,
         direct_discount_amount, tax_rate_percent, origin, member_product_id, validity_days,
-        created_at, created_by, assigned_member_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        created_at, created_by, assigned_member_id, purchase_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       v.gymId, v.memberId, v.productId, purchaseId, v.status, v.productName, v.productType,
       v.billingFrequency, v.units, v.quantity ?? 1, v.currency, money(v.unitAmount ?? v.amount), money(v.listPrice), money(v.directDiscountPercent),
       money(v.directDiscountAmount), v.taxRatePercent, v.origin, purchaseId, v.validityDays,
-      now, v.createdBy, v.assignedMemberId,
+      now, v.createdBy, v.assignedMemberId, cartId,
     ],
   );
+  await touchPurchases(tx, v.gymId, [cartId]);
   if (v.billingEventId != null) {
     const j = PURCHASE_EVENT_JUNCTIONS.find((x) => x.table === table)!;
     await tx.query(
@@ -154,6 +166,8 @@ export async function insertPurchasePromotion(
  * Promotion snapshots and junction rows cascade with it.
  */
 export async function deletePurchase(tx: Conn, gymId: string, purchaseId: number, where: { memberId: number; status: string }): Promise<boolean> {
+  // #3251: the cart the line leaves; emptied and unconfirmed, it goes too (`syncPurchase()`).
+  await touchPurchases(tx, gymId, await purchasesOfLine(tx, gymId, purchaseId));
   let deleted = 0;
   for (const table of SNAPSHOT_TABLES) {
     const { rowCount } = await tx.query(
@@ -197,6 +211,7 @@ export async function updatePurchase(
   const guardSql = 'fromStatus' in guard ? 'status = ?' : 'cancelled_on IS NULL';
   const guardParams = 'fromStatus' in guard ? [guard.fromStatus] : [];
 
+  if (change.status !== undefined) await touchPurchases(tx, gymId, await purchasesOfLine(tx, gymId, purchaseId));
   let changed = 0;
   for (const table of SNAPSHOT_TABLES) {
     const { rowCount } = await tx.query(

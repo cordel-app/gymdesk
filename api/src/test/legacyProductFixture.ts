@@ -6,7 +6,7 @@
  * hands it to `legacyProductInsert()`, which writes the Product snapshot row the application's writers
  * (`purchase-writer.ts`, `recurring-line-writer.ts`) would have written, under the same id rules:
  *
- *   - a purchase takes its id from `product_purchase_ids` and is written to `product_session_snapshots`
+ *   - a purchase takes its id from `product_line_ids` and is written to `product_session_snapshots`
  *     (a Sessions package) or `product_oneoff_snapshots`, `source_id = member_product_id = id`, and is
  *     linked to the Billing Event of the `payment_request_id` it names;
  *   - a purchase Promotion is a `product_promotion_snapshots` row with `source_purchase_promotion_id = id`,
@@ -55,7 +55,7 @@ async function evaluate(conn: Conn, columnsText: string, valuesText: string, par
 const opt = (v: Record<string, any>, key: string) => (key in v ? v[key] : null);
 
 async function insertPurchase(conn: Conn, v: Record<string, any>): Promise<number> {
-  const { insertId: allocated } = await conn.query('INSERT INTO product_purchase_ids (gym_id) VALUES (?)', [v.gym_id]);
+  const { insertId: allocated } = await conn.query('INSERT INTO product_line_ids (gym_id) VALUES (?)', [v.gym_id]);
   const id = Number(allocated);
   const isSessions = v.product_type === 'sessions';
   const table = isSessions ? 'product_session_snapshots' : 'product_oneoff_snapshots';

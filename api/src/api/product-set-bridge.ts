@@ -365,7 +365,7 @@ export async function reconfigureProjected(
   const { rows: setRows } = await tx.query<any>('SELECT starts_at, ends_at FROM product_sets WHERE id = ?', [set.id]);
   const created = await createDraft(tx, {
     gymId: input.gymId, ownerMemberId: set.owner_member_id, membershipPlanId: set.membership_plan_id,
-    startsAt: dateOnly(setRows[0].starts_at), actor: input.actor,
+    startsAt: dateOnly(setRows[0].starts_at), actor: input.actor, purchase: false,
   });
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
 
@@ -421,7 +421,7 @@ export async function retireProjected(
   const endsOn = await cancellationEndFor(tx, input.gymId, set);
   const created = await createDraft(tx, {
     gymId: input.gymId, ownerMemberId: set.owner_member_id, membershipPlanId: null,
-    startsAt: endsOn, actor: input.actor,
+    startsAt: endsOn, actor: input.actor, purchase: false,
   });
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: created.productSet.id, today: todayUtc(), actor: input.actor.name });

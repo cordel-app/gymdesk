@@ -33,6 +33,7 @@
  * The amounts are the purchases' frozen ones (`resolvePurchase()` priced each when it entered the
  * cart): a cart is paid at the price it shows, exactly as a cart Product Set's linked purchases are.
  */
+import { splitOffCheckout } from './purchases';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -243,6 +244,8 @@ export async function startCartCheckout(input: {
         throw new CartCheckoutRefused(409, 'cart_changed', 'The cart changed; read it again');
       }
 
+      // #3251: the lines paid are one checkout; what stays in the cart keeps the cart.
+      await splitOffCheckout(tx, gymId, memberId, purchases.map((p) => p.id), input.actorName);
       const { insertId: paymentRequestId } = await tx.query(
         `INSERT INTO payment_requests
            (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id,
