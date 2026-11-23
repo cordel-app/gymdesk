@@ -6,7 +6,7 @@ The record of how each ticket landed is `docs/changelog.md` — one entry per sh
 
 ## Status (2026-10-09)
 
-Derived from the GitHub issue state on that date: **1,305 issues closed, 16 open** (4 of those 17 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
+Derived from the GitHub issue state on that date: **1,306 issues closed, 15 open** (4 of those 17 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
 
 | Area | State | Shipped | Open |
 |---|---|---|---|
@@ -27,7 +27,6 @@ Every open issue, with what has merged and what is left. An issue appears once, 
 
 **Billing & Assigned Plans**
 - [#1288](https://github.com/cordel-app/gymdesk/issues/1288) Members App — select, configure and pay for a Membership Plan. Stage 1 merged (#1318): Save & Pay writes only the initial pending Billing Event plus its checkout, and a member never replaces a plan from the app. The owner's revised lifecycle decision (2026-10-09) governs the remaining stages and #1304.
-- [#3251](https://github.com/cordel-app/gymdesk/issues/3251) Carts modelled as purchases. Stage 1 (the `purchases` table, its lifecycle, Product Sets and one-time lines linked) and stage 2 (plan snapshots, recurring lines and checkout Billing Events linked) merged; stage 3 (the purchase shown on reads and Details) is left.
 - [#1304](https://github.com/cordel-app/gymdesk/issues/1304) Billing Events details and a simpler table. No code yet; the shared plan with #1288 is on the thread awaiting confirmation.
 - [#1240](https://github.com/cordel-app/gymdesk/issues/1240) Draft Assigned Plans fully editable, UI aligned with Membership Plans. PR 1 (#1307, hard-delete Cancel and the Cancel/Save/Save & Pay row) and PR 2 (#1320, Members section side by side) merged; most of the layout alignment landed under #1243. Open question: whether Effective Price should show a VAT-inclusive figure.
 - [#1191](https://github.com/cordel-app/gymdesk/issues/1191) Linked Assigned Plans of a multi-member Membership. PR #1221 open.
