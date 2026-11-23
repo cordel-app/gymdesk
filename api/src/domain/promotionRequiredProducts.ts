@@ -13,9 +13,34 @@ export interface PromotionGrantRef {
   product_id: number;
   product_name: string;
   requirement: unknown;
+  /** #3236: what the confirmation dialog shows of the Product and of the Promotion. */
+  product_description?: string | null;
+  product_image_url?: string | null;
+  product_image_thumbnail_url?: string | null;
+  promotion_name?: string | null;
+  promotion_description?: string | null;
+  promotion_image_url?: string | null;
+  promotion_image_thumbnail_url?: string | null;
 }
 
-export interface RequiredProduct { id: number; name: string }
+/** #3236: a chosen Promotion that makes a Product required. */
+export interface RequiringPromotion {
+  id: number;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
+}
+
+export interface RequiredProduct {
+  id: number;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
+  /** #3236: the chosen Promotions that require it, in grant order, each once. */
+  required_by: RequiringPromotion[];
+}
 
 /**
  * The mandatory Products of the chosen Promotions that the Member does not yet hold,
@@ -29,9 +54,30 @@ export function missingMandatoryProducts(
   const out = new Map<number, RequiredProduct>();
   for (const g of grants) {
     const id = Number(g.product_id);
-    if (id === currentProductId || ownedProductIds.has(id) || out.has(id)) continue;
+    if (id === currentProductId || ownedProductIds.has(id)) continue;
     if (!isPromotionItemRequirement(g.requirement) || g.requirement !== 'mandatory') continue;
-    out.set(id, { id, name: g.product_name });
+    let item = out.get(id);
+    if (!item) {
+      item = {
+        id,
+        name: g.product_name,
+        description: g.product_description ?? null,
+        image_url: g.product_image_url ?? null,
+        image_thumbnail_url: g.product_image_thumbnail_url ?? null,
+        required_by: [],
+      };
+      out.set(id, item);
+    }
+    const promotionId = Number(g.promotion_id);
+    if (!item.required_by.some((p) => p.id === promotionId)) {
+      item.required_by.push({
+        id: promotionId,
+        name: g.promotion_name ?? '',
+        description: g.promotion_description ?? null,
+        image_url: g.promotion_image_url ?? null,
+        image_thumbnail_url: g.promotion_image_thumbnail_url ?? null,
+      });
+    }
   }
   return [...out.values()];
 }
