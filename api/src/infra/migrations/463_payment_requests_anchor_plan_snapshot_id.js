@@ -17,7 +17,8 @@
  *      deleted while its assignment exists (`deleteUnlinkedPlanSnapshots()`), so SET NULL only ever
  *      fires on a gym delete or a discarded Draft, which raises no payment request.
  *
- * `down` re-adds `user_membership_id` filled from the anchor and renames the column back.
+ * Refuses while a request's two columns disagree. `down` re-adds `user_membership_id` filled from the
+ * anchor and renames the column back.
  */
 
 async function dropIndexIfExists(knex, table, index) {
@@ -33,50 +34,86 @@ async function dropFkIfExists(knex, table, fk) {
   if (rows.length > 0) await knex.raw(`ALTER TABLE ${table} DROP FOREIGN KEY ${fk}`);
 }
 
-exports.up = async (knex) => {
-  if (await knex.schema.hasColumn('payment_requests', 'anchor_plan_snapshot_id')) return;
+async function fkExists(knex, table, fk) {
+  const [rows] = await knex.raw(
+    `SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'`,
+    [table, fk]);
+  return rows.length > 0;
+}
 
+// Every step checks its own state, so an `up` (or `down`) that failed partway can be re-run.
+exports.up = async (knex) => {
+  const has = (c) => knex.schema.hasColumn('payment_requests', c);
   await knex.raw('SET SESSION lock_wait_timeout = 30');
   try {
     await dropFkIfExists(knex, 'payment_requests', 'pr_plan_assignment_fk');
     await dropIndexIfExists(knex, 'payment_requests', 'pr_plan_assignment_index');
-    await knex.raw('ALTER TABLE payment_requests RENAME COLUMN plan_assignment_id TO anchor_plan_snapshot_id');
-
-    await knex.raw(
-      `UPDATE payment_requests pr
-         JOIN plan_snapshots a ON a.id = pr.user_membership_id AND a.gym_id = pr.gym_id AND a.assignment_id = a.id
-          SET pr.anchor_plan_snapshot_id = a.id
-        WHERE pr.anchor_plan_snapshot_id IS NULL AND pr.user_membership_id IS NOT NULL`);
-
-    // Any index naming the column goes with it (MySQL drops a column from a multi-column index otherwise).
-    const [idx] = await knex.raw(
-      "SELECT DISTINCT INDEX_NAME AS name FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_requests' AND COLUMN_NAME = 'user_membership_id'");
-    for (const { name } of idx) {
-      if (name !== 'PRIMARY') await knex.raw(`ALTER TABLE payment_requests DROP INDEX \`${name}\``);
+    if ((await has('plan_assignment_id')) && !(await has('anchor_plan_snapshot_id'))) {
+      await knex.raw('ALTER TABLE payment_requests RENAME COLUMN plan_assignment_id TO anchor_plan_snapshot_id');
     }
-    await knex.raw('ALTER TABLE payment_requests DROP COLUMN user_membership_id');
 
-    await knex.raw(
-      `ALTER TABLE payment_requests
-         ADD KEY pr_anchor_plan_snapshot_index (anchor_plan_snapshot_id),
-         ADD CONSTRAINT pr_anchor_plan_snapshot_fk FOREIGN KEY (anchor_plan_snapshot_id)
+    if (await has('user_membership_id')) {
+      // Since migration 461 the two name the same assignment; refuse rather than drop a disagreement.
+      const [conflicts] = await knex.raw(
+        `SELECT id, gym_id, user_membership_id AS um, anchor_plan_snapshot_id AS anchor FROM payment_requests
+          WHERE anchor_plan_snapshot_id IS NOT NULL AND user_membership_id IS NOT NULL
+            AND anchor_plan_snapshot_id <> user_membership_id
+          ORDER BY id LIMIT 20`);
+      if (conflicts.length > 0) {
+        throw new Error('migration 463: payment request(s) whose user_membership_id is not their anchor: '
+          + conflicts.map((r) => `${r.id} (gym ${r.gym_id}, ${r.um} vs ${r.anchor})`).join(', '));
+      }
+      await knex.raw(
+        `UPDATE payment_requests pr
+           JOIN plan_snapshots a ON a.id = pr.user_membership_id AND a.gym_id = pr.gym_id AND a.assignment_id = a.id
+            SET pr.anchor_plan_snapshot_id = a.id
+          WHERE pr.anchor_plan_snapshot_id IS NULL AND pr.user_membership_id IS NOT NULL`);
+      // Any index naming the column goes with it.
+      const [idx] = await knex.raw(
+        "SELECT DISTINCT INDEX_NAME AS name FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_requests' AND COLUMN_NAME = 'user_membership_id'");
+      for (const { name } of idx) {
+        if (name !== 'PRIMARY') await knex.raw(`ALTER TABLE payment_requests DROP INDEX \`${name}\``);
+      }
+    }
+
+    // One rebuild for the column drop and the new key and FK.
+    const parts = [];
+    if (await has('user_membership_id')) parts.push('DROP COLUMN user_membership_id');
+    if (!(await fkExists(knex, 'payment_requests', 'pr_anchor_plan_snapshot_fk'))) {
+      parts.push('ADD KEY pr_anchor_plan_snapshot_index (anchor_plan_snapshot_id)');
+      parts.push(`ADD CONSTRAINT pr_anchor_plan_snapshot_fk FOREIGN KEY (anchor_plan_snapshot_id)
            REFERENCES plan_snapshots (id) ON DELETE SET NULL`);
+    }
+    if (parts.length > 0) await knex.raw(`ALTER TABLE payment_requests ${parts.join(', ')}`);
   } finally {
     await knex.raw('SET SESSION lock_wait_timeout = DEFAULT');
   }
 };
 
 exports.down = async (knex) => {
-  if (!(await knex.schema.hasColumn('payment_requests', 'anchor_plan_snapshot_id'))) return;
-  await dropFkIfExists(knex, 'payment_requests', 'pr_anchor_plan_snapshot_fk');
-  await dropIndexIfExists(knex, 'payment_requests', 'pr_anchor_plan_snapshot_index');
-  await knex.raw('ALTER TABLE payment_requests ADD COLUMN user_membership_id INT UNSIGNED NULL AFTER gym_id');
-  await knex.raw('UPDATE payment_requests SET user_membership_id = anchor_plan_snapshot_id');
-  await knex.raw('ALTER TABLE payment_requests ADD KEY payment_requests_user_membership_id_index (user_membership_id)');
-  await knex.raw('ALTER TABLE payment_requests RENAME COLUMN anchor_plan_snapshot_id TO plan_assignment_id');
-  await knex.raw(
-    `ALTER TABLE payment_requests
-       ADD KEY pr_plan_assignment_index (plan_assignment_id),
-       ADD CONSTRAINT pr_plan_assignment_fk FOREIGN KEY (plan_assignment_id)
-         REFERENCES plan_snapshots (id) ON DELETE SET NULL`);
+  const has = (c) => knex.schema.hasColumn('payment_requests', c);
+  await knex.raw('SET SESSION lock_wait_timeout = 30');
+  try {
+    await dropFkIfExists(knex, 'payment_requests', 'pr_anchor_plan_snapshot_fk');
+    await dropIndexIfExists(knex, 'payment_requests', 'pr_anchor_plan_snapshot_index');
+    if (!(await has('user_membership_id'))) {
+      await knex.raw('ALTER TABLE payment_requests ADD COLUMN user_membership_id INT UNSIGNED NULL');
+      const col = (await has('anchor_plan_snapshot_id')) ? 'anchor_plan_snapshot_id' : 'plan_assignment_id';
+      await knex.raw(`UPDATE payment_requests SET user_membership_id = ${col}`);
+      await knex.raw('ALTER TABLE payment_requests ADD KEY payment_requests_user_membership_id_index (user_membership_id)');
+    }
+    if ((await has('anchor_plan_snapshot_id')) && !(await has('plan_assignment_id'))) {
+      await knex.raw('ALTER TABLE payment_requests RENAME COLUMN anchor_plan_snapshot_id TO plan_assignment_id');
+    }
+    if (!(await fkExists(knex, 'payment_requests', 'pr_plan_assignment_fk'))) {
+      await knex.raw(
+        `ALTER TABLE payment_requests
+           ADD KEY pr_plan_assignment_index (plan_assignment_id),
+           ADD CONSTRAINT pr_plan_assignment_fk FOREIGN KEY (plan_assignment_id)
+             REFERENCES plan_snapshots (id) ON DELETE SET NULL`);
+    }
+  } finally {
+    await knex.raw('SET SESSION lock_wait_timeout = DEFAULT');
+  }
 };
