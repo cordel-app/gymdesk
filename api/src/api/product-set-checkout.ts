@@ -10,7 +10,7 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { BlockingEvent, blockingEvents, LockEvent } from '../domain/billingEventEditLock';
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
-import { DRAFT_TTL_MINUTES } from '../domain/productSet';
+import { setCartLiveSql } from '../domain/cartExpiry';
 import { staffProductDraftSql } from './editable-draft';
 import { BillingEventLineRow, lineFromSimulation, linesTotal } from '../domain/billingEventLines';
 import { planScheduledEvents } from './product-set-configuration';
@@ -88,8 +88,7 @@ export async function loadEditLockForDraftEdit(
   const { rows } = await db.query<any>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-        AND ${opts.staff ? staffProductDraftSql('ps') : `ps.status = 'in_cart' AND ps.plan_assignment_id IS NULL
-        AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`}
+        AND ${opts.staff ? staffProductDraftSql('ps') : `${setCartLiveSql('ps')} AND ps.plan_assignment_id IS NULL`}
       LIMIT 1`,
     [gymId, ownerMemberId]);
   if (rows.length > 0) return [];

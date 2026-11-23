@@ -1,4 +1,5 @@
 import { parseLineDirectDiscountInput } from '../domain/lineDirectDiscount';
+import { setCartExpiredSql } from '../domain/cartExpiry';
 import { db, Tx } from '../infra/db';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { recurringLineInheritedSql } from './recurring-line-sharing';
@@ -58,7 +59,7 @@ const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v
 export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<LockedDraft | DraftRefusal> {
   const { rows } = await tx.query<any>(
     `SELECT id, gym_id, owner_member_id, previous_product_set_id, membership_plan_id, starts_at, status,
-            (status = 'in_cart' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired
+            ${setCartExpiredSql('product_sets')} AS expired
        FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE`,
     [id, gymId],
   );

@@ -349,7 +349,8 @@ export function editableDraftLineId(item: Pick<PurchasedProduct, 'source' | 'dra
 }
 
 /**
- * #2962 — what a cart countdown shows `nowMs` against the server's `cart_expires_at`: the time
+ * #2962 — what a cart countdown shows `nowMs` against the server's `cart_expires_at` (#3274: the
+ * cart's one clock, its purchase's `expires_at`): the time
  * left as `H:MM:SS` (never negative), and whether it has run out. `null` for a purchase the server
  * gave no expiry (anything but a standalone cart purchase). Presentation only: the expiry instant
  * is the server's, and the server is what deletes the purchase.

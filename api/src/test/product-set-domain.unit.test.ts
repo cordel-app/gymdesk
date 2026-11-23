@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DRAFT_TTL_MINUTES, canCancelPending, canTransition, pendingCancellation, isDraftExpired, isInFlight, isProductSetStatus,
+  canCancelPending, canTransition, pendingCancellation, isInFlight, isProductSetStatus,
 } from '../domain/productSet';
 import {
   RESET_AUDIT_ENTITY_TYPES, RESET_CONFIRMATION, RESET_STEPS, blockingReferences, evaluateResetGuard,
@@ -48,14 +48,6 @@ describe('ProductSet lifecycle (#1325)', () => {
     expect(isProductSetStatus('draft')).toBe(false);
   });
 
-  it('expires a Draft only after more than two hours of inactivity', () => {
-    const now = Date.UTC(2026, 9, 10, 12, 0, 0);
-    const limit = DRAFT_TTL_MINUTES * 60_000;
-    expect(DRAFT_TTL_MINUTES).toBe(120);
-    expect(isDraftExpired(now - limit, now)).toBe(false);
-    expect(isDraftExpired(now - limit - 1, now)).toBe(true);
-    expect(isDraftExpired(now, now)).toBe(false);
-  });
 
   describe('cancelling a Pending Payment set', () => {
     it('allows it when nothing was ever sent to the provider', () => {

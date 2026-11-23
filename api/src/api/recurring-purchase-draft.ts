@@ -19,6 +19,7 @@
 // the payment webhook, which is the one place a version is activated.
 
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
+import { refreshSetCart } from './purchases';
 import { deleteProductApplication, lineApplications } from './product-promotion-writer';
 import { ownRecurringLine, updateRecurringLine, type RecurringLinePatch } from './recurring-line-writer';
 import type { Tx } from '../infra/db';
@@ -102,9 +103,7 @@ export async function ensureRecurringDraft(tx: Tx, input: {
            FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
         [created.productSetId, input.gymId]);
       if (rows[0] && (rows[0].plan_assignment_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
-        await tx.query(
-          'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?',
-          [created.productSetId, input.gymId]);
+        await refreshSetCart(tx, input.gymId, created.productSetId);
         return { kind: 'ok', productSetId: created.productSetId, created: false };
       }
     }
@@ -305,7 +304,7 @@ export async function editRecurringPurchaseLine(tx: Tx, input: {
   }
 
   if (input.quantity !== undefined) await allocateItemSchedules(tx, input.gymId, draftId);
-  await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?', [draftId, input.gymId]);
+  await refreshSetCart(tx, input.gymId, draftId);
   await syncProductSnapshotsOfVersion(tx, input.gymId, draftId);
   return { kind: 'ok', productSetId: draftId, lineId, productId };
 }

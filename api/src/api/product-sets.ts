@@ -9,9 +9,9 @@ import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
 import { activateSetPurchases, moveSetPurchases } from './set-purchases';
 import { deleteStandaloneCartPurchases } from './cart-checkout';
-import { openCart, touchPurchases } from './purchases';
+import { openCart, refreshCart, touchPurchases } from './purchases';
+import { setCartExpiredSql, setCartLiveSql } from '../domain/cartExpiry';
 import {
-  DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
   PendingAttempt,
   canCancelPending,
@@ -44,7 +44,6 @@ export interface ProductSetRow {
 const COLUMNS = `id, gym_id, owner_member_id, previous_product_set_id,
                  status, membership_plan_id, purchase_id`;
 
-const FRESH_DRAFT_SQL = `last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`;
 
 /**
  * Who is acting. Only `name` is written (#1182 stage 3: `created_by` is the
@@ -60,7 +59,7 @@ export type CreateDraftOutcome =
 /** Locks the owner's in-flight (draft / pending_payment) row, if there is one. */
 async function lockInFlight(tx: Tx, gymId: string, ownerMemberId: number) {
   const { rows } = await tx.query<ProductSetRow & { expired: number }>(
-    `SELECT ${COLUMNS}, NOT (${FRESH_DRAFT_SQL}) AS expired
+    `SELECT ${COLUMNS}, ${setCartExpiredSql('product_sets')} AS expired
        FROM product_sets
       WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')
       FOR UPDATE`,
@@ -95,11 +94,11 @@ export async function createDraft(tx: Tx, input: {
 }): Promise<CreateDraftOutcome> {
   const inFlight = await lockInFlight(tx, input.gymId, input.ownerMemberId);
   if (inFlight) {
-    if (inFlight.status === 'in_cart' && Number(inFlight.expired) === 1) {
-      // The Admin's Draft assignment (#1325 PR 3e) expires with its version.
-      await discardDraftSet(tx, input.gymId, Number(inFlight.id));
-      await restorePendingCancellations(tx, input.gymId, input.ownerMemberId);
-      await restorePendingReactivations(tx, input.gymId, input.ownerMemberId);
+    if (inFlight.status === 'in_cart' && Number(inFlight.expired) === 1 && inFlight.purchase_id != null) {
+      // #3274: the Draft's cart is past its time, so the whole cart expires (the Admin's Draft
+      // assignment, #1325 PR 3e, with its version) and the owner starts a new one.
+      const { expireCartInTx } = await import('./cart-expiry');
+      await expireCartInTx(tx, input.gymId, Number(inFlight.purchase_id));
     } else {
       return { kind: 'in_flight', productSetId: Number(inFlight.id), status: inFlight.status };
     }
@@ -123,17 +122,17 @@ export async function createDraft(tx: Tx, input: {
 }
 
 /**
- * Records activity on a Draft, extending its two hours. `false` means the Draft
- * is gone or expired — the caller says it is no longer available and the owner
- * starts a new one; nothing is resurrected.
+ * Records activity on a Draft: #3274, its cart's one clock (`purchases.expires_at`) moves two hours
+ * ahead. `false` means the Draft is gone or its cart expired — the caller says it is no longer
+ * available and the owner starts a new one; nothing is resurrected.
  */
 export async function touchDraft(tx: Tx, gymId: string, id: number): Promise<boolean> {
-  const { rowCount } = await tx.query(
-    `UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP()
-      WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND ${FRESH_DRAFT_SQL}`,
+  const { rows } = await tx.query<{ purchase_id: number | null }>(
+    `SELECT purchase_id FROM product_sets WHERE id = ? AND gym_id = ? AND ${setCartLiveSql('product_sets')}`,
     [id, gymId],
   );
-  return rowCount > 0;
+  if (!rows[0]) return false;
+  return refreshCart(tx, gymId, rows[0].purchase_id);
 }
 
 export type MoveOutcome =
@@ -144,7 +143,7 @@ export type MoveOutcome =
 
 async function lockSet(tx: Tx, gymId: string, id: number) {
   const { rows } = await tx.query<ProductSetRow & { expired: number }>(
-    `SELECT ${COLUMNS}, NOT (${FRESH_DRAFT_SQL}) AS expired
+    `SELECT ${COLUMNS}, ${setCartExpiredSql('product_sets')} AS expired
        FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE`,
     [id, gymId],
   );
@@ -316,7 +315,8 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
       AND status <> 'completed'`, [gymId, id]);
   await moveSetPurchases(tx, gymId, id, 'pending_payment', 'in_cart');
   await tx.query(
-    `UPDATE product_sets SET status = 'in_cart', payment_request_id = NULL, pending_at = NULL, last_activity_at = UTC_TIMESTAMP()
+    // #3274: back in the cart, the purchase takes a fresh two hours (`syncPurchase()`'s status move).
+    `UPDATE product_sets SET status = 'in_cart', payment_request_id = NULL, pending_at = NULL
       WHERE id = ? AND status = 'pending_payment'`, [id]);
   const { rows: linked } = await tx.query<{ um_id: number | null }>(
     `SELECT ${productSetLegacyAssignmentIdSql()} AS um_id FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [id, gymId]);
@@ -345,37 +345,6 @@ export async function expirePendingPayments(): Promise<number> {
   let n = 0;
   for (const r of rows) {
     const out = await db.transaction((tx) => returnPendingToDraft(tx, r.gym_id, Number(r.id)));
-    if (out.kind === 'cancelled') n += 1;
-  }
-  return n;
-}
-
-/**
- * Deletes every Draft that has been idle for more than two hours. One statement,
- * so the status and expiry are re-evaluated by the database at delete time and a
- * set that moved to `pending_payment` between a read and this call survives.
- */
-export async function expireDrafts(): Promise<number> {
-  const { rows } = await db.query<{ id: number; gym_id: string }>(
-    `SELECT id, gym_id FROM product_sets
-      WHERE status = 'in_cart'
-        AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`,
-  );
-  let n = 0;
-  for (const r of rows) {
-    // #2477: the very discard a manual cancel runs (`cancelInFlight`), one
-    // transaction per Draft so a failure leaves the others — and a retry — intact.
-    // Expiry is re-checked under the row lock: a Draft touched or committed since
-    // the read is left alone.
-    const out = await db.transaction(async (tx) => {
-      const { rows: fresh } = await tx.query(
-        `SELECT id FROM product_sets
-          WHERE id = ? AND gym_id = ? AND status = 'in_cart'
-            AND last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE FOR UPDATE`,
-        [r.id, r.gym_id]);
-      if (fresh.length === 0) return { kind: 'skipped' };
-      return cancelInFlight(tx, r.gym_id, Number(r.id));
-    }).catch((err) => { console.error(`expireDrafts: draft ${r.id} failed`, err); return { kind: 'failed' }; });
     if (out.kind === 'cancelled') n += 1;
   }
   return n;

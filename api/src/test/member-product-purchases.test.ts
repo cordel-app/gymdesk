@@ -26,7 +26,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment, legacyChildQuery } from './helpers';
+import { ageTestCart, cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst, snapshotTestAssignment, legacyChildQuery } from './helpers';
 import { TEST_PURCHASES, TEST_RECURRING_LINES } from './productSnapshotReads';
 import { legacyProductInsert } from './legacyProductFixture';
 import { testAssignmentWrite } from './assignmentFixture';
@@ -631,9 +631,7 @@ describe('#2479 — the Products list shows every line of the Draft being edited
     const before = await auth(request.get(`/members/${m}/products`));
     expect((before.body.items as any[]).some((r) => r.source === 'recurring' && r.product_id === item)).toBe(true);
 
-    await db.query(
-      'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 1 DAY WHERE id = ?',
-      [add.body.product_set_id]);
+    await ageTestCart({ productSetId: add.body.product_set_id }, 24 * 60);
     const after = await auth(request.get(`/members/${m}/products`));
     expect((after.body.items as any[]).some((r) => r.source === 'recurring' && r.product_id === item)).toBe(false);
   });

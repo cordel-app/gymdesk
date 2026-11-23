@@ -342,14 +342,21 @@ describe('the reminder the run raises (#1113 §2)', () => {
 
 // #2477 stage 2 — the same 15-minute pass discards ProductSet Drafts idle past
 // their two hours, through the manual discard, so an abandoned Draft no longer
-// waits for the twice-daily billing cleanup.
+// waits for the twice-daily billing cleanup. #3274: the clock is the cart's.
 describe('Draft expiry on the 15-minute pass (#2477 stage 2)', () => {
   async function draft(minutesIdle: number, status = 'in_cart'): Promise<number> {
     const ownerId = await createMember();
+    // #3274: an In-Cart Draft is in a cart (`purchases`), whose one clock is `expires_at`.
+    const cart = status === 'in_cart'
+      ? (await db.query(
+        `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, created_by)
+         VALUES (?, ?, 'in_cart', UTC_TIMESTAMP() + INTERVAL ? MINUTE, 'test')`,
+        [gymId, ownerId, 120 - minutesIdle])).insertId
+      : null;
     const { insertId } = await db.query(
-      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
-       VALUES (?, ?, ?, UTC_DATE(), UTC_TIMESTAMP() - INTERVAL ? MINUTE)`,
-      [gymId, ownerId, status, minutesIdle],
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, purchase_id)
+       VALUES (?, ?, ?, UTC_DATE(), ?)`,
+      [gymId, ownerId, status, cart],
     );
     return insertId;
   }

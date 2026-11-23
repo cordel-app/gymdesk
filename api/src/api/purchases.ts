@@ -21,6 +21,7 @@
 import { beforeCommit, type Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CART_ITEM_STATUS, CartItemStatus, derivePurchaseStatus } from '../domain/purchaseStatus';
+import { CART_EXPIRES_AT_SQL, purchaseCartExpiredSql } from '../domain/cartExpiry';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -28,13 +29,45 @@ const LINE_TABLES = ['product_session_snapshots', 'product_oneoff_snapshots'] as
 /** #3251 stage 2: rows that record the cart they were written in, without being what the cart holds. */
 const STAMPED_TABLES = ['plan_snapshots', 'product_periodical_snapshots', 'billing_events'] as const;
 
-/** The owner's cart now `in_cart`, created when there is none. Locked. */
+/**
+ * The owner's cart now `in_cart`, created when there is none. Locked. #3274: a cart past its two
+ * hours is expired as a whole first (`expireCartInTx()`), so nothing is ever added to a cart whose
+ * time is up and the owner gets a new one.
+ */
 export async function openCart(tx: Conn, gymId: string, ownerMemberId: number, actorName: string | null): Promise<number> {
-  const { rows } = await tx.query<{ id: number }>(
-    `SELECT id FROM purchases WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart' FOR UPDATE`,
+  const { rows } = await tx.query<{ id: number; expired: number }>(
+    `SELECT id, ${purchaseCartExpiredSql('purchases')} AS expired
+       FROM purchases WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart' FOR UPDATE`,
     [gymId, ownerMemberId]);
-  if (rows[0]) return Number(rows[0].id);
+  if (rows[0] && Number(rows[0].expired) !== 1) return Number(rows[0].id);
+  if (rows[0]) {
+    const { expireCartInTx } = await import('./cart-expiry');
+    await expireCartInTx(tx as Tx, gymId, Number(rows[0].id));
+    const { rows: still } = await tx.query<{ id: number }>(
+      `SELECT id FROM purchases WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart' FOR UPDATE`,
+      [gymId, ownerMemberId]);
+    if (still[0]) return Number(still[0].id);
+  }
   return createPurchase(tx, gymId, ownerMemberId, 'in_cart', actorName);
+}
+
+/**
+ * #3274 — a change of the cart `purchaseId`'s contents moves its one clock two hours ahead. A cart
+ * already past its time is not revived (the sweep or the next guard expires it), and a purchase not
+ * `in_cart` has no clock to move. Answers whether the cart is live after the call.
+ */
+export async function refreshCart(tx: Conn, gymId: string, purchaseId: number | null | undefined): Promise<boolean> {
+  if (purchaseId == null) return true;
+  const { rowCount } = await tx.query(
+    `UPDATE purchases SET expires_at = ${CART_EXPIRES_AT_SQL}
+      WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND expires_at > UTC_TIMESTAMP()`,
+    [purchaseId, gymId]);
+  return rowCount > 0;
+}
+
+/** `refreshCart()` for the cart the Product Set `productSetId` belongs to (none for a set no checkout made). */
+export async function refreshSetCart(tx: Conn, gymId: string, productSetId: number): Promise<boolean> {
+  return refreshCart(tx, gymId, await purchaseOfSet(tx, gymId, productSetId));
 }
 
 /** A new cart in `status` (a checkout started outside the cart is `pending_payment` from birth). */
@@ -44,9 +77,11 @@ export async function createPurchase(
   const { insertId } = await tx.query(
     // #3270: the name basis is the creation instant (UTC, ISO 8601), written once from the very
     // `UTC_TIMESTAMP()` `created_at` defaults to in this statement; nothing updates it.
-    `INSERT INTO purchases (gym_id, owner_member_id, status, name, created_by)
-     VALUES (?, ?, ?, DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), ?)`,
-    [gymId, ownerMemberId, status, actorName ?? SYSTEM_ACTOR]);
+    // #3274: a cart opened now has two hours; a checkout started outside the cart has no cart clock.
+    `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, name, created_by)
+     VALUES (?, ?, ?, IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL),
+             DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), ?)`,
+    [gymId, ownerMemberId, status, status, actorName ?? SYSTEM_ACTOR]);
   return Number(insertId);
 }
 
@@ -157,9 +192,18 @@ async function moveMembers(tx: Conn, members: Member[], to: number): Promise<voi
 }
 
 async function writeStatus(tx: Conn, purchaseId: number, status: string): Promise<void> {
+  // #3274: entering the cart (opened, or back from a Pending Payment, #1991) starts a fresh clock;
+  // leaving it stops the clock.
   await tx.query(
-    `UPDATE purchases SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND status <> ?`,
-    [status, SYSTEM_ACTOR, purchaseId, status]);
+    `UPDATE purchases SET status = ?, expires_at = IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL),
+            modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND status <> ?`,
+    [status, status, SYSTEM_ACTOR, purchaseId, status]);
+  // Staying in the cart: the change the caller made is the cart's activity.
+  if (status === 'in_cart') {
+    await tx.query(
+      `UPDATE purchases SET expires_at = ${CART_EXPIRES_AT_SQL}
+        WHERE id = ? AND status = 'in_cart' AND expires_at > UTC_TIMESTAMP()`, [purchaseId]);
+  }
 }
 
 /**

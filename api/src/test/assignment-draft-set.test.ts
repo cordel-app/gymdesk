@@ -3,8 +3,8 @@ import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
-import { expireDrafts } from '../api/product-sets';
+import { ageTestCart, TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { expireCarts } from '../api/cart-expiry';
 import { testAssignmentWrite } from './assignmentFixture';
 
 let gymId: string;
@@ -110,9 +110,8 @@ describe('a Draft assignment is created set-first', () => {
     const res = await api('post', '/user-memberships')
       .send({ member_id: m, membership_plan_id: await plan('E'), starts_at: '2026-06-01' });
     const set = await draftSetOf(res.body.id);
-    await db.query(
-      'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 3 HOUR WHERE id = ?', [set.id]);
-    await expireDrafts();
+    await ageTestCart({ productSetId: set.id }, 180);
+    await expireCarts();
     expect(await draftSetOf(res.body.id)).toBeNull();
     const { rows } = await db.query(`SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [res.body.id]);
     expect(rows).toHaveLength(0);

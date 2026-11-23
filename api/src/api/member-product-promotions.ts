@@ -1,6 +1,6 @@
-import { DRAFT_TTL_MINUTES } from '../domain/productSet';
 import { assignedMemberSql } from '../domain/productAssignee';
-import { IN_CART_PURCHASE_STATUS, purchaseCartExpiresAt } from '../domain/memberProductPurchase';
+import { IN_CART_PURCHASE_STATUS } from '../domain/memberProductPurchase';
+import { cartExpiresAtIso, setCartLiveSql } from '../domain/cartExpiry';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
 import { DateTime } from 'luxon';
@@ -409,7 +409,7 @@ export async function loadMemberPurchases(
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
-            mp.in_product_set, mp.purchase_id,
+            mp.in_product_set, mp.purchase_id, mp.cart_expires_at,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
             ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
@@ -442,8 +442,10 @@ export async function loadMemberPurchases(
       cancelled_on: row.cancelled_on ?? null,
       validity_state: purchaseValidityState(row, today),
       created_at: row.created_at ?? null,
-      cart_expires_at: row.status === IN_CART_PURCHASE_STATUS && !Number(row.in_product_set) && row.created_at
-        ? purchaseCartExpiresAt(new Date(row.created_at)).toISOString() : null,
+      // #3274: the cart's one clock (its purchase's `expires_at`), reported on the cart's standalone
+      // items (a set's own items are counted with the set).
+      cart_expires_at: row.status === IN_CART_PURCHASE_STATUS && !Number(row.in_product_set)
+        ? cartExpiresAtIso(row.cart_expires_at) : null,
       created_by: row.created_by ?? null,
       origin: toItemOrigin(row.origin),
       // With no Promotion the two figures are the same number: the purchase was
@@ -659,8 +661,7 @@ async function loadRecurringPurchases(
        JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
        JOIN product_periodical_snapshots s
          ON s.id = lnk.product_periodical_snapshot_id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
-      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
-        AND ps.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${setCartLiveSql('ps')}
         AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
       ORDER BY s.created_at DESC, s.source_id DESC`,
     [gymId, memberId],

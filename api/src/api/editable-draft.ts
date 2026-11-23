@@ -1,6 +1,6 @@
 import type { Tx } from '../infra/db';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
-import { DRAFT_TTL_MINUTES } from '../domain/productSet';
+import { setCartLiveSql } from '../domain/cartExpiry';
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 
 /**
@@ -21,8 +21,7 @@ import { planSnapshotInheritedSql } from './plan-snapshot-lines';
  * both still answer `in_flight`, so one in-flight version per owner stays the rule.
  */
 export const editableDraftSql = (ps: string): string =>
-  `(${ps}.status = 'in_cart'
-    AND ${ps}.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE
+  `(${setCartLiveSql(ps)}
     AND (${ps}.plan_assignment_id IS NULL OR NOT EXISTS (
       SELECT 1 FROM product_set_plan_snapshots ej_ JOIN plan_snapshots es_ ON es_.id = ej_.plan_snapshot_id
        WHERE ej_.product_set_id = ${ps}.id AND ej_.entitlement_only = 0
@@ -38,8 +37,7 @@ export const editableDraftSql = (ps: string): string =>
  * owner stays the rule.
  */
 export const staffProductDraftSql = (ps: string): string =>
-  `(${ps}.status = 'in_cart'
-    AND ${ps}.last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE)`;
+  setCartLiveSql(ps);
 
 /** The owner's live Draft staff may keep editing, locked; `null` when there is none. */
 export async function lockEditableDraft(

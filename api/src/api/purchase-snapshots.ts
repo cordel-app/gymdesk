@@ -1,3 +1,5 @@
+import { lineCartExpiresAtSql } from '../domain/cartExpiry';
+
 /**
  * #2126 stage 3d — the one SQL spelling of "a member's one-time purchases", read from the Product
  * snapshot tables (migration 348) instead of `member_products_oneoff_snapshot`.
@@ -31,16 +33,24 @@ function paymentRequestColumn(table: string, junction: string, snapshotCol: stri
 /**
  * #2962 — whether a member's cart Product Set carries the purchase (#2746, through the arm's
  * `product_set_{session,oneoff}_snapshots` junction): a standalone draft (0) expires on its own
- * clock, one in a Product Set (1) follows the set's.
+ * clock, one in a Product Set (1) follows the set's. #3274: both now follow their purchase's one clock;
+ * the flag still tells the cart's standalone items from the set's own.
  */
 function inProductSetColumn(table: string, junction: string, snapshotCol: string): string {
   return `EXISTS (SELECT 1 FROM ${junction} psj_ WHERE psj_.${snapshotCol} = ${table}.id) AS in_product_set`;
 }
 
+/** #3274: the line's cart expiry, its purchase's one clock (NULL outside an In-Cart cart). */
+function cartExpiresAtColumn(table: string): string {
+  return `${lineCartExpiresAtSql(`${table}.purchase_id`)} AS cart_expires_at`;
+}
+
 const SESSION_ARM_COLUMNS = `${PURCHASE_SNAPSHOT_COLUMNS},
+  ${cartExpiresAtColumn('product_session_snapshots')},
   ${paymentRequestColumn('product_session_snapshots', 'billing_event_session_snapshots', 'product_session_snapshot_id')},
   ${inProductSetColumn('product_session_snapshots', 'product_set_session_snapshots', 'product_session_snapshot_id')}`;
 const ONEOFF_ARM_COLUMNS = `${PURCHASE_SNAPSHOT_COLUMNS},
+  ${cartExpiresAtColumn('product_oneoff_snapshots')},
   ${paymentRequestColumn('product_oneoff_snapshots', 'billing_event_oneoff_snapshots', 'product_oneoff_snapshot_id')},
   ${inProductSetColumn('product_oneoff_snapshots', 'product_set_oneoff_snapshots', 'product_oneoff_snapshot_id')}`;
 

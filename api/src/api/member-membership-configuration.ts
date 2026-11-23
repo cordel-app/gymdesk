@@ -1,5 +1,5 @@
 import { resolveCurrentProductSet } from '../domain/currentProductSet';
-import { draftExpiresInSeconds } from '../domain/productSet';
+import { cartExpiresInSeconds, setCartExpiredSql, setCartExpiresInSecondsSql } from '../domain/cartExpiry';
 import { withDerivedBilling } from './derived-billing';
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -136,9 +136,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // hours is reported `expired` and is never offered an action.
   const { rows: inFlight } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.membership_plan_id,
-            (ps.status = 'in_cart' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
-            CASE WHEN ps.status = 'in_cart'
-                 THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
+            ${setCartExpiredSql('ps')} AS expired,
+            ${setCartExpiresInSecondsSql('ps')} AS expires_in_seconds,
             mp.name AS plan_name,
             pu.id AS purchase_id, pu.name AS purchase_name, pu.status AS purchase_status,
             (SELECT be.amount FROM billing_events be
@@ -235,9 +234,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   const { rows: setRows } = await db.query<any>(
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
-            (ps.status = 'in_cart' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
-            CASE WHEN ps.status = 'in_cart'
-                 THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
+            ${setCartExpiredSql('ps')} AS expired,
+            ${setCartExpiresInSecondsSql('ps')} AS expires_in_seconds,
             mp.name AS plan_name, mp.lifecycle_status AS plan_status, pa.ends_at AS ends_at
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
@@ -257,7 +255,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     created_at: toDateOnly(r.created_at),
     created_by: r.created_by ?? null,
     expired: Number(r.expired) === 1,
-    expires_in_seconds: draftExpiresInSeconds(r.expires_in_seconds),
+    expires_in_seconds: cartExpiresInSeconds(r.expires_in_seconds),
   });
   // #1582 — one resolver decides the current version; an ambiguous chain
   // (never expected: migration 246's UNIQUE keys forbid it) reports no current.
@@ -281,7 +279,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       starts_at: toDateOnly(r.starts_at),
       amount_due: r.amount_due != null ? Number(r.amount_due) : null,
       expired: Number(r.expired) === 1,
-      expires_in_seconds: draftExpiresInSeconds(r.expires_in_seconds),
+      expires_in_seconds: cartExpiresInSeconds(r.expires_in_seconds),
       created_by: r.created_by ?? null,
       // #2966 stage 4: the further plans this version holds as plan snapshots only.
       added_plans: addedBySet.get(Number(r.id)) ?? [],

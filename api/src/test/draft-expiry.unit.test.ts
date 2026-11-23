@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { draftExpiresInSeconds } from '../domain/productSet';
+import { CART_TTL_MINUTES, cartExpiresInSeconds } from '../domain/cartExpiry';
 
-describe('draftExpiresInSeconds (#2477)', () => {
-  it('is null for a non-Draft and clamps an expired one to 0', () => {
-    expect(draftExpiresInSeconds(null)).toBeNull();
-    expect(draftExpiresInSeconds(-30)).toBe(0);
-    expect(draftExpiresInSeconds('5400')).toBe(5400);
+describe('cart expiry (#2477, #3274)', () => {
+  it('is null with no clock and clamps an expired cart to 0', () => {
+    expect(cartExpiresInSeconds(null)).toBeNull();
+    expect(cartExpiresInSeconds(-30)).toBe(0);
+    expect(cartExpiresInSeconds('5400')).toBe(5400);
+  });
+
+  it('keeps the two hours as the one cart TTL', () => {
+    expect(CART_TTL_MINUTES).toBe(120);
   });
 });

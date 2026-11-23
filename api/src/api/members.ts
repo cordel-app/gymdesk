@@ -24,7 +24,7 @@ import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 import { isNewMemberStatus, newMemberStatusByMember } from './new-member-eligibility';
 import { loadMemberPurchases, withProductConfiguration } from './member-product-promotions';
-import { expireStandalonePurchaseDrafts } from './me-products';
+import { expireCarts } from './cart-expiry';
 import { loadMemberTabCounts } from './member-tab-counts';
 // A Member's profile image (#1374): the key and the bytes are
 // `domain/memberImages.ts`'s, the upload, the clear, the sweep and the rename
@@ -303,8 +303,8 @@ membersRouter.get('/:id/products', async (req, res, next) => {
       [memberId, gymId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
-    // #2962: a standalone cart purchase past its two hours is deleted before it can be listed.
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    // #3274: a cart past its two hours is expired (as a whole) before its items can be listed.
+    await expireCarts({ gymId, ownerMemberId: memberId });
     res.json({ items: await withProductConfiguration(gymId, await loadMemberPurchases(gymId, memberId)) });
   } catch (err) {
     next(err);
