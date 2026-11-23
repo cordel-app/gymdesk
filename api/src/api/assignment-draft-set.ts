@@ -2,6 +2,7 @@ import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { openAssignmentOnSet } from './plan-assignment-sync';
 import { Tx } from '../infra/db';
 import { createDraft } from './product-sets';
+import { refreshSetCart } from './purchases';
 import { staffProductDraftSql } from './editable-draft';
 import { snapshotProductSetFromPlan } from './product-set-configuration';
 import { syncDraftAssignment } from './product-set-projection';
@@ -87,8 +88,9 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   if (cart[0]) {
     setId = Number(cart[0].id);
     await tx.query(
-      `UPDATE product_sets SET membership_plan_id = ?, starts_at = ?, last_activity_at = UTC_TIMESTAMP()
+      `UPDATE product_sets SET membership_plan_id = ?, starts_at = ?
         WHERE id = ? AND gym_id = ?`, [input.membershipPlanId, input.startsAt, setId, input.gymId]);
+    await refreshSetCart(tx, input.gymId, setId);
   } else {
     const created = await createDraft(tx, {
       gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
@@ -268,8 +270,9 @@ export async function createDraftSetFromActive(tx: Tx, input: {
   if (cart[0]) {
     setId = Number(cart[0].id);
     await tx.query(
-      `UPDATE product_sets SET membership_plan_id = ?, starts_at = ?, last_activity_at = UTC_TIMESTAMP()
+      `UPDATE product_sets SET membership_plan_id = ?, starts_at = ?
         WHERE id = ? AND gym_id = ?`, [input.membershipPlanId, input.startsAt, setId, input.gymId]);
+    await refreshSetCart(tx, input.gymId, setId);
   } else {
     const created = await createDraft(tx, {
       gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
@@ -308,10 +311,12 @@ export async function adoptDraftForEdit(tx: Tx, input: {
   /** The Active version the plain Draft was cloned from, and the running assignment being edited (#2946). */
   activeSetId: number; editedUserMembershipId: number;
 }): Promise<{ setId: number; assignmentId: number }> {
-  await tx.query(
-    `UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP()
+  // #3274: adopting the plain Draft is a change of its cart, so the cart's clock moves on.
+  const { rows: plain } = await tx.query(
+    `SELECT id FROM product_sets
       WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND plan_assignment_id IS NULL`,
     [input.draftSetId, input.gymId]);
+  if (plain[0]) await refreshSetCart(tx, input.gymId, input.draftSetId);
   await ownPrimaryPlanSnapshot(tx, input.gymId, input.draftSetId);
   // #2125 N1: the owned copy opens the Draft assignment; its id is the copy's.
   const assignmentId = await openAssignmentOnSet(tx, input.gymId, input.draftSetId);

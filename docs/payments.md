@@ -1086,7 +1086,7 @@ created). `startCartCheckout()` (`api/src/api/cart-checkout.ts`) pays all of the
 `purchase_ids` named, from `POST /me/cart/checkout` (the member; a family beneficiary gets
 `403 family_owner_pays`) or `POST /members/:id/product-purchases/checkout` (staff):
 
-1. The cart is read after the standalone expiry (#2962); empty → `409 cart_empty`, a named id not
+1. The cart is read after the cart expiry (#2962, since #3274 the purchase's one clock, `expireCarts()`); empty → `409 cart_empty`, a named id not
    in it → `404 purchase_not_in_cart`, a zero total → `409 nothing_to_pay`.
 2. The provider payment is created for the **sum of the frozen amounts** (each priced when it
    entered the cart; nothing is re-priced — the conservative default, as a cart Product Set's

@@ -1,9 +1,10 @@
 import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, linkTestSetToAssignment } from './helpers';
+import { ageTestCart, cleanupTestGyms, createTestGym, linkTestSetToAssignment } from './helpers';
+import { expireCarts } from '../api/cart-expiry';
 import {
-  activate, addCoverage, cancelInFlight, createDraft, expireDrafts, submitForPayment, touchDraft,
+  activate, addCoverage, cancelInFlight, createDraft, submitForPayment, touchDraft,
 } from '../api/product-sets';
 import { testAssignmentWrite } from './assignmentFixture';
 
@@ -158,8 +159,7 @@ describe('Draft expiry (#1325)', () => {
     if (d.kind !== 'created') throw new Error('expected created');
     expect(await db.transaction((tx) => touchDraft(tx, gymId, d.productSet.id))).toBe(true);
 
-    await db.query(
-      `UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 121 MINUTE WHERE id = ?`, [d.productSet.id]);
+    await ageTestCart({ productSetId: d.productSet.id });
     expect(await db.transaction((tx) => touchDraft(tx, gymId, d.productSet.id))).toBe(false);
     expect((await db.transaction((tx) => submitForPayment(tx, gymId, d.productSet.id))).kind).toBe('expired');
 
@@ -170,17 +170,22 @@ describe('Draft expiry (#1325)', () => {
     expect(await status(d.productSet.id)).toBeNull();
   });
 
-  it('the sweep deletes only idle Drafts and never a Pending Payment set', async () => {
+  it('the sweep expires only carts past their time and never a Pending Payment set', async () => {
     const ownerA = await member(`ps-d-${Date.now()}@example.com`);
     const ownerB = await member(`ps-e-${Date.now()}@example.com`);
-    const idle = await db.query(
-      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
-       VALUES (?, ?, 'in_cart', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerA, today()]);
+    const idle = await db.transaction((tx) => createDraft(tx, {
+      gymId, ownerMemberId: ownerA, membershipPlanId: null, startsAt: today(), actor }));
+    const live = await db.transaction((tx) => createDraft(tx, {
+      gymId, ownerMemberId: ownerB, membershipPlanId: null, startsAt: today(), actor }));
+    if (idle.kind !== 'created' || live.kind !== 'created') throw new Error('expected created');
+    await ageTestCart({ productSetId: idle.productSet.id });
+    const ownerC = await member(`ps-f-${Date.now()}@example.com`);
     const pending = await db.query(
       `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, last_activity_at)
-       VALUES (?, ?, 'pending_payment', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerB, today()]);
-    await expireDrafts();
-    expect(await status(idle.insertId)).toBeNull();
+       VALUES (?, ?, 'pending_payment', ?, UTC_TIMESTAMP() - INTERVAL 3 HOUR)`, [gymId, ownerC, today()]);
+    await expireCarts();
+    expect(await status(idle.productSet.id)).toBeNull();
+    expect(await status(live.productSet.id)).toBe('in_cart');
     expect(await status(pending.insertId)).toBe('pending_payment');
   });
 });

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { setCartExpiredSql } from '../domain/cartExpiry';
 import { AWAITING_STAFF_SETUP, awaitsStaffSetup } from '../domain/shoppingCart';
 import { refuseUnlessMayAdd } from './family-add-rights';
 import { db } from '../infra/db';
@@ -318,7 +319,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // takes a plan through `POST /me/product-sets/:id/plans` instead).
     const { rows: inFlight } = await db.query<{ id: number; status: string; plan_assignment_id: number | null }>(
       `SELECT id, status, plan_assignment_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')
-        AND NOT (status = 'in_cart' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) LIMIT 1`,
+        AND NOT ${setCartExpiredSql('product_sets')} LIMIT 1`,
       [gymId, memberId],
     );
     if (inFlight[0]) {

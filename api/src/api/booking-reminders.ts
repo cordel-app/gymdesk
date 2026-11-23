@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { recordNotifications } from '../infra/notifications';
 import { convertStartedReservations } from './service-reservation';
-import { expireDrafts } from './product-sets';
+import { expireCarts } from './cart-expiry';
 import { submitPendingVerifactuRecords } from './verifactu-submission';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { buildJobMetrics, sumJobMetrics } from '../domain/jobRuns';
@@ -121,16 +121,16 @@ bookingRemindersRouter.post('/run', async (req: Request, res: Response) => {
       failures.push({ gym_id: '*', error: `event-start conversion: ${(err as Error).message}` });
     }
 
-    // #2477 stage 2: a ProductSet Draft idle past its two hours is discarded by
-    // this pass too, so an abandoned Draft is gone within a quarter of an hour
-    // rather than at the next twice-daily billing cleanup (which keeps its own
-    // call). `expireDrafts()` is the manual discard (`cancelInFlight()`), one
-    // transaction per Draft with the expiry re-checked under the row lock, so a
-    // repeated or overlapping pass discards nothing twice; a failure here must
-    // not cost reminders.
+    // #2477 stage 2 / #3274: a cart past its two hours is expired by this pass
+    // too, so an abandoned cart is gone within a quarter of an hour rather than
+    // at the next twice-daily billing cleanup (which keeps its own call).
+    // `expireCarts()` is the one Purchase-level sweep (each cart in its own
+    // transaction, re-checked under its locks), so a repeated or overlapping
+    // pass expires nothing twice; a failure here must not cost reminders.
+    // `drafts_expired` keeps counting the Product Set Drafts it discarded.
     let draftsExpired: number | null = null;
     try {
-      draftsExpired = await expireDrafts();
+      draftsExpired = (await expireCarts()).productSets;
     } catch (err) {
       failures.push({ gym_id: '*', error: `draft expiry: ${(err as Error).message}` });
     }

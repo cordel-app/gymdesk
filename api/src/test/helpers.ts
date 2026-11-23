@@ -1171,3 +1171,28 @@ export async function linkTestSetToAssignment(productSetId: number, umId: number
       WHERE id = ?`, [umId, productSetId]);
 }
 
+
+/**
+ * #3274 — ages a cart past (or towards) its two hours: the cart's one clock is `purchases.expires_at`.
+ * Name the cart directly, or by the Product Set or the one-time line (its `source_id`) it holds.
+ * `minutesAgo` is how long ago the cart's last change was (121 = one minute past its time).
+ */
+export async function ageTestCart(
+  ref: { purchaseId?: number; productSetId?: number; lineId?: number }, minutesAgo = 121,
+): Promise<void> {
+  let purchaseId = ref.purchaseId ?? null;
+  if (purchaseId == null && ref.productSetId != null) {
+    const { rows } = await db.query<any>('SELECT purchase_id FROM product_sets WHERE id = ?', [ref.productSetId]);
+    purchaseId = rows[0]?.purchase_id ?? null;
+  }
+  if (purchaseId == null && ref.lineId != null) {
+    const { rows } = await db.query<any>(
+      `SELECT purchase_id FROM product_oneoff_snapshots WHERE source_id = ? AND purchase_id IS NOT NULL
+       UNION ALL SELECT purchase_id FROM product_session_snapshots WHERE source_id = ? AND purchase_id IS NOT NULL`,
+      [ref.lineId, ref.lineId]);
+    purchaseId = rows[0]?.purchase_id ?? null;
+  }
+  if (purchaseId == null) throw new Error('ageTestCart: no cart found');
+  await db.query(
+    `UPDATE purchases SET expires_at = UTC_TIMESTAMP() + INTERVAL ? MINUTE WHERE id = ?`, [120 - minutesAgo, purchaseId]);
+}

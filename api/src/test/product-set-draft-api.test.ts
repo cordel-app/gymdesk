@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, legacyChildQuery } from './helpers';
+import { ageTestCart, cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, legacyChildQuery } from './helpers';
 
 let gymId: string;
 let seq = 0;
@@ -169,7 +169,7 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
     expect(committed.body.error).toBe('not_a_draft');
 
     const { id: stale } = await draft(await plan(10));
-    await db.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 3 HOUR WHERE id = ?', [stale]);
+    await ageTestCart({ productSetId: stale }, 180);
     const gone = await auth(request.put(`/product-sets/${stale}/fee-benefit`)).send({ action: 'no_benefit' });
     expect(gone.status).toBe(410);
 
@@ -183,10 +183,12 @@ describe('editing a Draft ProductSet (#1325 PR 4)', () => {
 
   it('an edit refreshes the Draft\'s two hours', async () => {
     const { id } = await draft(await plan(10));
-    await db.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 110 MINUTE WHERE id = ?', [id]);
+    await ageTestCart({ productSetId: id }, 110);
     await auth(request.put(`/product-sets/${id}/fee-benefit`)).send({ action: 'no_benefit' });
+    // #3274: the edit moved the cart's one clock, `purchases.expires_at`, two hours ahead.
     const { rows } = await db.query<any>(
-      'SELECT TIMESTAMPDIFF(MINUTE, last_activity_at, UTC_TIMESTAMP()) AS idle FROM product_sets WHERE id = ?', [id]);
-    expect(Number(rows[0].idle)).toBeLessThan(5);
+      `SELECT TIMESTAMPDIFF(MINUTE, UTC_TIMESTAMP(), p.expires_at) AS left_ FROM product_sets ps
+         JOIN purchases p ON p.id = ps.purchase_id WHERE ps.id = ?`, [id]);
+    expect(Number(rows[0].left_)).toBeGreaterThan(115);
   });
 });

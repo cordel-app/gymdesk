@@ -2,13 +2,14 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { abandonedRequestHours } from '../domain/paymentRequestExpiry';
-import { cancelAbandonedPurchases, expireStandalonePurchaseDrafts } from './me-products';
+import { cancelAbandonedPurchases } from './me-products';
+import { expireCarts } from './cart-expiry';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { buildJobMetrics } from '../domain/jobRuns';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
 import { issueDueSimplifiedInvoices } from './billing-invoices';
-import { expireDrafts, expirePendingPayments } from './product-sets';
+import { expirePendingPayments } from './product-sets';
 import { reconcileAbandonedRequests } from './payment-settlement';
 import { reconcilePendingProviderRefunds } from './billing-event-refunds';
 
@@ -256,13 +257,13 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     // folded into `expired`, which `.github/workflows/billing-run.yml` parses.
     const purchasesCancelled = await cancelAbandonedPurchases();
 
-    // #1325: a ProductSet Draft idle for more than two hours is deleted here as
-    // well as lazily when its owner starts a new one. The statement re-evaluates
-    // status and age in the database, so a set that was committed in between
-    // survives. Reported beside the totals, never folded into `expired`.
-    const draftsExpired = await expireDrafts();
-    // #2962: a standalone one-time Product left in the cart for more than two hours.
-    const purchaseDraftsExpired = (await expireStandalonePurchaseDrafts()).length;
+    // #3274: a cart (purchase) past its two hours is expired as a whole — its Product Set Draft and
+    // its one-time lines together — re-checked under its locks, so one changed or paid in between
+    // survives. Reported beside the totals (Draft sets and one-time lines, as before, plus carts),
+    // never folded into `expired`.
+    const cartsExpired = await expireCarts();
+    const draftsExpired = cartsExpired.productSets;
+    const purchaseDraftsExpired = cartsExpired.lines.length;
     // #1991 stage 4: a Pending Payment whose link expired returns to Draft.
     const pendingReturned = await expirePendingPayments();
     // #2480 follow-up: a provider refund left pending is settled from the provider's own record.
@@ -280,6 +281,7 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       // #2087: opened requests the provider's answer settled instead of being expired.
       reconciled,
       purchases_cancelled: purchasesCancelled,
+      carts_expired: cartsExpired.carts,
       drafts_expired: draftsExpired,
       purchase_drafts_expired: purchaseDraftsExpired,
       pending_returned_to_draft: pendingReturned,

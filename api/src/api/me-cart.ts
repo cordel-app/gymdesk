@@ -14,13 +14,14 @@
  * The body names a Product, its Promotions and who it is for — never a price or a discount.
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { expireCarts } from './cart-expiry';
 import rateLimit from 'express-rate-limit';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { getRequestLocale } from '../infra/locale';
 import {
-  IN_CART_PURCHASE_STATUS, PURCHASE_CART_TTL_MINUTES, isDraftAddable, purchaseBlockResponse, parsePurchaseQuantity,
+  IN_CART_PURCHASE_STATUS, isDraftAddable, purchaseBlockResponse, parsePurchaseQuantity,
 } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { resolveMemberId } from './me';
@@ -29,7 +30,7 @@ import { resolvePayerFor } from './payer-resolution';
 import { AssigneeRefused } from './product-assignee';
 import {
   PricingRefused, PromotionRefused, PurchaseRefused,
-  expireStandalonePurchaseDrafts, replacePurchaseDraft, resolveDraftPurchase, writeDraftPurchase,
+  replacePurchaseDraft, resolveDraftPurchase, writeDraftPurchase,
 } from './me-products';
 import { loadAppliedPromotionLists } from './member-product-promotions';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
@@ -67,8 +68,8 @@ async function cartBody(gymId: string, memberId: number) {
   return {
     purchases: purchases.map((p) => ({
       ...p,
-      cart_expires_at: p.created_at == null ? null
-        : new Date(new Date(p.created_at).getTime() + PURCHASE_CART_TTL_MINUTES * 60_000).toISOString(),
+      // #3274: every item of the cart reports the cart's one expiry.
+      cart_expires_at: p.cart_expires_at ?? null,
     })),
     total: cartTotal(purchases),
     currency: purchases[0]?.currency ?? null,
@@ -78,7 +79,7 @@ async function cartBody(gymId: string, memberId: number) {
 meCartRouter.get('/purchases', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { gymId, memberId } = await memberOf(req);
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    await expireCarts({ gymId, ownerMemberId: memberId });
     res.json(await cartBody(gymId, memberId));
   } catch (err) { next(err); }
 });
@@ -92,7 +93,7 @@ meCartRouter.get('/purchases', async (req: Request, res: Response, next: NextFun
 meCartRouter.get('/summary', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { gymId, memberId } = await memberOf(req);
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    await expireCarts({ gymId, ownerMemberId: memberId });
     const cart = await loadCartPurchases(db, gymId, memberId);
     const amountDue = cartTotal(cart);
     const memberIds = [...new Set(cart.map((p) => p.assigned_member_id ?? memberId))];
@@ -152,7 +153,7 @@ meCartRouter.post('/purchases', async (req: Request, res: Response, next: NextFu
     if (isDraftAddable({ billing_frequency: m[0].billing_frequency })) {
       return res.status(400).json({ error: 'recurring_product', message: 'A recurring Product is added to a Product Set' });
     }
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    await expireCarts({ gymId, ownerMemberId: memberId });
     // One of each Product in the cart, wherever the cart holds it (standalone or in a cart Product Set).
     const { rows: held } = await db.query<{ id: number }>(
       `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.product_id = ? AND mp.status = ? LIMIT 1`,
@@ -199,7 +200,7 @@ meCartRouter.put('/purchases/:id', async (req: Request, res: Response, next: Nex
   try {
     const { gymId, memberId } = await memberOf(req);
     if (await refuseUnlessMayAdd(res, gymId, memberId)) return;
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    await expireCarts({ gymId, ownerMemberId: memberId });
     const cart = await loadCartPurchases(db, gymId, memberId);
     const current = cart.find((p) => p.id === purchaseId);
     if (!current || current.product_id == null) return res.status(404).json({ error: 'not_found' });
@@ -258,7 +259,7 @@ meCartRouter.post('/checkout', cartCheckoutRateLimit as any, async (req: Request
     if ((await resolvePayerFor(db, gymId, memberId)).viaFamily) {
       return res.status(403).json({ error: 'family_owner_pays', message: 'Your family owner pays for this purchase' });
     }
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    await expireCarts({ gymId, ownerMemberId: memberId });
     const { rows: m } = await db.query<{ email: string | null }>(
       'SELECT email FROM members WHERE gym_id = ? AND id = ?', [gymId, memberId]);
     if (!m[0]) return res.status(404).json({ error: 'Member profile not found' });

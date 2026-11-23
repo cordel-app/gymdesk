@@ -40,9 +40,10 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { withPurposeParam } from '../domain/storedCards';
 import {
-  IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS, PRODUCT_PURCHASE_SOURCE, PURCHASE_CART_TTL_MINUTES,
+  IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS, PRODUCT_PURCHASE_SOURCE,
 } from '../domain/memberProductPurchase';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
+import { cartExpiresAtIso, lineCartLiveSql } from '../domain/cartExpiry';
 import { lineFromSimulation, type BillingEventLineRow } from '../domain/billingEventLines';
 import type { SimulationLine } from '../domain/billingSimulation';
 import { resolvePayerFor } from './payer-resolution';
@@ -75,6 +76,8 @@ export interface CartPurchase {
   created_at: string | null;
   /** #3251 stage 3: the cart (`purchases`) the line is in, when the read selected it. */
   purchase_id?: number | null;
+  /** #3274: the cart's one expiry (its purchase's `expires_at`), when the read selected it. */
+  cart_expires_at?: string | null;
 }
 
 /** A refusal the routes answer as `{ status, error }`. */
@@ -86,15 +89,16 @@ export class CartCheckoutRefused extends Error {
 
 /**
  * The member's standalone `in_cart` purchases (none a Product Set carries), oldest first. The
- * caller runs `expireStandalonePurchaseDrafts()` first, so an expired one is never listed or paid.
+ * caller runs `expireCarts()` for the member first, so an expired cart is never listed or paid.
  */
 export async function loadCartPurchases(exec: Conn, gymId: string, memberId: number): Promise<CartPurchase[]> {
-  // #2962: one past its cart expiry is never listed or paid, even before the sweep deleted it.
+  // #3274: one in a cart past its expiry (its purchase's `expires_at`) is never listed or paid, even
+  // before the sweep deleted it.
   const { rows } = await exec.query<any>(
     `SELECT mp.id, mp.product_id, mp.product_name, mp.product_type, mp.amount, mp.unit_amount, mp.quantity, mp.list_price, mp.currency,
-            mp.tax_rate_percent, mp.assigned_member_id, mp.created_at, mp.purchase_id
+            mp.tax_rate_percent, mp.assigned_member_id, mp.created_at, mp.purchase_id, mp.cart_expires_at
        FROM ${purchaseSnapshotsSql(
-         `gym_id = ? AND member_id = ? AND status = ? AND created_at >= UTC_TIMESTAMP() - INTERVAL ${PURCHASE_CART_TTL_MINUTES} MINUTE`,
+         `gym_id = ? AND member_id = ? AND status = ? AND ${lineCartLiveSql('purchase_id')}`,
          { notInProductSet: true })} mp
       ORDER BY mp.created_at, mp.id`,
     purchaseSnapshotParams([gymId, memberId, IN_CART_PURCHASE_STATUS]),
@@ -131,6 +135,7 @@ function toCartPurchase(r: any): CartPurchase {
     assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
     created_at: r.created_at == null ? null : new Date(r.created_at).toISOString(),
     ...(r.purchase_id !== undefined ? { purchase_id: r.purchase_id == null ? null : Number(r.purchase_id) } : {}),
+    ...(r.cart_expires_at !== undefined ? { cart_expires_at: cartExpiresAtIso(r.cart_expires_at) } : {}),
   };
 }
 

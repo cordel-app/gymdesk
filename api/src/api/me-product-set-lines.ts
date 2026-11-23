@@ -1,5 +1,5 @@
 import { db } from '../infra/db';
-import { draftExpiresInSeconds, DRAFT_TTL_MINUTES } from '../domain/productSet';
+import { cartExpiresInSeconds, setCartExpiresInSecondsSql } from '../domain/cartExpiry';
 import { loadRecurringLinePromotions } from './member-product-promotions';
 import { assignedMemberSql } from '../domain/productAssignee';
 import { planSnapshotInheritedSql, PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE } from './plan-snapshot-lines';
@@ -227,9 +227,10 @@ export async function loadMemberProductSetView(
   let expiresIn: number | null = null;
   if (set.status === 'in_cart') {
     const { rows } = await db.query<any>(
-      `SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), last_activity_at + INTERVAL ${DRAFT_TTL_MINUTES} MINUTE) AS s
+      // #3274: the cart's one clock, its purchase's `expires_at`.
+      `SELECT ${setCartExpiresInSecondsSql('product_sets')} AS s
          FROM product_sets WHERE id = ? AND gym_id = ?`, [Number(set.id), gymId]);
-    expiresIn = draftExpiresInSeconds(rows[0]?.s);
+    expiresIn = cartExpiresInSeconds(rows[0]?.s);
   }
 
   // #2496 stage 4 — the version's Membership Plans, in link order: `added` for

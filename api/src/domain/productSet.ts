@@ -13,9 +13,9 @@
  *                 └──► cancelled   (#2747: kept, never deleted)
  *
  * - `in_cart`          being prepared (the member's cart; `draft` until #2949 stage 2,
- *                      migration 434); persisted section by section and expires after
- *                      `DRAFT_TTL_MINUTES` without activity. The routes and messages still
- *                      call it a Draft.
+ *                      migration 434); persisted section by section and expires with its
+ *                      cart (#3274: `purchases.expires_at`, `domain/cartExpiry.ts`). The
+ *                      routes and messages still call it a Draft.
  * - `pending_payment`  committed (Save & Pay); the initial payment is awaited.
  * - `active`           the current committed configuration of the chain.
  * - `superseded`       replaced by a newer version that reached `active`.
@@ -29,9 +29,6 @@
 
 export const PRODUCT_SET_STATUSES = ['in_cart', 'pending_payment', 'active', 'superseded', 'cancelled'] as const;
 export type ProductSetStatus = (typeof PRODUCT_SET_STATUSES)[number];
-
-/** A Draft expires after two hours without a successful update (#1325). */
-export const DRAFT_TTL_MINUTES = 120;
 
 /** #1991: a Pending Payment that is not confirmed within two hours returns to Draft. */
 export const PENDING_TTL_MINUTES = 120;
@@ -58,26 +55,6 @@ export function canTransition(from: ProductSetStatus, to: ProductSetStatus): boo
 /** Statuses that occupy the owner's single in-flight slot. */
 export function isInFlight(status: ProductSetStatus): boolean {
   return status === 'in_cart' || status === 'pending_payment';
-}
-
-/**
- * Has this Draft gone stale? `lastActivityAt` and `now` are epoch milliseconds
- * so the caller decides the clock — the database's `UTC_TIMESTAMP()` in SQL, a
- * fixed value in a test. Exactly at the limit is still alive: a Draft is
- * expired only once it is *more than* two hours old.
- */
-export function isDraftExpired(lastActivityAtMs: number, nowMs: number): boolean {
-  return nowMs - lastActivityAtMs > DRAFT_TTL_MINUTES * 60_000;
-}
-
-/**
- * Seconds a Draft has left, from the database's own clock (#2477). `null` for a
- * row that is not a Draft; never negative — an expired Draft reports 0.
- */
-export function draftExpiresInSeconds(raw: unknown): number | null {
-  if (raw == null) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.max(0, n) : null;
 }
 
 /** What a cancel of a pending checkout may do, from its payment attempts. */

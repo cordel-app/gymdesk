@@ -17,6 +17,7 @@
 // server-side from the Product's id, so the UI is never the enforcement.
 
 import { lockPurchase, updatePurchase } from './purchase-writer';
+import { expireCarts } from './cart-expiry';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -30,7 +31,6 @@ import {
   PurchaseRefused,
   grossPrice,
   deletePurchaseDraft,
-  expireStandalonePurchaseDrafts,
   replacePurchaseDraft,
   saveProductPurchaseDraft,
   startProductPurchase,
@@ -571,7 +571,7 @@ memberProductPurchasesRouter.get('/cart-summary', async (req, res, next) => {
   const memberId = memberIdOf(req);
   try {
     if (!(await loadMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    await expireCarts({ gymId, ownerMemberId: memberId });
     const cart = await loadCartPurchases(db, gymId, memberId);
     const amountDue = cartTotal(cart);
     const memberIds = [...new Set(cart.map((p) => p.assigned_member_id ?? memberId))];
@@ -628,8 +628,8 @@ memberProductPurchasesRouter.post('/checkout', requireModuleWrite('MEMBERS'), as
   try {
     const member = await loadMember(gymId, memberId);
     if (!member) return res.status(404).json({ error: 'Member not found' });
-    // #2962: a standalone cart purchase past its two hours is deleted, never paid for.
-    await expireStandalonePurchaseDrafts({ gymId, memberId });
+    // #3274: a purchase in a cart past its two hours is deleted with the cart, never paid for.
+    await expireCarts({ gymId, ownerMemberId: memberId });
     const result = await startCartCheckout({
       gymId, memberId, memberEmail: member.email ?? '',
       actorName: resolveRequestActor(tenantCtx) ?? member.name,
@@ -660,9 +660,9 @@ memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBER
     const member = await loadMember(gymId, memberId);
     if (!member) return res.status(404).json({ error: 'Member not found' });
     if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
-    // #2962: a standalone cart purchase past its two hours is deleted, never paid for.
-    const expired = await expireStandalonePurchaseDrafts({ gymId, memberId });
-    if (expired.some((e) => e.id === purchaseId)) {
+    // #3274: a purchase in a cart past its two hours is deleted with the cart, never paid for.
+    const expired = await expireCarts({ gymId, ownerMemberId: memberId });
+    if (expired.lines.some((e) => e.id === purchaseId)) {
       return res.status(410).json({ error: 'purchase_expired', message: 'This product was in the cart for more than two hours and has expired' });
     }
     const { rows } = await db.query<any>(
@@ -735,8 +735,8 @@ memberProductPurchasesRouter.put('/:purchaseId', requireModuleWrite('MEMBERS'), 
     if (!discount) return;
     const promotionIds = promotionIdsFrom(req, res);
     if (!promotionIds) return;
-    const expired = await expireStandalonePurchaseDrafts({ gymId, memberId });
-    if (expired.some((e) => e.id === purchaseId)) {
+    const expired = await expireCarts({ gymId, ownerMemberId: memberId });
+    if (expired.lines.some((e) => e.id === purchaseId)) {
       return res.status(410).json({ error: 'purchase_expired', message: 'This product was in the cart for more than two hours and has expired' });
     }
     const { rows } = await db.query<any>(

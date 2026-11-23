@@ -23,7 +23,7 @@ vi.mock('../payments', async (importOriginal) => {
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { createDraft } from '../api/product-sets';
-import { expireStandalonePurchaseDrafts } from '../api/me-products';
+import { expireCarts } from '../api/cart-expiry';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
 const SECRET = 'test-3251-purchases-webhook';
@@ -137,10 +137,9 @@ describe('one cart, one purchase (#3251)', () => {
     const m = await member();
     const a = await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('4.00') });
     const cart = await cartOfLine(a.body.purchase_id);
-    await db.query(`UPDATE product_oneoff_snapshots SET created_at = UTC_TIMESTAMP() - INTERVAL 1 DAY WHERE source_id = ?`,
-      [a.body.purchase_id]);
-    const expired = await expireStandalonePurchaseDrafts({ gymId, memberId: m.id });
-    expect(expired.map((e) => e.id)).toEqual([a.body.purchase_id]);
+    await db.query('UPDATE purchases SET expires_at = UTC_TIMESTAMP() - INTERVAL 1 MINUTE WHERE id = ?', [cart]);
+    const expired = await expireCarts({ gymId, ownerMemberId: m.id });
+    expect(expired.lines.map((e) => e.id)).toEqual([a.body.purchase_id]);
     expect(await purchase(cart)).toBeNull();
   });
 });

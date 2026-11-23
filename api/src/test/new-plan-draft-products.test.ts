@@ -3,7 +3,7 @@
 // instead of answering `A draft is already in progress for this member`.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import {
+import { ageTestCart,
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 
@@ -133,7 +133,7 @@ describe('adding a recurring Product to a new-plan Draft (#2891)', () => {
 
   it('an expired new-plan Draft is not reused', async () => {
     const { memberId, draftId } = await memberWithNewPlanDraft();
-    await db.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() - INTERVAL 3 HOUR WHERE id = ?', [draftId]);
+    await ageTestCart({ productSetId: draftId }, 180);
     const productId = await monthlyProduct();
     const res = await auth(request.post(`/members/${memberId}/product-purchases`)).send({ product_id: productId });
     expect(res.status).toBe(201);

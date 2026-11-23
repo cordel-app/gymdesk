@@ -1,4 +1,5 @@
 import { deleteProductApplication } from './product-promotion-writer';
+import { refreshSetCart } from './purchases';
 import { Router, Response } from 'express';
 import { nameSimulatedEvents } from './billing-event-name';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
@@ -299,7 +300,7 @@ productSetDraftRouter.post('/promotions', requireModuleWrite('PAYMENTS'), (req, 
     if (selectionError) return { kind: 'invalid' as const, message: selectionError.error };
     try {
       const applied = await applyPromotionToProductSet(tx, gymId, resolveRequestActor(getTenantContext(req)), draft.id, promotionId);
-      await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [draft.id]);
+      await refreshSetCart(tx, gymId, draft.id);
       return { ok: true as const, application_id: applied.application_id };
     } catch (err: any) {
       if (err?.status) return { kind: 'invalid' as const, message: err.message };
@@ -325,7 +326,7 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
         [Number(req.params.applicationId), draft.gym_id, snapshotId]);
       if (onSnapshot === 0) return { kind: 'not_found' as const };
     }
-    await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [draft.id]);
+    await refreshSetCart(tx, draft.gym_id, draft.id);
     return { ok: true as const };
   }, next, { remove_promotion: Number(req.params.applicationId) }));
 

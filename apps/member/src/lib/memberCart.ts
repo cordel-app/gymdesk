@@ -214,8 +214,9 @@ export function standaloneCartItems(standalone: MemberStandaloneCart): CartItem[
 }
 
 /**
- * #2949 stage 6 — seconds until the first standalone purchase leaves the cart
- * (#2962's two hours, the server's `cart_expires_at`), or `null` with none.
+ * #2949 stage 6 — seconds until the standalone purchases leave the cart (the
+ * server's `cart_expires_at`, since #3274 the cart's one clock, the same for
+ * every item and for the cart's Product Set), or `null` with none.
  */
 export function standaloneSecondsLeft(standalone: MemberStandaloneCart, nowMs: number): number | null {
   const times = standalone.purchases

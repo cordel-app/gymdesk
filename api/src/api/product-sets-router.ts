@@ -1,4 +1,6 @@
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { cartExpiresAtIso, setCartExpiredSql, setCartExpiresAtSql } from '../domain/cartExpiry';
+import { refreshSetCart } from './purchases';
 import { Router } from 'express';
 import { generatePaidRepresentations } from './billing-invoices';
 import { refuseUnlessMayAdd } from './family-add-rights';
@@ -8,7 +10,7 @@ import { recordStatusChange } from './billing-events';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
-import { canCancelPending, isDraftExpired } from '../domain/productSet';
+import { canCancelPending } from '../domain/productSet';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
@@ -93,7 +95,7 @@ async function loadSet(gymId: string, id: unknown) {
   if (!Number.isInteger(numeric) || numeric <= 0) return null;
   const { rows } = await db.query<any>(
     `SELECT ps.*, ${productSetLegacyAssignmentIdSql()} AS linked_user_membership_id,
-            (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
+            ${setCartExpiredSql('ps')} AS stale, ${setCartExpiresAtSql('ps')} AS cart_expires_at
        FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [numeric, gymId]);
   return rows[0] ?? null;
 }
@@ -111,7 +113,8 @@ function shape(row: any) {
     activated_at: row.activated_at ?? null,
     superseded_at: row.superseded_at ?? null,
     cancelled_at: row.cancelled_at ?? null,
-    last_activity_at: row.last_activity_at ?? null,
+    /** #3274: the cart's one expiry (`purchases.expires_at`), null outside an In-Cart cart. */
+    cart_expires_at: cartExpiresAtIso(row.cart_expires_at),
     expired: row.status === 'in_cart' && Number(row.stale) === 1,
   };
 }
@@ -136,7 +139,7 @@ productSetsRouter.get('/', async (req, res) => {
   const memberId = Number(req.query.member_id);
   if (!Number.isInteger(memberId) || memberId <= 0) return res.status(400).json({ error: 'member_id is required' });
   const { rows } = await db.query<any>(
-    `SELECT ps.*, (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
+    `SELECT ps.*, ${setCartExpiredSql('ps')} AS stale, ${setCartExpiresAtSql('ps')} AS cart_expires_at
        FROM product_sets ps WHERE ps.gym_id = ? AND ps.owner_member_id = ?
       ORDER BY ps.id DESC`, [gymId, memberId]);
   res.json(rows.map(shape));
@@ -772,7 +775,7 @@ meProductSetsRouter.get('/', async (req, res) => {
   let memberId: number;
   try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { return res.json([]); }
   const { rows } = await db.query<any>(
-    `SELECT ps.*, (ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS stale
+    `SELECT ps.*, ${setCartExpiredSql('ps')} AS stale, ${setCartExpiresAtSql('ps')} AS cart_expires_at
        FROM product_sets ps
       WHERE ps.gym_id = ?
         AND (ps.owner_member_id = ?
@@ -817,7 +820,6 @@ meProductSetsRouter.delete('/:id', async (req, res) => {
   res.status(204).end();
 });
 
-export { isDraftExpired };
 
 
 /**
@@ -1117,7 +1119,7 @@ meProductSetsRouter.post('/:id/purchases', async (req, res, next) => {
     return editDraft(req, res, 'update', async (tx, d) => {
       const purchaseId = await writeDraftPurchase(tx, input, resolved);
       await linkPurchaseToSet(tx, gymId, purchaseId, Number(d.id));
-      await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [Number(d.id)]);
+      await refreshSetCart(tx, gymId, Number(d.id));
       return { ok: true as const, purchase_id: purchaseId, amount: resolved.snapshot.amount, currency: resolved.snapshot.currency };
     }, next, { add_purchase: productId, promotion_ids: promotionIds, source: 'members_app' });
   } catch (err: any) {
@@ -1148,7 +1150,7 @@ meProductSetsRouter.delete('/:id/purchases/:purchaseId', async (req, res, next) 
     if (!(await removeSetPurchase(tx, gymId, Number(d.id), purchaseId))) {
       throw Object.assign(new Error('not_found'), { status: 404 });
     }
-    await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [Number(d.id)]);
+    await refreshSetCart(tx, gymId, Number(d.id));
     return { ok: true as const, removed_purchase: purchaseId };
   }, next, { remove_purchase: purchaseId, source: 'members_app' });
 });
