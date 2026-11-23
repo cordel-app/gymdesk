@@ -61,6 +61,8 @@ export interface MemberPurchase {
   status: string;
   created_at: string;
   created_by: string | null;
+  /** #3278: the application the purchase was initiated through; null when unknown. */
+  channel: string | null;
   owner: PurchaseMemberRef;
   plans: PurchasePlan[];
   products: PurchaseProduct[];
@@ -99,4 +101,14 @@ export function productTypeLabelKey(type: string | null | undefined): string | n
 /** Whether the purchase has anything to show in its expanded body. */
 export function purchaseIsEmpty(p: Pick<MemberPurchase, 'plans' | 'products'>): boolean {
   return p.plans.length === 0 && p.products.length === 0;
+}
+
+/**
+ * #3278 — the locale key of a purchase's Channel value (`admin_app` → Admin App, `members_app` →
+ * Members App), or null for an unknown or absent channel, which reads as the neutral `—`.
+ */
+export function purchaseChannelLabelKey(channel: string | null | undefined): string | null {
+  if (channel === 'admin_app') return 'members.purchases_channel_admin_app';
+  if (channel === 'members_app') return 'members.purchases_channel_members_app';
+  return null;
 }

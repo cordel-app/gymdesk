@@ -13,7 +13,7 @@ import {
 } from '@/components/formChrome';
 import { NormalizedPaymentStatusBadge, BillingEventStatusBadge } from '../payments/billing-events/BillingEventShared';
 import {
-  beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseEventPath, purchaseIsEmpty,
+  beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseChannelLabelKey, purchaseEventPath, purchaseIsEmpty,
   type MemberPurchase, type PurchaseBillingEvent,
 } from './purchasesTabView';
 
@@ -53,6 +53,7 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
       {items.map((p) => {
         const expanded = open.has(p.id);
         const event = p.billing_events[0];
+        const channelKey = purchaseChannelLabelKey(p.channel);
         return (
           <div key={p.id} style={innerCardStyle}>
             <button
@@ -70,9 +71,17 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
 
             {expanded && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
-                <div style={cardDetailRowStyle}>
-                  <span style={cardDetailLabelStyle}>{t('members.purchases_buyer')}</span>
-                  <span style={cardDetailValueStyle}>{p.owner.name ?? `#${p.owner.id}`}</span>
+                {/* #3278: who initiated the purchase (its stored `created_by`) and through which app,
+                    two separate fields side by side, wrapping on a narrow screen. Never the owner. */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', columnGap: 24, rowGap: 4 }}>
+                  <div style={cardDetailRowStyle}>
+                    <span style={cardDetailLabelStyle}>{t('members.purchases_managed_by')}</span>
+                    <span style={cardDetailValueStyle}>{p.created_by ?? '—'}</span>
+                  </div>
+                  <div style={cardDetailRowStyle}>
+                    <span style={cardDetailLabelStyle}>{t('members.purchases_channel')}</span>
+                    <span style={cardDetailValueStyle}>{channelKey ? t(channelKey as any) : '—'}</span>
+                  </div>
                 </div>
 
                 {p.plans.length > 0 && (

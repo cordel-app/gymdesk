@@ -11,6 +11,8 @@ import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
 import { AppRole, AppModule, canAccess, canAccessFeature, canWrite, canWriteFeature } from './permissions';
 import { isAllowedWhileRevoked, isMemberAccessRevoked, memberAccessRevokedBody } from '../domain/memberAccessRevocation';
+import { purchaseChannelForPath } from '../domain/purchaseChannel';
+import { runInRequestChannel } from './requestChannel';
 
 /** Gym-scoped role stored in gym_memberships.role. */
 export type GymRole = AppRole;
@@ -57,7 +59,18 @@ declare global {
   }
 }
 
+/**
+ * #3278: everything after a resolved tenant context runs in the request's channel (`/me` → the
+ * Members App, any other tenant route → the Admin App), which `createPurchase()` stamps.
+ */
 export async function tenantContext(req: Request, res: Response, next: NextFunction) {
+  const channel = purchaseChannelForPath(req.originalUrl);
+  return resolveTenantContext(req, res, (err?: unknown) => (
+    err ? next(err) : runInRequestChannel(channel, () => next())
+  ));
+}
+
+async function resolveTenantContext(req: Request, res: Response, next: NextFunction) {
   const userId = req.auth?.userId;
   const gymId = req.headers['x-gym-id'] as string | undefined;
 
