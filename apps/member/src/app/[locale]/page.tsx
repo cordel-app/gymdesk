@@ -67,6 +67,9 @@ interface Membership {
   status: 'active' | 'paused' | 'cancelled' | 'expired';
 }
 
+interface PendingMembership { membership_fee: number | null; product_set_id?: number | null }
+interface PendingRequest { status: string; source?: string | null; amount: string; currency?: string | null; product_set_id?: number | null }
+
 interface NotificationItem {
   id: number;
   type: string;
@@ -113,7 +116,11 @@ export default function HomePage() {
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
   const [activeProducts, setActiveProducts] = useState(0);
   // #2744 — the global pending payment notice lives here, not on My Products.
-  const [pendingPayment, setPendingPayment] = useState<{ amount: number; currency: string } | null>(null);
+  // #3286 — the candidates are kept as read, and the banner is decided on render
+  // against the Pending Payment Product Set the cart card below already shows
+  // (`undefined` until the card has read it, so the banner never flashes first).
+  const [pendingCandidates, setPendingCandidates] = useState<{ pending: PendingMembership | null; requests: PendingRequest[] }>({ pending: null, requests: [] });
+  const [cartPendingSetId, setCartPendingSetId] = useState<number | null | undefined>(undefined);
   const [serviceSessions, setServiceSessions] = useState(0);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null);
   const [alert, setAlert] = useState<NotificationItem | null>(null);
@@ -137,10 +144,10 @@ export default function HomePage() {
 
       const [sessions, mship, notifs, nutrition, requests] = await Promise.all([
         apiFetch<UpcomingBooking[]>(`/me/schedule?to=${to.toISOString()}`),
-        apiFetch<{ membership: Membership | null; active_products_count?: number; professional_service_sessions?: number; pending_membership?: { membership_fee: number | null } | null }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0, professional_service_sessions: 0, pending_membership: null })),
+        apiFetch<{ membership: Membership | null; active_products_count?: number; professional_service_sessions?: number; pending_membership?: PendingMembership | null }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0, professional_service_sessions: 0, pending_membership: null })),
         apiFetch<{ items: NotificationItem[] }>('/me/notifications?limit=5').catch(() => ({ items: [] })),
         apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan').catch(() => ({ plan: null })),
-        apiFetch<{ status: string; source?: string | null; amount: string; currency?: string | null }[]>('/me/payment-requests').catch(() => []),
+        apiFetch<PendingRequest[]>('/me/payment-requests').catch(() => []),
       ]);
 
       const booked = sessions.filter(
@@ -153,7 +160,7 @@ export default function HomePage() {
           : 0,
       );
       setMembership(mship.membership);
-      setPendingPayment(homePendingPayment(mship.pending_membership, requests));
+      setPendingCandidates({ pending: mship.pending_membership ?? null, requests });
       setActiveProducts(mship.active_products_count ?? 0);
       setServiceSessions(mship.professional_service_sessions ?? 0);
       setAlert(notifs.items.find((n) => n.read_at === null) ?? null);
@@ -195,6 +202,13 @@ export default function HomePage() {
       setCancelBusy(false);
     }
   }
+  // The cart card is mounted only for a linked member with My Products on; where it
+  // is not, it shows no checkout and nothing waits for it.
+  const cartMounted = !!member && featureEnabled('member_web.my_membership');
+  const pendingPayment = cartMounted && cartPendingSetId === undefined
+    ? null
+    : homePendingPayment(pendingCandidates.pending, pendingCandidates.requests, cartPendingSetId ?? null);
+
   function goToBookings() { router.push(`/${locale}/schedule`); }
 
   // Clerk's state is not known yet (always the case on the server and on the
@@ -282,7 +296,7 @@ export default function HomePage() {
       {/* #2973 stage 1 — the cart card, the same cart My Products shows. */}
       {!loading && member && featureEnabled('member_web.my_membership') && (
         <section style={styles.section}>
-          <MemberCart />
+          <MemberCart onPendingCheckout={setCartPendingSetId} />
         </section>
       )}
 

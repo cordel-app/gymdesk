@@ -243,6 +243,26 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     expect(res.body.cart).toEqual({ plans: 1, products: 0 });
   });
 
+  it('#3286: the member\'s pending plan and its payment request name the Pending Payment Product Set they belong to', async () => {
+    for (const assignment of [true, false]) {
+      const clerk = `ps-pending-link-${assignment}-${uniq()}`;
+      await createTestMembership(gymId, 'member', clerk);
+      const own = await pending(await member(clerk), { assignment });
+
+      vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any);
+      const me = await request.get('/me/membership').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+      expect(me.status).toBe(200);
+      // With the legacy assignment projection the pending plan is the assignment; without it, the set.
+      expect(me.body.pending_membership).toMatchObject({ product_set_id: own.id });
+      if (assignment) expect(me.body.pending_membership.id).toBe(own.umId);
+
+      vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any);
+      const reqs = await request.get('/me/payment-requests').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+      expect(reqs.status).toBe(200);
+      expect(reqs.body.find((r: any) => r.id === own.request.id)).toMatchObject({ product_set_id: own.id });
+    }
+  });
+
   it('#2747 stage 2: a cancelled plan that never had an assignment is listed under Past in both apps', async () => {
     const clerk = `ps-cancel-past-${uniq()}`;
     await createTestMembership(gymId, 'member', clerk);
