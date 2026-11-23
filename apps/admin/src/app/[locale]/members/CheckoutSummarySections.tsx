@@ -80,6 +80,12 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
                       )}
                     </span>
                   )}
+                  {l.proration && (
+                    // #3165 stage 2 — the proration the first charge applied, by the Product's own calendar.
+                    <span data-line-proration style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
+                      {t('checkout_line_prorated', { days: l.proration.days, period: l.proration.period_days })}
+                    </span>
+                  )}
                   {prepaid && <span data-prepaid-periods style={{ ...cardHintStyle, margin: 0, display: 'block' }}>{prepaid}</span>}
                 </td>
                 <td style={tdNum}>{l.quantity}</td>

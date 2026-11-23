@@ -278,3 +278,54 @@ describe('a Product added to a running Product Set owes only the new line (#3165
     expect(initialAmount).toBeCloseTo(first, 2);
   });
 });
+
+describe('a Product follows its own frequency calendar, never the plan\'s billing date (#3165 stage 2)', () => {
+  it('a Monthly Product beside a plan billing on the 7th is prorated to month end and bills on the 1st', async () => {
+    const m = await member();
+    const planId = await plan(40);
+    const created = await auth(request.post('/product-sets')).send({ member_id: m, membership_plan_id: planId, starts_at: TODAY });
+    expect(created.status).toBe(201);
+    await saveAndPay(created.body.id);
+    // A plan schedule opened before the billing calendar (#2125 M5c) bills on its own start date.
+    const { rows: sched } = await db.query<any>(
+      `SELECT id FROM product_set_schedules WHERE gym_id = ? AND owner_member_id = ? AND schedule_key = 'plan'`, [gymId, m]);
+    expect(sched).toHaveLength(1);
+    await db.query(`UPDATE product_set_schedules SET anchor_date = '2026-10-07' WHERE id = ?`, [sched[0].id]);
+
+    const locker = await product({ name: 'FC Locker Own Calendar', frequency: 'month', amount: '31.00', type: 'service' });
+    const nextId = await addRecurring(m, locker);
+    const first = proratedToNextFirst(31);
+
+    // The line is not on the plan's schedule: it has one of its own, on the 1st.
+    const { rows: line } = await db.query<any>(
+      `SELECT DATE_FORMAT(sch.anchor_date, '%Y-%m-%d') AS anchor, sch.schedule_key
+         FROM product_set_periodical_snapshots lnk
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+         JOIN product_set_schedules sch ON sch.id = s.schedule_id
+        WHERE lnk.product_set_id = ? AND s.product_id = ?`, [nextId, locker]);
+    expect(line).toHaveLength(1);
+    expect(line[0].schedule_key).not.toBe('plan');
+    expect(line[0].anchor.endsWith('-01')).toBe(true);
+
+    const review = await auth(request.get(`${mset(nextId)}/review`));
+    expect(review.status).toBe(200);
+    expect(Number(review.body.amount_due)).toBeCloseTo(first, 2);
+    const initialLine = review.body.initial_payment.lines.find((l: any) => l.name === 'FC Locker Own Calendar');
+    if (TODAY.endsWith('-01')) {
+      expect(initialLine.proration).toBeNull();
+    } else {
+      expect(initialLine.proration).toEqual({ days: daysBetween(TODAY, firstOfNextMonth), period_days: expect.any(Number) });
+    }
+
+    const { initial, dates } = await initialForecast(nextId);
+    expect(Number(initial.total)).toBeCloseTo(first, 2);
+    if (!TODAY.endsWith('-01')) {
+      expect(dates.find((d: any) => d.date === firstOfNextMonth).lines.find((l: any) => l.label === 'FC Locker Own Calendar').actual_charge).toBe(31);
+    }
+    const { initialAmount } = await saveAndPay(nextId);
+    expect(initialAmount).toBeCloseTo(first, 2);
+    const scheduled = await scheduledFor(nextId, locker);
+    expect(scheduled.map((e) => e.d)).not.toContain(TODAY);
+    expect(scheduled.every((e) => e.d.endsWith('-01'))).toBe(true);
+  });
+});

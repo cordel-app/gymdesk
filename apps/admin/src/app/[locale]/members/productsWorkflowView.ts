@@ -91,6 +91,8 @@ export interface InitialPaymentLike {
       prorated: { days: number; period_days: number; start: string; end: string; amount: number };
       prepaid: { periods: number; start: string; end: string; amount: number } | null;
     } | null;
+    /** #3165 stage 2 — the partial first period the line was prorated to, by its own billing calendar. */
+    proration?: { days: number; period_days: number } | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;

@@ -14,6 +14,7 @@ import {
   reviewFrequencyKey,
   reviewBeneficiary,
   reviewLineDiscount,
+  reviewLineProration,
   reviewSections,
   reviewContractedGroups,
   reviewPendingDeletions,
@@ -121,7 +122,10 @@ export function CartSummary({ review, defaultOpen = false }: { review: MemberSet
             {review.immediate_lines.map((l, n) => {
               const discount = reviewLineDiscount(l);
               const prepaidKey = prepaidPaymentKey(l.prepaid_periods, l.prepaid_cadence);
+              const proration = reviewLineProration(l);
               const sub = [
+                // #3165 stage 2 — the partial first period, by the Product's own billing calendar.
+                proration ? t('membership.summary_line_prorated', { days: proration.days, period: proration.period }) : null,
                 // #2883 — a Membership Fee collecting a Pre-paid Duration says how many periods it covers.
                 prepaidKey ? t(`payments.${prepaidKey}` as any, { count: l.prepaid_periods as number }) : null,
                 l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price) }) : null,

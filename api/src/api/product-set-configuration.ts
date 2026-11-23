@@ -293,7 +293,11 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
       const cadence = cadenceForFrequency(row.frequency as any);
       if (!cadence) continue;
       const purchaseDate = row.startsAt ? toDateOnly(row.startsAt) : setStart;
-      const allocation = allocateSchedule({ cadence, purchaseDate, schedules });
+      // #3165 stage 2 — an ad-hoc Product line follows its own frequency calendar, never the
+      // plan's billing date; a plan's included Products keep joining the plan's schedule.
+      const allocation = allocateSchedule({
+        cadence, purchaseDate, schedules, ownCalendar: table === 'product_periodical_snapshots',
+      });
       let scheduleId: number | null = null;
       if (allocation.kind === 'new') {
         scheduleId = await ensureSchedule(tx, {

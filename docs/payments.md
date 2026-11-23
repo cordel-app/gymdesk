@@ -121,6 +121,18 @@ first stretch is owed in full (matched by Product, it read as already paid and t
 review, Save & Pay, the free activation and the Draft's initial-payment forecast group all read
 this one figure, and reading it writes nothing.
 
+**A recurring Product follows its own frequency calendar** (#3165 stage 2). When a recurring
+Product line is given a schedule (`allocateItemSchedules()`), it joins an existing schedule — the
+plan's included — only when that schedule bills on the Product's own calendar
+(`billsOnOwnCalendar()`, `domain/scheduleAllocation.ts`): monthly on the 1st, 4 weeks on the
+2026-11-02 grid, weekly on Mondays, yearly on the purchase date's own anniversary. A plan schedule
+opened before the billing calendar on its start date (the 7th) is therefore not joined: the
+Product opens its own schedule on the 1st, is prorated to month end and bills its full amount on
+the 1st. A plan's included Products keep joining the plan's schedule. The Initial Payment states
+the proration a line applied beside its name (*Prorated: 9 of 30 days*, `lineProration()` in
+`domain/checkoutSummary.ts`, the engine's `prorated_days` / `period_days`), never on a full period
+nor on a Membership Fee whose split charge already states its prorated stretch.
+
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
 current plan exactly as it was, and the pending row is discarded through `POST /:id/close`,
 which cancels the pending version with it (`cancelPendingSetForAssignment()`; refused with
