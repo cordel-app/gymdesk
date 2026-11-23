@@ -52,6 +52,21 @@ export interface Tx {
   query<T = any>(sql: string, params?: any[]): Promise<QueryResult<T>>;
 }
 
+/**
+ * #3251 — work a writer needs done once, after every other statement of the transaction and
+ * before it commits (a cart's status follows what the whole transaction left in it, not each step).
+ * Keyed by the `Tx` object `db.transaction()` hands out; `false` means `tx` is not one (a pool or a
+ * test connection), and the caller does the work at once.
+ */
+const preCommitHooks = new WeakMap<object, Array<() => Promise<void>>>();
+
+export function beforeCommit(tx: object, hook: () => Promise<void>): boolean {
+  const hooks = preCommitHooks.get(tx);
+  if (!hooks) return false;
+  hooks.push(hook);
+  return true;
+}
+
 export const db = {
   query<T = any>(sql: string, params: any[] = []): Promise<QueryResult<T>> {
     return run<T>(pool, sql, params);
@@ -62,7 +77,13 @@ export const db = {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
-      const result = await fn({ query: (sql, params) => run(conn, sql, params ?? []) });
+      const tx: Tx = { query: (sql, params) => run(conn, sql, params ?? []) };
+      const hooks: Array<() => Promise<void>> = [];
+      preCommitHooks.set(tx, hooks);
+      const result = await fn(tx);
+      // A hook may register another (a cart sync that moves items touches a second cart).
+      while (hooks.length > 0) await hooks.shift()!();
+      preCommitHooks.delete(tx);
       await conn.commit();
       return result;
     } catch (err) {

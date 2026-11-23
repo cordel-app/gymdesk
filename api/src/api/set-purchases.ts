@@ -21,6 +21,7 @@
  * it (`purchaseSnapshotsSql(…, { notInProductSet: true })`), and its amount is the one `resolvePurchase()` froze — nothing here
  * prices anything.
  */
+import { moveLineToPurchase, purchaseOfSet } from './purchases';
 import { DateTime } from 'luxon';
 import type { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -109,6 +110,9 @@ export async function linkPurchaseToSet(tx: Conn, gymId: string, purchaseId: num
        SELECT ?, s.id FROM ${arm.table} s WHERE s.gym_id = ? AND s.source_id = ?`,
       [productSetId, gymId, purchaseId]);
   }
+  // #3251: a line added to a set is in the set's cart.
+  const cartId = await purchaseOfSet(tx, gymId, productSetId);
+  if (cartId != null) await moveLineToPurchase(tx, gymId, purchaseId, cartId);
 }
 
 /** Removes an in-cart purchase from the Draft (a hard delete: it has charged nothing). */

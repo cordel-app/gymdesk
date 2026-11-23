@@ -257,7 +257,7 @@ describe('one writer for a one-time purchase (#2126 stage 5b)', () => {
     expect(sessions).toBeGreaterThan(fee);
 
     // Each id is registered once, for the gym, and the snapshot carries it.
-    const { rows } = await db.query<any>('SELECT id, gym_id FROM product_purchase_ids WHERE id IN (?, ?) ORDER BY id', [fee, sessions]);
+    const { rows } = await db.query<any>('SELECT id, gym_id FROM product_line_ids WHERE id IN (?, ?) ORDER BY id', [fee, sessions]);
     expect(rows).toEqual([{ id: fee, gym_id: gymId }, { id: sessions, gym_id: gymId }]);
     expectWritten(await pair(fee, 'fee'));
     expectWritten(await pair(sessions, 'sessions'));

@@ -141,6 +141,7 @@ export function auditActorField(stored: string | null | undefined): string | nul
  */
 export const AUDITED_TABLES: readonly string[] = [
   'families',
+  'purchases',
   'activity_types',
   'calendar_events',
   'centers',

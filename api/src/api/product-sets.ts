@@ -9,6 +9,7 @@ import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
 import { activateSetPurchases, moveSetPurchases } from './set-purchases';
 import { deleteStandaloneCartPurchases } from './cart-checkout';
+import { openCart, touchPurchases } from './purchases';
 import {
   DRAFT_TTL_MINUTES,
   PENDING_TTL_MINUTES,
@@ -36,10 +37,12 @@ export interface ProductSetRow {
   previous_product_set_id: number | null;
   status: string;
   membership_plan_id: number | null;
+  /** #3251: the cart (`purchases`) the version belongs to; NULL for one no checkout made. */
+  purchase_id?: number | null;
 }
 
 const COLUMNS = `id, gym_id, owner_member_id, previous_product_set_id,
-                 status, membership_plan_id`;
+                 status, membership_plan_id, purchase_id`;
 
 const FRESH_DRAFT_SQL = `last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`;
 
@@ -84,6 +87,11 @@ async function lockActive(tx: Tx, gymId: string, ownerMemberId: number) {
 export async function createDraft(tx: Tx, input: {
   gymId: string; ownerMemberId: number; membershipPlanId: number | null;
   startsAt: string; actor: Actor;
+  /**
+   * #3251: whether the Draft is a cart (the default). The bridge's versions, which edit or retire a
+   * running plan and are activated in the same transaction, are not checkouts and pass `false`.
+   */
+  purchase?: boolean;
 }): Promise<CreateDraftOutcome> {
   const inFlight = await lockInFlight(tx, input.gymId, input.ownerMemberId);
   if (inFlight) {
@@ -98,15 +106,18 @@ export async function createDraft(tx: Tx, input: {
   }
 
   const active = await lockActive(tx, input.gymId, input.ownerMemberId);
+  const purchaseId = input.purchase === false ? null
+    : await openCart(tx, input.gymId, input.ownerMemberId, input.actor.name);
   const { insertId } = await tx.query(
     `INSERT INTO product_sets
        (gym_id, owner_member_id, previous_product_set_id, status,
-        membership_plan_id, starts_at, created_by)
-     VALUES (?, ?, ?, 'in_cart', ?, ?, ?)`,
+        membership_plan_id, starts_at, created_by, purchase_id)
+     VALUES (?, ?, ?, 'in_cart', ?, ?, ?, ?)`,
     [input.gymId, input.ownerMemberId,
       active ? active.id : null, input.membershipPlanId, input.startsAt,
-      input.actor.name],
+      input.actor.name, purchaseId],
   );
+  await touchPurchases(tx, input.gymId, [purchaseId]);
   const { rows } = await tx.query<ProductSetRow>(`SELECT ${COLUMNS} FROM product_sets WHERE id = ?`, [insertId]);
   return { kind: 'created', productSet: rows[0] };
 }
@@ -159,6 +170,7 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
     [paymentRequestId, id],
   );
   await syncPlanSnapshot(tx, gymId, id);
+  await touchPurchases(tx, gymId, [row.purchase_id]);
   return { kind: 'ok', productSet: { ...row, status: 'pending_payment' } };
 }
 
@@ -209,6 +221,7 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
   // Active set looks for an ended plan no snapshot states (`carryClosedAssignments()`).
   if (previous) await syncPlanSnapshot(tx, gymId, Number(previous.id));
   await syncPlanSnapshot(tx, gymId, id);
+  await touchPurchases(tx, gymId, [row.purchase_id]);
   return { kind: 'ok', productSet: { ...row, status: 'active' } };
 }
 
@@ -311,6 +324,7 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
     await writeAssignmentLifecycle(tx, gymId, Number(linked[0].um_id), { status: 'in_cart', from: 'pending_payment', actor });
   }
   await syncPlanSnapshot(tx, gymId, id);
+  await touchPurchases(tx, gymId, [row.purchase_id]);
   return { kind: 'cancelled' };
 }
 

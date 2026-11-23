@@ -2,6 +2,7 @@ import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import { originOf } from '../domain/itemOrigin';
 import { insertPurchase, insertPurchasePromotion, deletePurchase, lockPurchase, updatePurchase } from './purchase-writer';
+import { splitOffCheckout } from './purchases';
 import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -667,6 +668,9 @@ export async function startProductPurchase(
     const payer = await resolvePayerFor(db, input.gymId, input.memberId);
     try {
       const purchaseId = await db.transaction(async (tx) => {
+        // #3251: the checkout is the draft's purchase (a purchase of its own when its cart holds more).
+        const cartId = input.fromDraftId == null ? null
+          : await splitOffCheckout(tx, input.gymId, input.memberId, [input.fromDraftId], actorName);
         if (input.fromDraftId != null) {
           await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: IN_CART_PURCHASE_STATUS });
         }
@@ -688,7 +692,7 @@ export async function startProductPurchase(
           directDiscountAmount: price.direct_discount_amount,
           validityDays: row.validity_days == null ? null : Number(row.validity_days),
           origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
-          paymentRequestId: null, billingEventId: Number(billingEventId),
+          paymentRequestId: null, billingEventId: Number(billingEventId), cartId,
         });
         for (const step of price.promotions) {
           await insertPurchasePromotion(tx, input.gymId, id, snapshot.product_type, step);
@@ -740,6 +744,9 @@ export async function startProductPurchase(
 
   try {
     const purchaseId = await db.transaction(async (tx) => {
+      // #3251: the checkout is the draft's purchase (a purchase of its own when its cart holds more).
+      const cartId = input.fromDraftId == null ? null
+        : await splitOffCheckout(tx, input.gymId, input.memberId, [input.fromDraftId], actorName);
       if (input.fromDraftId != null) {
         // The draft is promoted, not duplicated: gone in the transaction that
         // writes its pending replacement (#1657).
@@ -796,7 +803,7 @@ export async function startProductPurchase(
         // #1693: the validity agreed at purchase time.
         validityDays: row.validity_days == null ? null : Number(row.validity_days),
         origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
-        paymentRequestId, billingEventId,
+        paymentRequestId, billingEventId, cartId,
       });
 
       // #1118 §7 — the application, frozen beside the purchase it priced. In
