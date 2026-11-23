@@ -138,7 +138,6 @@ describe('gate: audited tables', () => {
     { file: 'api/product-sets-router.ts', table: 'product_sets', why: 'payment_request_id pointer written with the attempt in the transaction that already moved the version (#1664)' },
     { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'plan_assignment_id link written by the projection (#2125 M6b-46)' },
     { file: 'api/plan-assignment-sync.ts', table: 'product_sets', why: '#2125 M6b-36: plan_assignment_id linked and re-pointed at its assignment anchor (M6b-46 dropped user_membership_id); product_sets keeps only created_by and the version itself is not edited' },
-    { file: 'api/plan-assignment-sync.ts', table: 'payment_requests', why: '#2125 M6b-34: plan_assignment_id linked and re-pointed at its assignment anchor (M6b-46 dropped user_membership_id); the request itself is not edited' },
     { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
     { file: 'api/recurring-purchase-draft.ts', table: 'product_sets', why: 'ends_at carried onto the Draft just created in the same transaction (created_by is recorded by createDraft)' },
     { file: 'api/product-set-draft.ts', table: 'product_sets', why: 'membership_plan_id of a Draft set or cleared with the plan the member adds to or takes off it (#2496 stage 4); product_sets keeps only created_by and the edit is audited against the product_set' },

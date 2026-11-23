@@ -57,7 +57,7 @@ async function insertPendingRequest(opts: {
   const expires = opts.expiresSql ?? 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE)';
   const { insertId } = await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, provider_ref, page_token, page_token_expires, source)
      VALUES (?, ?, ?, '29.99', 'EUR', ?, 'pending', 'monei',
              UUID(), ?, ?, ${expires}, 'admin')`,
@@ -76,7 +76,7 @@ async function insertPendingCardUpdate(opts: {
 }): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, provider_ref, page_token, page_token_expires, source)
      VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei',
              UUID(), ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'card_update')`,
@@ -282,7 +282,7 @@ describe('GET /payment-page/token/:token', () => {
       const pageToken = crypto.randomUUID();
       const requestId = (await db.query<any>(
         `INSERT INTO payment_requests
-           (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+           (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires, source)
          VALUES (?, NULL, ?, '20.00', 'EUR', NULL, 'pending', 'monei', UUID(), ?, ?,
                  DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,

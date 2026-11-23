@@ -1,12 +1,11 @@
 import { db, type Tx } from '../infra/db';
 import { paymentMethodCodeFor } from '../domain/paymentAttemptSnapshot';
-import { planAssignmentIdOf } from './plan-assignment-sync';
 
 type Exec = Pick<Tx, 'query'> | typeof db;
 
 async function stamp(tx: Pick<Tx, 'query'>, paymentRequestId: number): Promise<number | null> {
   const { rows } = await tx.query<any>(
-    'SELECT gym_id, user_membership_id, billing_event_id, method, source FROM payment_requests WHERE id = ? FOR UPDATE', [paymentRequestId]);
+    'SELECT gym_id, billing_event_id, method, source FROM payment_requests WHERE id = ? FOR UPDATE', [paymentRequestId]);
   const pr = rows[0];
   if (!pr) return null;
 
@@ -29,21 +28,18 @@ async function stamp(tx: Pick<Tx, 'query'>, paymentRequestId: number): Promise<n
          FROM base_payment_methods m WHERE m.code = ? AND m.deleted_at IS NULL LIMIT 1`, [code]);
     snap = m[0] ?? null;
   }
-  // #2125 M6b-34: the re-keyed assignment (migration 431) is written with the attempt.
-  const planAssignmentId = await planAssignmentIdOf(tx, pr.gym_id, pr.user_membership_id);
+  // #2125 N3a: the assignment (`anchor_plan_snapshot_id`) is written by the INSERT itself.
   await tx.query(
     `UPDATE payment_requests
-        SET attempt = COALESCE(?, attempt), base_payment_method_id = ?, payment_method_code = ?, payment_method_name = ?,
-            plan_assignment_id = ?
+        SET attempt = COALESCE(?, attempt), base_payment_method_id = ?, payment_method_code = ?, payment_method_name = ?
       WHERE id = ?`,
-    [attempt, snap?.id ?? null, snap ? snap.code : null, snap ? snap.name : null, planAssignmentId, paymentRequestId]);
+    [attempt, snap?.id ?? null, snap ? snap.code : null, snap ? snap.name : null, paymentRequestId]);
   return attempt;
 }
 
 /**
  * #2451: the one place a freshly inserted Payment Transaction gets its payment
- * method snapshot and its position in the Billing Event's attempt count (and, since
- * #2125 M6b-34, its `plan_assignment_id`). Call it
+ * method snapshot and its position in the Billing Event's attempt count. Call it
  * right after every `INSERT INTO payment_requests`, in the same transaction
  * (given the pool it opens its own, so the counter is still atomic).
  */

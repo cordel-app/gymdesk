@@ -109,7 +109,7 @@ async function completeThroughWebhook(umId: number, memberId: number): Promise<n
   const chargeId = crypto.randomBytes(20).toString('hex');
   const { insertId: prId } = await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires, initiated_by, source)
      VALUES (?, ?, ?, '30.00', 'EUR', ?, 'pending', 'monei', ?, UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test-user-id', 'admin')`,
     [gymId, umId, memberId, chargeTypeId, orderId],

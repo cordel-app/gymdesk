@@ -661,7 +661,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
               pm.card_brand, pm.card_last4
        FROM payment_requests pr
        LEFT JOIN members m ON m.id = pr.member_id
-       LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.anchor_plan_snapshot_id')}
        LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
        LEFT JOIN payment_methods pm ON pm.member_id = COALESCE(pr.payer_member_id, pr.member_id) AND pm.gym_id = pr.gym_id
        -- #2935: the Refund Receipt a completed refund transaction was documented by.

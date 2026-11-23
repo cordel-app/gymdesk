@@ -12,7 +12,7 @@ import { toMinorUnits } from '../payments/money';
 import { parseQuery, z } from '../infra/validate';
 import { currentMembershipFee } from './membership-fee-pricing';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
-import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
+import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, assignmentOfLegacyIdSql } from '../domain/planAssignments';
 
 export const paymentRequestsRouter = Router();
 
@@ -37,7 +37,7 @@ paymentRequestsRouter.get('/', async (req: Request, res: Response, next: NextFun
     if (q.status) { where += ' AND pr.status = ?'; params.push(q.status); }
 
     const { rows } = await db.query(
-      `SELECT pr.id, pr.user_membership_id, pr.member_id, pr.amount, pr.currency,
+      `SELECT pr.id, pr.anchor_plan_snapshot_id AS user_membership_id, pr.member_id, pr.amount, pr.currency,
               pr.status, pr.provider, pr.provider_order, pr.provider_ref,
               pr.source, pr.created_by, pr.created_at, pr.completed_at,
               pr.modified_at, pr.modified_by,
@@ -154,12 +154,12 @@ paymentRequestsRouter.post(
         : { rows: [{ n: 0 }] };
       const { insertId } = await db.query(
         `INSERT INTO payment_requests
-           (gym_id, user_membership_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,
+           (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id, billing_event_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
             created_by, source, attempt)
-         VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin', ?)`,
+         VALUES (?, ${ANCHOR_PLAN_SNAPSHOT_VALUE_SQL}, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin', ?)`,
         [
-          gymId, user_membership_id, um.member_id, payer.payerMemberId, charged.toFixed(2), ctRows[0].id, open ? open.eventId : null,
+          gymId, user_membership_id, gymId, um.member_id, payer.payerMemberId, charged.toFixed(2), ctRows[0].id, open ? open.eventId : null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
           resolveRequestActor(getTenantContext(req)), Number(prevAttempt[0]?.n ?? 0) + 1,
         ],

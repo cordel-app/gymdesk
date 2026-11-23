@@ -60,7 +60,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
          -- every purchase, which is indistinguishable from a real expiry.
          -- #2125 M6b-10: the assignment's plan is its current plan snapshot's.
          LEFT JOIN plan_snapshots pa
-           ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.user_membership_id')}
+           ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.anchor_plan_snapshot_id')}
          LEFT JOIN billing_policies bp
            ON bp.membership_plan_id = pa.membership_plan_id AND bp.gym_id = pa.gym_id
          LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL

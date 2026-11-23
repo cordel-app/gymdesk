@@ -74,7 +74,7 @@ describe('record-payment records the payment for the assignment snapshot\'s owne
     expect(res.status).toBeLessThan(300);
 
     const { rows } = await db.query<{ member_id: number }>(
-      `SELECT member_id FROM payment_requests WHERE gym_id = ? AND user_membership_id = ? AND method = 'cash'`,
+      `SELECT member_id FROM payment_requests WHERE gym_id = ? AND anchor_plan_snapshot_id = ? AND method = 'cash'`,
       [gymId, um]);
     expect(rows.map((r) => Number(r.member_id))).toEqual([owner]);
   });

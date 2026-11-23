@@ -136,7 +136,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
       expect(readFileSync(join(API_SRC, file), 'utf8')).toContain('assignmentOfLegacyIdSql(');
     }
     // M6b-16 moved the two statements left in payments.ts (the assignment of a Billing Event).
-    expect(readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
+    expect(readFileSync(join(API_SRC, 'api/payments.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.anchor_plan_snapshot_id')");
   });
 
   it('M6b-11: the past plans\' details read plan_snapshots and the #956 multi-plan report is retired', () => {
@@ -179,7 +179,7 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(LEGACY_STATEMENTS['domain/billingEventPayments.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8')).toContain('assignmentOfLegacyIdSql(eventAssignmentSql())');
     // M6b-17 moved the one statement left in me.ts (`GET /me/membership`'s pending-payment plan read).
-    expect(readFileSync(join(API_SRC, 'api/me.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.user_membership_id')");
+    expect(readFileSync(join(API_SRC, 'api/me.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('pr.anchor_plan_snapshot_id')");
   });
 
   it('M6b-17: the pending-payment plan read and the Billing Simulation loader read plan_snapshots', () => {

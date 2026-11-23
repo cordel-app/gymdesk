@@ -89,7 +89,7 @@ async function insertPendingPaymentRequest(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires, initiated_by, source)
      VALUES (?, ?, ?, '5.00', 'EUR', ?, 'pending', 'monei',
              ?, UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test-user-id', 'admin')`,
@@ -107,7 +107,7 @@ async function insertPendingCardUpdate(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires, consent_given_at, source)
      VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei',
              ?, UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), UTC_TIMESTAMP(), 'card_update')`,
@@ -429,7 +429,7 @@ describe('POST /webhooks/payment — cleanup must not lose a payment that was ma
     const token = crypto.randomUUID();
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source)
        VALUES (?, ?, ?, '5.00', 'EUR', ?, 'pending', 'monei', ?, ?, ?,

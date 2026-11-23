@@ -26,7 +26,7 @@ async function purchase(opts: {
   const token = crypto.randomUUID();
   const requestId = (await db.query<any>(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, provider_ref, page_token, page_token_expires, source)
      VALUES (?, NULL, ?, '20.00', 'EUR', NULL, ?, 'monei', UUID(), ?, ?,
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'product_purchase')`,
