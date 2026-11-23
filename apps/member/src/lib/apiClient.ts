@@ -102,5 +102,34 @@ export function useApiClient() {
     return res.json();
   }, [gymId, activeCenterId, locale]);
 
-  return { apiFetch, uploadFetch };
+  /**
+   * #3242: a stored file (a receipt or invoice PDF) as a Blob, with the same
+   * tenant, locale and impersonation headers as `apiFetch`. The Payments
+   * documents used a hand-rolled `fetch` that sent no `x-gym-id`, so the API
+   * could not resolve the member and every download failed (#824's lesson).
+   */
+  const downloadFetch = useCallback(async function downloadFetch(path: string): Promise<Blob> {
+    const token = await getTokenRef.current();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (gymId) headers['x-gym-id'] = gymId;
+    if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
+    if (locale) headers['x-locale'] = locale;
+    try {
+      const stored = typeof window !== 'undefined' ? sessionStorage.getItem(IMPERSONATION_KEY) : null;
+      if (stored) {
+        const session = JSON.parse(stored);
+        if (session?.effectiveUserId) headers['x-impersonate-as'] = session.effectiveUserId;
+      }
+    } catch {}
+
+    const res = await trackRequest(() => fetch(`/api/proxy${path}`, { headers }));
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), { status: res.status, body });
+    }
+    return res.blob();
+  }, [gymId, activeCenterId, locale]);
+
+  return { apiFetch, uploadFetch, downloadFetch };
 }

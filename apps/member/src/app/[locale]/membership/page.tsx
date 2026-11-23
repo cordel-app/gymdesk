@@ -8,7 +8,6 @@ import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
 import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, FAMILY_OWNER_ONLY_KEY, MEMBERSHIP_PATH, canAddPlansAndProducts, canViewPayments, membershipPageMode, membershipTabs } from '@/lib/membershipPages';
-import { useAuth } from '@clerk/nextjs';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
@@ -36,6 +35,7 @@ import {
   PaymentsSection,
   PaymentsSubcard,
   PastBillingEventRow,
+  PaymentDocumentList,
 } from '@/components/MemberPaymentsCard';
 import {
   MemberProductsSection,
@@ -185,6 +185,9 @@ import {
   prepaidPaymentKey,
   paymentDocumentLabelKey,
   paymentDocumentPath,
+  paymentDocumentFileName,
+  paymentDocumentKey,
+  paymentDocumentRows,
   type MemberPaymentDocument,
 } from '@/lib/memberPayments';
 
@@ -290,8 +293,7 @@ export default function MembershipPage() {
   const router = useRouter();
   // #2737 — My Products, Add Plan or Add Product: one component, three routes.
   const mode = membershipPageMode(usePathname());
-  const { apiFetch } = useApiClient();
-  const { getToken } = useAuth();
+  const { apiFetch, downloadFetch } = useApiClient();
   const { isLinked, loading: appLoading, gymName, isSuperadmin, member: appMember } = useApp();
   const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
@@ -333,6 +335,7 @@ export default function MembershipPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [downloadingDocument, setDownloadingDocument] = useState<string | null>(null);
+  const [documentError, setDocumentError] = useState<string | null>(null);
 
   // #1121 stage 2 — the Product the member is confirming, and that one
   // dialog's own submit state. `null` means no dialog.
@@ -758,19 +761,28 @@ export default function MembershipPage() {
     }
   }
 
-  // #2936 — a stored document of one of the member's payments, opened in a new tab.
+  // #2936/#3242 — a stored document of one of the member's payments, saved as a
+  // file. It goes through `downloadFetch` (the tenant headers the API needs) and
+  // an anchor click rather than `window.open` after an await, which a browser
+  // treats as an unrequested popup and blocks. Nothing is issued: the route
+  // serves the stored document or answers 404.
   async function downloadDocument(doc: MemberPaymentDocument) {
-    const key = `${doc.kind}:${doc.id}`;
+    const key = paymentDocumentKey(doc);
     setDownloadingDocument(key);
+    setDocumentError(null);
     try {
-      const token = await getToken();
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch(`/api/proxy${paymentDocumentPath(doc)}`, { headers });
-      if (!res.ok) return;
-      const blob = await res.blob();
+      const blob = await downloadFetch(paymentDocumentPath(doc));
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = paymentDocumentFileName(doc);
+      anchor.rel = 'noopener';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      setDocumentError(t('payments.documents_download_failed'));
     } finally {
       setDownloadingDocument(null);
     }
@@ -1318,6 +1330,34 @@ export default function MembershipPage() {
     );
   }
 
+  // #3242 — every stored document of the member's payments, one row each. A
+  // member with none sees no section at all: a missing document is omitted,
+  // never a placeholder or a broken link.
+  function renderDocumentsSubcard() {
+    const rows = paymentDocumentRows(events);
+    if (rows.length === 0) return null;
+    const byKey = new Map(rows.map((row) => [row.key, row.document]));
+    return (
+      <PaymentsSubcard title={t('payments.documents_heading')}>
+        <PaymentDocumentList
+          rows={rows.map((row) => {
+            const type = t(paymentDocumentLabelKey(row.document.kind) as any);
+            return {
+              key: row.key,
+              date: formatPaymentDate(row.date, gymFmt),
+              type,
+              identifier: row.document.number,
+              downloadLabel: t('payments.documents_download', { type, number: row.document.number }),
+              downloading: downloadingDocument === row.key,
+            };
+          })}
+          onDownload={(key) => { const doc = byKey.get(key); if (doc) downloadDocument(doc); }}
+        />
+        {documentError && <p role="alert" style={styles.hint}>{documentError}</p>}
+      </PaymentsSubcard>
+    );
+  }
+
   // #2740 — Payments is its own tab: the three subcards #1123 put in one
   // collapsed card, from the ledger and the forecast the page already loads.
   function renderPaymentsTab() {
@@ -1348,6 +1388,8 @@ export default function MembershipPage() {
             events.map((event) => renderPastBillingEvent(event))
           )}
         </PaymentsSubcard>
+
+        {renderDocumentsSubcard()}
 
         <PaymentsSubcard title={t('payments.forecast_heading')}
           forceOpen={focusedPayment != null && laterGroups.some((g) => g.date === focusedPayment)}>
@@ -2032,8 +2074,9 @@ export default function MembershipPage() {
 
   /**
    * #2937 — one past Billing Event: title, issued date, status and amount in the
-   * header; its own stored lines and the payment details (method, notes,
-   * documents) once expanded. Every figure is the ledger's.
+   * header; its own stored lines and the payment details (method, notes) once
+   * expanded — its documents are in the Documents section (#3242). Every
+   * figure is the ledger's.
    */
   function renderPastBillingEvent(event: BillingEvent) {
     const transition = event.event_type === 'status_changed' && event.new_status
@@ -2075,22 +2118,6 @@ export default function MembershipPage() {
           <>
             {event.payment_method_name && <span>{event.payment_method_name}</span>}
             {notes && <span>{notes}</span>}
-            {/* #2936 — one action per stored document; a kind with none is absent. */}
-            {(event.documents ?? []).map((doc) => {
-              const key = `${doc.kind}:${doc.id}`;
-              return (
-                <button
-                  key={key}
-                  onClick={() => downloadDocument(doc)}
-                  disabled={downloadingDocument === key}
-                  style={styles.receiptBtn}
-                >
-                  {downloadingDocument === key
-                    ? '…'
-                    : `${t(paymentDocumentLabelKey(doc.kind) as any)} (${doc.number})`}
-                </button>
-              );
-            })}
           </>
         )}
       />
@@ -2440,7 +2467,6 @@ const styles: Record<string, React.CSSProperties> = {
   eventLabel: { fontSize: 14, fontWeight: 500, color: memberTheme.text },
   eventAmount: { fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
   eventSub: { fontSize: 12, color: memberTheme.textMuted, marginTop: 4 },
-  receiptBtn: { background: 'none', border: 'none', padding: 0, color: memberTheme.link, textDecoration: 'underline', fontSize: 12, cursor: 'pointer' },
   // #1122 — the Add plan row, the plan awaiting its first payment, and the
   // choose dialog's text. Every colour is the theme's (#983).
   addPlanRow: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginBottom: 12 },

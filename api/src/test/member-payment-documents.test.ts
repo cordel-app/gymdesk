@@ -126,11 +126,14 @@ describe('GET /me/billing-events documents (#2936)', () => {
     expect(res.status).toBe(200);
     const items = json(res).items;
     const row = items.find((i: any) => i.id === documented);
+    const iso = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(row.documents).toEqual([
-      { kind: 'receipt', id: documented, number: `2026-${stamp % 10000}` },
-      { kind: 'full_invoice', id: full, number: `F-${stamp}` },
-      { kind: 'refund_receipt', id: latest, number: `R-${stamp}-2` },
+      { kind: 'receipt', id: documented, number: `2026-${stamp % 10000}`, issued_at: iso },
+      { kind: 'full_invoice', id: full, number: `F-${stamp}`, issued_at: iso },
+      { kind: 'refund_receipt', id: latest, number: `R-${stamp}-2`, issued_at: iso },
     ]);
+    // #3242 — the event's own receipt timestamp is read for the document, not reported on the row.
+    expect(row).not.toHaveProperty('receipt_issued_at');
     // No receipt, an invoice with no stored document: nothing at all.
     expect(items.find((i: any) => i.id === bare).documents).toEqual([]);
   });

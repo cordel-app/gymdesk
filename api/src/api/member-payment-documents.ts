@@ -10,6 +10,15 @@ import {
 export interface MemberEventRef {
   id: number;
   receipt_number: string | null;
+  /** #3242 — when the receipt number was issued; absent where the caller did not read it. */
+  receipt_issued_at?: Date | string | null;
+}
+
+/** A DATETIME as the ISO string the wire carries, or null. */
+function isoOrNull(value: unknown): string | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 /** The downloadable documents of each event, keyed by Billing Event id. */
@@ -22,7 +31,7 @@ export async function loadMemberPaymentDocuments(
   const marks = ids.map(() => '?').join(',');
   const [{ rows: invoiceRows }, { rows: refundRows }] = await Promise.all([
     db.query<any>(
-      `SELECT i.id, i.billing_event_id, i.invoice_type, i.status, i.fiscal_number,
+      `SELECT i.id, i.billing_event_id, i.invoice_type, i.status, i.fiscal_number, i.issued_at,
               (i.simplified_not_paid_pdf_key IS NOT NULL OR i.simplified_paid_pdf_key IS NOT NULL
                 OR i.full_not_paid_pdf_key IS NOT NULL OR i.full_paid_pdf_key IS NOT NULL) AS has_document,
               EXISTS (SELECT 1 FROM invoices f WHERE f.gym_id = i.gym_id AND f.replaces_invoice_id = i.id) AS replaced
@@ -31,7 +40,7 @@ export async function loadMemberPaymentDocuments(
       [gymId, ...ids],
     ),
     db.query<any>(
-      `SELECT rr.id, rr.billing_event_id, rr.receipt_number
+      `SELECT rr.id, rr.billing_event_id, rr.receipt_number, rr.issued_at
          FROM refund_receipts rr
         WHERE rr.gym_id = ? AND rr.billing_event_id IN (${marks})`,
       [gymId, ...ids],
@@ -43,19 +52,21 @@ export async function loadMemberPaymentDocuments(
     list.push({
       id: Number(r.id), invoice_type: r.invoice_type, status: r.status, fiscal_number: r.fiscal_number,
       has_document: !!Number(r.has_document), replaced: !!Number(r.replaced),
+      issued_at: isoOrNull(r.issued_at),
     });
     invoices.set(Number(r.billing_event_id), list);
   }
   const refunds = new Map<number, RefundReceiptCandidate[]>();
   for (const r of refundRows) {
     const list = refunds.get(Number(r.billing_event_id)) ?? [];
-    list.push({ id: Number(r.id), receipt_number: r.receipt_number });
+    list.push({ id: Number(r.id), receipt_number: r.receipt_number, issued_at: isoOrNull(r.issued_at) });
     refunds.set(Number(r.billing_event_id), list);
   }
   for (const e of events) {
     out.set(Number(e.id), memberPaymentDocuments({
       billingEventId: Number(e.id),
       receiptNumber: e.receipt_number,
+      receiptIssuedAt: isoOrNull(e.receipt_issued_at),
       invoices: invoices.get(Number(e.id)) ?? [],
       refundReceipts: refunds.get(Number(e.id)) ?? [],
     }));
