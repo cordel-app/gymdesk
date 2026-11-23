@@ -16,6 +16,7 @@ import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
 import { inFlightSetTitle, type ReviewSummary } from './productsWorkflowView';
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
+import { PurchaseHeading } from './PurchaseHeading';
 
 interface Props {
   productSets: ProductSetRow[];
@@ -58,14 +59,28 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
       {inFlight.map((ps) => (
         <div key={ps.id} style={row} data-product-set-id={ps.id}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <strong>{inFlightSetTitle(ps, ps.status === 'in_cart' ? review : null) ?? t('product_set_no_plan')}</strong>
-            <span style={cardHintStyle}>
-              {' · '}
-              {ps.expired
-                ? t('product_set_status_expired')
-                : t(ps.status === 'pending_payment' ? 'product_set_status_pending_payment' : 'product_set_status_in_cart')}
-              {ps.amount_due != null ? ` · ${ps.amount_due.toFixed(2)} €` : ''}
-            </span>
+            {ps.purchase ? (
+              // #3270 — a version that belongs to a purchase is identified by the purchase's name, with
+              // its status as a separate badge; never by the plan, which the cart may change.
+              <>
+                <PurchaseHeading
+                  purchase={ps.purchase}
+                  statusOverride={ps.expired ? { status: 'expired', label: t('product_set_status_expired') } : null}
+                />
+                {ps.amount_due != null && <span style={cardHintStyle}>{` · ${ps.amount_due.toFixed(2)} €`}</span>}
+              </>
+            ) : (
+              <>
+                <strong>{inFlightSetTitle(ps, ps.status === 'in_cart' ? review : null) ?? t('product_set_no_plan')}</strong>
+                <span style={cardHintStyle}>
+                  {' · '}
+                  {ps.expired
+                    ? t('product_set_status_expired')
+                    : t(ps.status === 'pending_payment' ? 'product_set_status_pending_payment' : 'product_set_status_in_cart')}
+                  {ps.amount_due != null ? ` · ${ps.amount_due.toFixed(2)} €` : ''}
+                </span>
+              </>
+            )}
             {ps.status === 'in_cart' && review && (
               <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} />
             )}

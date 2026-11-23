@@ -10,9 +10,13 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle } from '@/components/formChrome';
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
+import { PurchaseHeading } from './PurchaseHeading';
+import type { PurchaseLike } from '@/lib/purchaseName';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
 
 interface CartSummary {
+  /** #3270 — the purchase (cart) these lines belong to: its persisted name basis and status. */
+  purchase?: PurchaseLike | null;
   initial_payment: InitialPaymentLike;
   contracted_items: ContractedItemLike[];
   amount_due: number;
@@ -39,6 +43,7 @@ export function StandaloneCartSummary({ memberId, reloadKey, paymentLink }: {
 
   return (
     <div data-standalone-cart style={{ marginBottom: 12 }}>
+      {summary?.purchase && <PurchaseHeading purchase={summary.purchase} />}
       {summary && <CheckoutSummaryPanel payment={summary.initial_payment} contracted={summary.contracted_items} />}
       {paymentLink && (
         <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{paymentLink}</code></div>

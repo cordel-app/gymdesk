@@ -93,6 +93,8 @@ export interface InitialPaymentLike {
     } | null;
     /** #3165 stage 2 — the partial first period the line was prorated to, by its own billing calendar. */
     proration?: { days: number; period_days: number } | null;
+    /** #3270 — the line's persisted source (#3254): `plan`, `product`, or `null` where none applies. */
+    source?: 'plan' | 'product' | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;

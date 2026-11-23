@@ -12,6 +12,7 @@
 // Plan was agreed with are read from the Assigned Plans card instead.
 
 import type { AssignedPlanService } from '@/components/assignedPlan/types';
+import type { PurchaseLike } from '@/lib/purchaseName';
 
 export interface MemberPlanRow {
   /** The Assigned Plan (user_memberships) id — what every write is addressed to. */
@@ -98,6 +99,8 @@ export interface ProductSetRow {
   added_plans?: AddedPlanRow[];
   /** #2966 stage 8 — on a row built by `addedCartPlans()`: the Promotions applied to that added plan. */
   promotions?: AddedPlanPromotion[];
+  /** #3270 — the purchase (cart) the version belongs to: its persisted name basis and status. */
+  purchase?: PurchaseLike | null;
 }
 
 export interface AddedPlanRow {

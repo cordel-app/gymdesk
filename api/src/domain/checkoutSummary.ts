@@ -10,7 +10,7 @@
 // purpose — the issue forbids prices, discounts and taxes there, and a shape
 // with no money field cannot leak one.
 
-import type { FeeChargeSplit } from './billingSimulation';
+import type { FeeChargeSplit, LineSource } from './billingSimulation';
 
 /** One line of the commit charge, as `GET /product-sets/:id/review` reports it. */
 export interface ChargeLineLike {
@@ -37,6 +37,8 @@ export interface ChargeLineLike {
   /** #3165 stage 2 — the engine's proration of a partial first period (days charged of the period's days). */
   prorated_days?: number | null;
   period_days?: number | null;
+  /** #3270 — the line's `source` (#3254: `plan` | `product`), `null` where none applies. */
+  source?: LineSource | null;
 }
 
 /**
@@ -58,6 +60,7 @@ export function chargeLineView(l: any): ChargeLineLike {
     fee_split: l.fee_split ?? null,
     prorated_days: l.prorated_days != null ? Number(l.prorated_days) : null,
     period_days: l.period_days != null ? Number(l.period_days) : null,
+    source: l.source === 'plan' || l.source === 'product' ? l.source : null,
   };
 }
 
@@ -108,6 +111,11 @@ export interface InitialPaymentLine {
   fee_split: FeeChargeSplit | null;
   /** #3165 stage 2 — the partial first period this line's charge was prorated to (`lineProration()`). */
   proration: { days: number; period_days: number } | null;
+  /**
+   * #3270 — the line's `source` as the Billing Event Line carries it (#3254): `plan`, `product`, or
+   * `null` for a line no source applies to. Read from the line, never inferred from its name or price.
+   */
+  source: LineSource | null;
 }
 
 export interface InitialPaymentTaxRow {
@@ -174,6 +182,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       prepaid_cadence: l.prepaid_periods != null && l.prepaid_periods > 0 ? l.prepaid_cadence ?? null : null,
       fee_split: l.fee_split ?? null,
       proration: lineProration(l),
+      source: l.source ?? null,
     };
   });
   const taxRows = [...taxes.values()]
