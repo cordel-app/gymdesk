@@ -52,7 +52,7 @@ const append = (path: '/payments' | '/billing-events', body: object, gym = gymId
 async function pendingRequest(um: number, memberId: number, extra: { token?: string; eventId?: number } = {}): Promise<void> {
   await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, billing_event_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, billing_event_id, amount, currency, charge_type_id,
         status, provider, provider_order, provider_ref, page_token, page_token_expires, source)
      VALUES (?, ?, ?, ?, '20.00', 'EUR', ?, 'pending', 'monei', UUID(), 'pay_ref', ?,
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'admin')`,

@@ -140,7 +140,7 @@ async function settleInTransaction(
 
   return db.transaction(async (tx): Promise<SettleOutcome> => {
     const { rows } = await tx.query<RequestRow>(
-      `SELECT id, gym_id, user_membership_id, member_id, payer_member_id, charge_type_id, amount, status, source, billing_event_id
+      `SELECT id, gym_id, anchor_plan_snapshot_id AS user_membership_id, member_id, payer_member_id, charge_type_id, amount, status, source, billing_event_id
          FROM payment_requests WHERE provider_order = ? FOR UPDATE`,
       [payload.orderId],
     );

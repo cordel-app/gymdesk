@@ -1,5 +1,5 @@
 /**
- * #3251 — the one writer of `purchases`: a purchase is a cart (migration 464).
+ * #3251 — the one writer of `purchases`: a purchase is a cart (migration 465).
  *
  * A cart is started by the first thing put in it and holds:
  *   - a Product Set version (`product_sets.purchase_id`) — the plan, its lines and Promotions — and

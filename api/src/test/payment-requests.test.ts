@@ -72,7 +72,7 @@ async function insertPaymentRequest(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires, initiated_by, source)
      VALUES (?, ?, ?, '29.99', 'EUR', ?, 'pending', 'monei',
              UUID(), UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test-user-id', 'admin')`,
@@ -409,7 +409,7 @@ describe('POST /payment-requests', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/owes nothing/);
 
-    const { rows } = await db.query('SELECT id FROM payment_requests WHERE user_membership_id = ?', [umId]);
+    const { rows } = await db.query('SELECT id FROM payment_requests WHERE anchor_plan_snapshot_id = ?', [umId]);
     expect(rows).toEqual([]);
   });
 });

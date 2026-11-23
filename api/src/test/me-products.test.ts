@@ -414,7 +414,7 @@ async function deliverWebhook(orderId: string, status: 'SUCCEEDED' | 'FAILED') {
 async function purchaseRows(gid: string) {
   const { rows } = await db.query<any>(
     `SELECT mp.*, pr.source, pr.status AS request_status, pr.provider_order,
-            pr.user_membership_id, pr.amount AS request_amount
+            pr.anchor_plan_snapshot_id AS user_membership_id, pr.amount AS request_amount
        FROM ${TEST_PURCHASES} mp
        LEFT JOIN payment_requests pr ON pr.id = mp.payment_request_id
       WHERE mp.gym_id = ? ORDER BY mp.id`,

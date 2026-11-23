@@ -72,27 +72,6 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
 
 
 /**
- * #2125 M6b-34 — keeps `payment_requests.plan_assignment_id` (migration 431) in step with
- * `user_membership_id`, the source of truth until M6b-4, by the rule `syncPromotionAssignmentIds()`
- * uses: a request of a legacy assignment takes that assignment's anchor, none where no snapshot names
- * it. A new request is stamped with the attempt (`recordPaymentAttempt()`); this re-sync, from
- * `syncPlanAssignment()`, covers an anchor that moved since. Nothing reads the column yet;
- * `plan-assignments:validate` reports drift (`payment_request_assignment_mismatch`).
- */
-export async function syncPaymentRequestAssignmentIds(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<void> {
-  const ids = [...new Set(userMembershipIds)];
-  if (ids.length === 0) return;
-  const anchors = await anchorsOf(exec, gymId, ids);
-  for (const umId of ids) {
-    const anchor = anchors.get(umId) ?? null;
-    await exec.query(
-      `UPDATE payment_requests SET plan_assignment_id = ?
-        WHERE gym_id = ? AND user_membership_id = ? AND NOT (plan_assignment_id <=> ?)`,
-      [anchor, gymId, umId, anchor]);
-  }
-}
-
-/**
  * #2125 M6b-36 / M6b-46 — the SET clause that links a Product Set to an assignment: its
  * `plan_assignment_id` (migration 432) becomes the anchor (lowest plan snapshot id) naming the
  * legacy assignment id bound to its one `?`. An unaliased `product_sets` is required. None where no
@@ -364,7 +343,7 @@ export async function lockAssignmentsCovering(
     .sort((x, y) => (x.starts_at === y.starts_at ? y.id - x.id : (x.starts_at < y.starts_at ? 1 : -1)));
 }
 
-/** #2125 M6b-34 — the anchor a new payment request of `userMembershipId` carries, or null. */
+/** The anchor of assignment `userMembershipId`, or null where no snapshot of the gym anchors it. */
 export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembershipId: number | null): Promise<number | null> {
   if (userMembershipId == null) return null;
   return (await anchorsOf(exec, gymId, [Number(userMembershipId)])).get(Number(userMembershipId)) ?? null;
@@ -398,7 +377,6 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
   }
   await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
   const umIds = rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number);
-  await syncPaymentRequestAssignmentIds(tx, gymId, umIds);
   await syncProductSetAssignmentIds(tx, gymId, [productSetId], umIds);
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;

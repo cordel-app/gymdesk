@@ -8,7 +8,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, writeDiscountOnVersion, writeDraftAssignmentDates } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
-import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
 import { lockAssignmentRecord, writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
@@ -1337,13 +1337,13 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
           'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [open.eventId]);
         const { insertId: cashAttemptId } = await tx.query(
           `INSERT INTO payment_requests
-             (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
+             (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
               source, attempt, method, created_by, notes, created_at, completed_at)
-           VALUES (?, ?, (SELECT pa.member_id FROM plan_snapshots pa
+           VALUES (?, ${ANCHOR_PLAN_SNAPSHOT_VALUE_SQL}, (SELECT pa.member_id FROM plan_snapshots pa
                           WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?')}), ?, 'EUR', ?, ?, 'completed', 'monei',
                    'manual', ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
           // #2125 M6b-25: the payer column is the assignment's owner, read from its current plan snapshot.
-          [gymId, req.params.id, gymId, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
+          [gymId, req.params.id, gymId, gymId, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
             Number(prev[0]?.n ?? 0) + 1, payMethod, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
         await recordPaymentAttempt(tx, cashAttemptId);

@@ -180,3 +180,13 @@ export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'p
 export const productSetLegacyAssignmentIdSql = (alias = 'ps'): string =>
   `(SELECT ps_lid.assignment_id FROM plan_snapshots ps_lid
      WHERE ps_lid.id = ${alias}.plan_assignment_id AND ps_lid.gym_id = ${alias}.gym_id)`;
+
+/**
+ * #2125 N3a — the value a new `payment_requests.anchor_plan_snapshot_id` is written with: the anchor
+ * plan snapshot whose id is the assignment id bound to the first `?`, of the gym bound to the second,
+ * or NULL where no snapshot of that gym anchors that id (an id read off a request body, a stale page).
+ * Written inside the INSERT so a payment request can never name a snapshot that is not an anchor.
+ */
+export const ANCHOR_PLAN_SNAPSHOT_VALUE_SQL =
+  `(SELECT pa_req.id FROM plan_snapshots pa_req
+     WHERE pa_req.id = ? AND pa_req.gym_id = ? AND pa_req.assignment_id = pa_req.id)`;

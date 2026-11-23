@@ -223,7 +223,7 @@ describe('POST /me/payment-method/replace-requests', () => {
       consent_given_at: Date | null; created_by: string | null; status: string;
       page_token: string | null; user_membership_id: number;
     }>(
-      'SELECT source, amount, charge_type_id, consent_given_at, created_by, status, page_token, user_membership_id FROM payment_requests WHERE id = ?',
+      'SELECT source, amount, charge_type_id, consent_given_at, created_by, status, page_token, anchor_plan_snapshot_id AS user_membership_id FROM payment_requests WHERE id = ?',
       [res.body.id],
     );
     expect(rows[0].source).toBe('card_update');
@@ -278,7 +278,7 @@ describe('POST /me/payment-method/replace-requests', () => {
   it('reports the latest attempt so the return page can tell it settled', async () => {
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
           status, provider, provider_order, source)
        VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei', UUID(), 'card_update')`,
       [gymId, membershipId, memberId],

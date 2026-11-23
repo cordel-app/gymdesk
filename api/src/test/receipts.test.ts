@@ -80,7 +80,7 @@ async function createEvent(
   if (opts.txStatus) {
     await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, source, created_at)
        VALUES (?, ?, ?, ?, 'EUR', ?, ?, ?, 'monei', ?, 'billing_run', UTC_TIMESTAMP())`,
       [gymId, umId, memberId, amount, ctId, insertId, opts.txStatus, `order-${uniq()}`],
@@ -98,7 +98,7 @@ async function appendTransaction(
   const ctId = await chargeTypeId();
   await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id, billing_event_id,
         status, provider, provider_order, source, created_at)
      VALUES (?, ?, ?, '29.99', 'EUR', ?, ?, ?, 'monei', ?, 'admin',
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 SECOND))`,

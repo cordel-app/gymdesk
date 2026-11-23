@@ -83,7 +83,7 @@ afterAll(async () => {
 
 const cardRequestAssignment = async (memberId: number, gym = gymId) => {
   const res = must(await auth(request.post('/payment-methods/replace-requests'), gym).send({ member_id: memberId }), 'replace-request');
-  const { rows } = await db.query<{ user_membership_id: number }>('SELECT user_membership_id FROM payment_requests WHERE id = ?', [res.body.id]);
+  const { rows } = await db.query<{ user_membership_id: number }>('SELECT anchor_plan_snapshot_id AS user_membership_id FROM payment_requests WHERE id = ?', [res.body.id]);
   return Number(rows[0].user_membership_id);
 };
 

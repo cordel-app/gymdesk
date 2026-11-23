@@ -132,7 +132,7 @@ async function insertExpiredPaymentRequest(
   );
   await db.query(
     `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+       (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires, source)
      VALUES (?, ?, ?, '29.99', 'EUR', ?, 'pending', 'monei', UUID(), UUID(),
              DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR), 'admin')`,
@@ -468,7 +468,7 @@ describe('POST /billing/cleanup', () => {
     );
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+         (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, charge_type_id,
           status, provider, provider_order, page_token, page_token_expires, source)
        VALUES (?, ?, ?, '29.99', 'EUR', ?, 'pending', 'monei', UUID(), NULL,
                DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR), 'customer')`,

@@ -1,6 +1,6 @@
 /**
  * The one writer of `billing_event_lines`: a line restates the engine's figures (#1325 stage 2a) and
- * nothing else. #3122 stage 1's snapshot attribution was reverted (migration 464), so a line carries
+ * nothing else. #3122 stage 1's snapshot attribution was reverted (migration 463), so a line carries
  * no reference to the contractual snapshot behind it.
  */
 import type { Tx } from '../infra/db';

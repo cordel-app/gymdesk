@@ -1,13 +1,13 @@
+// #2125 N3a (migration 464): a payment request names its plan assignment by one column,
+// `anchor_plan_snapshot_id`; `user_membership_id` and `plan_assignment_id` are gone.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft, addCoverage } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { recordPaymentAttempt } from '../api/payment-attempt';
-import { syncPaymentRequestAssignmentIds, syncPlanAssignment } from '../api/plan-assignment-sync';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 
 let gymId: string;
 let planId: number;
@@ -35,26 +35,21 @@ async function commit(owner: number): Promise<{ setId: number; um: number }> {
   const { rows } = await db.query<any>(`SELECT ${productSetLegacyAssignmentIdSql('product_sets')} AS user_membership_id FROM product_sets WHERE id = ?`, [setId]);
   return { setId, um: Number(rows[0].user_membership_id) };
 }
-/** Raises a payment request the way every writer does: INSERT, then `recordPaymentAttempt()`. */
+/** Raises a payment request the way every writer does: INSERT through the anchor value, then the attempt. */
 async function raise(memberId: number, um: number | null): Promise<number> {
   return db.transaction(async (tx) => {
     const { insertId } = await tx.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, status, provider, provider_order, source, attempt, method)
-       VALUES (?, ?, ?, '30.00', 'EUR', 'pending', 'monei', ?, 'customer', 1, 'provider')`,
-      [gymId, um, memberId, `prk-${uniq()}`]);
+         (gym_id, anchor_plan_snapshot_id, member_id, amount, currency, status, provider, provider_order, source, attempt, method)
+       VALUES (?, ${ANCHOR_PLAN_SNAPSHOT_VALUE_SQL}, ?, '30.00', 'EUR', 'pending', 'monei', ?, 'customer', 1, 'provider')`,
+      [gymId, um, gymId, memberId, `prk-${uniq()}`]);
     await recordPaymentAttempt(tx, Number(insertId));
     return Number(insertId);
   });
 }
-async function anchorOf(um: number): Promise<number> {
-  const { rows } = await db.query<any>(
-    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?', [gymId, um]);
-  return Number(rows[0].a);
-}
 async function keyOf(id: number): Promise<number | null> {
-  const { rows } = await db.query<any>('SELECT plan_assignment_id FROM payment_requests WHERE id = ?', [id]);
-  return rows[0].plan_assignment_id == null ? null : Number(rows[0].plan_assignment_id);
+  const { rows } = await db.query<any>('SELECT anchor_plan_snapshot_id FROM payment_requests WHERE id = ?', [id]);
+  return rows[0].anchor_plan_snapshot_id == null ? null : Number(rows[0].anchor_plan_snapshot_id);
 }
 async function requestDrift() {
   const report = await findPlanAssignmentDrift(db as any, gymId);
@@ -62,10 +57,10 @@ async function requestDrift() {
 }
 
 beforeAll(async () => {
-  gymId = await createTestGym('Payment request re-key gym');
+  gymId = await createTestGym('Payment request anchor gym');
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit)
-     VALUES (?, ?, 'active', 'public', '1')`, [gymId, `PrRekey-${uniq()}`]);
+     VALUES (?, ?, 'active', 'public', '1')`, [gymId, `PrAnchor-${uniq()}`]);
   planId = Number(insertId);
   await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
                   VALUES (?, ?, 30, '2020-01-01', 'active')`, [gymId, planId]);
@@ -79,41 +74,44 @@ afterAll(async () => {
   await db.end();
 });
 
-describe('#2125 M6b-34: a payment request carries its plan_assignment_id beside user_membership_id', () => {
-  it('a request raised for an assignment takes that assignment\'s anchor with its attempt', async () => {
+describe('#2125 N3a: a payment request names its assignment by anchor_plan_snapshot_id alone', () => {
+  it('the legacy columns are gone', async () => {
+    const { rows } = await db.query<any>(
+      `SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_requests'
+          AND COLUMN_NAME IN ('user_membership_id', 'plan_assignment_id', 'anchor_plan_snapshot_id')`);
+    expect(rows.map((r: any) => r.c)).toEqual(['anchor_plan_snapshot_id']);
+  });
+
+  it('a request raised for an assignment names its anchor, which is the assignment id', async () => {
     const owner = await member();
     const { um } = await commit(owner);
     const id = await raise(owner, um);
-    expect(await keyOf(id)).toBe(await anchorOf(um));
+    expect(await keyOf(id)).toBe(um);
+    const { rows } = await db.query<any>('SELECT assignment_id FROM plan_snapshots WHERE id = ?', [um]);
+    expect(Number(rows[0].assignment_id)).toBe(um);
   });
 
-  it('a request that names no assignment has no plan_assignment_id', async () => {
+  it('a request that names no assignment, or an id that is no anchor of the gym, names none', async () => {
     const owner = await member();
-    const id = await raise(owner, null);
-    expect(await keyOf(id)).toBeNull();
+    expect(await keyOf(await raise(owner, null))).toBeNull();
+    const { rows } = await db.query<any>('SELECT COALESCE(MAX(id), 0) + 1000 AS n FROM plan_snapshots');
+    expect(await keyOf(await raise(owner, Number(rows[0].n)))).toBeNull();
   });
 
-  it('the assignment sync puts a drifted request back in step', async () => {
-    const owner = await member();
-    const { setId, um } = await commit(owner);
-    const id = await raise(owner, um);
-    await db.query('UPDATE payment_requests SET plan_assignment_id = NULL WHERE id = ?', [id]);
-    await db.transaction((tx) => syncPlanAssignment(tx, gymId, setId));
-    expect(await keyOf(id)).toBe(await anchorOf(um));
-  });
-
-  it('plan-assignments:validate reports a drifted request, and the sync repairs it', async () => {
+  it('plan-assignments:validate reports a request pointing at a snapshot that is no anchor', async () => {
     expect((await requestDrift()).count).toBe(0);
     const owner = await member();
     const { um } = await commit(owner);
     const id = await raise(owner, um);
-    await db.query('UPDATE payment_requests SET plan_assignment_id = NULL WHERE id = ?', [id]);
-    const drift = await requestDrift();
-    expect(drift.sample.map((r: any) => [Number(r.payment_request_id), r.plan_assignment_id, Number(r.expected_plan_assignment_id)]))
-      .toEqual([[id, null, await anchorOf(um)]]);
-    // #2125 N2: migration 431's backfill read the column migration 462 dropped; the sync repairs it.
-    await syncPaymentRequestAssignmentIds(db as any, gymId, [um]);
+    await db.query('UPDATE plan_snapshots SET assignment_id = NULL WHERE id = ?', [um]);
+    try {
+      const drift = await requestDrift();
+      expect(drift.sample.map((r: any) => [Number(r.payment_request_id), Number(r.anchor_plan_snapshot_id)]))
+        .toEqual([[id, um]]);
+    } finally {
+      await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [um]);
+    }
     expect((await requestDrift()).count).toBe(0);
-    expect(await keyOf(id)).toBe(await anchorOf(um));
   });
 });

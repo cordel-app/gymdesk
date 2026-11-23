@@ -57,14 +57,14 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
   // three checks that compared them with the legacy row (`lifecycle_mismatch`, `modifier_mismatch`,
   // `assignment_lifecycle_mismatch`) are retired.
 
-  // #2125 M6b-34: a payment request's re-keyed assignment (migration 431), by the same rule.
+  // #2125 N3a: a payment request names its assignment by `anchor_plan_snapshot_id` alone (migration
+  // 463), which must be an anchor of the request's own gym.
   await add('payment_request_assignment_mismatch',
-    'A payment request whose plan_assignment_id is not the anchor of its user_membership_id.',
-    `SELECT pr.id AS payment_request_id, pr.gym_id, pr.user_membership_id, pr.plan_assignment_id,
-            a.anchor_id AS expected_plan_assignment_id
+    'A payment request whose anchor_plan_snapshot_id is not an assignment anchor of its gym.',
+    `SELECT pr.id AS payment_request_id, pr.gym_id, pr.anchor_plan_snapshot_id
        FROM payment_requests pr
-       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = pr.gym_id AND a.anchor_id = pr.user_membership_id
-      WHERE NOT (pr.plan_assignment_id <=> a.anchor_id)${scope('pr')}
+       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = pr.gym_id AND a.anchor_id = pr.anchor_plan_snapshot_id
+      WHERE pr.anchor_plan_snapshot_id IS NOT NULL AND a.anchor_id IS NULL${scope('pr')}
       ORDER BY pr.id`);
 
   // #2125 M6b-36 / M6b-46: a Product Set's link (migration 432) is the anchor of the assignment it
