@@ -23,6 +23,7 @@
  * snapshot's `anchor_plan_snapshot_id`, because every caller still names an
  * assignment by it.
  */
+import { productSetAssignmentSql } from './planAssignments';
 
 /**
  * Scalar subquery: the assignment id (`anchor_plan_snapshot_id`) of the owner of `<alias>.product_set_id`, or NULL (a purchase, a verification with no set, a chain whose
@@ -34,8 +35,8 @@ export function eventAssignmentSql(alias = 'be'): string {
              JOIN product_sets p2
                ON p2.owner_member_id = p1.owner_member_id AND p2.gym_id = p1.gym_id
              JOIN plan_snapshots anc
-               ON anc.id = p2.plan_assignment_id AND anc.gym_id = p2.gym_id
-            WHERE p1.id = ${alias}.product_set_id AND p2.plan_assignment_id IS NOT NULL
+               ON anc.id = ${productSetAssignmentSql('p2')} AND anc.gym_id = p2.gym_id
+            WHERE p1.id = ${alias}.product_set_id AND ${productSetAssignmentSql('p2')} IS NOT NULL
             ORDER BY p2.id DESC
             LIMIT 1)`;
 }
@@ -49,7 +50,7 @@ export function eventsOfAssignmentSql(alias = 'be'): string {
             SELECT ps.id FROM product_sets ps
              WHERE ps.gym_id = ? AND ps.owner_member_id IN (
                      SELECT p2.owner_member_id FROM product_sets p2
-                       JOIN plan_snapshots anc ON anc.id = p2.plan_assignment_id AND anc.gym_id = p2.gym_id
+                       JOIN plan_snapshots anc ON anc.id = ${productSetAssignmentSql('p2')} AND anc.gym_id = p2.gym_id
                       WHERE p2.gym_id = ? AND anc.anchor_plan_snapshot_id = ?))`;
 }
 

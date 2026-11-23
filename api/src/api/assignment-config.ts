@@ -40,7 +40,7 @@ export type AssignmentConfigColumn =
  */
 export const assignmentVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9
-      JOIN plan_snapshots a9 ON a9.id = p9.plan_assignment_id AND a9.gym_id = p9.gym_id
+      JOIN plan_snapshots a9 ON a9.id = ${productSetAssignmentSql('p9')} AND a9.gym_id = p9.gym_id
      WHERE a9.anchor_plan_snapshot_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
 
 /**
@@ -60,7 +60,7 @@ export const assignmentVersionId = (idExpr: string) =>
  */
 export const assignmentLineVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9
-      JOIN plan_snapshots u9 ON u9.gym_id = p9.gym_id AND ${assignmentOfAnchorSql('p9.plan_assignment_id', 'u9')}
+      JOIN plan_snapshots u9 ON u9.gym_id = p9.gym_id AND ${assignmentOfAnchorSql(productSetAssignmentSql('p9'), 'u9')}
      WHERE u9.anchor_plan_snapshot_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
      ORDER BY p9.id DESC LIMIT 1)`;
 
@@ -104,7 +104,7 @@ export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `
 export const assignmentConfig = (column: AssignmentConfigColumn, _um = 'um') => `cfg.${column}`;
 
 import { db } from '../infra/db';
-import { assignmentOfAnchorSql, currentAssignmentSnapshotSql, GYM_ASSIGNMENT_ROWS_SQL } from '../domain/planAssignments';
+import { assignmentOfAnchorSql, currentAssignmentSnapshotSql, GYM_ASSIGNMENT_ROWS_SQL, productSetAssignmentSql } from '../domain/planAssignments';
 
 const OVERLAID: AssignmentConfigColumn[] = [
   'membership_fee_price', 'base_price', 'plan_price_id', 'discount_reason', 'discount_expires_at',

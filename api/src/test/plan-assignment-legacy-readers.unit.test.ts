@@ -238,21 +238,21 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
   it('M6b-26: an assignment\'s version-level lines are chosen by its plan snapshot\'s status', () => {
     expect(LEGACY_STATEMENTS['api/assignment-config.ts']).toBeUndefined();
     expect(readFileSync(join(API_SRC, 'api/assignment-config.ts'), 'utf8'))
-      .toContain("assignmentOfAnchorSql('p9.plan_assignment_id', 'u9')");
+      .toContain("assignmentOfAnchorSql(productSetAssignmentSql('p9'), 'u9')");
   });
 
   it('M6b-27: the bridge\'s closed-assignment check and the cancellation start date read plan_snapshots', () => {
     expect(LEGACY_STATEMENTS['api/product-set-bridge.ts']).toBeUndefined();
     const bridge = readFileSync(join(API_SRC, 'api/product-set-bridge.ts'), 'utf8');
     expect(bridge).toContain("assignmentOfLegacyIdSql('?', 'pa')");
-    expect(bridge).toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
+    expect(bridge).toContain("assignmentOfAnchorSql(productSetAssignmentSql('ps'), 'pa')");
   });
 
   it('M6b-28: the projection\'s predecessor start date and the Product Sets list\'s end date read plan_snapshots', () => {
     expect(LEGACY_STATEMENTS['api/product-set-projection.ts']).toBeUndefined(); // M6b-51d-2 moved its locks
     expect(readFileSync(join(API_SRC, 'api/product-set-projection.ts'), 'utf8')).toContain("assignmentOfLegacyIdSql('?', 'pa')");
     expect(readFileSync(join(API_SRC, 'api/member-membership-configuration.ts'), 'utf8'))
-      .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
+      .toContain("assignmentOfAnchorSql(productSetAssignmentSql('ps'), 'pa')");
   });
 
   it('M6b-31: the Member card\'s plan history reads plan_snapshots, creator and modifier included', () => {
@@ -285,11 +285,24 @@ describe('user_memberships is being retired (#2125 M6b-3)', () => {
     expect(readFileSync(join(API_SRC, 'api/plan-assignment-sync.ts'), 'utf8')).toContain('export async function openAssignmentOnSet(');
   });
 
+  it('N3b: no production code names plan_assignment_id, and only one writer sets projects_assignment', () => {
+    const naming = sourceFiles(API_SRC)
+      .filter((f) => !f.includes('/migrations/'))
+      .filter((f) => /\bplan_assignment_id\b/.test(code(readFileSync(f, 'utf8'))))
+      .map((f) => f.slice(API_SRC.length + 1));
+    expect(naming).toEqual([]);
+    const writers = sourceFiles(API_SRC)
+      .filter((f) => !f.includes('/migrations/'))
+      .filter((f) => /\bSET\s+(?:\w+\.)?projects_assignment\b/.test(code(readFileSync(f, 'utf8'))))
+      .map((f) => f.slice(API_SRC.length + 1));
+    expect(writers).toEqual(['api/plan-assignment-sync.ts']);
+  });
+
   it('M6b-47: the end-of-period sweep and both dunning pauses pick their assignment from plan_snapshots', () => {
     const sweep = readFileSync(join(API_SRC, 'api/assignment-lifecycle.ts'), 'utf8');
     expect(sweep).toContain("isCurrentAssignmentSnapshotSql('pa')");
     expect(readFileSync(join(API_SRC, 'api/scheduled-event-execution.ts'), 'utf8'))
-      .toContain("assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')");
+      .toContain("assignmentOfAnchorSql(productSetAssignmentSql('ps'), 'pa')");
     expect(readFileSync(join(API_SRC, 'domain/billingEventPayments.ts'), 'utf8'))
       .toContain("assignmentOfLegacyIdSql('?', 'pa')");
     // The dual-write each kept, guarded on the status it moves away from, is the one writer's (M6b-51c-3).

@@ -9,7 +9,7 @@ import { redirectEditToProductSet, redirectRetireToProductSet } from './assignme
 import { lockEditableDraft } from './editable-draft';
 import { adoptDraftForEdit, createDraftSetForAssignment, createDraftSetFromActive, deleteLinkedDraftSet, writeDiscountOnVersion, writeDraftAssignmentDates } from './assignment-draft-set';
 import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentPlanSnapshotId, assignmentVersionId, withAssignmentConfig } from './assignment-config';
-import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfLegacyIdSql, GYM_ASSIGNMENT_ROWS_SQL, isCurrentAssignmentSnapshotSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { lockAssignmentRecord, writeAssignmentReplacement } from './plan-assignment-sync';
 import { loadAssignmentAssigneeOptions, parseSection as parseUnitSection, writeUnitAssignees } from './plan-unit-assignees';
 import { projectedSetFor, pendingSetIdForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
@@ -1604,7 +1604,7 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
       const { rows: owned } = await tx.query<any>(
         // #2125 M6b-51d-3: the Draft assignment is read and locked on its anchor (the set's link).
         `SELECT ps.id, a.anchor_plan_snapshot_id AS um_id
-           FROM product_sets ps JOIN plan_snapshots a ON a.id = ps.plan_assignment_id AND a.gym_id = ps.gym_id
+           FROM product_sets ps JOIN plan_snapshots a ON a.id = ${productSetAssignmentSql('ps')} AND a.gym_id = ps.gym_id
           WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND a.assignment_status = 'in_cart'
           FOR UPDATE`,
         [gymId, active.owner_member_id]);

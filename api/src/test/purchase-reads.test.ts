@@ -1,6 +1,7 @@
 // #3251 stage 3 — the cart (`purchases`) a Product Set version, a one-time line, a recurring line and a
 // checkout's Billing Event belong to is reported on their reads as `purchase_id`, never confused with a
 // line's own id. Integration against the real stack; only the provider's `createPaymentRequest` is stubbed.
+import { productSetAssignmentSql } from '../domain/planAssignments';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../payments', async (importOriginal) => {
@@ -70,7 +71,7 @@ async function plan(price = 30): Promise<number> {
 const cartOfSet = async (setId: number) =>
   Number((await db.query<any>('SELECT purchase_id FROM product_sets WHERE id = ?', [setId])).rows[0].purchase_id);
 const setOfAssignment = async (um: number) =>
-  Number((await db.query<any>('SELECT id FROM product_sets WHERE plan_assignment_id = ? ORDER BY id DESC LIMIT 1', [um])).rows[0].id);
+  Number((await db.query<any>(`SELECT id FROM product_sets ps WHERE ${productSetAssignmentSql('ps')} = ? ORDER BY id DESC LIMIT 1`, [um])).rows[0].id);
 
 beforeAll(async () => {
   process.env.MONEI_API_KEY = 'test-api-key';

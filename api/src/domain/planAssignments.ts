@@ -65,7 +65,7 @@ export const assignmentOfLegacyIdSql = (legacyIdExpr: string, alias = 'pa'): str
 /**
  * #2125 M6b-37 — predicate: the `plan_snapshots` row `alias` is the current snapshot of the
  * assignment an anchor names (`plan_snapshots.anchor_plan_snapshot_id`, the id of its first snapshot). For a
- * reader that already holds the anchor, which since M6b-36 is `product_sets.plan_assignment_id`:
+ * reader that already holds the anchor (since N3b, `productSetAssignmentSql()` of a Product Set):
  * it asks the assignment by its own identity rather than through the assignment id
  * (`assignmentOfLegacyIdSql()`), which is how a Product Set's readers stop reading
  * `product_sets.user_membership_id` before that column is dropped.
@@ -158,28 +158,35 @@ export const GYM_ASSIGNMENT_ROWS_SQL = `(
      AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL})`;
 
 /**
- * #2125 M6b-41 — predicate: the Product Set `alias` is linked to the assignment an assignment id
- * (`anchor_plan_snapshot_id`) names. Asked of the set's anchor (`product_sets.plan_assignment_id`,
- * M6b-36), the lowest snapshot naming that legacy id (the rule `PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL`
- * writes), never of `product_sets.user_membership_id`, the column the re-key drops. For the
- * lookups that are handed a legacy id and want the sets linked to it; `legacyIdExpr` is a column
- * or a `?`.
+ * #2125 N3b (migration 471) — the assignment a Product Set `alias` projects: the anchor
+ * (`anchor_plan_snapshot_id`) of the plan snapshot(s) its junction rows flag `projects_assignment`.
+ * NULL for a set linked to no assignment (a plain Draft that links the running plan's snapshot
+ * unchanged, a Pending Payment or cancelled set, a superseded set the bridge unlinked). The flag is
+ * written only by `linkProductSetToAssignment()` (`plan-assignment-sync.ts`); `product_sets` has no
+ * column for it since migration 471. `alias` is a `product_sets` row.
  */
-export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'ps'): string =>
-  `${alias}.plan_assignment_id = (SELECT MIN(ps_anc.id) FROM plan_snapshots ps_anc
-                                   WHERE ps_anc.gym_id = ${alias}.gym_id
-                                     AND ps_anc.anchor_plan_snapshot_id = ${legacyIdExpr})`;
+export const productSetAssignmentSql = (alias = 'ps'): string =>
+  `(SELECT MIN(psa_s.anchor_plan_snapshot_id) FROM product_set_plan_snapshots psa_j
+      JOIN plan_snapshots psa_s ON psa_s.id = psa_j.plan_snapshot_id
+     WHERE psa_j.product_set_id = ${alias}.id AND psa_j.projects_assignment = 1)`;
 
 /**
- * #2125 M6b-42 — the assignment id (`anchor_plan_snapshot_id`) of the assignment the Product Set `alias` is
- * linked to, read off the set's anchor (`product_sets.plan_assignment_id`, M6b-36): the anchor
- * snapshot's own `anchor_plan_snapshot_id`, which is that legacy id by construction (the anchor is
- * the lowest snapshot naming it). NULL for a set linked to no assignment. For a reader that needs the
- * value of the link, never `product_sets.user_membership_id`, the column the re-key drops.
+ * #2125 M6b-41 — predicate: the Product Set `alias` is linked to the assignment an assignment id
+ * (`anchor_plan_snapshot_id`) names; since N3b, a junction row of the set flagged
+ * `projects_assignment` whose snapshot names it. For the lookups that are handed an assignment id and
+ * want the sets linked to it; `legacyIdExpr` is a column or a `?`.
  */
-export const productSetLegacyAssignmentIdSql = (alias = 'ps'): string =>
-  `(SELECT ps_lid.anchor_plan_snapshot_id FROM plan_snapshots ps_lid
-     WHERE ps_lid.id = ${alias}.plan_assignment_id AND ps_lid.gym_id = ${alias}.gym_id)`;
+export const productSetOfLegacyAssignmentSql = (legacyIdExpr: string, alias = 'ps'): string =>
+  `EXISTS (SELECT 1 FROM product_set_plan_snapshots psl_j
+             JOIN plan_snapshots psl_s ON psl_s.id = psl_j.plan_snapshot_id
+            WHERE psl_j.product_set_id = ${alias}.id AND psl_j.projects_assignment = 1
+              AND psl_s.anchor_plan_snapshot_id = ${legacyIdExpr})`;
+
+/**
+ * #2125 M6b-42 — the assignment id of the assignment the Product Set `alias` is linked to; since N3b
+ * `productSetAssignmentSql()` itself (the assignment id is the anchor's own id since N1).
+ */
+export const productSetLegacyAssignmentIdSql = (alias = 'ps'): string => productSetAssignmentSql(alias);
 
 /**
  * #2125 N3a — the value a new `payment_requests.anchor_plan_snapshot_id` is written with: the anchor

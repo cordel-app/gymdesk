@@ -41,11 +41,10 @@ describe('a Product Set is found by a legacy assignment id through its anchor (#
     expect(offenders).toEqual([]);
   });
 
-  it('the predicate asks the set\'s anchor, the lowest snapshot naming the legacy id', () => {
+  it('the predicate asks the set\'s projects_assignment link for that assignment id', () => {
     const sql = productSetOfLegacyAssignmentSql('?', 'p');
-    expect(sql).toContain('p.plan_assignment_id = (SELECT MIN(ps_anc.id) FROM plan_snapshots ps_anc');
-    expect(sql).toContain('ps_anc.gym_id = p.gym_id');
-    expect(sql).toContain('ps_anc.anchor_plan_snapshot_id = ?');
+    expect(sql).toContain('psl_j.product_set_id = p.id AND psl_j.projects_assignment = 1');
+    expect(sql).toContain('psl_s.anchor_plan_snapshot_id = ?');
     expect(sql).not.toContain('p.user_membership_id');
   });
 

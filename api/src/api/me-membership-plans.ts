@@ -28,7 +28,7 @@ import { isNewMemberStatus } from './new-member-eligibility';
 import {
   PLAN_PROMOTION_TARGET, firstCycleFinalPrice, isOfferableFeeBenefit,
 } from '../domain/memberPlanCatalogue';
-import { assignmentCoversMemberSql, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { assignmentCoversMemberSql, isCurrentAssignmentSnapshotSql, productSetAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1122 §1–§6 — the Members App's **Add Plan**.
@@ -317,9 +317,10 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // #1288 §28: no plan is replaced from the Members App, and a Draft or a
     // payment already in flight blocks a second purchase (stage 4's shared Draft
     // takes a plan through `POST /me/product-sets/:id/plans` instead).
-    const { rows: inFlight } = await db.query<{ id: number; status: string; plan_assignment_id: number | null }>(
-      `SELECT id, status, plan_assignment_id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('in_cart','pending_payment')
-        AND NOT ${setCartExpiredSql('product_sets')} LIMIT 1`,
+    const { rows: inFlight } = await db.query<{ id: number; status: string; linked_user_membership_id: number | null }>(
+      `SELECT ps.id, ps.status, ${productSetAssignmentSql('ps')} AS linked_user_membership_id FROM product_sets ps
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('in_cart','pending_payment')
+        AND NOT ${setCartExpiredSql('ps')} LIMIT 1`,
       [gymId, memberId],
     );
     if (inFlight[0]) {

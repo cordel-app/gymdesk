@@ -2,6 +2,7 @@
 // purchase they were written in; versions that are not checkouts (a reprice) create none and keep
 // the original purchase on what they copy. Integration against the real stack; only the provider's
 // `createPaymentRequest` is stubbed, and the webhook's signature check stays real.
+import { productSetAssignmentSql } from '../domain/planAssignments';
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -98,7 +99,7 @@ const eventsOf = async (memberId: number) =>
 const purchasesOf = async (memberId: number) =>
   (await db.query<any>('SELECT id, status FROM purchases WHERE owner_member_id = ? ORDER BY id', [memberId])).rows;
 const setOfAssignment = async (um: number) =>
-  Number((await db.query<any>('SELECT id FROM product_sets WHERE plan_assignment_id = ? ORDER BY id DESC LIMIT 1', [um])).rows[0].id);
+  Number((await db.query<any>(`SELECT id FROM product_sets ps WHERE ${productSetAssignmentSql('ps')} = ? ORDER BY id DESC LIMIT 1`, [um])).rows[0].id);
 const activeSetOf = async (memberId: number) =>
   Number((await db.query<any>(
     `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active'`, [gymId, memberId])).rows[0].id);

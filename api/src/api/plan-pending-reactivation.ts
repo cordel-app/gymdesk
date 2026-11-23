@@ -4,7 +4,8 @@ import {
 } from '../domain/assignmentStatus';
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { unmarkPlanForCancellation } from './plan-pending-cancellation';
-import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import { linkProductSetToAssignment } from './plan-assignment-sync';
+import { productSetAssignmentSql } from '../domain/planAssignments';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
@@ -180,8 +181,9 @@ export async function commitPendingReactivations(
   // so the projection continues that assignment in place (no new assignment, no superseded copy).
   const primaryUm = first[0]?.um_id != null ? Number(first[0].um_id) : null;
   if (primaryUm != null && marked.some((m) => Number(m.id) === primaryUm)) {
-    await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND plan_assignment_id IS NULL`,
-      [primaryUm, input.productSetId]);
+    const { rows: linked } = await tx.query<{ um: number | null }>(
+      `SELECT ${productSetAssignmentSql('ps')} AS um FROM product_sets ps WHERE ps.id = ?`, [input.productSetId]);
+    if (linked[0]?.um == null) await linkProductSetToAssignment(tx, input.gymId, input.productSetId, primaryUm);
   }
   return marked.length;
 }

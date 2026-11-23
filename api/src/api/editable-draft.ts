@@ -1,5 +1,5 @@
 import type { Tx } from '../infra/db';
-import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { productSetLegacyAssignmentIdSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { setCartLiveSql } from '../domain/cartExpiry';
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
 
@@ -22,7 +22,7 @@ import { planSnapshotInheritedSql } from './plan-snapshot-lines';
  */
 export const editableDraftSql = (ps: string): string =>
   `(${setCartLiveSql(ps)}
-    AND (${ps}.plan_assignment_id IS NULL OR NOT EXISTS (
+    AND (${productSetAssignmentSql(ps)} IS NULL OR NOT EXISTS (
       SELECT 1 FROM product_set_plan_snapshots ej_ JOIN plan_snapshots es_ ON es_.id = ej_.plan_snapshot_id
        WHERE ej_.product_set_id = ${ps}.id AND ej_.entitlement_only = 0
          AND NOT ${planSnapshotInheritedSql('es_', `${ps}.id`)})))`;

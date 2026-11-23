@@ -11,7 +11,7 @@ import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
 import { primaryPlanSnapshotSql, promotionHolderSql } from './plan-snapshot-lines';
-import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { purchaseView } from '../domain/purchaseView';
 
 /**
@@ -239,7 +239,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             mp.name AS plan_name, mp.lifecycle_status AS plan_status, pa.ends_at AS ends_at
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
-       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')}
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql(productSetAssignmentSql('ps'), 'pa')}
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
       ORDER BY ps.id DESC`,
     [gymId, memberId],

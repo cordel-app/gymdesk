@@ -1,4 +1,5 @@
 import { planSnapshotInheritedSql } from './plan-snapshot-lines';
+import { productSetAssignmentSql } from '../domain/planAssignments';
 import { recordPaymentAttempt } from './payment-attempt';
 import { AttemptMethod } from '../domain/paymentAttemptMethod';
 import { payerCheckoutUrl } from './checkout-url';
@@ -88,7 +89,7 @@ export async function loadEditLockForDraftEdit(
   const { rows } = await db.query<any>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ?
-        AND ${opts.staff ? staffProductDraftSql('ps') : `${setCartLiveSql('ps')} AND ps.plan_assignment_id IS NULL`}
+        AND ${opts.staff ? staffProductDraftSql('ps') : `${setCartLiveSql('ps')} AND ${productSetAssignmentSql('ps')} IS NULL`}
       LIMIT 1`,
     [gymId, ownerMemberId]);
   if (rows.length > 0) return [];

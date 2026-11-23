@@ -11,7 +11,7 @@ import { cloneConfiguration } from './product-set-bridge';
 import { ownAssignmentPlanSnapshot, ownAssignmentSnapshot, ownPrimaryPlanSnapshot, discardDraftSet } from './plan-snapshot-ownership';
 import { planSnapshotOfAssignment, primaryPlanSnapshotSql } from './plan-snapshot-lines';
 import { linkCancellingPlans } from './entitlement-plan-links';
-import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
+import { productSetOfLegacyAssignmentSql, productSetAssignmentSql } from '../domain/planAssignments';
 
 /**
  * #1325 PR 3e — the Draft assignment of the Admin is created **set-first**.
@@ -62,7 +62,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   const { rows: stale } = await tx.query<{ id: number; user_membership_id: number }>(
     // #2125 M6b-51d-3: read and locked on the stale Draft's anchor (the set's link), not `user_memberships`.
     `SELECT ps.id, a.anchor_plan_snapshot_id AS user_membership_id
-       FROM product_sets ps JOIN plan_snapshots a ON a.id = ps.plan_assignment_id AND a.gym_id = ps.gym_id
+       FROM product_sets ps JOIN plan_snapshots a ON a.id = ${productSetAssignmentSql('ps')} AND a.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart'
         AND a.assignment_status = 'in_cart' FOR UPDATE`,
     [input.gymId, input.ownerMemberId],
@@ -78,7 +78,7 @@ export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput):
   const { rows: cart } = await tx.query<{ id: number }>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${staffProductDraftSql('ps')}
-        AND ps.plan_assignment_id IS NULL
+        AND ${productSetAssignmentSql('ps')} IS NULL
         AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj
                          WHERE cj.product_set_id = ps.id AND cj.entitlement_only = 0)
       FOR UPDATE`,
@@ -260,7 +260,7 @@ export async function createDraftSetFromActive(tx: Tx, input: {
   const { rows: cart } = await tx.query<{ id: number }>(
     `SELECT ps.id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ${staffProductDraftSql('ps')}
-        AND ps.plan_assignment_id IS NULL
+        AND ${productSetAssignmentSql('ps')} IS NULL
         AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots cj
                          WHERE cj.product_set_id = ps.id AND cj.entitlement_only = 0)
       FOR UPDATE`,
@@ -313,8 +313,8 @@ export async function adoptDraftForEdit(tx: Tx, input: {
 }): Promise<{ setId: number; assignmentId: number }> {
   // #3274: adopting the plain Draft is a change of its cart, so the cart's clock moves on.
   const { rows: plain } = await tx.query(
-    `SELECT id FROM product_sets
-      WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND plan_assignment_id IS NULL`,
+    `SELECT ps.id FROM product_sets ps
+      WHERE ps.id = ? AND ps.gym_id = ? AND ps.status = 'in_cart' AND ${productSetAssignmentSql('ps')} IS NULL`,
     [input.draftSetId, input.gymId]);
   if (plain[0]) await refreshSetCart(tx, input.gymId, input.draftSetId);
   await ownPrimaryPlanSnapshot(tx, input.gymId, input.draftSetId);

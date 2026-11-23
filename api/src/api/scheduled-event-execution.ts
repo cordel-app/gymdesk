@@ -1,6 +1,6 @@
 import { isRunningAssignmentStatus } from '../domain/assignmentStatus';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
-import { assignmentOfAnchorSql } from '../domain/planAssignments';
+import { assignmentOfAnchorSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { recordPaymentAttempt } from './payment-attempt';
 import crypto from 'crypto';
 import { db, Tx } from '../infra/db';
@@ -106,7 +106,7 @@ async function pauseAfterFailedDays(tx: Tx, event: DueEvent): Promise<boolean> {
   // anchor (`writeAssignmentLifecycle()`), guarded on `active`, which serialises two pauses.
   const { rows } = await tx.query<{ id: number; member_id: number; status: string }>(
     `SELECT pa.anchor_plan_snapshot_id AS id, pa.member_id, pa.status
-       FROM product_sets ps JOIN plan_snapshots pa ON ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')} AND pa.gym_id = ps.gym_id
+       FROM product_sets ps JOIN plan_snapshots pa ON ${assignmentOfAnchorSql(productSetAssignmentSql('ps'), 'pa')} AND pa.gym_id = ps.gym_id
       WHERE ps.id = ? AND ps.gym_id = ?`,
     [event.product_set_id, event.gym_id],
   );

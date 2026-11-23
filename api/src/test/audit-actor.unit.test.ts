@@ -137,7 +137,7 @@ describe('gate: audited tables', () => {
     { file: 'infra/clerk-account-links.ts', table: 'members', why: 'clerk_user_id = NULL on a Clerk account unlink: a cleanup path with no request actor' },
     { file: 'api/product-sets.ts', table: 'product_sets', why: 'status moves of a version; product_sets keeps only created_by (a version is replaced, never edited)' },
     { file: 'api/product-set-cancellation.ts', table: 'product_sets', why: '#2747: status move to cancelled; product_sets keeps only created_by, and the cancellation records its own cancelled_by beside cancelled_at' },
-    { file: 'api/product-set-bridge.ts', table: 'product_sets', why: 'plan_assignment_id link moved between the version and the assignment projection (#2125 M6b-46)' },
+    { file: 'api/product-set-bridge.ts', table: 'product_sets', why: 'ends_at carried onto the Draft the bridge just created (#2125 N3b moved its assignment link onto the junction)' },
     { file: 'api/product-sets-router.ts', table: 'product_sets', why: 'payment_request_id pointer written with the attempt in the transaction that already moved the version (#1664)' },
     { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'plan_assignment_id link written by the projection (#2125 M6b-46)' },
     { file: 'api/plan-assignment-sync.ts', table: 'product_sets', why: '#2125 M6b-36: plan_assignment_id linked and re-pointed at its assignment anchor (M6b-46 dropped user_membership_id); product_sets keeps only created_by and the version itself is not edited' },

@@ -142,20 +142,38 @@ async function latestLinkedSet(umId: number): Promise<number | null> {
 }
 
 /**
- * #2125 M6b-46: links a fixture's Product Set to the assignment `umId` names, the way the writers do
- * (`PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL`): its anchor, the lowest snapshot naming it, or none yet.
+ * #2125 N3b — links a fixture's Product Set to the assignment `anchorId` (or unlinks it, `null`) the way
+ * `linkProductSetToAssignment()` does: the `projects_assignment` flag of the set's junction rows whose
+ * snapshot names it. A fixture that links a set to an assignment none of whose snapshots the set links
+ * (the old column allowed it) gets the assignment's anchor snapshot linked to the set first.
  */
-async function relinkTestSet(setId: number, umId: number): Promise<void> {
+export async function setTestSetAssignmentLink(
+  setId: number, anchorId: number | null, opts: { linkAnchor?: boolean } = {},
+): Promise<void> {
   await db.query(
-    `UPDATE product_sets SET plan_assignment_id = (SELECT a.id FROM plan_snapshots a
-                                                    WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.anchor_plan_snapshot_id = a.id)
-      WHERE id = ?`, [umId, setId]);
+    `UPDATE product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        SET j.projects_assignment = IF(s.anchor_plan_snapshot_id <=> ?, 1, 0) WHERE j.product_set_id = ?`,
+    [anchorId ?? -1, setId]);
+  if (anchorId == null) return;
+  const { rows } = await db.query<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM product_set_plan_snapshots WHERE product_set_id = ? AND projects_assignment = 1', [setId]);
+  if (Number(rows[0].n) > 0 || opts.linkAnchor === false) return;
+  const { rows: anchor } = await db.query<{ id: number }>(
+    'SELECT id FROM plan_snapshots WHERE id = ? AND anchor_plan_snapshot_id = id', [anchorId]);
+  if (!anchor[0]) return;
+  await db.query(
+    `INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id, projects_assignment) VALUES (?, ?, 1)
+     ON DUPLICATE KEY UPDATE projects_assignment = 1`, [setId, anchorId]);
+}
+
+async function relinkTestSet(setId: number, umId: number, opts: { linkAnchor?: boolean } = {}): Promise<void> {
+  await setTestSetAssignmentLink(setId, umId, opts);
 }
 
 /** Copies a config holder's snapshot onto a freshly created Active version. */
 async function adoptConfigHolder(setId: number, umId: number | null): Promise<void> {
   if (umId == null) return;
-  await relinkTestSet(setId, umId);
+  await relinkTestSet(setId, umId, { linkAnchor: false });
   // A version is the assignment's: it carries its plan (a plan-less version is
   // the retirement of a plan, which the projection treats as such).
   await db.query(
@@ -164,7 +182,10 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
               (SELECT membership_plan_id FROM ${fixtureAssignments()} fa WHERE fa.id = ?))
       WHERE id = ?`, [umId, setId]);
   const { rows: own } = await db.query('SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
-  if (own.length > 0) return;
+  if (own.length > 0) {
+    await relinkTestSet(setId, umId);
+    return;
+  }
   const { rows: holder } = await db.query<{ id: number }>(
     `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j JOIN product_sets ps ON ps.id = j.product_set_id
       WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ps.id <> ? ORDER BY ps.id DESC, j.plan_snapshot_id DESC LIMIT 1`, [umId, setId]);
@@ -1121,7 +1142,7 @@ export async function snapshotTestAssignment(umId: number): Promise<number> {
   await db.query(
     'INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [setId, inserted]);
   const snapId = await anchorHandAssignment(Number(inserted), umId);
-  await db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [snapId, setId]);
+  await setTestSetAssignmentLink(Number(setId), Number(snapId));
   await mirrorLegacyLifecycle(db, [umId]);
   return Number(snapId);
 }
@@ -1145,8 +1166,7 @@ export async function createTestFamily(gymId: string, ownerId: number, otherIds:
 
 /**
  * #2125 M6b-42 — links a Product Set to a hand-inserted assignment the way the real writers do: the
- * set's `user_membership_id` **and** its anchor `plan_assignment_id`, the lowest plan snapshot naming
- * that assignment. When no snapshot names it yet, the set's own first plan snapshot is named (as the
+ * set's `projects_assignment` junction flag (#2125 N3b) on the snapshots naming that assignment. When no snapshot names it yet, the set's own first plan snapshot is named (as the
  * snapshot sync does for a Draft), else `snapshotTestAssignment()` gives it one.
  */
 export async function linkTestSetToAssignment(productSetId: number, umId: number): Promise<void> {
@@ -1165,10 +1185,7 @@ export async function linkTestSetToAssignment(productSetId: number, umId: number
       await snapshotTestAssignment(umId);
     }
   }
-  await db.query(
-    `UPDATE product_sets SET plan_assignment_id = (SELECT a.id FROM plan_snapshots a
-                                   WHERE a.gym_id = product_sets.gym_id AND a.id = ? AND a.anchor_plan_snapshot_id = a.id)
-      WHERE id = ?`, [umId, productSetId]);
+  await setTestSetAssignmentLink(productSetId, umId);
 }
 
 

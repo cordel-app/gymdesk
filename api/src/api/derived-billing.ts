@@ -1,4 +1,5 @@
 import { db } from '../infra/db';
+import { productSetAssignmentSql } from '../domain/planAssignments';
 import { AttemptFact, DerivedBilling, EventFact, deriveBilling } from '../domain/derivedBilling';
 
 /**
@@ -29,7 +30,7 @@ export async function loadDerivedBilling(gymId: string, assignmentIds: number[])
 
   const { rows: sets } = await db.query<{ user_membership_id: number; owner_member_id: number }>(
     `SELECT anc.anchor_plan_snapshot_id AS user_membership_id, ps.owner_member_id FROM product_sets ps
-       JOIN plan_snapshots anc ON anc.id = ps.plan_assignment_id AND anc.gym_id = ps.gym_id
+       JOIN plan_snapshots anc ON anc.id = ${productSetAssignmentSql('ps')} AND anc.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.status = 'active'
         AND anc.anchor_plan_snapshot_id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids]);
