@@ -69,17 +69,17 @@ async function activeSetOf(memberId: number): Promise<number> {
 interface Snapshot {
   id: number; assignmentId: number; status: string; copiedFrom: number | null; closedAt: unknown; endsAt: string | null;
 }
-const SNAPSHOT_COLUMNS = `s.id, s.assignment_id, s.status, s.copied_from_plan_snapshot_id AS copied_from, s.closed_at,
+const SNAPSHOT_COLUMNS = `s.id, s.anchor_plan_snapshot_id, s.status, s.copied_from_plan_snapshot_id AS copied_from, s.closed_at,
                           DATE_FORMAT(s.ends_at, '%Y-%m-%d') AS ends_at`;
 const toSnapshot = (r: any): Snapshot => ({
-  id: Number(r.id), assignmentId: Number(r.assignment_id), status: String(r.status),
+  id: Number(r.id), assignmentId: Number(r.anchor_plan_snapshot_id), status: String(r.status),
   copiedFrom: r.copied_from == null ? null : Number(r.copied_from), closedAt: r.closed_at, endsAt: r.ends_at,
 });
 /** Every snapshot of the assignment the `user_memberships` row is, oldest first. */
 async function snapshotsOf(um: number): Promise<Snapshot[]> {
   const { rows } = await db.query<any>(
     `SELECT ${SNAPSHOT_COLUMNS} FROM plan_snapshots s
-      WHERE s.gym_id = ? AND s.assignment_id = ? ORDER BY s.id`, [gymId, um]);
+      WHERE s.gym_id = ? AND s.anchor_plan_snapshot_id = ? ORDER BY s.id`, [gymId, um]);
   return rows.map(toSnapshot);
 }
 /** The snapshot that states the assignment now (`currentAssignmentSnapshotSql()`). */

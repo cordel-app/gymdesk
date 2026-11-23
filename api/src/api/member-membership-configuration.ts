@@ -164,7 +164,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
          LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
         WHERE pp.product_set_id IN (${inFlightIds.map(() => '?').join(',')})
           AND pp.entitlement_only = 0
-          AND s.assignment_id IS NULL
+          AND s.anchor_plan_snapshot_id IS NULL
           AND s.id <> COALESCE(${primaryPlanSnapshotSql('pp.product_set_id', '?')}, 0)
         ORDER BY pp.id`,
       [gymId, ...inFlightIds, gymId],

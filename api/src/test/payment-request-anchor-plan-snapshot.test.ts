@@ -88,8 +88,8 @@ describe('#2125 N3a: a payment request names its assignment by anchor_plan_snaps
     const { um } = await commit(owner);
     const id = await raise(owner, um);
     expect(await keyOf(id)).toBe(um);
-    const { rows } = await db.query<any>('SELECT assignment_id FROM plan_snapshots WHERE id = ?', [um]);
-    expect(Number(rows[0].assignment_id)).toBe(um);
+    const { rows } = await db.query<any>('SELECT anchor_plan_snapshot_id FROM plan_snapshots WHERE id = ?', [um]);
+    expect(Number(rows[0].anchor_plan_snapshot_id)).toBe(um);
   });
 
   it('a request that names no assignment, or an id that is no anchor of the gym, names none', async () => {
@@ -104,13 +104,13 @@ describe('#2125 N3a: a payment request names its assignment by anchor_plan_snaps
     const owner = await member();
     const { um } = await commit(owner);
     const id = await raise(owner, um);
-    await db.query('UPDATE plan_snapshots SET assignment_id = NULL WHERE id = ?', [um]);
+    await db.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = NULL WHERE id = ?', [um]);
     try {
       const drift = await requestDrift();
       expect(drift.sample.map((r: any) => [Number(r.payment_request_id), Number(r.anchor_plan_snapshot_id)]))
         .toEqual([[id, um]]);
     } finally {
-      await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [um]);
+      await db.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = id WHERE id = ?', [um]);
     }
     expect((await requestDrift()).count).toBe(0);
   });

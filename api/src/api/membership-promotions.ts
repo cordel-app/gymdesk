@@ -69,7 +69,7 @@ import {
 const SELECT = `
   SELECT pps.id, pps.gym_id, pps.promotion_id, pps.applied_by, pps.applied_at, pps.consumed_at,
          pps.status, pps.snapshot, pps.revoked_at, pps.modified_at, pps.modified_by, pps.created_by,
-         pps.snapshot_confirmed_at, pa.assignment_id AS user_membership_id,
+         pps.snapshot_confirmed_at, pa.anchor_plan_snapshot_id AS user_membership_id,
          p.name AS promotion_name, p.description AS promotion_description,
          p.stackable, p.starts_at, p.ends_at,
          p.free_months, p.paid_months, p.bonus_months,
@@ -554,7 +554,7 @@ export async function applyPromotionToMembership(
     // the only write below goes through the Draft, and `lockDraft()` locks its Product Set,
     // which is what serialises two applies on one Draft.
     const { rows: umRows } = await tx.query(
-      `SELECT pa.assignment_id AS id, pa.member_id, pa.membership_plan_id, pa.status
+      `SELECT pa.anchor_plan_snapshot_id AS id, pa.member_id, pa.membership_plan_id, pa.status
          FROM plan_snapshots pa WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')}`,
       [gymId, umId],
     );

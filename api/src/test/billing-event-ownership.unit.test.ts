@@ -21,7 +21,7 @@ describe('billingEventOwnership', () => {
     expect(sql).toContain('p2.owner_member_id = p1.owner_member_id');
     expect(sql).not.toContain('root_product_set_id');
     expect(sql).toContain('p2.plan_assignment_id IS NOT NULL');
-    expect(sql).toContain('anc.assignment_id');
+    expect(sql).toContain('anc.anchor_plan_snapshot_id');
     expect(sql).not.toContain('user_membership_id IS NOT NULL');
     expect(sql).toMatch(/ORDER BY p2\.id DESC\s+LIMIT 1/);
   });

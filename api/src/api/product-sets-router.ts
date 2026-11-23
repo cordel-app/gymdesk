@@ -722,16 +722,16 @@ async function reviewHandler(req: any, res: any, next: any) {
     // #3007 stage 2(b): the plans the owner marked as pending cancellation are part of what this commit
     // does; nothing is charged for them.
     const { rows: cancelling } = await db.query<any>(
-      `SELECT pa.assignment_id AS user_membership_id, mp.name AS plan_name
+      `SELECT pa.anchor_plan_snapshot_id AS user_membership_id, mp.name AS plan_name
          FROM plan_snapshots pa LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
-        WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_canceled' AND pa.assignment_id IS NOT NULL
-        GROUP BY pa.assignment_id, mp.name`,
+        WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_canceled' AND pa.anchor_plan_snapshot_id IS NOT NULL
+        GROUP BY pa.anchor_plan_snapshot_id, mp.name`,
       [gymId, Number(set.owner_member_id)]);
     const { rows: reactivating } = await db.query<any>(
-      `SELECT pa.assignment_id AS user_membership_id, mp.name AS plan_name
+      `SELECT pa.anchor_plan_snapshot_id AS user_membership_id, mp.name AS plan_name
          FROM plan_snapshots pa LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
-        WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_reactivated' AND pa.assignment_id IS NOT NULL
-        GROUP BY pa.assignment_id, mp.name`,
+        WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_reactivated' AND pa.anchor_plan_snapshot_id IS NOT NULL
+        GROUP BY pa.anchor_plan_snapshot_id, mp.name`,
       [gymId, Number(set.owner_member_id)]);
     res.json({
       plans_to_reactivate: reactivating.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),

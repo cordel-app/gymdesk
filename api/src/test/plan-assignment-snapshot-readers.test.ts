@@ -61,7 +61,7 @@ afterAll(async () => {
 describe('loadAssignedPlanSnapshot reads the assignment from plan_snapshots', () => {
   it('reports the snapshot\'s fee and cadence with no legacy row in the gym', async () => {
     const { um, productId } = await running();
-    await db.query('UPDATE plan_snapshots SET membership_fee_price = 42 WHERE gym_id = ? AND assignment_id = ?', [gymId, um]);
+    await db.query('UPDATE plan_snapshots SET membership_fee_price = 42 WHERE gym_id = ? AND anchor_plan_snapshot_id = ?', [gymId, um]);
     await moveLegacyRowAway(um);
     const snap = await loadAssignedPlanSnapshot(gymId, um);
     expect(Number(snap.membership_fee_price)).toBe(42);

@@ -51,7 +51,7 @@ async function commit(owner: number, planId: number, fee: number): Promise<numbe
 }
 
 const setSnapshots = (um: number, column: string, value: string) =>
-  db.query(`UPDATE plan_snapshots SET ${column} = ? WHERE gym_id = ? AND assignment_id = ?`, [value, gymId, um]);
+  db.query(`UPDATE plan_snapshots SET ${column} = ? WHERE gym_id = ? AND anchor_plan_snapshot_id = ?`, [value, gymId, um]);
 
 const setAnchor = (setId: number, value: number | null) =>
   db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [value, setId]);

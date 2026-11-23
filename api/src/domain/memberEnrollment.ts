@@ -44,6 +44,6 @@ export function latestEnrollmentStatusSql(alias: string): string {
             WHERE pa.member_id = ${alias}.id AND pa.gym_id = ${alias}.gym_id
               AND pa.status NOT IN ('in_cart', 'pending_payment')
               AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}
-            ORDER BY ${ENROLLMENT_STATUS_RANK_SQL('pa.status')}, anc.created_at DESC, pa.assignment_id DESC
+            ORDER BY ${ENROLLMENT_STATUS_RANK_SQL('pa.status')}, anc.created_at DESC, pa.anchor_plan_snapshot_id DESC
             LIMIT 1)`;
 }

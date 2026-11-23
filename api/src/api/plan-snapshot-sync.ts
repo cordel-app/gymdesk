@@ -71,8 +71,8 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
     `UPDATE plan_snapshots s
        JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = s.id AND psj.product_set_id = ? AND psj.entitlement_only = 0
        JOIN product_sets ps ON ps.id = psj.product_set_id AND ps.gym_id = s.gym_id
-       LEFT JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.assignment_id = asg.id
-                                   AND asg.assignment_id = COALESCE(s.assignment_id, ?)
+       LEFT JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.anchor_plan_snapshot_id = asg.id
+                                   AND asg.anchor_plan_snapshot_id = COALESCE(s.anchor_plan_snapshot_id, ?)
         SET s.status = CASE WHEN ps.status = 'active'
                                  AND asg.assignment_status IN ('paused','to_be_canceled','active_cancel_at_period_end','to_be_reactivated','cancelled','expired') THEN asg.assignment_status
                             WHEN ps.status = 'superseded' AND asg.assignment_status IN ('cancelled','expired') THEN asg.assignment_status
@@ -94,9 +94,9 @@ async function syncPlanSnapshotConfiguration(tx: Tx, gymId: string, productSetId
         SET s.member_id = ps.owner_member_id, s.membership_plan_id = COALESCE(ps.membership_plan_id, s.membership_plan_id),
             s.starts_at = ps.starts_at,
             s.ends_at = IF(ps.status IN ('superseded','cancelled') AND s.closed_at IS NOT NULL, s.ends_at, ps.ends_at),
-            s.replace_on_activation = IF(? IS NOT NULL AND NOT (s.assignment_id <=> ?), 0, s.replace_on_activation),
-            s.replaces_assignment_id = IF(? IS NOT NULL AND NOT (s.assignment_id <=> ?), NULL, s.replaces_assignment_id),
-            s.assignment_id = COALESCE(?, s.assignment_id)
+            s.replace_on_activation = IF(? IS NOT NULL AND NOT (s.anchor_plan_snapshot_id <=> ?), 0, s.replace_on_activation),
+            s.replaces_assignment_id = IF(? IS NOT NULL AND NOT (s.anchor_plan_snapshot_id <=> ?), NULL, s.replaces_assignment_id),
+            s.anchor_plan_snapshot_id = COALESCE(?, s.anchor_plan_snapshot_id)
       WHERE s.id = ?`,
     // #2125 M6b-51c-2: a snapshot renamed after another assignment drops the previous one's replacement
     // (reset before the name moves: one UPDATE assigns left to right). `nameAssignmentSnapshot()` names
@@ -139,11 +139,11 @@ export async function syncPlanSnapshotsForAssignment(tx: Tx, gymId: string, user
      SELECT p.id FROM product_sets p
        JOIN product_set_plan_snapshots j ON j.product_set_id = p.id
        JOIN plan_snapshots s ON s.id = j.plan_snapshot_id AND s.gym_id = p.gym_id
-      WHERE p.gym_id = ? AND p.status = 'active' AND s.assignment_id = ?
+      WHERE p.gym_id = ? AND p.status = 'active' AND s.anchor_plan_snapshot_id = ?
      UNION
      SELECT p.id FROM product_sets p
        JOIN plan_snapshots s ON s.gym_id = p.gym_id AND s.member_id = p.owner_member_id
-      WHERE p.gym_id = ? AND p.status = 'active' AND s.assignment_id = ?
+      WHERE p.gym_id = ? AND p.status = 'active' AND s.anchor_plan_snapshot_id = ?
      ORDER BY id`, [gymId, userMembershipId, gymId, userMembershipId, gymId, userMembershipId]);
   for (const r of rows) await syncPlanSnapshot(tx, gymId, Number(r.id));
 }

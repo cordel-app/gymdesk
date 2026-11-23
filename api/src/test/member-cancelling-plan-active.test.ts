@@ -97,7 +97,7 @@ describe('a plan that cancels on its end date, in the Members App', () => {
     const { m, um, setId } = await cancellingPlan();
     await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [um]);
     // #2125 M6b-14: the Past list reads the plan snapshot, which the sync keeps on the same date.
-    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE assignment_id = ?', [um]);
+    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE anchor_plan_snapshot_id = ?', [um]);
 
     expect(await myPlans(m.clerk, setId)).toEqual([]);
     const mship = await asMember(m.clerk, '/me/membership');
