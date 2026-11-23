@@ -339,6 +339,11 @@ export interface MemberPurchasedProduct {
    */
   billing_event_id: number | null;
   /**
+   * #3251 stage 3 — the cart (`purchases`) the purchase or line was put in; `null` for one written
+   * before carts existed (history is not backfilled). Not the line's own `id`.
+   */
+  purchase_id?: number | null;
+  /**
    * #1661 — where the row comes from: a one-time purchase snapshot, or a
    * recurring Product line of the member's Active / Pending Payment ProductSet.
    * A recurring row's `id` is the negative of the line id so it can never
@@ -404,7 +409,7 @@ export async function loadMemberPurchases(
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
-            mp.in_product_set,
+            mp.in_product_set, mp.purchase_id,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
             ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
@@ -456,6 +461,7 @@ export async function loadMemberPurchases(
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
       payment_status: row.payment_status ?? null,
       billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
+      purchase_id: row.purchase_id == null ? null : Number(row.purchase_id),
       assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
       assigned_member_name: row.assigned_member_name ?? null,
     };
@@ -606,7 +612,7 @@ async function loadRecurringPurchases(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.created_at, s.origin, ps.status AS set_status, ps.id AS set_id,
+            s.currency, s.starts_at, s.created_at, s.origin, s.purchase_id, ps.status AS set_status, ps.id AS set_id,
             COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
                                            WHERE tp.id = s.product_id AND tp.gym_id = s.gym_id)) AS tax_rate_percent,
             COALESCE(s.line_ref, s.source_id) AS line_ref,
@@ -643,7 +649,7 @@ async function loadRecurringPurchases(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.created_at, s.origin, ps.id AS set_id,
+            s.currency, s.starts_at, s.created_at, s.origin, s.purchase_id, ps.id AS set_id,
             COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
                                            WHERE tp.id = s.product_id AND tp.gym_id = s.gym_id)) AS tax_rate_percent,
             COALESCE(s.line_ref, s.source_id) AS line_ref, ps.created_by AS set_created_by,
@@ -721,6 +727,7 @@ async function loadRecurringPurchases(
         tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
         payment_status: null,
         billing_event_id: null,
+        purchase_id: row.purchase_id == null ? null : Number(row.purchase_id),
         source: 'recurring' as const,
         pending_termination: false,
         draft_line_id: Number(row.id),
@@ -757,6 +764,7 @@ async function loadRecurringPurchases(
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
       payment_status: active.payment_status ?? null,
       billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
+      purchase_id: row.purchase_id == null ? null : Number(row.purchase_id),
       source: 'recurring' as const,
       pending_termination: active.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(active.line_ref)),
       draft_line_id: active.set_status === 'active' && draftByRef.has(Number(active.line_ref))

@@ -73,6 +73,8 @@ export interface CartPurchase {
   tax_rate_percent: number | null;
   assigned_member_id: number | null;
   created_at: string | null;
+  /** #3251 stage 3: the cart (`purchases`) the line is in, when the read selected it. */
+  purchase_id?: number | null;
 }
 
 /** A refusal the routes answer as `{ status, error }`. */
@@ -90,7 +92,7 @@ export async function loadCartPurchases(exec: Conn, gymId: string, memberId: num
   // #2962: one past its cart expiry is never listed or paid, even before the sweep deleted it.
   const { rows } = await exec.query<any>(
     `SELECT mp.id, mp.product_id, mp.product_name, mp.product_type, mp.amount, mp.unit_amount, mp.quantity, mp.list_price, mp.currency,
-            mp.tax_rate_percent, mp.assigned_member_id, mp.created_at
+            mp.tax_rate_percent, mp.assigned_member_id, mp.created_at, mp.purchase_id
        FROM ${purchaseSnapshotsSql(
          `gym_id = ? AND member_id = ? AND status = ? AND created_at >= UTC_TIMESTAMP() - INTERVAL ${PURCHASE_CART_TTL_MINUTES} MINUTE`,
          { notInProductSet: true })} mp
@@ -128,6 +130,7 @@ function toCartPurchase(r: any): CartPurchase {
     tax_rate_percent: r.tax_rate_percent == null ? null : Number(r.tax_rate_percent),
     assigned_member_id: r.assigned_member_id == null ? null : Number(r.assigned_member_id),
     created_at: r.created_at == null ? null : new Date(r.created_at).toISOString(),
+    ...(r.purchase_id !== undefined ? { purchase_id: r.purchase_id == null ? null : Number(r.purchase_id) } : {}),
   };
 }
 
