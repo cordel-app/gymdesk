@@ -5,7 +5,7 @@ import React from 'react';
  * (#1556), duplicated here because the two apps share no frontend module
  * (#1637). `currentColor` only, so the caller's text colour is the one colour.
  */
-export type ActivityMetaIconName = 'center' | 'trainer' | 'space' | 'service' | 'status' | 'attendees' | 'waitlist';
+export type ActivityMetaIconName = 'center' | 'trainer' | 'space' | 'service' | 'status' | 'attendees' | 'waitlist' | 'calendar';
 
 const PATHS: Record<ActivityMetaIconName, React.ReactNode> = {
   center: (
@@ -44,6 +44,13 @@ const PATHS: Record<ActivityMetaIconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="8" />
       <path d="M12 7.5V12l3 2" />
+    </>
+  ),
+  // #3245 - a calendar page: the Home's "No upcoming bookings" empty state.
+  calendar: (
+    <>
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M4 10h16M8 3v4M16 3v4" />
     </>
   ),
   space: (
