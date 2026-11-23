@@ -23,7 +23,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, proratedToNextFirst } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, productProratedToNextFirst as proratedToNextFirst } from './helpers';
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { daysBetween } from '../domain/proration';
 
