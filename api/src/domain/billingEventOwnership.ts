@@ -20,16 +20,16 @@
  * plan snapshot), never through `product_sets.user_membership_id`, the column the
  * re-key drops. Both directions still speak the assignment id (`user_membership_id`) at
  * their edge (the scalar answers it, the predicate binds it), read off the anchor
- * snapshot's `assignment_id`, because every caller still names an
+ * snapshot's `anchor_plan_snapshot_id`, because every caller still names an
  * assignment by it.
  */
 
 /**
- * Scalar subquery: the assignment id (`assignment_id`) of the owner of `<alias>.product_set_id`, or NULL (a purchase, a verification with no set, a chain whose
+ * Scalar subquery: the assignment id (`anchor_plan_snapshot_id`) of the owner of `<alias>.product_set_id`, or NULL (a purchase, a verification with no set, a chain whose
  * versions are all plan-less). Usable in a SELECT list or a JOIN condition.
  */
 export function eventAssignmentSql(alias = 'be'): string {
-  return `(SELECT anc.assignment_id
+  return `(SELECT anc.anchor_plan_snapshot_id
              FROM product_sets p1
              JOIN product_sets p2
                ON p2.owner_member_id = p1.owner_member_id AND p2.gym_id = p1.gym_id
@@ -50,7 +50,7 @@ export function eventsOfAssignmentSql(alias = 'be'): string {
              WHERE ps.gym_id = ? AND ps.owner_member_id IN (
                      SELECT p2.owner_member_id FROM product_sets p2
                        JOIN plan_snapshots anc ON anc.id = p2.plan_assignment_id AND anc.gym_id = p2.gym_id
-                      WHERE p2.gym_id = ? AND anc.assignment_id = ?))`;
+                      WHERE p2.gym_id = ? AND anc.anchor_plan_snapshot_id = ?))`;
 }
 
 export function eventsOfAssignmentParams(gymId: string, userMembershipId: number): [string, string, number] {

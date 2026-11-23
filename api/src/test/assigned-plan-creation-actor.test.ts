@@ -111,7 +111,7 @@ describe('#958 — the creation actor is snapshotted by every path that assigns 
     // assigned *it*" is asserted rather than coincidentally true.
     // #2125 M6b-51d-4: an assignment's creator is its anchor snapshot's (the assignment's first).
     await db.query(
-      'UPDATE plan_snapshots SET created_by = ? WHERE assignment_id = id AND assignment_id = ?',
+      'UPDATE plan_snapshots SET created_by = ? WHERE anchor_plan_snapshot_id = id AND anchor_plan_snapshot_id = ?',
       ['Earlier Admin', first.body.id],
     );
     // #1325 PR 3e: one in-flight version per owner — the first Draft is

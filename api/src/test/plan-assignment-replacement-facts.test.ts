@@ -39,11 +39,11 @@ async function activate(um: number): Promise<void> {
 }
 async function snapshotOf(um: number) {
   const { rows } = await db.query<any>(
-    `SELECT id, assignment_id, replace_on_activation, replaces_assignment_id, deleted_at
-       FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
+    `SELECT id, anchor_plan_snapshot_id, replace_on_activation, replaces_assignment_id, deleted_at
+       FROM plan_snapshots WHERE gym_id = ? AND anchor_plan_snapshot_id = ? ORDER BY id DESC LIMIT 1`, [gymId, um]);
   const r = rows[0];
   return {
-    id: Number(r.id), assignmentId: Number(r.assignment_id), replaceOnActivation: Number(r.replace_on_activation),
+    id: Number(r.id), assignmentId: Number(r.anchor_plan_snapshot_id), replaceOnActivation: Number(r.replace_on_activation),
     replacesAssignmentId: r.replaces_assignment_id == null ? null : Number(r.replaces_assignment_id),
     deletedAt: r.deleted_at,
   };
@@ -52,7 +52,7 @@ async function setOf(um: number): Promise<number> {
   const { rows } = await db.query<any>(
     `SELECT psj.product_set_id AS id FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
-      WHERE s.gym_id = ? AND s.assignment_id = ? ORDER BY psj.product_set_id DESC LIMIT 1`, [gymId, um]);
+      WHERE s.gym_id = ? AND s.anchor_plan_snapshot_id = ? ORDER BY psj.product_set_id DESC LIMIT 1`, [gymId, um]);
   return Number(rows[0].id);
 }
 
@@ -112,9 +112,9 @@ describe('an assignment\'s replacement is its plan snapshot\'s', () => {
     });
 
     const { rows } = await db.query<any>(
-      'SELECT assignment_id, replace_on_activation, replaces_assignment_id FROM plan_snapshots WHERE id = ?',
+      'SELECT anchor_plan_snapshot_id, replace_on_activation, replaces_assignment_id FROM plan_snapshots WHERE id = ?',
       [snapshot]);
-    expect(Number(rows[0].assignment_id)).toBe(second);
+    expect(Number(rows[0].anchor_plan_snapshot_id)).toBe(second);
     expect(Number(rows[0].replace_on_activation)).toBe(0);
     expect(rows[0].replaces_assignment_id).toBeNull();
 

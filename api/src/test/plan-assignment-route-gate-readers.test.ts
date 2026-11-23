@@ -50,7 +50,7 @@ async function running(): Promise<number> {
 const setLegacyStatus = (um: number, status: string) =>
   testAssignmentWrite('UPDATE user_memberships SET status = ? WHERE id = ?', [status, um]);
 const setSnapshotStatus = (um: number, status: string) =>
-  db.query('UPDATE plan_snapshots SET status = ? WHERE gym_id = ? AND assignment_id = ?', [status, gymId, um]);
+  db.query('UPDATE plan_snapshots SET status = ? WHERE gym_id = ? AND anchor_plan_snapshot_id = ?', [status, gymId, um]);
 
 beforeAll(async () => {
   gymId = await createTestGym('Gate Readers Gym');

@@ -51,7 +51,7 @@ export async function memberHoldsProductThroughPlan(
        JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = pa.id AND b.member_id = ?
        JOIN (${PLAN_LINES_SQL}) l ON l.plan_snapshot_id = pa.id AND l.product_id = ?
       WHERE pa.gym_id = ? AND pa.status IN (${marks})
-        AND COALESCE(pa.assignment_id, 0) NOT IN (${excludedMarks})
+        AND COALESCE(pa.anchor_plan_snapshot_id, 0) NOT IN (${excludedMarks})
         AND (pa.ends_at IS NULL OR pa.ends_at >= UTC_DATE())
         AND ${isCurrentAssignmentSnapshotSql('pa')}
       LIMIT 1`,
@@ -129,7 +129,7 @@ export async function planOnePerMemberConflicts(
        JOIN plan_snapshot_beneficiaries b ON b.plan_snapshot_id = pa.id
        JOIN (${PLAN_LINES_SQL}) l ON l.plan_snapshot_id = pa.id
        JOIN products p ON p.id = l.product_id AND p.gym_id = pa.gym_id
-      WHERE pa.assignment_id = ? AND pa.gym_id = ? AND p.one_per_member = 1
+      WHERE pa.anchor_plan_snapshot_id = ? AND pa.gym_id = ? AND p.one_per_member = 1
         AND ${isCurrentAssignmentSnapshotSql('pa')}
       ORDER BY b.member_id, p.id`,
     [userMembershipId, gymId],

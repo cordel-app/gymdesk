@@ -54,7 +54,7 @@ async function assignment(um: number) {
 /** The set's plan links in link order: which assignment each snapshot is the contract of, and the flag. */
 async function links(setId: number) {
   const { rows } = await db.query<{ um: number | null; entitlement_only: number }>(
-    `SELECT s.assignment_id AS um, j.entitlement_only
+    `SELECT s.anchor_plan_snapshot_id AS um, j.entitlement_only
        FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
       WHERE j.product_set_id = ? ORDER BY j.id`, [setId]);
   return rows.map((r) => ({ um: r.um == null ? null : Number(r.um), entitlementOnly: Number(r.entitlement_only) === 1 }));
@@ -139,7 +139,7 @@ describe('a Draft carries the plans cancelling at their period end', () => {
     // Once the sweep has moved A to cancelled, a new Draft no longer carries it.
     await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [a]);
     // #2125 M6b-47: the sweep picks its assignments from plan_snapshots.
-    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE assignment_id = ?', [a]);
+    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE anchor_plan_snapshot_id = ?', [a]);
     expect((await sweep()).status).toBe(200);
     expect((await assignment(a)).status).toBe('cancelled');
     const edit = await request.post(`/user-memberships/${b}/edit-draft`)

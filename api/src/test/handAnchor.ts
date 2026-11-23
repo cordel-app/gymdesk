@@ -1,7 +1,7 @@
 /**
  * #2125 N2 — a hand-written fixture assignment's id is a plan snapshot id, as a real one's is.
  *
- * Since migration 462 a plan snapshot names its assignment only through `assignment_id`, a FK to the
+ * Since migration 462 a plan snapshot names its assignment only through `anchor_plan_snapshot_id`, a FK to the
  * anchor snapshot whose id is the assignment's. A fixture that writes an assignment by hand
  * (`INSERT INTO user_memberships …`, `assignmentFixture.ts`) gets an id before any snapshot exists, so:
  *
@@ -9,7 +9,7 @@
  *     deleted, like `reserveBaseExerciseId()`), so no real snapshot ever takes it;
  *   - the first snapshot a fixture writes for it is **re-keyed** onto that id (`anchorHandAssignment()`)
  *     with every row that references it, so it becomes the assignment's anchor; a later one is named
- *     after it (`assignment_id = id`).
+ *     after it (`anchor_plan_snapshot_id = id`).
  */
 import { db } from '../infra/db';
 
@@ -49,12 +49,12 @@ export async function anchorHandAssignment(snapshotId: number, assignmentId: num
   const id = Number(assignmentId);
   const from = Number(snapshotId);
   if (from === id) {
-    await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [id]);
+    await db.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = id WHERE id = ?', [id]);
     return id;
   }
   const { rows: existing } = await db.query('SELECT id FROM plan_snapshots WHERE id = ?', [id]);
   if (existing[0]) {
-    await db.query('UPDATE plan_snapshots SET assignment_id = ? WHERE id = ?', [id, from]);
+    await db.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = ? WHERE id = ?', [id, from]);
     return from;
   }
   const refs = await referencesToPlanSnapshots();
@@ -65,7 +65,7 @@ export async function anchorHandAssignment(snapshotId: number, assignmentId: num
       for (const r of refs) {
         await tx.query(`UPDATE \`${r.table}\` SET \`${r.column}\` = ? WHERE \`${r.column}\` = ?`, [id, from]);
       }
-      await tx.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [id]);
+      await tx.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = id WHERE id = ?', [id]);
     } finally {
       await tx.query('SET FOREIGN_KEY_CHECKS = 1');
     }
