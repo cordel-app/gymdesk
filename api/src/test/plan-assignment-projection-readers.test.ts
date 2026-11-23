@@ -56,7 +56,7 @@ async function commit(owner: number, planId: number, fee: number): Promise<numbe
 const setLegacy = (um: number, column: string, value: string) =>
   testAssignmentWrite(`UPDATE user_memberships SET ${column} = ? WHERE id = ?`, [value, um], { mirror: false });
 const setSnapshots = (um: number, column: string, value: string) =>
-  db.query(`UPDATE plan_snapshots SET ${column} = ? WHERE gym_id = ? AND source_user_membership_id = ?`, [value, gymId, um]);
+  db.query(`UPDATE plan_snapshots SET ${column} = ? WHERE gym_id = ? AND assignment_id = ?`, [value, gymId, um]);
 
 beforeAll(async () => {
   gymId = await createTestGym('Projection Readers Gym');
@@ -82,7 +82,7 @@ describe('a superseded same-plan predecessor is clamped to its plan snapshot\'s 
     const second = await commit(owner, p, 35);
     expect(second).not.toBe(first);
     const { rows: snap } = await db.query<any>(
-      'SELECT MIN(starts_at) AS starts_at FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, first]);
+      'SELECT MIN(starts_at) AS starts_at FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?', [gymId, first]);
     expect(dateOnly(snap[0].starts_at)).toBe(TODAY);
     const { rows } = await db.query<any>(`SELECT status, ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [first]);
     expect(rows[0].status).toBe('superseded');

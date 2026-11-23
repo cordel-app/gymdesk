@@ -55,10 +55,10 @@ export async function endCancelledAtPeriodEnd(): Promise<number> {
 export async function sweepCancelledAtPeriodEnd(): Promise<{ moved: number; considered: number }> {
   return db.transaction(async (tx) => {
     const { rows } = await tx.query<{ id: number; gym_id: string; member_id: number; status: string }>(
-      `SELECT pa.source_user_membership_id AS id, pa.gym_id, pa.member_id, pa.status FROM plan_snapshots pa
-        WHERE ${cancelAtPeriodEndDueSql('pa')} AND pa.source_user_membership_id IS NOT NULL
+      `SELECT pa.assignment_id AS id, pa.gym_id, pa.member_id, pa.status FROM plan_snapshots pa
+        WHERE ${cancelAtPeriodEndDueSql('pa')} AND pa.assignment_id IS NOT NULL
           AND ${isCurrentAssignmentSnapshotSql('pa')}
-        ORDER BY pa.source_user_membership_id`);
+        ORDER BY pa.assignment_id`);
     let moved = 0;
     for (const row of rows) {
       const rowCount = await writeAssignmentLifecycle(tx, row.gym_id, Number(row.id), {

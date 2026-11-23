@@ -5,10 +5,9 @@ import { cleanupTestGyms, createTestGym } from './helpers';
 import { createDraft, addCoverage } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { recordPaymentAttempt } from '../api/payment-attempt';
-import { syncPlanAssignment } from '../api/plan-assignment-sync';
+import { syncPaymentRequestAssignmentIds, syncPlanAssignment } from '../api/plan-assignment-sync';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { backfillPaymentRequestAssignmentIds } = require('../infra/migrations/431_payment_request_plan_assignment_id.js');
 
 let gymId: string;
 let planId: number;
@@ -50,7 +49,7 @@ async function raise(memberId: number, um: number | null): Promise<number> {
 }
 async function anchorOf(um: number): Promise<number> {
   const { rows } = await db.query<any>(
-    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ?', [gymId, um]);
+    'SELECT MIN(id) AS a FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ?', [gymId, um]);
   return Number(rows[0].a);
 }
 async function keyOf(id: number): Promise<number | null> {
@@ -103,7 +102,7 @@ describe('#2125 M6b-34: a payment request carries its plan_assignment_id beside 
     expect(await keyOf(id)).toBe(await anchorOf(um));
   });
 
-  it('plan-assignments:validate reports a drifted request, and the backfill repairs it', async () => {
+  it('plan-assignments:validate reports a drifted request, and the sync repairs it', async () => {
     expect((await requestDrift()).count).toBe(0);
     const owner = await member();
     const { um } = await commit(owner);
@@ -112,7 +111,8 @@ describe('#2125 M6b-34: a payment request carries its plan_assignment_id beside 
     const drift = await requestDrift();
     expect(drift.sample.map((r: any) => [Number(r.payment_request_id), r.plan_assignment_id, Number(r.expected_plan_assignment_id)]))
       .toEqual([[id, null, await anchorOf(um)]]);
-    await backfillPaymentRequestAssignmentIds({ raw: (sql: string) => db.query(sql) });
+    // #2125 N2: migration 431's backfill read the column migration 462 dropped; the sync repairs it.
+    await syncPaymentRequestAssignmentIds(db as any, gymId, [um]);
     expect((await requestDrift()).count).toBe(0);
     expect(await keyOf(id)).toBe(await anchorOf(um));
   });

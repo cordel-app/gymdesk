@@ -1,7 +1,7 @@
 // #2125 M6b-1 (migration 419): `plan_snapshots.assignment_id` is the stable identity of a Membership Plan
-// assignment, the assignment-level facts are dual-written beside `user_memberships`, an assignment's
-// anchor snapshot is not deletable while another snapshot of it survives, and the read-only drift check
-// reports where the two records disagree.
+// assignment, an assignment's anchor snapshot is not deletable while another snapshot of it survives,
+// and the read-only drift check reports an inconsistent identity. #2125 N2 (migration 462): it is the
+// only record of a snapshot's assignment, NULL on a snapshot no assignment was opened on.
 import { TEST_ASSIGNMENTS } from './assignmentReads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -9,7 +9,7 @@ import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestDraftAssignment, createTestGym, createTestMembership, request,
 } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
-import { deleteUnlinkedPlanSnapshots, stampAssignmentIds } from '../api/plan-assignment-sync';
+import { deleteUnlinkedPlanSnapshots, openAssignmentOnSet } from '../api/plan-assignment-sync';
 import { copyPlanSnapshotToVersion } from '../api/plan-snapshot-add';
 import { discardDraftSet, ownPlanSnapshot } from '../api/plan-snapshot-ownership';
 import { createDraft } from '../api/product-sets';
@@ -47,7 +47,7 @@ async function activate(um: number, onConflict: 'add' | 'replace' = 'add'): Prom
 async function snapshotsOf(um: number) {
   const { rows } = await db.query<any>(
     `SELECT id, assignment_id, status, purchased_at, replace_on_activation, replaces_assignment_id
-       FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? ORDER BY id`, [gymId, um]);
+       FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id`, [gymId, um]);
   return rows.map((r: any) => ({
     id: Number(r.id), assignmentId: r.assignment_id == null ? null : Number(r.assignment_id), status: String(r.status),
     purchasedAt: r.purchased_at, replaceOnActivation: Number(r.replace_on_activation),
@@ -55,14 +55,16 @@ async function snapshotsOf(um: number) {
   }));
 }
 const check = async (name: string) => (await findPlanAssignmentDrift(db, gymId)).checks.find((c) => c.name === name)!;
-/** A Draft Product Set of a new owner with one plan snapshot of its own (no `user_memberships` row). */
-async function draftSet(owner?: number): Promise<{ owner: number; set: number; snapshot: number }> {
+/** A Draft Product Set of a new owner with one plan snapshot of its own, an assignment opened on it unless `open: false`. */
+async function draftSet(owner?: number, opts: { open?: boolean } = {}): Promise<{ owner: number; set: number; snapshot: number }> {
   const o = owner ?? await member();
   const planId = await plan();
   const set = await db.transaction(async (tx) => {
     const d = await createDraft(tx, { gymId, ownerMemberId: o, membershipPlanId: planId, startsAt: TODAY, actor: { name: 'T', type: 'staff' } });
     if (d.kind !== 'created') throw new Error(d.kind);
     await snapshotProductSetFromPlan(tx, { gymId, productSetId: d.productSet.id, membershipPlanId: planId, membershipFeePrice: 10, startsAt: TODAY });
+    // #2125 N2: a snapshot names no assignment until one is opened on it.
+    if (opts.open !== false) await openAssignmentOnSet(tx, gymId, d.productSet.id);
     return d.productSet.id;
   });
   const { rows } = await db.query<any>('SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ?', [set]);
@@ -137,7 +139,6 @@ describe('assignment identity', () => {
     expect(a.assignmentId).not.toBeNull();
     expect(b.assignmentId).not.toBeNull();
     expect(a.assignmentId).not.toBe(b.assignmentId);
-    expect((await check('assignment_id_names_two_assignments')).count).toBe(0);
     expect((await check('assignment_identity_split')).count).toBe(0);
   });
 
@@ -162,14 +163,19 @@ describe('assignment identity', () => {
     expect((await snapshotsOf(um))[0]).toMatchObject({ assignmentId: original.assignmentId, status: 'superseded' });
   });
 
-  it('a copy for another Product Set is the same assignment; a copy that drops the assignment is a new one', async () => {
+  it('a copy for another Product Set is the same assignment; a copy that drops the assignment names none', async () => {
     const a = await draftSet();
     const b = await draftSet(await member());
     const same = await db.transaction((tx) => copyPlanSnapshotToVersion(tx, gymId, a.snapshot, b.set, { keepAssignment: true }));
     const fresh = await db.transaction((tx) => copyPlanSnapshotToVersion(tx, gymId, a.snapshot, b.set, { keepAssignment: false }));
     expect(await assignmentIdOf(a.snapshot)).toBe(a.snapshot);
     expect(await assignmentIdOf(same)).toBe(a.snapshot);
-    expect(await assignmentIdOf(fresh)).toBe(fresh);
+    expect(await assignmentIdOf(fresh)).toBeNull();
+  });
+
+  it('#2125 N2: a snapshot no assignment was opened on names none', async () => {
+    const a = await draftSet(undefined, { open: false });
+    expect(await assignmentIdOf(a.snapshot)).toBeNull();
   });
 
   it('copy-on-write of a shared snapshot keeps the assignment identity', async () => {
@@ -236,23 +242,16 @@ describe('the drift check', () => {
     expect(snaps.at(-1)).toMatchObject({ assignmentId: snaps[0].id, status: CANCELS_AT_PERIOD_END_STATUS });
   });
 
-  it('reports a snapshot with no identity and one that names the wrong anchor, and the stamping repairs both', async () => {
+  it('reports a snapshot that names a snapshot which is not an anchor', async () => {
     const um = await createTestDraftAssignment(gymId, await member(), await plan());
     const [snap] = await snapshotsOf(um);
-    const other = await draftSet();
+    const other = await draftSet(undefined, { open: false });
 
     await db.query('UPDATE plan_snapshots SET assignment_id = ? WHERE id = ?', [other.snapshot, snap.id]);
-    await db.query('UPDATE plan_snapshots SET assignment_id = NULL WHERE id = ?', [other.snapshot]);
     expect((await check('assignment_identity_split')).sample.map((r) => Number(r.plan_snapshot_id))).toContain(snap.id);
-    expect((await check('snapshot_without_assignment_id')).sample.map((r) => Number(r.plan_snapshot_id))).toContain(other.snapshot);
 
-    // The stamping rule the sync runs (migration 419's backfill ran it once over history; it read
-    // `user_memberships`, dropped by migration 458) converges on the same identities.
-    await stampAssignmentIds(db, gymId, [snap.id, other.snapshot]);
-    expect(await assignmentIdOf(snap.id)).toBe(snap.id);
-    expect(await assignmentIdOf(other.snapshot)).toBe(other.snapshot);
+    await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [snap.id]);
     expect((await check('assignment_identity_split')).count).toBe(0);
-    expect((await check('snapshot_without_assignment_id')).count).toBe(0);
   });
 
   it('is scoped to the gym it is asked about', async () => {

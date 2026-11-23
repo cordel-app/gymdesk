@@ -129,7 +129,7 @@ async function reusesPredecessorsContract(
   const { rows } = await tx.query<{ n: number }>(
     `SELECT COUNT(*) AS n FROM plan_snapshots s
        JOIN product_set_plan_snapshots prev ON prev.plan_snapshot_id = s.id AND prev.product_set_id = ? AND prev.entitlement_only = 0
-      WHERE s.id = ? AND s.gym_id = ? AND s.source_user_membership_id = ?`,
+      WHERE s.id = ? AND s.gym_id = ? AND s.assignment_id = ?`,
     [set.previous_product_set_id, primary, gymId, previousUmId]);
   return Number(rows[0]?.n ?? 0) > 0;
 }

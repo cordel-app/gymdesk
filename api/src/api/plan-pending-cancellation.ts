@@ -50,7 +50,7 @@ export async function markPlanForCancellation(
   tx: Tx, input: { gymId: string; userMembershipId: number; actor: PendingCancellationActor; today: string },
 ): Promise<MarkOutcome> {
   const { rows } = await tx.query<{ id: number; member_id: number; status: string }>(
-    `SELECT pa.source_user_membership_id AS id, pa.member_id, pa.status FROM plan_snapshots pa
+    `SELECT pa.assignment_id AS id, pa.member_id, pa.status FROM plan_snapshots pa
       WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?', 'pa')} ORDER BY pa.id DESC LIMIT 1 FOR UPDATE`,
     [input.gymId, input.userMembershipId]);
   const um = rows[0];
@@ -67,7 +67,7 @@ export async function markPlanForCancellation(
   await setLegacyStatus(tx, input.gymId, input.userMembershipId, 'active', PENDING_CANCELLATION_STATUS, input.actor.name);
   await tx.query(
     `UPDATE plan_snapshots SET status = ?, previous_end_date = ends_at
-      WHERE gym_id = ? AND source_user_membership_id = ? AND status = 'active'`,
+      WHERE gym_id = ? AND assignment_id = ? AND status = 'active'`,
     [PENDING_CANCELLATION_STATUS, input.gymId, input.userMembershipId]);
   return { kind: 'ok', productSetId: draft.productSetId, created: draft.created };
 }
@@ -75,14 +75,14 @@ export async function markPlanForCancellation(
 /** Puts the marked plans back as they were (all of the owner's, or the one named). */
 async function restore(tx: Tx, gymId: string, where: string, params: unknown[], actor: string | null): Promise<number> {
   const { rows } = await tx.query<{ id: number }>(
-    `SELECT DISTINCT source_user_membership_id AS id FROM plan_snapshots
+    `SELECT DISTINCT assignment_id AS id FROM plan_snapshots
       WHERE gym_id = ? AND status = ? AND ${where}`,
     [gymId, PENDING_CANCELLATION_STATUS, ...params]);
   for (const r of rows) {
     await setLegacyStatus(tx, gymId, Number(r.id), PENDING_CANCELLATION_STATUS, 'active', actor);
     await tx.query(
       `UPDATE plan_snapshots SET status = 'active', ends_at = previous_end_date, previous_end_date = NULL
-        WHERE gym_id = ? AND source_user_membership_id = ? AND status = ?`,
+        WHERE gym_id = ? AND assignment_id = ? AND status = ?`,
       [gymId, r.id, PENDING_CANCELLATION_STATUS]);
   }
   return rows.length;
@@ -92,7 +92,7 @@ async function restore(tx: Tx, gymId: string, where: string, params: unknown[], 
 export async function unmarkPlanForCancellation(
   tx: Tx, input: { gymId: string; userMembershipId: number; actor: PendingCancellationActor },
 ): Promise<number> {
-  return restore(tx, input.gymId, 'source_user_membership_id = ?', [input.userMembershipId], input.actor.name);
+  return restore(tx, input.gymId, 'assignment_id = ?', [input.userMembershipId], input.actor.name);
 }
 
 /** The Draft carrying the marks was discarded: every marked plan of the owner is restored. */
@@ -114,9 +114,9 @@ export async function commitPendingCancellations(
     'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.productSetId, input.gymId]);
   if (!sets[0]) return 0;
   const { rows: marked } = await tx.query<{ id: number; starts_at: Date | string }>(
-    `SELECT source_user_membership_id AS id, MIN(starts_at) AS starts_at FROM plan_snapshots
-      WHERE gym_id = ? AND member_id = ? AND status = ? AND source_user_membership_id IS NOT NULL
-      GROUP BY source_user_membership_id`,
+    `SELECT assignment_id AS id, MIN(starts_at) AS starts_at FROM plan_snapshots
+      WHERE gym_id = ? AND member_id = ? AND status = ? AND assignment_id IS NOT NULL
+      GROUP BY assignment_id`,
     [input.gymId, Number(sets[0].owner_member_id), PENDING_CANCELLATION_STATUS]);
   if (marked.length === 0) return 0;
 
@@ -129,12 +129,12 @@ export async function commitPendingCancellations(
     await tx.query(
       `DELETE j FROM product_set_plan_snapshots j
          JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
-        WHERE j.product_set_id = ? AND j.entitlement_only = 0 AND s.gym_id = ? AND s.source_user_membership_id = ?`,
+        WHERE j.product_set_id = ? AND j.entitlement_only = 0 AND s.gym_id = ? AND s.assignment_id = ?`,
       [input.productSetId, input.gymId, Number(um.id)]);
     const closedAs = await closeAssignment(tx, input.gymId, Number(um.id), endsOn, input.actor);
     await tx.query(
       `UPDATE plan_snapshots SET previous_end_date = NULL
-        WHERE gym_id = ? AND source_user_membership_id = ?`, [input.gymId, Number(um.id)]);
+        WHERE gym_id = ? AND assignment_id = ?`, [input.gymId, Number(um.id)]);
     if (closedAs === CANCELS_AT_PERIOD_END_STATUS) await linkCancellingPlan(tx, input.gymId, input.productSetId, Number(um.id));
   }
 

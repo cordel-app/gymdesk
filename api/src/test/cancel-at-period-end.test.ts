@@ -117,7 +117,7 @@ describe('access until ends_at', () => {
     // Past its end date but before the sweep has run: no access. #2125 M6b-3: the access readers
     // ask the assignment's plan snapshot, so the date is moved there as well as on the legacy row.
     await testAssignmentWrite('UPDATE user_memberships SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE id = ?', [um]);
-    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE source_user_membership_id = ?', [um]);
+    await db.query('UPDATE plan_snapshots SET ends_at = UTC_DATE() - INTERVAL 1 DAY WHERE assignment_id = ?', [um]);
     expect(await centers(m)).toEqual([]);
   });
 });

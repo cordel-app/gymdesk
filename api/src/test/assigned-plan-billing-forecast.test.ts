@@ -304,7 +304,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     const umId = await assignPlan(gymId, await createPlan(gymId, { price: 70 }));
     await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [umId]);
     // #2125 M6b-17: the simulation reads the assignment's status from its snapshot.
-    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE source_user_membership_id = ?", [umId]);
+    await db.query("UPDATE plan_snapshots SET status = 'cancelled' WHERE assignment_id = ?", [umId]);
     const forecast = await forecastOf(gymId, umId);
     expect(forecast.available).toBe(false);
     expect(forecast.dates).toEqual([]);

@@ -37,7 +37,7 @@ async function both(um: number) {
   const { rows: anchor } = await db.query<any>(
     `SELECT assignment_status AS status, assignment_closed_at AS closed_at, assignment_ends_at AS ends_at,
             assignment_modified_at AS modified_at, assignment_modified_by AS modified_by
-       FROM plan_snapshots WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id = id`, [gymId, um]);
+       FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? AND assignment_id = id`, [gymId, um]);
   return { legacy: legacy[0], anchor: anchor[0] };
 }
 async function expectInStep(um: number, status: string) {
@@ -80,7 +80,7 @@ describe('the anchor carries the assignment lifecycle', () => {
     await auth(request.post(`/user-memberships/${um}/activate`)).send({ on_conflict: 'add' });
     const { rows } = await db.query<any>(
       `SELECT COUNT(*) AS n FROM plan_snapshots
-        WHERE gym_id = ? AND source_user_membership_id = ? AND assignment_id <> id AND assignment_status IS NOT NULL`,
+        WHERE gym_id = ? AND assignment_id = ? AND assignment_id <> id AND assignment_status IS NOT NULL`,
       [gymId, um]);
     expect(Number(rows[0].n)).toBe(0);
   });

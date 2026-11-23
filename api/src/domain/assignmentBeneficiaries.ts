@@ -5,7 +5,7 @@ import { productSetLegacyAssignmentIdSql } from './planAssignments';
  *
  * This is the definition the `user_membership_members` view carried (migration 388), moved into the
  * code so the view can be dropped (migration 407): the latest plan snapshot of each assignment (the
- * snapshot's own `source_user_membership_id`, else the assignment of the earliest Product Set linking
+ * snapshot's own `assignment_id`, else the assignment of the earliest Product Set linking
  * it) and that snapshot's beneficiaries, with the view's columns. It is a derived table, used as
  * `FROM ${ASSIGNMENT_BENEFICIARIES} umm` or `JOIN ${ASSIGNMENT_BENEFICIARIES} umm ON …`, and the one
  * place that spelling lives: a reader asks it, never `plan_snapshot_beneficiaries` through a second
@@ -16,7 +16,7 @@ import { productSetLegacyAssignmentIdSql } from './planAssignments';
  *
  * Columns: `user_membership_id`, `gym_id`, `member_id`, `is_owner`, `created_at`.
  */
-const SNAPSHOT_ASSIGNMENT = `COALESCE(s.source_user_membership_id,
+const SNAPSHOT_ASSIGNMENT = `COALESCE(s.assignment_id,
        (SELECT ${productSetLegacyAssignmentIdSql('ps')} FROM product_set_plan_snapshots j
           JOIN product_sets ps ON ps.id = j.product_set_id AND ps.gym_id = s.gym_id
          WHERE j.plan_snapshot_id = s.id ORDER BY j.product_set_id LIMIT 1))`;
