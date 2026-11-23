@@ -85,9 +85,8 @@ describe('a Product Set link value is read through its anchor (#2125 M6b-42)', (
 
   it('the helper reads the anchor snapshot\'s legacy id', () => {
     const sql = productSetLegacyAssignmentIdSql('p');
-    expect(sql).toContain('ps_lid.id = p.plan_assignment_id');
-    expect(sql).toContain('ps_lid.gym_id = p.gym_id');
-    expect(sql).toContain('ps_lid.anchor_plan_snapshot_id');
+    expect(sql).toContain('psa_j.product_set_id = p.id AND psa_j.projects_assignment = 1');
+    expect(sql).toContain('psa_s.anchor_plan_snapshot_id');
     expect(sql).not.toContain('p.user_membership_id');
   });
 });

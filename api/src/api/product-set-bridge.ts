@@ -1,5 +1,5 @@
 import { isCancelledAssignmentStatus } from '../domain/assignmentStatus';
-import { PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL } from './plan-assignment-sync';
+import { linkProductSetToAssignment } from './plan-assignment-sync';
 import { loadPaidThrough } from './cancellation-entitlement';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { linkRecurringLines } from './recurring-line-writer';
@@ -20,7 +20,7 @@ import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { linkCancellingPlans } from './entitlement-plan-links';
-import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { assignmentOfAnchorSql, assignmentOfLegacyIdSql, productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { removePlanPromotion } from './plan-promotion-writer';
 import { copyProductApplications, removeProductPromotion } from './product-promotion-writer';
 
@@ -370,7 +370,7 @@ export async function reconfigureProjected(
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
 
   const draftId = created.productSet.id;
-  await tx.query('UPDATE product_sets SET plan_assignment_id = NULL, ends_at = ? WHERE id = ?',
+  await tx.query('UPDATE product_sets SET ends_at = ? WHERE id = ?',
     [setRows[0].ends_at == null ? null : dateOnly(setRows[0].ends_at), draftId]);
   await cloneConfiguration(tx, input.gymId, set.id, draftId);
 
@@ -380,8 +380,8 @@ export async function reconfigureProjected(
   if ('kind' in edited) return edited;
 
   // The new version takes over the same assignment (it is the same contract).
-  await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [set.linked, draftId]);
-  await tx.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [set.id]);
+  await linkProductSetToAssignment(tx, input.gymId, draftId, set.linked);
+  await linkProductSetToAssignment(tx, input.gymId, set.id, null);
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: draftId, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };
   return { kind: 'ok', productSetId: draftId };
@@ -398,7 +398,7 @@ export async function cancellationEndFor(tx: Tx, gymId: string, set: { id: numbe
   const { rows: info } = await tx.query<any>(
     `SELECT pa.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
        FROM product_sets ps
-       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql('ps.plan_assignment_id', 'pa')}
+       LEFT JOIN plan_snapshots pa ON pa.gym_id = ps.gym_id AND ${assignmentOfAnchorSql(productSetAssignmentSql('ps'), 'pa')}
       WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, gymId]);
   const paidThrough = await loadPaidThrough(tx, gymId, set.id);
   return cancellationEndDate({

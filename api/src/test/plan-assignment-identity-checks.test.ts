@@ -3,7 +3,7 @@
 // activate it, discard one) stay clean; each check finds the state it exists to catch.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, setTestSetAssignmentLink } from './helpers';
 import { findPlanAssignmentDrift } from '../api/plan-assignment-drift';
 
 let gymId: string;
@@ -75,7 +75,7 @@ describe('plan-assignments:validate — assignment identity (#2125 N3d)', () => 
       `SELECT j.product_set_id FROM product_set_plan_snapshots j JOIN product_sets ps ON ps.id = j.product_set_id
         WHERE j.plan_snapshot_id = ? AND ps.status = 'active'`, [id]);
     expect(rows).toHaveLength(1);
-    await db.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [rows[0].product_set_id]);
+    await setTestSetAssignmentLink(Number(rows[0].product_set_id), null);
     await db.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = NULL WHERE id = ? AND gym_id = ?', [id, gymId]);
     const c = await check('active_plan_without_anchor');
     expect(c.sample.map((r) => Number(r.product_set_id))).toContain(Number(rows[0].product_set_id));

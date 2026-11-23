@@ -72,54 +72,29 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
 
 
 /**
- * #2125 M6b-36 / M6b-46 — the SET clause that links a Product Set to an assignment: its
- * `plan_assignment_id` (migration 432) becomes the anchor (lowest plan snapshot id) naming the
- * legacy assignment id bound to its one `?`. An unaliased `product_sets` is required. None where no
- * snapshot names that assignment yet; `nameAssignmentSnapshot()` names the set's primary snapshot and
- * re-links it. Since M6b-46 (migration 441) `product_sets.user_membership_id` is gone and this is the
- * only way a set is linked; a writer that unlinks a set writes `plan_assignment_id = NULL`.
+ * #2125 N3b (migration 471) — links the Product Set to the assignment `assignmentId` (an anchor id), or
+ * unlinks it (`null`). The link is the `projects_assignment` flag of the set's own
+ * `product_set_plan_snapshots` rows whose snapshot names that assignment; `product_sets` carries no
+ * column for it (it replaced `product_sets.plan_assignment_id`, migrations 432 → 471). Readers ask
+ * `productSetAssignmentSql()`. The set must already link a snapshot naming the assignment
+ * (`nameAssignmentSnapshot()` names its primary first, a clone links its predecessor's): a link with
+ * nothing to stand on throws rather than being dropped, since an unlinked set reads as a plain Draft.
  */
-export const PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL =
-  `plan_assignment_id = (SELECT pa_anchor.id FROM plan_snapshots pa_anchor
-                          WHERE pa_anchor.gym_id = product_sets.gym_id
-                            AND pa_anchor.id = ? AND pa_anchor.anchor_plan_snapshot_id = pa_anchor.id)`;
-
-/** The lowest snapshot naming the same legacy assignment as the set's current anchor (none kept). */
-const RENORMALIZED_ANCHOR_SQL =
-  `COALESCE((SELECT pa_cur.anchor_plan_snapshot_id FROM plan_snapshots pa_cur
-              WHERE pa_cur.id = product_sets.plan_assignment_id), plan_assignment_id)`;
-
-/**
- * #2125 M6b-36 / M6b-46 — keeps `product_sets.plan_assignment_id` pointing at its assignment's
- * anchor, the lowest snapshot naming the legacy assignment (the rule `stampAssignmentIds()` gives
- * every snapshot): the given sets, and every set whose anchor names one of the given assignments, are
- * re-pointed at that lowest snapshot when a lower one names the assignment after the set was linked.
- * The link itself is `plan_assignment_id` since M6b-46; this never links or unlinks a set.
- */
-export async function syncProductSetAssignmentIds(
-  exec: Exec, gymId: string, productSetIds: number[], userMembershipIds: number[] = [],
+export async function linkProductSetToAssignment(
+  exec: Exec, gymId: string, productSetId: number, assignmentId: number | null,
 ): Promise<void> {
-  const sets = new Set(productSetIds.map(Number));
-  const ums = [...new Set(userMembershipIds)];
-  if (ums.length > 0) {
-    // Found by a plain read first and written by primary key, so the UPDATE locks only those rows
-    // (a range scan of the gym's sets under a concurrent writer deadlocks).
-    const { rows } = await exec.query<{ id: number }>(
-      `SELECT ps.id FROM product_sets ps
-         JOIN plan_snapshots pa_um ON pa_um.id = ps.plan_assignment_id
-        WHERE ps.gym_id = ? AND pa_um.anchor_plan_snapshot_id IN (${ums.map(() => '?').join(',')})`,
-      [gymId, ...ums]);
-    for (const r of rows) sets.add(Number(r.id));
-  }
-  const ids = [...sets];
-  if (ids.length === 0) return;
-  // The comparison repeats the subquery rather than naming the column, so a set already in step is not
-  // written (its row lock is not taken by a re-sync that changes nothing).
   await exec.query(
-    `UPDATE product_sets SET plan_assignment_id = ${RENORMALIZED_ANCHOR_SQL}
-      WHERE id IN (${ids.map(() => '?').join(',')}) AND gym_id = ? AND plan_assignment_id IS NOT NULL
-        AND NOT (plan_assignment_id <=> ${RENORMALIZED_ANCHOR_SQL})`,
-    [...ids, gymId]);
+    `UPDATE product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        SET j.projects_assignment = IF(s.anchor_plan_snapshot_id <=> ?, 1, 0)
+      WHERE j.product_set_id = ? AND s.gym_id = ?`,
+    [assignmentId ?? -1, productSetId, gymId]);
+  if (assignmentId == null) return;
+  const { rows } = await exec.query<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM product_set_plan_snapshots WHERE product_set_id = ? AND projects_assignment = 1',
+    [productSetId]);
+  if (Number(rows[0]?.n ?? 0) === 0) {
+    throw new Error(`Product Set ${productSetId} links no plan snapshot of assignment ${assignmentId}; it cannot be linked to it`);
+  }
 }
 
 /**
@@ -130,7 +105,7 @@ export async function syncProductSetAssignmentIds(
  * from `product_sets.user_membership_id`; since M6b-44 the sync reads the set's anchor, which only
  * exists once a snapshot names the assignment, so a link to an assignment no snapshot names yet (a new
  * Draft assignment, one the projection opens) is named here. A snapshot another Product Set links is
- * left alone, as the sync always left it, and the set's `plan_assignment_id` is re-derived after.
+ * left alone, as the sync always left it, and the set is then linked (`linkProductSetToAssignment()`).
  */
 /**
  * #2125 M6b-51c-2 — the assignment-level facts a plan snapshot drops when it stops naming the
@@ -196,8 +171,7 @@ export async function nameAssignmentSnapshot(
       [userMembershipId, primary, gymId, userMembershipId]);
     await stampAssignmentIds(exec, gymId, [primary]);
   }
-  await exec.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ? AND gym_id = ?`,
-    [userMembershipId, productSetId, gymId]);
+  await linkProductSetToAssignment(exec, gymId, productSetId, userMembershipId);
 }
 
 /**
@@ -371,13 +345,8 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ?
       WHERE psj.product_set_id = ?`, [gymId, productSetId]);
-  if (rows.length === 0) {
-    await syncProductSetAssignmentIds(tx, gymId, [productSetId]);
-    return;
-  }
+  if (rows.length === 0) return;
   await stampAssignmentIds(tx, gymId, rows.map((r) => Number(r.id)));
-  const umIds = rows.map((r) => r.um_id).filter((v): v is number => v != null).map(Number);
-  await syncProductSetAssignmentIds(tx, gymId, [productSetId], umIds);
   for (const r of rows) {
     if (Number(r.shared) === 1) continue;
     await tx.query(

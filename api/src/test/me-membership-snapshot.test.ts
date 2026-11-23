@@ -133,6 +133,10 @@ async function createCallingMember(gymId: string): Promise<number> {
     "UPDATE user_memberships SET status = 'cancelled' WHERE member_id = ? AND status IN ('active', 'paused')",
     [rows[0].id],
   );
+  // #2125 N3b: the cancelled plans' Active Product Set goes with them, so the next block's
+  // assignment gets an Active set of its own (a set's link to an assignment stands on a snapshot
+  // of it, which the previous block's set does not hold).
+  await db.query("UPDATE product_sets SET status = 'superseded' WHERE owner_member_id = ? AND status = 'active'", [rows[0].id]);
   return rows[0].id;
 }
 

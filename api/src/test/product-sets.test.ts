@@ -130,7 +130,7 @@ describe('ProductSet versioning (#1325)', () => {
     // #2125 M6b-51d-4: a real Draft assignment's snapshot is its Draft set's own, so the fixture's
     // snapshot (a plan-less Draft has none) is linked to the set as the writers link it.
     await db.query(
-      `INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id)
+      `INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id)
        SELECT ?, id FROM plan_snapshots WHERE anchor_plan_snapshot_id = ?`, [draft.productSet.id, umId]);
     await db.query(
       `DELETE ps FROM product_sets ps JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id

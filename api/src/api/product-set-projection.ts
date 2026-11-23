@@ -1,7 +1,7 @@
 import { Tx } from '../infra/db';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import {
-  lockAssignmentRecord, openAssignmentOnSet, PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL, writeAssignmentPurchasedAt,
+  linkProductSetToAssignment, lockAssignmentRecord, openAssignmentOnSet, writeAssignmentPurchasedAt,
 } from './plan-assignment-sync';
 import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
@@ -169,7 +169,7 @@ export async function projectActiveProductSet(
       // only; linked here because its snapshot does not say it is cancelling until the sync.
       if (closedAs === CANCELS_AT_PERIOD_END_STATUS) await linkCancellingPlan(tx, gymId, productSetId, previousUmId);
     }
-    await tx.query('UPDATE product_sets SET plan_assignment_id = NULL WHERE id = ?', [productSetId]);
+    await linkProductSetToAssignment(tx, gymId, productSetId, null);
     return null;
   }
 
@@ -192,7 +192,7 @@ export async function projectActiveProductSet(
       status: 'active', actor,
       notFrom: ['active_cancel_at_period_end', 'cancelled', 'expired', 'superseded'],
     });
-    if (continuedUmId != null) await tx.query(`UPDATE product_sets SET ${PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL} WHERE id = ?`, [umId, productSetId]);
+    if (continuedUmId != null) await linkProductSetToAssignment(tx, gymId, productSetId, umId);
     // #2125 M6b-51c-1: the purchase time is the plan snapshot's own.
     await writeAssignmentPurchasedAt(tx, gymId, umId, 'fill');
     return umId;

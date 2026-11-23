@@ -20,14 +20,14 @@ export function cartCounts(view: {
 
 /**
  * #2895 — a Draft staff created by assigning a Membership Plan (a Draft linked to an assignment,
- * `product_sets.plan_assignment_id`, #2125 M6b-40: `createDraftSetForAssignment()` / `⋮ → Edit`). The member's
+ * `productSetAssignmentSql()`, #2125 M6b-40 / N3b: `createDraftSetForAssignment()` / `⋮ → Edit`). The member's
  * own Draft never links one (#2743, #2496), so this is the one test of "is this Draft the gym's,
  * still being set up". The member may read it but not pay, discard or change it: it reaches the
  * member only once staff choose **Members App** as its payment method, which is Save & Pay
  * (`pending_payment`), and that is no longer a Draft. Pure.
  */
-export function awaitsStaffSetup(set: { status: string; plan_assignment_id?: unknown }): boolean {
-  return set.status === 'in_cart' && set.plan_assignment_id != null;
+export function awaitsStaffSetup(set: { status: string; linked_user_membership_id?: unknown }): boolean {
+  return set.status === 'in_cart' && set.linked_user_membership_id != null;
 }
 
 /** The refusal a member's write on such a Draft answers, and the code an add answers while one exists. */

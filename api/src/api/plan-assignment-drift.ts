@@ -69,17 +69,23 @@ export async function findPlanAssignmentDrift(exec: Exec, gymId?: string): Promi
       WHERE pr.anchor_plan_snapshot_id IS NOT NULL AND a.anchor_id IS NULL${scope('pr')}
       ORDER BY pr.id`);
 
-  // #2125 M6b-36 / M6b-46: a Product Set's link (migration 432) is the anchor of the assignment it
-  // names. Since migration 441 dropped `product_sets.user_membership_id`, the check is that the link
-  // is the anchor of the legacy assignment the snapshot it points at names.
+  // #2125 N3b: a Product Set's link to an assignment is the `projects_assignment` flag of its
+  // junction rows (migration 471). Every flagged row names the same assignment, which is an anchor of
+  // the set's gym; a flagged row naming none, two flagged assignments, or a flag on a missing anchor
+  // is the drift this reports (`linkProductSetToAssignment()` writes none of them).
   await add('product_set_assignment_mismatch',
-    'A Product Set whose plan_assignment_id is not the anchor of the assignment it names.',
-    `SELECT ps.id AS product_set_id, ps.gym_id, ps.status, ps.plan_assignment_id,
-            a.anchor_id AS expected_plan_assignment_id
+    'A Product Set whose projects_assignment junction rows do not name exactly one assignment anchor of its gym.',
+    `SELECT ps.id AS product_set_id, ps.gym_id, ps.status,
+            COUNT(DISTINCT s.anchor_plan_snapshot_id) AS assignments,
+            SUM(s.anchor_plan_snapshot_id IS NULL) AS unnamed, SUM(a.anchor_id IS NULL) AS missing_anchor
        FROM product_sets ps
-       JOIN plan_snapshots cur ON cur.id = ps.plan_assignment_id
-       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = cur.gym_id AND a.anchor_id = cur.anchor_plan_snapshot_id
-      WHERE cur.anchor_plan_snapshot_id IS NULL OR NOT (ps.plan_assignment_id <=> a.anchor_id)${scope('ps')}
+       JOIN product_set_plan_snapshots j ON j.product_set_id = ps.id AND j.projects_assignment = 1
+       JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+       LEFT JOIN ${ANCHORS_SQL} a ON a.gym_id = ps.gym_id AND a.anchor_id = s.anchor_plan_snapshot_id
+      WHERE 1 = 1${scope('ps')}
+      GROUP BY ps.id, ps.gym_id, ps.status
+     HAVING COUNT(DISTINCT s.anchor_plan_snapshot_id) <> 1 OR SUM(s.anchor_plan_snapshot_id IS NULL) > 0
+         OR SUM(a.anchor_id IS NULL) > 0
       ORDER BY ps.id`);
 
   // #2125 N3d — an assignment's identity is its anchor, and every anchor stands for one assignment

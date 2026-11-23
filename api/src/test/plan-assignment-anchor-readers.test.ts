@@ -4,11 +4,10 @@
 // two columns disagree (the anchor cleared, the legacy id left) and asserts the reader follows the
 // anchor: the Member card's Product Sets list (end date) and the cancellation preview (start date).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { productSetOfLegacyAssignmentSql, productSetLegacyAssignmentIdSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
-} from './helpers';
+  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, setTestSetAssignmentLink } from './helpers';
 import { addCoverage, createDraft } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 
@@ -54,10 +53,10 @@ const setSnapshots = (um: number, column: string, value: string) =>
   db.query(`UPDATE plan_snapshots SET ${column} = ? WHERE gym_id = ? AND anchor_plan_snapshot_id = ?`, [value, gymId, um]);
 
 const setAnchor = (setId: number, value: number | null) =>
-  db.query('UPDATE product_sets SET plan_assignment_id = ? WHERE id = ?', [value, setId]);
+  setTestSetAssignmentLink(setId, value);
 const activeSetOf = async (um: number): Promise<{ id: number; anchor: number | null }> => {
   const { rows } = await db.query<any>(
-    `SELECT id, plan_assignment_id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = 'active'`, [gymId, um]);
+    `SELECT id, ${productSetAssignmentSql('product_sets')} AS plan_assignment_id FROM product_sets WHERE gym_id = ? AND ${productSetOfLegacyAssignmentSql('?', 'product_sets')} AND status = 'active'`, [gymId, um]);
   return { id: Number(rows[0].id), anchor: rows[0].plan_assignment_id == null ? null : Number(rows[0].plan_assignment_id) };
 };
 

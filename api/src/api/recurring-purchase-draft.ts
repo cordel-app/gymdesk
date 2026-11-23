@@ -18,6 +18,7 @@
 // through the existing Save & Pay (`POST /product-sets/:id/save-and-pay`) and
 // the payment webhook, which is the one place a version is activated.
 
+import { productSetAssignmentSql } from '../domain/planAssignments';
 import { syncProductSnapshotsOfVersion } from './product-snapshot-sync';
 import { refreshSetCart } from './purchases';
 import { deleteProductApplication, lineApplications } from './product-promotion-writer';
@@ -99,10 +100,10 @@ export async function ensureRecurringDraft(tx: Tx, input: {
   if (created.kind === 'in_flight') {
     if (created.status === 'in_cart') {
       const { rows } = await tx.query<any>(
-        `SELECT ps.plan_assignment_id, ${staffProductDraftSql('ps')} AS editable
+        `SELECT ${productSetAssignmentSql('ps')} AS linked_user_membership_id, ${staffProductDraftSql('ps')} AS editable
            FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`,
         [created.productSetId, input.gymId]);
-      if (rows[0] && (rows[0].plan_assignment_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
+      if (rows[0] && (rows[0].linked_user_membership_id == null || (input.staff === true && Number(rows[0].editable) === 1))) {
         await refreshSetCart(tx, input.gymId, created.productSetId);
         return { kind: 'ok', productSetId: created.productSetId, created: false };
       }
