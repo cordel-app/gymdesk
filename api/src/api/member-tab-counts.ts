@@ -1,4 +1,6 @@
-import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
+import {
+  CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, RUNNING_ASSIGNMENT_STATUSES,
+} from '../domain/assignmentStatus';
 import { db } from '../infra/db';
 import { canAccess, type AppRole } from '../infra/permissions';
 import { assignmentCoversMemberSql, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
@@ -22,6 +24,16 @@ export type MemberTabCounts = Partial<Record<MemberTabCountKey, number>>;
 
 const n = (v: unknown) => Number(v ?? 0);
 
+/**
+ * #3243 — the plan statuses the Products badge counts: running (Active, and a
+ * cancellation pending in the cart, which still behaves as Active) and
+ * Cancels on End Date (with a reactivation pending in the cart, still the same).
+ */
+export const BADGE_PLAN_STATUSES = [
+  ...RUNNING_ASSIGNMENT_STATUSES, CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS,
+] as const;
+const BADGE_PLAN_STATUSES_SQL = BADGE_PLAN_STATUSES.map((s) => `'${s}'`).join(', ');
+
 export async function loadMemberTabCounts(
   gymId: string, memberId: number, role: AppRole, isSuperadmin: boolean,
 ): Promise<MemberTabCounts> {
@@ -38,13 +50,28 @@ export async function loadMemberTabCounts(
     out.family = n(rows[0]?.c);
   })());
   jobs.push((async () => {
-    const { rows } = await db.query(
-      // #2125 M6b-5: an assignment is its current plan snapshot (owner, or a beneficiary of it).
-      `SELECT COUNT(*) AS c FROM plan_snapshots pa
-        WHERE pa.gym_id = ? AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND ${isCurrentAssignmentSnapshotSql('pa')}
-          AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})`,
-      [gymId, memberId, memberId]);
-    out.products_services = n(rows[0]?.c);
+    // #3243: the Products badge counts the member's recurring Membership Plans
+    // and recurring Products that are Active or Cancel on their End Date. A plan
+    // is its current plan snapshot (#2125 M6b-5: owner, or a beneficiary of it);
+    // a recurring Product is a line of the owner's Active Product Set that has
+    // not ended (the set the Products list reads it from). One-off purchases,
+    // In Cart / Pending Payment versions, paused and ended items are not counted.
+    const [plans, lines] = await Promise.all([
+      db.query(
+        `SELECT COUNT(*) AS c FROM plan_snapshots pa
+          WHERE pa.gym_id = ? AND pa.status IN (${BADGE_PLAN_STATUSES_SQL}) AND ${isCurrentAssignmentSnapshotSql('pa')}
+            AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})`,
+        [gymId, memberId, memberId]),
+      db.query(
+        `SELECT COUNT(DISTINCT s.id) AS c FROM product_sets ps
+           JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
+           JOIN product_periodical_snapshots s
+             ON s.id = lnk.product_periodical_snapshot_id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'active'
+            AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())`,
+        [gymId, memberId]),
+    ]);
+    out.products_services = n(plans.rows[0]?.c) + n(lines.rows[0]?.c);
   })());
   jobs.push((async () => {
     // Same set the wallet lists (gym-active, non-deleted services) and only
