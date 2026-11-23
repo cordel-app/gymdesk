@@ -10,6 +10,10 @@
  * Fee Benefit; stage 2 adds the Initial Payment waive, reason_code `initial_payment_waive`).
  * Written only by `writeEventLines()` with its line, never rewritten; it cascades with the line.
  *
+ * `reason_code` is deliberately free text (no CHECK): it is the manual adjustment's explicit
+ * evidence and stage 2 adds `initial_payment_waive` without a table rebuild. `action` is the
+ * Promotion vocabulary minus `no_benefit` (which `lineReasons()` never writes).
+ *
  * No backfill: a historical line's other treatments were never stored, so its reasons cannot be
  * reconstructed; it keeps its single primary treatment on the line row.
  */
@@ -37,6 +41,7 @@ exports.up = async (knex) => {
       CONSTRAINT belr_line_fk FOREIGN KEY (billing_event_line_id) REFERENCES billing_event_lines (id) ON DELETE CASCADE,
       CONSTRAINT chk_belr_type CHECK (reason_type IN ('benefit', 'discount', 'manual_adjustment')),
       CONSTRAINT chk_belr_source CHECK (source IN ('membership_plan', 'promotion', 'personal')),
+      CONSTRAINT chk_belr_action CHECK (action IN ('waive', 'percentage_discount', 'fixed_discount', 'fixed_price')),
       CONSTRAINT chk_belr_position CHECK (position > 0)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
