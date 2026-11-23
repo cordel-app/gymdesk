@@ -1,4 +1,4 @@
-// #2125 N3a (migration 463): a payment request names its plan assignment by one column,
+// #2125 N3a (migration 464): a payment request names its plan assignment by one column,
 // `anchor_plan_snapshot_id`; `user_membership_id` and `plan_assignment_id` are gone.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ANCHOR_PLAN_SNAPSHOT_VALUE_SQL, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';

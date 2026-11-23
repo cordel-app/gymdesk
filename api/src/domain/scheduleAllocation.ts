@@ -19,7 +19,7 @@
  *
  * Pure: no database, no clock.
  */
-import { calendarAnchorOnOrBefore } from './calendarSchedule';
+import { calendarAnchorOnOrBefore, calendarGridOf, isOnCalendarGrid } from './calendarSchedule';
 
 export type CadenceUnit = 'day' | 'week' | 'month' | 'year';
 export interface Cadence { interval: number; unit: CadenceUnit }
@@ -67,16 +67,42 @@ export function nextScheduleKey(existingKeys: readonly string[]): string {
   return `s${n + 1}`;
 }
 
+/**
+ * #3165 stage 2 — whether `schedule` bills on the dates an item of `cadence`
+ * bought on `purchaseDate` bills on by its **own** frequency calendar: for a
+ * cadence with a grid (monthly on the 1st, the 4-week grid, Mondays) the
+ * schedule's anchor must be a grid date; for one with no grid (yearly) the
+ * schedule must fall on the purchase date's own anniversary (same month and
+ * day). A schedule anchored elsewhere — a Membership Plan's schedule opened
+ * before #2125 M5c on its start date (the 7th), or a yearly plan with another
+ * anniversary — is not the item's calendar, so the item does not join it.
+ */
+export function billsOnOwnCalendar(schedule: ExistingSchedule, cadence: Cadence, purchaseDate: string): boolean {
+  if (!sameCadence(schedule.cadence, cadence)) return false;
+  if (calendarGridOf(cadence) != null) return isOnCalendarGrid(cadence, schedule.anchorDate);
+  return schedule.anchorDate.slice(5, 10) === purchaseDate.slice(5, 10);
+}
+
 export function allocateSchedule(input: {
   cadence: Cadence;
   purchaseDate: string;
   schedules: readonly ExistingSchedule[];
+  /**
+   * #3165 stage 2 — an ad-hoc recurring Product follows its own frequency
+   * calendar, never the Membership Plan's billing date: it joins an existing
+   * schedule (the plan's included) only when that schedule bills on the
+   * Product's own calendar (`billsOnOwnCalendar()`), else it opens its own.
+   * A plan and a plan's included Products leave it unset (unchanged rule).
+   */
+  ownCalendar?: boolean;
 }): ScheduleAllocation {
+  const joinable = (s: ExistingSchedule) => sameCadence(s.cadence, input.cadence)
+    && (!input.ownCalendar || billsOnOwnCalendar(s, input.cadence, input.purchaseDate));
   const plan = input.schedules.find((s) => s.key === PLAN_SCHEDULE_KEY);
-  if (plan && sameCadence(plan.cadence, input.cadence)) {
+  if (plan && joinable(plan)) {
     return { kind: 'plan', key: PLAN_SCHEDULE_KEY, prorate: true };
   }
-  const match = input.schedules.find((s) => s.key !== PLAN_SCHEDULE_KEY && sameCadence(s.cadence, input.cadence));
+  const match = input.schedules.find((s) => s.key !== PLAN_SCHEDULE_KEY && joinable(s));
   if (match) return { kind: 'existing', key: match.key, prorate: true };
   return {
     kind: 'new',

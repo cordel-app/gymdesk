@@ -61,7 +61,7 @@ exports.up = async (knex) => {
             AND anchor_plan_snapshot_id <> user_membership_id
           ORDER BY id LIMIT 20`);
       if (conflicts.length > 0) {
-        throw new Error('migration 463: payment request(s) whose user_membership_id is not their anchor: '
+        throw new Error('migration 464: payment request(s) whose user_membership_id is not their anchor: '
           + conflicts.map((r) => `${r.id} (gym ${r.gym_id}, ${r.um} vs ${r.anchor})`).join(', '));
       }
       await knex.raw(

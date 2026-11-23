@@ -721,6 +721,7 @@
     "checkout_discount_direct": "discount",
     "checkout_line_no_charge": "No charge",
     "checkout_split_prorated": "Prorated period {start} – {end}: {days} of {period} days · {amount}",
+    "checkout_line_prorated": "Prorated: {days} of {period} days",
     "checkout_split_prepaid": "Full prepaid periods ({periods}) {start} – {end}, separate from the prorated period · {amount}",
     "checkout_recurring": "Recurring",
     "checkout_one_off_products": "One-off",

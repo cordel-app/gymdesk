@@ -713,6 +713,10 @@ export interface MemberSetReviewLine {
   /** #2883 — the Pre-paid periods a Membership Fee line collects up front, and their cadence. */
   prepaid_periods?: number | null;
   prepaid_cadence?: { interval: number; unit: string } | null;
+  /** #3165 stage 2 — the engine's proration of a partial first period, and a fee's split charge. */
+  prorated_days?: number | null;
+  period_days?: number | null;
+  fee_split?: unknown;
 }
 
 /** `GET /me/product-sets/:id/review`, as the Summary reads it. */
@@ -861,6 +865,20 @@ export function reviewLineDiscount(line: MemberSetReviewLine): number | null {
   if (line.regular_unit_price == null) return null;
   const off = Math.round((line.regular_unit_price - line.amount) * 100) / 100;
   return off > 0 ? off : null;
+}
+
+/**
+ * #3165 stage 2 — the proration a line's first charge applied, stated beside the item
+ * ("Prorated: 9 of 30 days"): the server's `prorated_days` / `period_days`, only for a genuinely
+ * partial period, and never on a Membership Fee whose first charge is split (#2970) — the API's
+ * `lineProration()` rule, so both apps state the same lines.
+ */
+export function reviewLineProration(line: MemberSetReviewLine): { days: number; period: number } | null {
+  if (line.fee_split) return null;
+  const days = line.prorated_days != null ? Number(line.prorated_days) : null;
+  const period = line.period_days != null ? Number(line.period_days) : null;
+  if (days == null || period == null || !(days > 0) || !(period > 0) || days >= period) return null;
+  return { days, period };
 }
 
 /**
