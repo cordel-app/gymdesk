@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
+import { notifyApiMutation } from './apiMutations';
 
 /**
  * The sentence to show for a failed `apiFetch`.
@@ -81,6 +82,8 @@ export function useApiClient() {
         throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), { status: res.status, body });
       }
 
+      // #3243: announce the write so a derived value elsewhere on screen can be read again.
+      notifyApiMutation(path, init.method ?? 'GET');
       if (res.status === 204) return undefined;
       return res.json();
     },
