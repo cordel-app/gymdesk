@@ -22,6 +22,7 @@ import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/compon
 import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
+import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
 import { contractedMembersText, discountText, lineReducedToZero, splitContracted } from './productsWorkflowView';
 
@@ -30,6 +31,9 @@ const money = (n: number) => `${n.toFixed(2)} €`;
 export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike | null | undefined }) {
   const t = useTranslations('members');
   const tFreq = useTranslations('billing_frequency');
+  // #3270 — the Source column reads the Billing Event Line's own `source` (#3254), worded as the
+  // Billing Event details already word it.
+  const tLine = useTranslations('billing_events_page');
   const fmt = useGymFormatSettings();
   if (!payment) return null;
   if (payment.total == null) return <p style={cardHintStyle}>{t('review_error_amount')}</p>;
@@ -40,6 +44,7 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
         <thead>
           <tr>
             <th style={th}>{t('checkout_col_item')}</th>
+            <th style={th}>{tLine('col_line_source')}</th>
             <th style={thNum}>{t('checkout_col_quantity')}</th>
             <th style={thNum}>{t('checkout_col_unit_price')}</th>
             <th style={thNum}>{t('checkout_col_line_total')}</th>
@@ -88,6 +93,9 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
                   )}
                   {prepaid && <span data-prepaid-periods style={{ ...cardHintStyle, margin: 0, display: 'block' }}>{prepaid}</span>}
                 </td>
+                <td style={td} data-line-source={l.source ?? ''}>
+                  {(() => { const key = lineSourceLabelKey(l.source); return key ? tLine(key) : '—'; })()}
+                </td>
                 <td style={tdNum}>{l.quantity}</td>
                 <td style={tdNum}>{money(l.unit_price)}</td>
                 <td style={tdNum} data-line-total>{money(l.line_total)}</td>
@@ -135,7 +143,7 @@ export function CheckoutSummaryPanel({ payment, contracted }: {
   return (
     <div data-checkout-summary style={panel}>
       <div style={panelHeader}>
-        <div style={cardSubLabelStyle}>{t('checkout_initial_payment')}</div>
+        <div style={sectionHeading} data-summary-heading>{t('checkout_initial_payment')}</div>
         {total != null && (
           <div data-initial-payment-headline style={headline}>
             <div style={headlineLabel}>{t('checkout_total_initial_payment')}</div>
@@ -144,7 +152,7 @@ export function CheckoutSummaryPanel({ payment, contracted }: {
         )}
       </div>
       <InitialPaymentSection payment={payment} />
-      <div style={{ ...cardSubLabelStyle, marginTop: 12 }}>{t('checkout_contracted')}</div>
+      <div style={{ ...sectionHeading, marginTop: 20 }} data-summary-heading>{t('checkout_contracted')}</div>
       <ContractedItemsSection items={contracted} />
     </div>
   );
@@ -239,5 +247,11 @@ const panelHeader: CSSProperties = {
   display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '4px 16px', marginBottom: 8,
 };
 const headline: CSSProperties = { marginLeft: 'auto', textAlign: 'right' };
+// #3270 — the two section headings of the Summary (Initial Payment, Contracted Products & Plans):
+// the Theme's own text colour at a heading's size and weight, so they read as the sections' titles
+// and stay apart from the muted sub-labels and line details below them.
+const sectionHeading: CSSProperties = {
+  fontSize: 16, fontWeight: 700, lineHeight: 1.3, color: 'var(--gd-text, #111827)', margin: '0 0 6px',
+};
 const headlineLabel: CSSProperties = { ...cardSubLabelStyle, margin: 0 };
 const headlineAmount: CSSProperties = { fontSize: 32, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', color: 'var(--gd-text, #111827)' };

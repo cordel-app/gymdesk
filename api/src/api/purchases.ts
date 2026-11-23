@@ -42,7 +42,10 @@ export async function createPurchase(
   tx: Conn, gymId: string, ownerMemberId: number, status: string, actorName: string | null,
 ): Promise<number> {
   const { insertId } = await tx.query(
-    'INSERT INTO purchases (gym_id, owner_member_id, status, created_by) VALUES (?, ?, ?, ?)',
+    // #3270: the name basis is the creation instant (UTC, ISO 8601), written once from the very
+    // `UTC_TIMESTAMP()` `created_at` defaults to in this statement; nothing updates it.
+    `INSERT INTO purchases (gym_id, owner_member_id, status, name, created_by)
+     VALUES (?, ?, ?, DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), ?)`,
     [gymId, ownerMemberId, status, actorName ?? SYSTEM_ACTOR]);
   return Number(insertId);
 }

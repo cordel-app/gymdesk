@@ -55,6 +55,7 @@ import { loadEditLockForDraftEdit } from './product-set-checkout';
 import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
 import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
 import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
+import { purchaseView } from '../domain/purchaseView';
 import { getRequestLocale } from '../infra/locale';
 
 export const memberProductPurchasesRouter = Router({ mergeParams: true });
@@ -581,7 +582,17 @@ memberProductPurchasesRouter.get('/cart-summary', async (req, res, next) => {
         [gymId, ...memberIds]);
       for (const r of rows) names.set(Number(r.id), r.name ?? null);
     }
+    // #3270: the purchase the cart's lines belong to (its name basis and status), for the heading.
+    const purchaseId = cart.find((p) => p.purchase_id != null)?.purchase_id ?? null;
+    let purchase = null;
+    if (purchaseId != null) {
+      const { rows } = await db.query<any>(
+        'SELECT id AS purchase_id, name AS purchase_name, status AS purchase_status FROM purchases WHERE id = ? AND gym_id = ?',
+        [purchaseId, gymId]);
+      purchase = rows[0] ? purchaseView(rows[0]) : null;
+    }
     res.json({
+      purchase,
       purchase_ids: cart.map((p) => p.id),
       initial_payment: initialPaymentBreakdown(cart.map((p) => chargeLineView(cartChargeLine(p).line)), amountDue),
       contracted_items: contractedItems({

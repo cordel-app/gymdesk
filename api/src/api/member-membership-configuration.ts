@@ -12,6 +12,7 @@ import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
 import { primaryPlanSnapshotSql, promotionHolderSql } from './plan-snapshot-lines';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { purchaseView } from '../domain/purchaseView';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -139,11 +140,13 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             CASE WHEN ps.status = 'in_cart'
                  THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ps.last_activity_at + INTERVAL 120 MINUTE) END AS expires_in_seconds,
             mp.name AS plan_name,
+            pu.id AS purchase_id, pu.name AS purchase_name, pu.status AS purchase_status,
             (SELECT be.amount FROM billing_events be
               WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
               ORDER BY be.id DESC LIMIT 1) AS amount_due
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+       LEFT JOIN purchases pu ON pu.id = ps.purchase_id AND pu.gym_id = ps.gym_id
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('in_cart', 'pending_payment')
       ORDER BY ps.id DESC`,
     [gymId, memberId],
@@ -282,6 +285,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       created_by: r.created_by ?? null,
       // #2966 stage 4: the further plans this version holds as plan snapshots only.
       added_plans: addedBySet.get(Number(r.id)) ?? [],
+      // #3270: the purchase (#3251's cart) the version belongs to: its persisted name basis (the
+      // creation instant, UTC ISO) and its status. The Admin composes the heading from them.
+      purchase: purchaseView(r),
     })),
     cancelled_product_sets: cancelledSets.map((r: any) => ({
       id: Number(r.id),
