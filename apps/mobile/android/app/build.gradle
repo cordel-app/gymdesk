@@ -7,6 +7,13 @@ apply plugin: 'com.android.application'
 def ciVersionCode = (project.findProperty('versionCode') ?: '1').toString().toInteger()
 def ciVersionName = (project.findProperty('versionName') ?: '1.0').toString()
 
+// #1077: the Play upload key. Only CI's `android-release` job sets these (from
+// GitHub environment secrets; the keystore is decoded to a temporary file), so
+// no key or password is ever committed. Without them a release build is simply
+// unsigned and the debug build is untouched.
+def uploadKeystorePath = System.getenv('ANDROID_UPLOAD_KEYSTORE_PATH')
+def hasUploadKey = uploadKeystorePath != null && !uploadKeystorePath.isEmpty()
+
 android {
     namespace = "com.cordel.fitness"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -23,8 +30,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasUploadKey) {
+            release {
+                storeFile file(uploadKeystorePath)
+                storePassword System.getenv('ANDROID_UPLOAD_STORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_UPLOAD_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_UPLOAD_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasUploadKey) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -11,6 +11,11 @@ name: Mobile build
 #    cannot be installed on an iPhone: that needs a signed build and the Apple
 #    Developer account, and an iPhone gets its builds from TestFlight
 #    (`docs/go-to-production.md` §6).
+#  - Android release: a **signed AAB** for Google Play (`android-release`), built only
+#    on a `mobile-v*` tag or a manual run with `release: true`, never on a pull
+#    request. Signed with the Play upload key from environment secrets; uploaded to
+#    Play's internal track when `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` is set, and never
+#    published to Cordel → Mobile builds (an AAB cannot be installed by hand).
 #
 # It is a manual workflow, plus tags and changes to the shell itself. macOS runners
 # cost several times a Linux minute, which is why this does not run on every push.
@@ -23,6 +28,10 @@ on:
         type: choice
         options: [dev, pro]
         default: dev
+      release:
+        description: Also build the signed release AAB for Google Play
+        type: boolean
+        default: false
   push:
     tags: ['mobile-v*']
   pull_request:
@@ -184,6 +193,138 @@ jobs:
           export APP_ID="$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appId")"
           export APP_NAME="$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appName")"
           bash .github/scripts/publish-mobile-build.sh
+
+  android-release:
+    name: Android release AAB (signed)
+    # Never on a pull request: this job holds the Play upload key. Only a
+    # `mobile-v*` tag or a manual run that asks for it builds a release.
+    if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/mobile-v') || inputs.release)
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment || 'dev' }}
+    timeout-minutes: 30
+    env:
+      MOBILE_APP_PROFILE: ${{ (inputs.environment || 'dev') == 'pro' && 'cordel-fitness' || 'cordel-fitness-dev' }}
+      MOBILE_SERVER_URL: ${{ vars.CORDEL_FITNESS_MEMBERS_URL }}
+      MOBILE_GOOGLE_IOS_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
+      MOBILE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      MOBILE_ALLOW_NAVIGATION_VAR: ${{ vars.MOBILE_ALLOW_NAVIGATION }}
+      # The Play upload key (docs/mobile-runbook.md, "Release builds for Google Play").
+      ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+      ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+      ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+      ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+      ANDROID_UPLOAD_KEY_SHA256: ${{ secrets.ANDROID_UPLOAD_KEY_SHA256 }}
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+
+      - name: Build settings
+        run: |
+          if [ -n "$MOBILE_ALLOW_NAVIGATION_VAR" ]; then
+            echo "MOBILE_ALLOW_NAVIGATION=$MOBILE_ALLOW_NAVIGATION_VAR" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No MOBILE_ALLOW_NAVIGATION variable in this environment; the shell will allow only its own host."
+          fi
+
+      - name: Upload key
+        run: |
+          # A release build with no upload key would be an unsigned AAB that Play
+          # refuses; fail here, before anything is built.
+          for name in ANDROID_UPLOAD_KEYSTORE_B64 ANDROID_UPLOAD_STORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD ANDROID_UPLOAD_KEY_SHA256; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing secret $name in the '${{ inputs.environment || 'dev' }}' environment (docs/mobile-runbook.md, \"Release builds for Google Play\")."
+              exit 1
+            fi
+          done
+          KEYSTORE="$RUNNER_TEMP/upload.keystore"
+          echo "$ANDROID_UPLOAD_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          echo "ANDROID_UPLOAD_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Version
+        run: |
+          # Same workflow as the debug build, so the run number (Play's versionCode)
+          # only ever goes up across debug and release builds alike.
+          echo "BUILD_VERSION=$(node -p "require('./apps/mobile/package.json').version")" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "APP_ID=$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appId")" >> "$GITHUB_ENV"
+
+      - name: Apply the app profile and sync
+        working-directory: apps/mobile
+        run: |
+          npm run profile:apply
+          npx cap sync android
+
+      - name: Build the release AAB
+        working-directory: apps/mobile/android
+        run: ./gradlew bundleRelease --no-daemon -PversionName="$BUILD_VERSION" -PversionCode="$BUILD_NUMBER"
+
+      - name: Check the signer and describe the AAB
+        id: aab
+        run: |
+          SRC=apps/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          ENV_NAME="${{ inputs.environment || 'dev' }}"
+          NAME="cordel-fitness-${ENV_NAME}-${BUILD_VERSION}-b${BUILD_NUMBER}-${GITHUB_SHA::8}.aab"
+          cp "$SRC" "$NAME"
+          CERT=$(keytool -printcert -jarfile "$NAME")
+          SHA1=$(echo "$CERT" | grep 'SHA1:' | head -1 | sed 's/.*SHA1: //')
+          SHA256=$(echo "$CERT" | grep 'SHA256:' | head -1 | sed 's/.*SHA256: //')
+          norm() { echo "$1" | tr -d ': ' | tr 'A-F' 'a-f'; }
+          # Play accepts an upload only when it is signed with the registered upload
+          # key; catch a wrong or missing signature here, not in the Play Console.
+          if [ -z "$SHA256" ] || [ "$(norm "$SHA256")" != "$(norm "$ANDROID_UPLOAD_KEY_SHA256")" ]; then
+            echo "::error::The AAB is signed with '${SHA256:-nothing}', not the upload key in ANDROID_UPLOAD_KEY_SHA256."
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Android release AAB"
+            echo "- File: \`$NAME\` ($(du -h "$NAME" | cut -f1))"
+            echo "- Version: \`$BUILD_VERSION\` (versionCode \`$BUILD_NUMBER\`)"
+            echo "- App: \`$APP_ID\` (profile \`$MOBILE_APP_PROFILE\`), environment \`$ENV_NAME\` (loads \`$MOBILE_SERVER_URL\`)"
+            echo "- Upload key SHA-1: \`$SHA1\`"
+            echo "- Upload key SHA-256: \`$SHA256\`"
+            echo "- Google sign-in and App Links need Play App Signing's fingerprints too (Play Console → App integrity), not only these."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.aab.outputs.name }}
+          path: ${{ steps.aab.outputs.name }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: No Play service account
+        if: env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON == ''
+        run: echo "::warning::No GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret in this environment; the AAB is kept as a workflow artifact and not uploaded to Google Play."
+
+      # Internal track only. A Play app that has never been published accepts only
+      # draft releases, so the status is `draft` until GOOGLE_PLAY_RELEASE_STATUS says otherwise.
+      - name: Upload to Google Play (internal track)
+        if: env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.APP_ID }}
+          releaseFiles: ${{ steps.aab.outputs.name }}
+          track: internal
+          status: ${{ vars.GOOGLE_PLAY_RELEASE_STATUS || 'draft' }}
 
   ios-simulator:
     name: iOS simulator build (ad-hoc signed)

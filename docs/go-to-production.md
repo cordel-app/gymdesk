@@ -1516,8 +1516,17 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] CI that builds the iOS app on a macOS runner (the build needs the current Xcode, which may
       require a newer macOS than a developer's Mac). *Partly done (#1077):* `mobile-build.yml`
       builds an **ad-hoc signed simulator** app and an Android debug APK; the **signed** iOS build and
-      TestFlight upload still need the Apple Developer account, and an Android **release** build
-      still needs the upload key and Play App Signing.
+      TestFlight upload still need the Apple Developer account. The signed Android **release**
+      job exists (`android-release`, #1077, `docs/mobile-runbook.md` §5c); it still needs the
+      upload key and its secrets per environment.
+- [ ] **Android upload key** generated and kept in the password manager, its five
+      `ANDROID_UPLOAD_*` secrets set in the `pro` environment (and `dev` to rehearse), and
+      **Play App Signing** enabled on the first, manual upload in the Play Console (§5c).
+- [ ] **`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`** (a service account with release rights in the Play
+      Console) so `android-release` uploads to the internal track; switch
+      `GOOGLE_PLAY_RELEASE_STATUS` to `completed` once the app has been published once.
+- [ ] Register **Play App Signing's** SHA-1 in the Android OAuth client and its SHA-256 in
+      `MOBILE_APP_ASSOCIATIONS` — not the upload key's.
 - [ ] Web releases reach the app without a store review, native changes do not: agree who
       releases what, and keep an error screen with retry for when the web is down.
 - [ ] **Migration 258 (#1325 PR 3e-3) is one-way for two kinds of row.** Before running it against an environment with data, check what has no ProductSet version: `SELECT um.status, COUNT(*) FROM user_memberships um WHERE NOT EXISTS (SELECT 1 FROM product_sets ps WHERE ps.user_membership_id = um.id) GROUP BY um.status;`. A `draft` row with none is deleted (with its child rows), a `pending_payment` row with none is closed and its pending payment requests expired, and an `active`/`paused` one is given a superseded version and is not editable until it is re-committed. `down()` restores the columns from each assignment's latest version but not the deleted Drafts.

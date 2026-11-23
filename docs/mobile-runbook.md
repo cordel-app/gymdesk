@@ -211,7 +211,7 @@ project from §2.
 
 `.github/workflows/mobile-build.yml` builds the shell without anyone's laptop. Run it from
 *Actions → Mobile build → Run workflow* (pick `dev` or `pro`), or push a `mobile-v*` tag; it
-also runs on a PR that touches `apps/mobile/`. Two jobs:
+also runs on a PR that touches `apps/mobile/`. Two test-build jobs (and a release job, §5c):
 
 **Builds are versioned and published.** The version people read is `apps/mobile/package.json`'s
 `version`, and the build number is the workflow's run number (it only goes up: Android's
@@ -264,7 +264,52 @@ Per-environment inputs: `CORDEL_FITNESS_MEMBERS_URL` (variable, already used by 
 `NEXT_PUBLIC_GOOGLE_*_CLIENT_ID` (secrets, reused as the shell's Google clients) and
 `ANDROID_DEBUG_KEYSTORE_B64` (secret; `base64 < ~/.android/debug.keystore`). Artifacts are kept 30
 days (Android) / 14 days (iOS). The debug keystore is a throwaway with the well-known password
-`android`; a release build needs a real upload key and is not this workflow's job.
+`android`; a release build needs a real upload key — §5c.
+
+## 5c. Release builds for Google Play (#1077)
+
+The same workflow has a third job, **Android release AAB (signed)** (`android-release`). It runs
+only on a `mobile-v*` tag or a manual run with **release** ticked, **never on a pull request**
+(it holds the upload key; `api/src/test/mobile-release-build.unit.test.ts` is the gate). It builds
+`./gradlew bundleRelease` signed with the Play **upload key**, checks the AAB's signer against
+`ANDROID_UPLOAD_KEY_SHA256` (a wrong or missing signature fails the job, not the Play Console),
+keeps the AAB as a workflow artifact for 30 days and prints both upload-key fingerprints in the
+summary. It is **never** published to Cordel → Mobile builds: an AAB cannot be installed by hand.
+Being the same workflow, its `versionCode` is the same run number the debug builds use, so it
+only ever goes up.
+
+**The upload key (once, by hand).** One key for the developer account, not per app id:
+
+```bash
+keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keysize 4096 -validity 9125
+```
+
+Keep the keystore and both passwords in the password manager: a lost upload key means asking
+Google for a reset. Then set, in **each** environment that builds a release (`dev`, `pro`):
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_UPLOAD_KEYSTORE_B64` | `base64 < upload.keystore` |
+| `ANDROID_UPLOAD_STORE_PASSWORD` | the keystore password |
+| `ANDROID_UPLOAD_KEY_ALIAS` | `upload` |
+| `ANDROID_UPLOAD_KEY_PASSWORD` | the key password |
+| `ANDROID_UPLOAD_KEY_SHA256` | `keytool -list -v -keystore upload.keystore` → the SHA-256 line (colons optional) |
+
+Gradle reads them from the environment (`apps/mobile/android/app/build.gradle`); nothing is
+committed, and a local `bundleRelease` without them is simply unsigned.
+
+**Uploading to Play.** With a `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` secret (a Google Cloud service
+account invited in the Play Console with release rights for the app) the job uploads the AAB to the
+**internal** track of the profile's own app id. Without it the step is skipped with a warning. A
+Play app that has never been published accepts only **draft** releases, so the status is `draft`
+unless the environment variable `GOOGLE_PLAY_RELEASE_STATUS` says `completed`; the very first
+upload of a new app must be made by hand in the Play Console anyway, which is also when **Play
+App Signing** is enabled.
+
+**Fingerprints.** Play re-signs the app with its own **app signing key**, so a device sees that
+key, not the upload key. Google sign-in (the Android OAuth client) and App Links
+(`MOBILE_APP_ASSOCIATIONS`) need Play App Signing's SHA-1 / SHA-256 from *Play Console → App
+integrity* — the upload key's fingerprints in the job summary are for checking the upload only.
 
 ## 6. Switching profile (the stage-2 rehearsal)
 
