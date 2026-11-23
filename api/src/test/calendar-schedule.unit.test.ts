@@ -65,8 +65,9 @@ describe('a monthly plan starting off the 1st', () => {
   it('pays a prorated stretch to the next 1st, then the full fee on every 1st', () => {
     const rows = feeCharges(plan());
     expect(rows[0].date).toBe(START);
-    expect(rows[0].l.proration).toEqual({ prorated_days: 14, period_days: 31 });
-    expect(rows[0].l.actual_charge).toBe(14);
+    // #3280: a monthly stretch is counted over its own calendar month (November: 30 days).
+    expect(rows[0].l.proration).toEqual({ prorated_days: 14, period_days: 30 });
+    expect(rows[0].l.actual_charge).toBe(14.47);
     expect(rows[1]).toMatchObject({ date: '2026-12-01', l: { actual_charge: 31 } });
     expect(rows[2]).toMatchObject({ date: '2027-01-01', l: { actual_charge: 31 } });
   });
@@ -74,7 +75,7 @@ describe('a monthly plan starting off the 1st', () => {
   it('adds the whole Pre-paid Duration to the first payment, and the stretch consumes no pre-paid month', () => {
     const rows = feeCharges(plan({ paid: 3, prepaid: 3 }));
     expect(rows[0].date).toBe(START);
-    expect(rows[0].l.actual_charge).toBe(14 + 93);
+    expect(rows[0].l.actual_charge).toBe(107.47);
     expect(rows[0].l.prepaid_periods).toBe(3);
     // Dec, Jan and Feb were paid up front; regular billing resumes on 1 March.
     const charged = rows.slice(1).filter((r) => r.l.actual_charge > 0);

@@ -16,8 +16,10 @@
  *
  * #3279 narrows decision D for one caller: an independently contracted monthly
  * recurring Product (`buildServiceStream()`) passes `{ calendarMonth: true }` and
- * divides by the actual length of its own start month. Every other caller (the
- * Membership Fee, Plan-included Products) keeps the fixed 31. Pure.
+ * divides by the actual length of its own start month. #3280 extends it to the
+ * Membership Fee and Plan-included Products (`buildMembershipFeeStream()`,
+ * `buildItemStream()`), so every monthly first stretch is counted over its own
+ * calendar month. A promotion's partial-month day count keeps the fixed 31. Pure.
  */
 
 import { Cadence } from './scheduleAllocation';
@@ -52,7 +54,7 @@ export interface ProrateOptions {
    * #3279 — an independently contracted monthly recurring Product prorates its first stretch over
    * the actual length of the calendar month its own start date falls in (28/29/30/31), not the
    * fixed 31 of decision D. Only a plain monthly cadence (`1 month`) is affected; weekly, 4-weekly
-   * and yearly cadences, the Membership Fee and Plan-included Products keep `periodDays()`.
+   * and yearly cadences keep `periodDays()`. #3280: the Membership Fee and Plan-included Products pass it too.
    */
   calendarMonth?: boolean;
 }

@@ -629,16 +629,25 @@ by `ensureSchedule()` and `allocateSchedule()` to every new schedule.
 
 - **A plan starting off the grid** (`alignTo`, #2125 stage 8's mechanism) is charged, on its
   start date, the stretch to the next grid date prorated by the existing proration rule
-  (`prorate()`: monthly price ÷ 31 × days) **plus its whole Pre-paid Duration**; its Billing &
+  (`prorate()`: monthly price ÷ the days of its start month × days, #3280) **plus its whole Pre-paid Duration**; its Billing &
   Duration (free, pre-paid, paid, bonus) is counted from that next grid date, so the stretch
   consumes no period, and regular billing starts on the grid. A plan starting on a grid date
-  is not prorated. Example: €31/month, 3 pre-paid, starting 17 Nov → €14 + €93 on 17 Nov,
-  nothing on 1 Dec, 1 Jan or 1 Feb, €31 from 1 Mar.
+  is not prorated. Example: €31/month, 3 pre-paid, starting 17 Nov → €14.47 (14 of 30 days)
+  + €93 on 17 Nov, nothing on 1 Dec, 1 Jan or 1 Feb, €31 from 1 Mar.
+- **A plan added beside another plan follows its own cadence's calendar** (#3280). The plan's
+  schedule is chosen by `allocatePlanSchedule()` (`api/product-set-configuration.ts`): the owner's
+  `plan` schedule, or any other schedule of the same cadence, is joined only when it bills on that
+  cadence's calendar (`billsOnOwnCalendar()`); a plan schedule opened on its start date before the
+  calendar (the 7th) is not joined, and the new plan opens a schedule of its own on the grid. Its
+  included Products on the plan's cadence bill on that plan's schedule, those on another cadence on
+  their own calendar (the 28-day grid for 4-weekly). The established plan, its schedule and its
+  Billing Events are not moved. A version re-snapshotting the plan it already holds keeps its
+  schedule.
 - **A monthly recurring Product's first stretch** (#3279) is prorated over the actual length of
   the month its own start date falls in (`prorate(…, { calendarMonth: true })`, passed only by
   `buildServiceStream()`): started 23 Nov 2026 → 8 of 30 days, 21 Feb 2026 → 8 of 28, 21 Feb
-  2024 → 9 of 29. The plan's own fee above and a Product the plan includes keep the fixed 31;
-  weekly (7), 4-weekly (28) and yearly (never prorated) Products are unchanged.
+  2024 → 9 of 29. Since #3280 the plan's own fee above and a Product the plan includes divide by
+  the same month length; weekly (7), 4-weekly (28) and yearly (never prorated) are unchanged.
 - **A recurring Product added beside a plan that starts later** (#3167) starts today, on its own:
   the line's `starts_at` is today and the plan keeps its start date. Its first stretch (prorated
   to the next date of the schedule it joins, a whole year for a yearly Product) is due now, so the

@@ -26,7 +26,7 @@ vi.mock('../payments', async (importOriginal) => {
 });
 
 import { advanceBillingDate } from '../domain/billingDate';
-import { daysBetween } from '../domain/proration';
+import { daysBetween, daysInMonthOf } from '../domain/proration';
 import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
 
 const SECRET = 'test-2964-webhook';
@@ -104,7 +104,8 @@ function nextCalendarDate(from: string, grid: 'month' | 'four_week'): string {
 
 /** What the first stretch costs: price ÷ period days × days to the next calendar date. */
 function firstStretch(price: number, grid: 'month' | 'four_week'): { days: number; amount: number } {
-  const period = grid === 'month' ? 31 : 28;
+  // #3280: a monthly stretch divides by the actual length of its own month.
+  const period = grid === 'month' ? daysInMonthOf(TODAY) : 28;
   const days = Math.min(daysBetween(TODAY, nextCalendarDate(TODAY, grid)), period);
   return { days, amount: Math.round((price / period) * days * 100) / 100 };
 }
