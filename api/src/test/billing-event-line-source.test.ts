@@ -125,3 +125,47 @@ describe('persisted Billing Event Lines carry their source (#3254)', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('migration 466 backfills historical lines only where the origin is determinable (#3254)', () => {
+  // The migration's own `up`, run through the test pool: its guards find the column and CHECK there.
+  const knexLike = {
+    raw: async (sql: string, bindings: unknown[] = []) => [(await db.query<any>(sql, bindings as any[])).rows],
+    schema: { hasColumn: async () => true },
+  };
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const migration = require('../infra/migrations/466_billing_event_line_source.js');
+
+  it('a fee line is plan, a purchase event\'s line is product, an unexplained product line stays null', async () => {
+    const owner = await member();
+    const towel = await product('Hist', 7);
+    const ctId = (await db.query<any>('SELECT id FROM charge_types ORDER BY id LIMIT 1')).rows[0].id;
+    const insertEvent = async (type: string, setId: number | null) => (await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, amount, product_set_id, charge_type_id, source)
+       VALUES (?, ?, ?, 7.00, ?, ?, 'system')`, [gymId, owner, type, setId, ctId])).insertId;
+    const purchaseEvent = await insertEvent('product_purchase', null);
+    const insertLine = async (eventId: number, kind: string, productId: number | null) => (await db.query(
+      `INSERT INTO billing_event_lines (gym_id, billing_event_id, kind, source, product_id, item_name, amount)
+       VALUES (?, ?, ?, NULL, ?, 'Hist', 7.00)`, [gymId, eventId, kind, productId])).insertId;
+    const fee = await insertLine(purchaseEvent, 'membership_fee', null);
+    const bought = await insertLine(purchaseEvent, 'product', towel);
+    // A set holding neither a plan line nor a recurring line of that Product: not determinable.
+    const emptySet = (await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at) VALUES (?, ?, 'superseded', CURDATE())`,
+      [gymId, owner])).insertId;
+    const adjustmentEvent = await insertEvent('payment_recorded', emptySet);
+    const unexplained = await insertLine(adjustmentEvent, 'product', towel);
+
+    await migration.up(knexLike);
+
+    const sourceOf = async (id: number) =>
+      (await db.query<any>('SELECT source FROM billing_event_lines WHERE id = ?', [id])).rows[0].source;
+    expect(await sourceOf(fee)).toBe('plan');
+    expect(await sourceOf(bought)).toBe('product');
+    expect(await sourceOf(unexplained)).toBeNull();
+  });
+
+  it('the CHECK refuses any other value', async () => {
+    await expect(db.query(`UPDATE billing_event_lines SET source = 'manual' WHERE gym_id = ? LIMIT 1`, [gymId]))
+      .rejects.toThrow();
+  });
+});

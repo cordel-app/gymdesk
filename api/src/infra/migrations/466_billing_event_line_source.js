@@ -8,7 +8,7 @@
  *
  * Backfill, conservative (a line is classified only where its origin is determinable):
  *   - a `membership_fee` line                         -> plan
- *   - a `product` line whose Product is among the event's Product Set plan snapshot lines and
+ *   - a `product` (or legacy `service`) line whose Product is among the event's Product Set plan snapshot lines and
  *     not among its recurring lines nor its purchases -> plan
  *   - a `product` line whose Product is among the set's recurring lines, the event's one-time
  *     purchases, or whose event is a `product_purchase`, and not among the plan lines -> product
@@ -42,10 +42,13 @@ const PRODUCT_LINES = [
 ].join(' OR ');
 
 exports.up = async (knex) => {
-  if (!(await knex.schema.hasColumn(TABLE, 'source'))) {
-    await knex.raw(`ALTER TABLE ${TABLE} ADD COLUMN source VARCHAR(16) NULL AFTER kind`);
-  }
-  if (!(await checkExists(knex))) {
+  // One ALTER (one rebuild) for the column and its CHECK; each half guarded for a re-run.
+  const hasColumn = await knex.schema.hasColumn(TABLE, 'source');
+  const hasCheck = await checkExists(knex);
+  if (!hasColumn) {
+    await knex.raw(`ALTER TABLE ${TABLE} ADD COLUMN source VARCHAR(16) NULL${hasCheck ? '' :
+      `, ADD CONSTRAINT ${CHECK} CHECK (source IS NULL OR source IN ('plan', 'product'))`}`);
+  } else if (!hasCheck) {
     await knex.raw(`ALTER TABLE ${TABLE} ADD CONSTRAINT ${CHECK} CHECK (source IS NULL OR source IN ('plan', 'product'))`);
   }
 
@@ -56,7 +59,7 @@ exports.up = async (knex) => {
              WHEN (${PLAN_LINES}) AND NOT (${PRODUCT_LINES}) THEN 'plan'
              WHEN (${PRODUCT_LINES}) AND NOT (${PLAN_LINES}) THEN 'product'
              ELSE NULL END
-     WHERE bel.source IS NULL AND bel.kind = 'product' AND bel.product_id IS NOT NULL`);
+     WHERE bel.source IS NULL AND bel.kind IN ('product', 'service') AND bel.product_id IS NOT NULL`);
 
   const [[{ n }]] = await knex.raw(`SELECT COUNT(*) AS n FROM ${TABLE} WHERE source IS NULL AND kind <> 'adjustment'`);
   if (Number(n) > 0) {
