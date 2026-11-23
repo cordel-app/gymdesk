@@ -29,9 +29,10 @@ describe('latestEnrollmentStatusSql', () => {
     expect(flat('m')).toContain('pa.id = (SELECT cas.id FROM product_set_plan_snapshots');
   });
 
-  it('filters on both member_id and gym_id with the alias it was given', () => {
+  it('filters on the gym and on the plans the member owns or is covered by (#3281)', () => {
     const sql = flat('m');
-    expect(sql).toMatch(/WHERE pa\.member_id = m\.id AND pa\.gym_id = m\.gym_id/);
+    expect(sql).toContain('WHERE pa.gym_id = m.gym_id AND (pa.member_id = m.id OR EXISTS (SELECT 1 FROM plan_snapshot_beneficiaries pab');
+    expect(sql).toContain('pab.plan_snapshot_id = pa.id AND pab.gym_id = pa.gym_id AND pab.member_id = m.id');
   });
 
   it('uses whatever alias the caller passes, not a hardcoded one', () => {
