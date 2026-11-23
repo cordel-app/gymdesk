@@ -45,7 +45,11 @@ export async function loadMissingMandatoryProducts(
   const grants: PromotionGrantRef[] = [];
   for (const table of GRANT_TABLES) {
     const { rows } = await db.query<any>(
-      `SELECT b.promotion_id, b.product_id, pr.name AS product_name, b.requirement
+      `SELECT b.promotion_id, b.product_id, pr.name AS product_name, b.requirement,
+              pr.description AS product_description, pr.image_url AS product_image_url,
+              pr.image_thumbnail_url AS product_image_thumbnail_url,
+              p.name AS promotion_name, p.description AS promotion_description,
+              p.image_url AS promotion_image_url, p.image_thumbnail_url AS promotion_image_thumbnail_url
          FROM ${table} b
          JOIN promotions p ON p.id = b.promotion_id AND p.gym_id = b.gym_id
          JOIN products pr ON pr.id = b.product_id AND pr.gym_id = b.gym_id

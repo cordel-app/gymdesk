@@ -527,6 +527,8 @@
     "required_products_title": "Productos adicionales necesarios",
     "required_products_message": "Esta promoción requiere incluir los siguientes productos adicionales:",
     "required_products_question": "Estos productos se añadirán a este miembro y la promoción seleccionada se aplicará a todos ellos. ¿Quieres continuar?",
+    "required_products_promotion": "Promoción",
+    "required_products_items": "Productos necesarios",
     "required_products_confirm": "Confirmar",
     "add_product_error_direct_discount_not_allowed": "Solo un administrador puede aplicar un descuento directo.",
     "add_product_error_duplicate_promotion": "Esta promoción ya está aplicada a este producto.",

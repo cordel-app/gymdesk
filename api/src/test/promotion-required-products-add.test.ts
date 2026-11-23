@@ -118,5 +118,27 @@ describe('#3168 a Promotion with required Products', () => {
     const ids = ((await auth(request.get(`/members/${m}/products`))).body.items as any[]).map((r) => r.product_id);
     expect(ids.sort()).toEqual([locker, towel].sort());
   });
-});
 
+  it('#3236: the quote names each required Product with its image and the Promotion that requires it', async () => {
+    const m = await member();
+    const insurance = await product(`Insurance-${uniq()}`);
+    const registration = await product(`Registration-${uniq()}`);
+    await db.query(
+      `UPDATE products SET description = 'Annual registration', image_url = 'https://cdn.test/r.webp',
+              image_thumbnail_url = 'https://cdn.test/r-thumbnail.webp' WHERE id = ?`, [registration]);
+    const promo = await promotionRequiring([insurance, registration]);
+    await db.query(`UPDATE promotions SET description = 'Half price', image_thumbnail_url = 'https://cdn.test/p-thumbnail.webp' WHERE id = ?`, [promo]);
+
+    const quote = await auth(request.post(`/members/${m}/product-purchases/quote`)).send({ product_id: insurance, promotion_ids: [promo] });
+    expect(quote.status).toBe(200);
+    expect(quote.body.required_products).toHaveLength(1);
+    const [req] = quote.body.required_products;
+    expect(req).toMatchObject({
+      id: registration, description: 'Annual registration',
+      image_url: 'https://cdn.test/r.webp', image_thumbnail_url: 'https://cdn.test/r-thumbnail.webp',
+    });
+    expect(req.required_by).toEqual([expect.objectContaining({
+      id: promo, description: 'Half price', image_thumbnail_url: 'https://cdn.test/p-thumbnail.webp',
+    })]);
+  });
+});

@@ -209,10 +209,29 @@ export interface PurchasableProductPromotion {
   promotion_image_thumbnail_url?: string | null;
 }
 
+/** #3236: a chosen Promotion that makes a Product required, with what its detail modal shows. */
+export interface RequiringPromotion {
+  id: number; name: string; description: string | null; image_url: string | null; image_thumbnail_url: string | null;
+}
+
+/** #2374/#3236: a mandatory Product still to be added, and the Promotions that require it. */
+export interface RequiredProduct {
+  id: number; name: string; description?: string | null;
+  image_url?: string | null; image_thumbnail_url?: string | null;
+  required_by?: RequiringPromotion[];
+}
+
+/** #3236: the Promotions that triggered the confirmation, each once, in the order the server listed them. */
+export function requiringPromotions(products: readonly RequiredProduct[]): RequiringPromotion[] {
+  const out = new Map<number, RequiringPromotion>();
+  for (const p of products) for (const promo of p.required_by ?? []) if (!out.has(promo.id)) out.set(promo.id, promo);
+  return [...out.values()];
+}
+
 /** The server's quote (`POST …/product-purchases/quote`): every figure VAT-inclusive. */
 export interface PurchaseQuote {
   /** #2374: mandatory Products of the chosen Promotions still to be added (never optional ones). */
-  required_products?: Array<{ id: number; name: string }>;
+  required_products?: RequiredProduct[];
   product_id: number;
   product_name: string;
   recurring: boolean;
