@@ -110,6 +110,8 @@ export interface MemberBillingEvent {
 export interface MemberBillingEventLine {
   id: number;
   kind: 'membership_fee' | 'product' | 'service' | 'adjustment' | string;
+  /** #3254 — the line's origin, `plan` | `product` (null when neither applies). */
+  source?: 'plan' | 'product' | null;
   item_name: string;
   quantity: number;
   /** The unit's regular price, when one was recorded (DECIMAL as a string). */

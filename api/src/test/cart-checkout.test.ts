@@ -169,8 +169,10 @@ describe('POST /me/cart/checkout (#2949 stage 4)', () => {
     expect(ev[0]).toMatchObject({ event_type: 'product_purchase', amount: '42.50', product_set_id: null });
     expect(ev[0].name).toContain('Compra');
     const { rows: lines } = await db.query<any>(
-      'SELECT amount FROM billing_event_lines WHERE billing_event_id = ? ORDER BY amount', [eventId]);
+      'SELECT amount, source FROM billing_event_lines WHERE billing_event_id = ? ORDER BY amount', [eventId]);
     expect(lines.map((l: any) => l.amount)).toEqual(['12.50', '30.00']);
+    // #3254: a standalone purchase is a Product bought on its own.
+    expect(lines.map((l: any) => l.source)).toEqual(['product', 'product']);
     const { rows: reqs } = await db.query<any>('SELECT COUNT(*) AS n FROM payment_requests WHERE billing_event_id = ?', [eventId]);
     expect(Number(reqs[0].n)).toBe(1);
     expect(await purchaseStatus(one.body.purchase_id)).toBe('pending_payment');

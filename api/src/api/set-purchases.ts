@@ -198,7 +198,7 @@ export async function linkSetPurchasesToEvent(tx: Conn, gymId: string, productSe
 export function purchaseChargeLine(p: SetPurchase): { simulation: SimulationLine; line: BillingEventLineRow } {
   const regular = p.list_price ?? p.unit_amount;
   const simulation: SimulationLine = {
-    kind: 'product', label: p.product_name, user_membership_id: 0, plan_name: null,
+    kind: 'product', source: 'product', label: p.product_name, user_membership_id: 0, plan_name: null,
     product_id: p.product_id, quantity: p.quantity, unit_price: p.unit_amount, regular_price: regular,
     benefits: [], actual_charge: p.amount, price_may_change: false, prepaid_periods: null,
   };

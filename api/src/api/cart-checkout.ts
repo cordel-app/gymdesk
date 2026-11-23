@@ -139,7 +139,7 @@ export function purchaseLine(p: CartPurchase): BillingEventLineRow {
 /** The same line in the simulation's own shape too, for a Product Set's initial charge (stage 5). */
 export function cartChargeLine(p: CartPurchase): { simulation: SimulationLine; line: BillingEventLineRow } {
   const simulation: SimulationLine = {
-    kind: 'product', label: p.product_name, user_membership_id: 0, plan_name: null,
+    kind: 'product', source: 'product', label: p.product_name, user_membership_id: 0, plan_name: null,
     product_id: p.product_id, quantity: p.quantity, unit_price: p.unit_amount, regular_price: p.list_price ?? p.unit_amount,
     benefits: [], actual_charge: p.amount, price_may_change: false, prepaid_periods: null,
   };

@@ -481,7 +481,16 @@ export interface SimulationLine {
   fee_split?: FeeChargeSplit | null;
   /** #2657 stage 3 — the member a Plan line held per member is for; absent otherwise. */
   assigned_member_id?: number;
+  /**
+   * #3254 — where the line comes from, decided by the builder that made it: `plan` for the
+   * Membership Fee and a Product the Plan includes (its benefit items and its Promotion grants),
+   * `product` for a Product bought on its own (a recurring Product line, a one-time purchase).
+   * Persisted as `billing_event_lines.source`; never inferred from a name or a price.
+   */
+  source?: LineSource;
 }
+
+export type LineSource = 'plan' | 'product';
 
 export interface SimulationEvent {
   date: string;
@@ -1064,6 +1073,7 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
       const prepaid = resolved.prepaidPeriods != null && resolved.prepaidPeriods > 0;
       return {
         kind: 'membership_fee',
+        source: 'plan',
         label: a.planName ?? 'Membership Fee',
         user_membership_id: a.userMembershipId,
         plan_name: a.planName,
@@ -1385,6 +1395,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
     },
     line: (date, resolved) => ({
       kind: 'product',
+      source: 'plan',
       label: item.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
@@ -1465,6 +1476,7 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
     },
     line: (date, resolved) => ({
       kind: 'product',
+      source: 'product',
       label: service.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
@@ -1616,6 +1628,7 @@ function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): Sin
     date: a.startsAt,
     line: {
       kind: 'product',
+      source: 'plan',
       label: item.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
@@ -1696,6 +1709,7 @@ function buildSessionAllowanceStream(a: SimulationAssignment, item: BillableItem
       const quantity = resolved.quantity ?? item.quantity;
       return {
         kind: 'product',
+        source: 'plan',
         label: item.name,
         user_membership_id: a.userMembershipId,
         plan_name: a.planName,
