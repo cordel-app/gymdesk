@@ -21,7 +21,7 @@
 import { beforeCommit, type Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CART_ITEM_STATUS, CartItemStatus, derivePurchaseStatus } from '../domain/purchaseStatus';
-import { CART_EXPIRES_AT_SQL, purchaseCartExpiredSql } from '../domain/cartExpiry';
+import { CART_EXPIRES_AT_SQL, cartClockSql, purchaseCartExpiredSql } from '../domain/cartExpiry';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -60,7 +60,7 @@ export async function refreshCart(tx: Conn, gymId: string, purchaseId: number | 
   if (purchaseId == null) return true;
   const { rowCount } = await tx.query(
     `UPDATE purchases SET expires_at = ${CART_EXPIRES_AT_SQL}
-      WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND expires_at > UTC_TIMESTAMP()`,
+      WHERE id = ? AND gym_id = ? AND status = 'in_cart' AND ${cartClockSql('purchases')} > UTC_TIMESTAMP()`,
     [purchaseId, gymId]);
   return rowCount > 0;
 }
@@ -202,7 +202,7 @@ async function writeStatus(tx: Conn, purchaseId: number, status: string): Promis
   if (status === 'in_cart') {
     await tx.query(
       `UPDATE purchases SET expires_at = ${CART_EXPIRES_AT_SQL}
-        WHERE id = ? AND status = 'in_cart' AND expires_at > UTC_TIMESTAMP()`, [purchaseId]);
+        WHERE id = ? AND status = 'in_cart' AND ${cartClockSql('purchases')} > UTC_TIMESTAMP()`, [purchaseId]);
   }
 }
 

@@ -13,6 +13,12 @@
  * expired last under the old rules, so no item of a mixed cart expires earlier than it would have.
  * Every other purchase keeps NULL. Idempotent: only NULL values of `in_cart` rows are filled.
  *
+ * A cart an API image still running the previous code opens while this deploys has no clock; the new
+ * code reads a NULL clock as two hours after the cart's creation (`cartClockSql()`), so it is neither
+ * expired at once nor kept for ever. A cart whose items were all idle for more than two hours gets a
+ * clock already past, and the first expiry sweep after the deploy deletes it, as the old rules would
+ * have. The 120 minutes mirror `CART_TTL_MINUTES` (`domain/cartExpiry.ts`), frozen here.
+ *
  * `down` drops the index and the column.
  */
 

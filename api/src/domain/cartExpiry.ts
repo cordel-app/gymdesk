@@ -23,12 +23,16 @@ export const CART_TTL_MINUTES = 120;
 export const CART_EXPIRES_AT_SQL = `UTC_TIMESTAMP() + INTERVAL ${CART_TTL_MINUTES} MINUTE`;
 
 /**
- * Is the purchase `pu` (alias) an In-Cart cart past its time? A purchase in any other status is never
- * expired by this rule; an `in_cart` row with no clock (none should exist after migration 470) is
- * treated as expired rather than as living for ever.
+ * The clock of the purchase `pu` (alias). An `in_cart` row written with no clock — by an API image
+ * still running the previous code while migration 470 deploys — reads as two hours after its
+ * creation, so it neither expires at once nor lives for ever, and its next change gives it a clock.
  */
+export const cartClockSql = (pu: string): string =>
+  `COALESCE(${pu}.expires_at, ${pu}.created_at + INTERVAL ${CART_TTL_MINUTES} MINUTE)`;
+
+/** Is the purchase `pu` (alias) an In-Cart cart past its time? Any other status is never expired here. */
 export const purchaseCartExpiredSql = (pu: string): string =>
-  `(${pu}.status = 'in_cart' AND (${pu}.expires_at IS NULL OR ${pu}.expires_at <= UTC_TIMESTAMP()))`;
+  `(${pu}.status = 'in_cart' AND ${cartClockSql(pu)} <= UTC_TIMESTAMP())`;
 
 /**
  * Is the Product Set `ps` (alias or table name) in an expired cart? Only a set in the cart can be;
@@ -46,16 +50,16 @@ export const setCartLiveSql = (ps: string): string =>
 
 /** The cart expiry of the Product Set `ps`, NULL when it is not in a cart that has one. */
 export const setCartExpiresAtSql = (ps: string): string =>
-  `(SELECT cx_.expires_at FROM purchases cx_ WHERE cx_.id = ${ps}.purchase_id AND cx_.status = 'in_cart')`;
+  `(SELECT ${cartClockSql('cx_')} FROM purchases cx_ WHERE cx_.id = ${ps}.purchase_id AND cx_.status = 'in_cart')`;
 
 /** Seconds the Product Set `ps`'s cart has left (NULL with none; may be negative). */
 export const setCartExpiresInSecondsSql = (ps: string): string =>
-  `(SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), cx_.expires_at) FROM purchases cx_
+  `(SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ${cartClockSql('cx_')}) FROM purchases cx_
      WHERE cx_.id = ${ps}.purchase_id AND cx_.status = 'in_cart' AND ${ps}.status = 'in_cart')`;
 
 /** The cart expiry of a one-time line whose purchase column is `col`, NULL when it is not in a cart. */
 export const lineCartExpiresAtSql = (col: string): string =>
-  `(SELECT cx_.expires_at FROM purchases cx_ WHERE cx_.id = ${col} AND cx_.status = 'in_cart')`;
+  `(SELECT ${cartClockSql('cx_')} FROM purchases cx_ WHERE cx_.id = ${col} AND cx_.status = 'in_cart')`;
 
 /**
  * Is the line whose purchase column is `col` outside an expired cart? Only an In-Cart purchase past

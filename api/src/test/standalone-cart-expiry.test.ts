@@ -165,6 +165,22 @@ describe('a cart reports its one expiry', () => {
     expect(new Date(after!.expires_at!).getTime() - Date.now()).toBeGreaterThan(115 * 60_000);
   });
 
+  it('a cart with no clock (opened by the previous API during the deploy) reads as two hours after its creation', async () => {
+    const m = await member();
+    const d = await draft(m, await product('Gap towel'));
+    const cart = (await cartOf(d))!.id;
+    await db.query('UPDATE purchases SET expires_at = NULL WHERE id = ?', [cart]);
+    const res = await auth(request.get(`/members/${m}/products`));
+    expect(res.body.items.map((i: any) => i.id)).toContain(d);
+    // Its next change gives it a clock.
+    await draft(m, await product('Gap robe'));
+    expect((await cartOf(d))!.expires_at).not.toBeNull();
+    // Past two hours from its creation, it expires.
+    await db.query(`UPDATE purchases SET expires_at = NULL, created_at = UTC_TIMESTAMP() - INTERVAL 3 HOUR WHERE id = ?`, [cart]);
+    await auth(request.get(`/members/${m}/products`));
+    expect(await exists(d)).toBe(false);
+  });
+
   it('a cart that is not past its time is left alone by the expiry, even when asked directly', async () => {
     const m = await member();
     const d = await draft(m, await product('Live towel'));
