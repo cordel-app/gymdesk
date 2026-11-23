@@ -109,6 +109,10 @@ export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<numbe
       `INSERT IGNORE INTO ${j.junction} (billing_event_id, ${j.snapshotCol}) VALUES (?, ?)`,
       [v.billingEventId, snapshotId],
     );
+    // #3251 stage 2: the purchase's own Billing Event is its checkout's (an event that already names
+    // a cart, a Product Set's initial event, keeps it).
+    await tx.query('UPDATE billing_events SET purchase_id = COALESCE(purchase_id, ?) WHERE id = ? AND gym_id = ?',
+      [cartId, v.billingEventId, v.gymId]);
   }
   return purchaseId;
 }

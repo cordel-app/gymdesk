@@ -126,14 +126,14 @@ describe('persisted Billing Event Lines carry their source (#3254)', () => {
   });
 });
 
-describe('migration 466 backfills historical lines only where the origin is determinable (#3254)', () => {
+describe('migration 468 backfills historical lines only where the origin is determinable (#3254)', () => {
   // The migration's own `up`, run through the test pool: its guards find the column and CHECK there.
   const knexLike = {
     raw: async (sql: string, bindings: unknown[] = []) => [(await db.query<any>(sql, bindings as any[])).rows],
     schema: { hasColumn: async () => true },
   };
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const migration = require('../infra/migrations/466_billing_event_line_source.js');
+  const migration = require('../infra/migrations/468_billing_event_line_source.js');
 
   it('a fee line is plan, a purchase event\'s line is product, an unexplained product line stays null', async () => {
     const owner = await member();

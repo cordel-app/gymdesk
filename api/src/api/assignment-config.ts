@@ -35,13 +35,13 @@ export type AssignmentConfigColumn =
  *
  * #2125 M6b-39 — "linked to the assignment" is the set's anchor (`product_sets.plan_assignment_id`,
  * M6b-36), never `product_sets.user_membership_id`, the column the re-key drops. The caller still
- * names the assignment by its legacy id, read off the anchor snapshot's `assignment_id`
+ * names the assignment by its legacy id, read off the anchor snapshot's `anchor_plan_snapshot_id`
  * (the anchor is the lowest snapshot naming that id, so it names exactly it).
  */
 export const assignmentVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9
       JOIN plan_snapshots a9 ON a9.id = p9.plan_assignment_id AND a9.gym_id = p9.gym_id
-     WHERE a9.assignment_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
+     WHERE a9.anchor_plan_snapshot_id = ${idExpr} ORDER BY p9.id DESC LIMIT 1)`;
 
 /**
  * #2125 stage 15 — the version whose **version-level** lines (recurring Products and services) an
@@ -55,25 +55,25 @@ export const assignmentVersionId = (idExpr: string) =>
  * #2125 M6b-37 — that snapshot is found through the set's own anchor (`p9.plan_assignment_id`,
  * `assignmentOfAnchorSql()`), not through `product_sets.user_membership_id`.
  * #2125 M6b-39 — and the set is picked by that anchor too: the anchor's
- * `assignment_id` is the legacy id, so `u9` (an assignment's snapshots share its
- * `assignment_id`) names it exactly.
+ * `anchor_plan_snapshot_id` is the legacy id, so `u9` (an assignment's snapshots share its
+ * `anchor_plan_snapshot_id`) names it exactly.
  */
 export const assignmentLineVersionId = (idExpr: string) =>
   `(SELECT p9.id FROM product_sets p9
       JOIN plan_snapshots u9 ON u9.gym_id = p9.gym_id AND ${assignmentOfAnchorSql('p9.plan_assignment_id', 'u9')}
-     WHERE u9.assignment_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
+     WHERE u9.anchor_plan_snapshot_id = ${idExpr} AND NOT (u9.status = 'active' AND p9.status = 'superseded')
      ORDER BY p9.id DESC LIMIT 1)`;
 
 /**
  * #2125 stage 10 — SQL for the id of the plan snapshot an assignment is the contract of: the
- * latest `plan_snapshots` row naming it (`assignment_id`), whichever version holds it.
+ * latest `plan_snapshots` row naming it (`anchor_plan_snapshot_id`), whichever version holds it.
  * A version holds several plans now, so "the version linked to the assignment" no longer says
  * which plan is meant; the snapshot does. Draft and closed included, as before.
  */
 export const assignmentPlanSnapshotId = (idExpr: string, gymExpr?: string) =>
   `(SELECT s9.id FROM product_set_plan_snapshots j9 JOIN plan_snapshots s9 ON s9.id = j9.plan_snapshot_id
      JOIN product_sets p9 ON p9.id = j9.product_set_id
-     WHERE s9.assignment_id = ${idExpr}${gymExpr ? ` AND s9.gym_id = ${gymExpr}` : ''}
+     WHERE s9.anchor_plan_snapshot_id = ${idExpr}${gymExpr ? ` AND s9.gym_id = ${gymExpr}` : ''}
      ORDER BY p9.id DESC, s9.id DESC LIMIT 1)`;
 
 /**
@@ -85,15 +85,15 @@ export const assignmentPlanSnapshotId = (idExpr: string, gymExpr?: string) =>
  * where it is the subject: its editor, forecast and review address its own set, and `⋮ → Edit` on a
  * running plan opens a Draft assignment of its own, whose current snapshot is the Draft's.
  *
- * One legacy id is exactly one `assignment_id` (M6b-1). The fallback to `assignmentPlanSnapshotId()`
+ * One legacy id is exactly one `anchor_plan_snapshot_id` (M6b-1). The fallback to `assignmentPlanSnapshotId()`
  * covers a snapshot not yet stamped inside the transaction that wrote it; `plan-assignments:validate`
  * reports one left unstamped. Writers keep owning the snapshot through `assignmentPlanSnapshotId()`.
  */
 export const assignmentConfigSnapshotId = (idExpr: string, gymExpr: string) =>
   `COALESCE(${currentAssignmentSnapshotSql(
-    `(SELECT cla.assignment_id FROM plan_snapshots cla
-       WHERE cla.assignment_id = ${idExpr} AND cla.gym_id = ${gymExpr}
-         AND cla.assignment_id IS NOT NULL ORDER BY cla.id LIMIT 1)`, gymExpr)},
+    `(SELECT cla.anchor_plan_snapshot_id FROM plan_snapshots cla
+       WHERE cla.anchor_plan_snapshot_id = ${idExpr} AND cla.gym_id = ${gymExpr}
+         AND cla.anchor_plan_snapshot_id IS NOT NULL ORDER BY cla.id LIMIT 1)`, gymExpr)},
     ${assignmentPlanSnapshotId(idExpr, gymExpr)})`;
 
 /** Joins the assignment's plan snapshot (its current one, M6b-12) as `cfg`. */

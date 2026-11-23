@@ -50,8 +50,8 @@ async function assign(set: number): Promise<number> {
   return db.transaction((tx) => openAssignmentOnSet(tx, gymId, set));
 }
 const assignmentIdOf = async (snapshotId: number) => {
-  const { rows } = await db.query<any>('SELECT assignment_id FROM plan_snapshots WHERE id = ?', [snapshotId]);
-  return rows[0].assignment_id == null ? null : Number(rows[0].assignment_id);
+  const { rows } = await db.query<any>('SELECT anchor_plan_snapshot_id FROM plan_snapshots WHERE id = ?', [snapshotId]);
+  return rows[0].anchor_plan_snapshot_id == null ? null : Number(rows[0].anchor_plan_snapshot_id);
 };
 const drift = async (name: string) => (await findPlanAssignmentDrift(db, gymId)).checks.find((c) => c.name === name)!;
 
@@ -93,7 +93,7 @@ describe('an assignment anchor never moves', () => {
     await expect(db.transaction((tx) => nameAssignmentSnapshot(tx, gymId, a.set, other)))
       .rejects.toThrow(/anchors assignment/);
 
-    const { rows } = await db.query<any>('SELECT assignment_id AS um FROM plan_snapshots WHERE id = ?', [a.snapshot]);
+    const { rows } = await db.query<any>('SELECT anchor_plan_snapshot_id AS um FROM plan_snapshots WHERE id = ?', [a.snapshot]);
     expect(Number(rows[0].um)).toBe(um);
     expect(await assignmentIdOf(a.snapshot)).toBe(a.snapshot);
   });

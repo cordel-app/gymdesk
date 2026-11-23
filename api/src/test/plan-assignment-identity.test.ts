@@ -1,4 +1,4 @@
-// #2125 M6b-1 (migration 419): `plan_snapshots.assignment_id` is the stable identity of a Membership Plan
+// #2125 M6b-1 (migration 419): `plan_snapshots.anchor_plan_snapshot_id` is the stable identity of a Membership Plan
 // assignment, an assignment's anchor snapshot is not deletable while another snapshot of it survives,
 // and the read-only drift check reports an inconsistent identity. #2125 N2 (migration 462): it is the
 // only record of a snapshot's assignment, NULL on a snapshot no assignment was opened on.
@@ -46,10 +46,10 @@ async function activate(um: number, onConflict: 'add' | 'replace' = 'add'): Prom
 /** Every plan snapshot naming the assignment, oldest first. */
 async function snapshotsOf(um: number) {
   const { rows } = await db.query<any>(
-    `SELECT id, assignment_id, status, purchased_at, replace_on_activation, replaces_assignment_id
-       FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id`, [gymId, um]);
+    `SELECT id, anchor_plan_snapshot_id, status, purchased_at, replace_on_activation, replaces_assignment_id
+       FROM plan_snapshots WHERE gym_id = ? AND anchor_plan_snapshot_id = ? ORDER BY id`, [gymId, um]);
   return rows.map((r: any) => ({
-    id: Number(r.id), assignmentId: r.assignment_id == null ? null : Number(r.assignment_id), status: String(r.status),
+    id: Number(r.id), assignmentId: r.anchor_plan_snapshot_id == null ? null : Number(r.anchor_plan_snapshot_id), status: String(r.status),
     purchasedAt: r.purchased_at, replaceOnActivation: Number(r.replace_on_activation),
     replacesAssignmentId: r.replaces_assignment_id == null ? null : Number(r.replaces_assignment_id),
   }));
@@ -71,8 +71,8 @@ async function draftSet(owner?: number, opts: { open?: boolean } = {}): Promise<
   return { owner: o, set, snapshot: Number(rows[0].id) };
 }
 const assignmentIdOf = async (snapshotId: number) => {
-  const { rows } = await db.query<any>('SELECT assignment_id FROM plan_snapshots WHERE id = ?', [snapshotId]);
-  return rows[0] ? (rows[0].assignment_id == null ? null : Number(rows[0].assignment_id)) : undefined;
+  const { rows } = await db.query<any>('SELECT anchor_plan_snapshot_id FROM plan_snapshots WHERE id = ?', [snapshotId]);
+  return rows[0] ? (rows[0].anchor_plan_snapshot_id == null ? null : Number(rows[0].anchor_plan_snapshot_id)) : undefined;
 };
 
 beforeAll(async () => {
@@ -247,10 +247,10 @@ describe('the drift check', () => {
     const [snap] = await snapshotsOf(um);
     const other = await draftSet(undefined, { open: false });
 
-    await db.query('UPDATE plan_snapshots SET assignment_id = ? WHERE id = ?', [other.snapshot, snap.id]);
+    await db.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = ? WHERE id = ?', [other.snapshot, snap.id]);
     expect((await check('assignment_identity_split')).sample.map((r) => Number(r.plan_snapshot_id))).toContain(snap.id);
 
-    await db.query('UPDATE plan_snapshots SET assignment_id = id WHERE id = ?', [snap.id]);
+    await db.query('UPDATE plan_snapshots SET anchor_plan_snapshot_id = id WHERE id = ?', [snap.id]);
     expect((await check('assignment_identity_split')).count).toBe(0);
   });
 

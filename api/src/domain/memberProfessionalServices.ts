@@ -321,7 +321,7 @@ export async function loadMemberProfessionalServiceGrants(
             pa.member_id          AS holder_member_id
      FROM plan_snapshots pa
      JOIN product_set_periodical_snapshots umsvl
-       ON umsvl.product_set_id = ${assignmentLineVersionId('pa.assignment_id')}
+       ON umsvl.product_set_id = ${assignmentLineVersionId('pa.anchor_plan_snapshot_id')}
      JOIN product_periodical_snapshots umsv
        ON umsv.id = umsvl.product_periodical_snapshot_id AND umsv.gym_id = pa.gym_id
           AND umsv.source_id IS NOT NULL
@@ -332,7 +332,7 @@ export async function loadMemberProfessionalServiceGrants(
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = pa.gym_id AND gps.status = 'active'
-     WHERE pa.gym_id = ? AND pa.member_id IN ${IN} AND pa.assignment_id IS NOT NULL
+     WHERE pa.gym_id = ? AND pa.member_id IN ${IN} AND pa.anchor_plan_snapshot_id IS NOT NULL
        AND ${ENTITLED_ASSIGNMENT_SQL} AND ${isCurrentAssignmentSnapshotSql('pa')}
        AND umsv.starts_at <= UTC_DATE()
        AND (umsv.ends_at IS NULL OR umsv.ends_at >= UTC_DATE())`,

@@ -1,4 +1,5 @@
 import { stampAssignmentId } from './plan-assignment-sync';
+import { stampSnapshotPurchase } from './purchases';
 import type { Tx } from '../infra/db';
 import { ensureSchedule } from './product-set-configuration';
 import { copyProductTargetApplications } from './product-set-bridge';
@@ -92,6 +93,8 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
 
   // M6b-1: a plan added to a Product Set is a new logical assignment, anchored on this snapshot.
   await stampAssignmentId(tx, gymId, Number(insertId));
+  // #3251 stage 2: the plan was added in the set's cart.
+  await stampSnapshotPurchase(tx, gymId, 'plan_snapshots', Number(insertId), productSetId);
   await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [productSetId, insertId]);
   await tx.query(
     'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
@@ -121,7 +124,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
  * Copies one plan snapshot (and everything hanging off it: beneficiaries, included Products,
  * Promotion applications with the Products they grant) onto another version as an inherited copy.
  * The copy is native — it has no legacy twin — keeps the assignment the original is the contract
- * of (`assignment_id`) and records its source in `copied_from_plan_snapshot_id` (#2125 M5a),
+ * of (`anchor_plan_snapshot_id`) and records its source in `copied_from_plan_snapshot_id` (#2125 M5a),
  * which is what keeps an edited inherited plan reading as inherited (`planSnapshotInheritedSql()`).
  */
 export async function copyPlanSnapshotToVersion(
@@ -140,7 +143,7 @@ export async function copyPlanSnapshotToVersion(
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods, personal_fee_benefit_action,
         personal_fee_benefit_value, auto_renew, recurring_billing_interval, recurring_billing_unit, origin,
         created_by, owner_is_beneficiary, membership_fee_scope, member_limit,
-        assignment_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by,
+        anchor_plan_snapshot_id, purchased_at, replace_on_activation, replaces_assignment_id, deleted_at, deleted_by,
         modified_at, modified_by, promotions_plan_snapshot_id)
      SELECT s.gym_id, s.member_id, s.membership_plan_id, ps.status, s.id, s.starts_at, s.ends_at, NULL,
             s.schedule_id, s.plan_price_id, s.base_price, s.discount_reason, s.discount_expires_at, s.membership_fee_price,
@@ -150,13 +153,15 @@ export async function copyPlanSnapshotToVersion(
             s.membership_fee_scope, s.member_limit,
             ${opts.keepAssignment === false
               ? 'NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL'
-              : 's.assignment_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by, s.modified_at, s.modified_by'},
+              : 's.anchor_plan_snapshot_id, s.purchased_at, s.replace_on_activation, s.replaces_assignment_id, s.deleted_at, s.deleted_by, s.modified_at, s.modified_by'},
             ${opts.reusePromotions ? 'COALESCE(s.promotions_plan_snapshot_id, s.id)' : 'NULL'}
        FROM plan_snapshots s JOIN product_sets ps ON ps.id = ?
       WHERE s.id = ? AND s.gym_id = ?`, [toSetId, fromSnapshotId, gymId]);
-  // M6b-1: the copy is the same logical assignment as its source (same `assignment_id`); #2125 N2: a
-  // copy that drops the assignment names none (`assignment_id` NULL) until one is opened on it.
+  // M6b-1: the copy is the same logical assignment as its source (same `anchor_plan_snapshot_id`); #2125 N2: a
+  // copy that drops the assignment names none (`anchor_plan_snapshot_id` NULL) until one is opened on it.
   await stampAssignmentId(tx, gymId, Number(insertId));
+  // #3251 stage 2: a copy made in a cart is the cart's; any other copy keeps its source's purchase.
+  await stampSnapshotPurchase(tx, gymId, 'plan_snapshots', Number(insertId), toSetId, fromSnapshotId);
   if (opts.link !== false) {
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [toSetId, insertId]);
   }
@@ -218,11 +223,11 @@ export async function mergeActiveVersionIntoDraft(
 ): Promise<void> {
   const excluded = new Set((opts.excludeUserMembershipIds ?? []).map(Number));
   const { rows: plans } = await tx.query<any>(
-    `SELECT s.id, s.assignment_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+    `SELECT s.id, s.anchor_plan_snapshot_id FROM product_set_plan_snapshots psj JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
       WHERE s.gym_id = ? AND psj.product_set_id = ? AND psj.entitlement_only = 0 ORDER BY psj.id`,
     [gymId, activeSetId]);
   for (const plan of plans) {
-    if (plan.assignment_id != null && excluded.has(Number(plan.assignment_id))) continue;
+    if (plan.anchor_plan_snapshot_id != null && excluded.has(Number(plan.anchor_plan_snapshot_id))) continue;
     await copyPlanSnapshotToVersion(tx, gymId, Number(plan.id), draftSetId);
   }
 

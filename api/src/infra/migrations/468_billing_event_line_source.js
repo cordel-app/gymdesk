@@ -64,7 +64,7 @@ exports.up = async (knex) => {
   const [[{ n }]] = await knex.raw(`SELECT COUNT(*) AS n FROM ${TABLE} WHERE source IS NULL AND kind <> 'adjustment'`);
   if (Number(n) > 0) {
     // eslint-disable-next-line no-console
-    console.log(`[466] ${n} billing_event_lines left with source NULL: origin not determinable (both or neither).`);
+    console.log(`[468] ${n} billing_event_lines left with source NULL: origin not determinable (both or neither).`);
   }
 };
 

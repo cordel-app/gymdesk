@@ -218,7 +218,7 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
       `INSERT INTO plan_promotion_snapshots (gym_id, plan_snapshot_id, promotion_id, status)
        SELECT pps.gym_id, pps.plan_snapshot_id, pps.promotion_id, 'applied'
          FROM plan_promotion_snapshots pps JOIN plan_snapshots s ON s.id = pps.plan_snapshot_id
-        WHERE pps.gym_id = ? AND s.assignment_id = ? AND pps.promotion_id = ?`,
+        WHERE pps.gym_id = ? AND s.anchor_plan_snapshot_id = ? AND pps.promotion_id = ?`,
       [gymId, umId, promotionId],
     )).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
   });

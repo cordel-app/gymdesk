@@ -2229,7 +2229,7 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
        JOIN plan_promotion_snapshots pps
          ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
        JOIN promotions p ON p.id = pps.promotion_id
-       WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.assignment_id IS NOT NULL
+       WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.anchor_plan_snapshot_id IS NOT NULL
          AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}
          AND pps.status = 'applied' AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})
        ORDER BY pps.applied_at DESC`,

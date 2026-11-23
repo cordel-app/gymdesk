@@ -3,12 +3,12 @@
  * (migration 419). Since migration 458 dropped `user_memberships`, the plan snapshots are the
  * assignment's only record.
  *
- * `plan_snapshots.assignment_id` is the stable identity of the logical Membership Plan assignment:
+ * `plan_snapshots.anchor_plan_snapshot_id` is the stable identity of the logical Membership Plan assignment:
  * the id of the assignment's first snapshot. It is decided here and nowhere else:
  *
- *   - a snapshot naming an assignment id (`assignment_id`) takes that assignment's
+ *   - a snapshot naming an assignment id (`anchor_plan_snapshot_id`) takes that assignment's
  *     anchor — the snapshot already anchoring it, else (its first snapshot) the lowest snapshot id
- *     naming that id — so one assignment id is exactly one `assignment_id` (which is what let M6b-3
+ *     naming that id — so one assignment id is exactly one `anchor_plan_snapshot_id` (which is what let M6b-3
  *     re-key every reference through the pair), and an anchor, once set, never moves (#2125 M8);
  *   - a snapshot naming none keeps the assignment it was given (a copy is given its source's by
  *     `copyPlanSnapshotToVersion()`), else it is its own.
@@ -25,7 +25,7 @@ type Exec = { query: Tx['query'] };
 /**
  * The anchor of each of the given assignment ids. Since #2125 N1 an assignment's id is its anchor
  * snapshot's own id, so an assignment has an anchor exactly when the snapshot of that id exists and
- * anchors itself (`assignment_id = id`); an id no snapshot anchors (a discarded Draft) has none.
+ * anchors itself (`anchor_plan_snapshot_id = id`); an id no snapshot anchors (a discarded Draft) has none.
  */
 async function anchorsOf(exec: Exec, gymId: string, userMembershipIds: number[]): Promise<Map<number, number>> {
   const ids = [...new Set(userMembershipIds)];
@@ -33,13 +33,13 @@ async function anchorsOf(exec: Exec, gymId: string, userMembershipIds: number[])
   if (ids.length === 0) return anchors;
   const { rows } = await exec.query<{ id: number }>(
     `SELECT id FROM plan_snapshots
-      WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')}) AND assignment_id = id`, [gymId, ...ids]);
+      WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')}) AND anchor_plan_snapshot_id = id`, [gymId, ...ids]);
   for (const r of rows) anchors.set(Number(r.id), Number(r.id));
   return anchors;
 }
 
 /**
- * #2125 N2 — `assignment_id` is written where a snapshot is named (`nameAssignmentSnapshot()`) or
+ * #2125 N2 — `anchor_plan_snapshot_id` is written where a snapshot is named (`nameAssignmentSnapshot()`) or
  * copied (`copyPlanSnapshotToVersion()`), so nothing is re-derived here any more: this seeds the
  * lifecycle of every given snapshot that anchors its assignment and has none yet.
  */
@@ -60,7 +60,7 @@ async function seedAnchorLifecycle(exec: Exec, gymId: string, anchorIds: number[
     `UPDATE plan_snapshots a
         SET a.assignment_status = a.status, a.assignment_ends_at = a.ends_at,
             a.assignment_closed_at = NULL, a.assignment_modified_at = NULL, a.assignment_modified_by = NULL
-      WHERE a.assignment_id = a.id AND a.gym_id = ? AND a.id IN (${anchorIds.map(() => '?').join(',')})
+      WHERE a.anchor_plan_snapshot_id = a.id AND a.gym_id = ? AND a.id IN (${anchorIds.map(() => '?').join(',')})
         AND a.assignment_status IS NULL`,
     [gymId, ...anchorIds]);
 }
@@ -82,11 +82,11 @@ export async function stampAssignmentId(exec: Exec, gymId: string, planSnapshotI
 export const PRODUCT_SET_ASSIGNMENT_ANCHOR_SQL =
   `plan_assignment_id = (SELECT pa_anchor.id FROM plan_snapshots pa_anchor
                           WHERE pa_anchor.gym_id = product_sets.gym_id
-                            AND pa_anchor.id = ? AND pa_anchor.assignment_id = pa_anchor.id)`;
+                            AND pa_anchor.id = ? AND pa_anchor.anchor_plan_snapshot_id = pa_anchor.id)`;
 
 /** The lowest snapshot naming the same legacy assignment as the set's current anchor (none kept). */
 const RENORMALIZED_ANCHOR_SQL =
-  `COALESCE((SELECT pa_cur.assignment_id FROM plan_snapshots pa_cur
+  `COALESCE((SELECT pa_cur.anchor_plan_snapshot_id FROM plan_snapshots pa_cur
               WHERE pa_cur.id = product_sets.plan_assignment_id), plan_assignment_id)`;
 
 /**
@@ -107,7 +107,7 @@ export async function syncProductSetAssignmentIds(
     const { rows } = await exec.query<{ id: number }>(
       `SELECT ps.id FROM product_sets ps
          JOIN plan_snapshots pa_um ON pa_um.id = ps.plan_assignment_id
-        WHERE ps.gym_id = ? AND pa_um.assignment_id IN (${ums.map(() => '?').join(',')})`,
+        WHERE ps.gym_id = ? AND pa_um.anchor_plan_snapshot_id IN (${ums.map(() => '?').join(',')})`,
       [gymId, ...ums]);
     for (const r of rows) sets.add(Number(r.id));
   }
@@ -148,10 +148,10 @@ export const RESET_ASSIGNMENT_FACTS_SQL =
  */
 async function refuseRenamingAnAnchor(exec: Exec, gymId: string, planSnapshotId: number, userMembershipId: number): Promise<void> {
   const { rows } = await exec.query<{ um_id: number | null }>(
-    `SELECT s.assignment_id AS um_id FROM plan_snapshots s
-      WHERE s.id = ? AND s.gym_id = ? AND s.assignment_id = s.id
-        AND NOT (s.assignment_id <=> ?)
-        AND EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.assignment_id = s.id AND o.id <> s.id)`,
+    `SELECT s.anchor_plan_snapshot_id AS um_id FROM plan_snapshots s
+      WHERE s.id = ? AND s.gym_id = ? AND s.anchor_plan_snapshot_id = s.id
+        AND NOT (s.anchor_plan_snapshot_id <=> ?)
+        AND EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.anchor_plan_snapshot_id = s.id AND o.id <> s.id)`,
     [planSnapshotId, gymId, userMembershipId]);
   if (rows.length > 0) {
     throw new Error(
@@ -161,8 +161,8 @@ async function refuseRenamingAnAnchor(exec: Exec, gymId: string, planSnapshotId:
 
 /**
  * #2125 N1 — opens a new assignment on the Product Set's primary plan snapshot: the assignment's id is
- * that snapshot's own id, which anchors itself (`assignment_id = id`) and is named with it
- * (`assignment_id`, equal to the anchor id until N2 drops the column). This is the one way
+ * that snapshot's own id, which anchors itself (`anchor_plan_snapshot_id = id`) and is named with it
+ * (`anchor_plan_snapshot_id`, equal to the anchor id until N2 drops the column). This is the one way
  * an assignment id comes into being; there is no allocator. The snapshot must be the set's own (a
  * fresh snapshot, or one `ownPrimaryPlanSnapshot()` copied for the set), since a snapshot another
  * Product Set links belongs to an assignment already. A Draft discarded with its set takes the
@@ -188,11 +188,11 @@ export async function nameAssignmentSnapshot(
     // it named before (a copy made for an edit carries its source's); the new assignment's writers
     // write its own afterwards (`writeAssignmentReplacement()`). The facts are reset before the name
     // moves, since MySQL applies the assignments of one UPDATE left to right. #2125 M8: its identity
-    // goes too (`assignment_id = NULL`, which the refusal above makes safe), so the stamp below gives it
+    // goes too (`anchor_plan_snapshot_id = NULL`, which the refusal above makes safe), so the stamp below gives it
     // the new assignment's existing anchor rather than letting it stand as an anchor of its own.
     await exec.query(
-      `UPDATE plan_snapshots SET ${RESET_ASSIGNMENT_FACTS_SQL}, assignment_id = ?
-        WHERE id = ? AND gym_id = ? AND NOT (assignment_id <=> ?)`,
+      `UPDATE plan_snapshots SET ${RESET_ASSIGNMENT_FACTS_SQL}, anchor_plan_snapshot_id = ?
+        WHERE id = ? AND gym_id = ? AND NOT (anchor_plan_snapshot_id <=> ?)`,
       [userMembershipId, primary, gymId, userMembershipId]);
     await stampAssignmentIds(exec, gymId, [primary]);
   }
@@ -229,7 +229,7 @@ export interface LockedAssignment {
 
 /**
  * #2125 M6b-51d-2 — the one lock a writer of an assignment takes, and what it reads while holding it.
- * Locks the assignment's anchor snapshot (`assignment_id = id`) `FOR UPDATE` and answers its owner,
+ * Locks the assignment's anchor snapshot (`anchor_plan_snapshot_id = id`) `FOR UPDATE` and answers its owner,
  * plan and lifecycle off it (`assignment_status`, `assignment_ends_at`, which `writeAssignmentLifecycle()`
  * keeps exactly in step, M6b-51c-4), with the start date of its current snapshot. Replaces the
  * `SELECT … FROM user_memberships … FOR UPDATE` every writer took first: the anchor is the
@@ -250,7 +250,7 @@ export async function lockAssignmentRecord(
     `SELECT a.id AS anchor_id, DATE_FORMAT(a.starts_at, '%Y-%m-%d') AS anchor_starts_at, a.member_id, a.membership_plan_id, a.assignment_status AS status,
             DATE_FORMAT(a.assignment_ends_at, '%Y-%m-%d') AS ends_at
        FROM plan_snapshots a
-      WHERE a.gym_id = ? AND a.assignment_id = ? AND a.assignment_id = a.id
+      WHERE a.gym_id = ? AND a.anchor_plan_snapshot_id = ? AND a.anchor_plan_snapshot_id = a.id
       ORDER BY a.id LIMIT 1 FOR UPDATE`, [gymId, id]);
   const anchor = rows[0];
   if (!anchor || anchor.status == null) return null;
@@ -306,15 +306,15 @@ export async function lockAssignmentsCovering(
   if (memberIds.length === 0 || statuses.length === 0) return [];
   const members = memberIds.map(() => '?').join(',');
   const states = statuses.map(() => '?').join(',');
-  const exclude = opts.excludeUserMembershipId != null ? ' AND a.assignment_id <> ?' : '';
+  const exclude = opts.excludeUserMembershipId != null ? ' AND a.anchor_plan_snapshot_id <> ?' : '';
   const excludeParams = opts.excludeUserMembershipId != null ? [Number(opts.excludeUserMembershipId)] : [];
   const { rows: candidates } = await exec.query<{ id: number }>(
-    `SELECT DISTINCT a.assignment_id AS id FROM plan_snapshots a
-      WHERE a.gym_id = ? AND a.assignment_id = a.id AND a.assignment_id IS NOT NULL
+    `SELECT DISTINCT a.anchor_plan_snapshot_id AS id FROM plan_snapshots a
+      WHERE a.gym_id = ? AND a.anchor_plan_snapshot_id = a.id AND a.anchor_plan_snapshot_id IS NOT NULL
         AND a.assignment_status IN (${states})
         AND (a.member_id IN (${members})
              OR EXISTS (SELECT 1 FROM ${ASSIGNMENT_BENEFICIARIES} umm
-                         WHERE umm.user_membership_id = a.assignment_id AND umm.gym_id = a.gym_id
+                         WHERE umm.user_membership_id = a.anchor_plan_snapshot_id AND umm.gym_id = a.gym_id
                            AND umm.member_id IN (${members})))${exclude}`,
     [gymId, ...statuses, ...memberIds, ...memberIds, ...excludeParams]);
   if (candidates.length === 0) return [];
@@ -323,14 +323,14 @@ export async function lockAssignmentsCovering(
     id: number; anchor_id: number; member_id: number; membership_plan_id: number | null; status: string;
     starts_at: string | null; ends_at: string | null;
   }>(
-    `SELECT a.assignment_id AS id, a.id AS anchor_id, a.member_id, a.membership_plan_id,
+    `SELECT a.anchor_plan_snapshot_id AS id, a.id AS anchor_id, a.member_id, a.membership_plan_id,
             a.assignment_status AS status,
             COALESCE((SELECT DATE_FORMAT(pa.starts_at, '%Y-%m-%d') FROM plan_snapshots pa
-                       WHERE pa.gym_id = a.gym_id AND ${assignmentOfLegacyIdSql('a.assignment_id')} LIMIT 1),
+                       WHERE pa.gym_id = a.gym_id AND ${assignmentOfLegacyIdSql('a.anchor_plan_snapshot_id')} LIMIT 1),
                      DATE_FORMAT(a.starts_at, '%Y-%m-%d')) AS starts_at,
             DATE_FORMAT(a.assignment_ends_at, '%Y-%m-%d') AS ends_at
        FROM plan_snapshots a
-      WHERE a.gym_id = ? AND a.assignment_id = a.id AND a.assignment_id IN (${ids.map(() => '?').join(',')})
+      WHERE a.gym_id = ? AND a.anchor_plan_snapshot_id = a.id AND a.anchor_plan_snapshot_id IN (${ids.map(() => '?').join(',')})
       ORDER BY a.id FOR UPDATE`,
     [gymId, ...ids]);
   return rows
@@ -366,7 +366,7 @@ export async function planAssignmentIdOf(exec: Exec, gymId: string, userMembersh
  */
 export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: number): Promise<void> {
   const { rows } = await tx.query<{ id: number; um_id: number | null; shared: number }>(
-    `SELECT s.id, s.assignment_id AS um_id,
+    `SELECT s.id, s.anchor_plan_snapshot_id AS um_id,
             ${planSnapshotSharedSql('s.id', 'psj.product_set_id')} AS shared
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id AND s.gym_id = ?
@@ -383,7 +383,7 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
     await tx.query(
       // M6b-51d-7a: the assignment's last modifier is its anchor's (`writeAssignmentLifecycle()`).
       `UPDATE plan_snapshots s
-         JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.id = s.assignment_id
+         JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.id = s.anchor_plan_snapshot_id
           SET s.modified_at = asg.assignment_modified_at,
               s.modified_by = asg.assignment_modified_by
         WHERE s.id = ? AND s.gym_id = ?`,
@@ -393,7 +393,7 @@ export async function syncPlanAssignment(tx: Exec, gymId: string, productSetId: 
 
 /**
  * Deletes plan snapshots no Product Set links any more, and is the only way production code deletes
- * one. The anchor of an assignment (`assignment_id = id`) is never deleted while another snapshot of
+ * one. The anchor of an assignment (`anchor_plan_snapshot_id = id`) is never deleted while another snapshot of
  * that assignment survives: the self FK refuses it, and such a row is skipped here so the rest of the
  * delete still happens. InnoDB also refuses to delete a row that references itself under RESTRICT, so
  * a snapshot about to go is un-anchored first, in the same transaction. Two passes, so an anchor whose
@@ -408,14 +408,14 @@ export async function deleteUnlinkedPlanSnapshots(exec: Exec, gymId: string, pla
       `SELECT s.id FROM plan_snapshots s
         WHERE s.gym_id = ? AND s.id IN (${marks})
           AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j WHERE j.plan_snapshot_id = s.id)
-          AND NOT EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.assignment_id = s.id AND o.id <> s.id)
+          AND NOT EXISTS (SELECT 1 FROM plan_snapshots o WHERE o.anchor_plan_snapshot_id = s.id AND o.id <> s.id)
           AND NOT EXISTS (SELECT 1 FROM plan_snapshots h WHERE h.promotions_plan_snapshot_id = s.id)`,
       [gymId, ...planSnapshotIds]);
     const ids = rows.map((r) => Number(r.id));
     if (ids.length === 0) return;
     const idMarks = ids.map(() => '?').join(',');
     await exec.query(
-      `UPDATE plan_snapshots SET assignment_id = NULL WHERE gym_id = ? AND id IN (${idMarks}) AND assignment_id = id`,
+      `UPDATE plan_snapshots SET anchor_plan_snapshot_id = NULL WHERE gym_id = ? AND id IN (${idMarks}) AND anchor_plan_snapshot_id = id`,
       [gymId, ...ids]);
     await exec.query(`DELETE FROM plan_snapshots WHERE gym_id = ? AND id IN (${idMarks})`, [gymId, ...ids]);
   }
@@ -435,7 +435,7 @@ export async function assignmentReplacementOf(
 ): Promise<{ replaceOnActivation: boolean; replacesUserMembershipId: number | null }> {
   const { rows } = await exec.query<{ replace_on_activation: number | null; replaces: number | null }>(
     `SELECT pa.replace_on_activation,
-            (SELECT rep.assignment_id FROM plan_snapshots rep
+            (SELECT rep.anchor_plan_snapshot_id FROM plan_snapshots rep
               WHERE rep.id = pa.replaces_assignment_id AND rep.gym_id = pa.gym_id) AS replaces
        FROM plan_snapshots pa
       WHERE pa.gym_id = ? AND ${assignmentOfLegacyIdSql('?')}
@@ -474,7 +474,7 @@ export async function writeAssignmentReplacement(
   if (sets.length === 0) return;
   await exec.query(
     `UPDATE plan_snapshots s SET ${sets.join(', ')}
-      WHERE s.gym_id = ? AND s.assignment_id = ?
+      WHERE s.gym_id = ? AND s.anchor_plan_snapshot_id = ?
         AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j1
                          JOIN product_set_plan_snapshots j2
                            ON j2.plan_snapshot_id = j1.plan_snapshot_id AND j2.product_set_id <> j1.product_set_id
@@ -499,7 +499,7 @@ export async function writeAssignmentPurchasedAt(
     ? "AND s.status NOT IN ('active_cancel_at_period_end','cancelled','expired','superseded')" : '';
   await exec.query(
     `UPDATE plan_snapshots s SET ${set}
-      WHERE s.gym_id = ? AND s.assignment_id = ? ${guard}
+      WHERE s.gym_id = ? AND s.anchor_plan_snapshot_id = ? ${guard}
         AND NOT EXISTS (SELECT 1 FROM product_set_plan_snapshots j1
                          JOIN product_set_plan_snapshots j2
                            ON j2.plan_snapshot_id = j1.plan_snapshot_id AND j2.product_set_id <> j1.product_set_id

@@ -80,9 +80,9 @@ describe('the Member card plan history reads plan_snapshots', () => {
   it('reports the latest modifier across the assignment\'s snapshots, not only the current one', async () => {
     const { owner, um } = await activePlan();
     const { rows } = await db.query<any>(
-      'SELECT id FROM plan_snapshots WHERE gym_id = ? AND assignment_id = ? ORDER BY id', [gymId, um]);
+      'SELECT id FROM plan_snapshots WHERE gym_id = ? AND anchor_plan_snapshot_id = ? ORDER BY id', [gymId, um]);
     await db.query(
-      'UPDATE plan_snapshots SET modified_at = ?, modified_by = ? WHERE gym_id = ? AND assignment_id = ?',
+      'UPDATE plan_snapshots SET modified_at = ?, modified_by = ? WHERE gym_id = ? AND anchor_plan_snapshot_id = ?',
       ['2026-01-01 00:00:00', 'Older Person', gymId, um]);
     await db.query('UPDATE plan_snapshots SET modified_at = ?, modified_by = ? WHERE id = ?',
       ['2026-06-01 00:00:00', 'Latest Person', rows[0].id]);

@@ -9,7 +9,7 @@
  * record of the assignment, so the change has to land on a snapshot, and Oscar's rule says which:
  *
  *   1. the snapshot is shared, so a new one is created for the Product Set being changed;
- *   2. it is the same logical assignment (same `assignment_id`, same `assignment_id`);
+ *   2. it is the same logical assignment (same `anchor_plan_snapshot_id`);
  *   3. the previous snapshot and the Product Sets that link it are left exactly as they are;
  *   4. the copy reuses the very same Promotion snapshot records (`promotions_plan_snapshot_id`,
  *      migration 420): none is created or copied;
@@ -27,7 +27,7 @@
  * with nothing left to run, replaced, expired, or superseded by a changed plan) leaves the Active set,
  * so nothing above reached it: its last snapshot kept reading `active` where older Product Sets share
  * it. Oscar's cancellation workflow says where the closed state goes: the Product Set the change
- * produced holds a copy of the snapshot (same `assignment_id`) carrying the new status.
+ * produced holds a copy of the snapshot (same `anchor_plan_snapshot_id`) carrying the new status.
  * `carryClosedAssignments()` therefore links such a snapshot to the owner's Active set **for the record
  * only** (`entitlement_only = 1`: never billed, projected, primary or cloned onto a successor), and the
  * copy rule above then writes the closed status on that set's own copy. The snapshot a superseded set
@@ -62,8 +62,8 @@ const CLOSED_SQL = CLOSED_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(',');
  * lifecycle columns migration 453 put there (`assignment_status`, …), written only by
  * `writeAssignmentLifecycle()` (#2125 M6b-51c-5; until then this read `user_memberships`).
  */
-const ASSIGNMENT_OF_SNAPSHOT = `JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.assignment_id = asg.id
-                                     AND asg.assignment_id = s.assignment_id`;
+const ASSIGNMENT_OF_SNAPSHOT = `JOIN plan_snapshots asg ON asg.gym_id = s.gym_id AND asg.anchor_plan_snapshot_id = asg.id
+                                     AND asg.anchor_plan_snapshot_id = s.anchor_plan_snapshot_id`;
 
 /** The status a snapshot of an Active set, linked by `psj`, holds for its assignment `asg`. */
 const WANTED_STATUS = `IF(asg.assignment_status IN (${MOVED_ON_SQL}) OR (psj.entitlement_only = 1 AND asg.assignment_status = 'superseded'), asg.assignment_status, 'active')`;
@@ -174,10 +174,10 @@ export async function settleSharedPlanLifecycle(tx: Tx, gymId: string, productSe
  */
 const UNSTATED_CLOSED_FROM = `
   FROM product_sets ps
-  JOIN plan_snapshots s ON s.gym_id = ps.gym_id AND s.member_id = ps.owner_member_id AND s.assignment_id = s.id
+  JOIN plan_snapshots s ON s.gym_id = ps.gym_id AND s.member_id = ps.owner_member_id AND s.anchor_plan_snapshot_id = s.id
   ${ASSIGNMENT_OF_SNAPSHOT} AND asg.assignment_status IN (${CLOSED_SQL})
   JOIN plan_snapshots cur ON cur.gym_id = s.gym_id AND cur.id = ${currentAssignmentSnapshotSql('s.id', 's.gym_id')}
-                         AND cur.assignment_id = asg.assignment_id
+                         AND cur.anchor_plan_snapshot_id = asg.anchor_plan_snapshot_id
  WHERE ps.status = 'active' AND NOT (cur.status <=> asg.assignment_status)`;
 
 /**
@@ -285,7 +285,7 @@ const UNSTATED_CLOSED_IN_PLACE_FROM = `
   ${ASSIGNMENT_OF_SNAPSHOT} AND asg.assignment_status IN (${CLOSED_SQL})
  WHERE psj.entitlement_only = 0
    AND NOT ${planSnapshotSharedSql('s.id', 'psj.product_set_id')}
-   AND s.id = ${currentAssignmentSnapshotSql('s.assignment_id', 's.gym_id')}
+   AND s.id = ${currentAssignmentSnapshotSql('s.anchor_plan_snapshot_id', 's.gym_id')}
    AND (NOT (s.ends_at <=> asg.assignment_ends_at) OR NOT (s.closed_at <=> asg.assignment_closed_at)
         OR (asg.assignment_status <> 'superseded' AND NOT (s.status <=> asg.assignment_status)))`;
 

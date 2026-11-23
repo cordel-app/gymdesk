@@ -47,7 +47,7 @@ export async function linkCancellingPlans(tx: Tx, gymId: string, productSetId: n
       WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = ?
         AND pa.ends_at IS NOT NULL AND pa.ends_at >= UTC_DATE()
         AND ${isCurrentAssignmentSnapshotSql('pa')}
-      ORDER BY pa.starts_at, pa.assignment_id`,
+      ORDER BY pa.starts_at, pa.anchor_plan_snapshot_id`,
     [gymId, Number(owner[0].owner_member_id), CANCELS_AT_PERIOD_END_STATUS]);
   for (const r of rows) await linkForEntitlement(tx, productSetId, Number(r.snapshot_id));
   return rows.length;

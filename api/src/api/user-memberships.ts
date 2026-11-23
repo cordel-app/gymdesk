@@ -1,4 +1,5 @@
 import { primaryPlanSnapshotId, promotionHolderSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
+import { purchaseOfSet, stampEventPurchase } from './purchases';
 import { generatePaidRepresentations } from './billing-invoices';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
@@ -459,7 +460,7 @@ async function loadApplicationsKeyedBy(
   const marks = ids.map(() => '?').join(',');
   const { rows } = column === 'user_membership_id'
     ? await exec.query(
-      `SELECT pps.id, pa.assignment_id AS owner_key, pps.promotion_id, pps.status,
+      `SELECT pps.id, pa.anchor_plan_snapshot_id AS owner_key, pps.promotion_id, pps.status,
               pps.applied_at, pps.revoked_at, pps.snapshot,
               p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
               p.applies_to
@@ -467,7 +468,7 @@ async function loadApplicationsKeyedBy(
          JOIN plan_promotion_snapshots pps
            ON pps.plan_snapshot_id = ${promotionHolderSql('pa.id')} AND pps.gym_id = pa.gym_id
          LEFT JOIN promotions p ON p.id = pps.promotion_id
-        WHERE pa.assignment_id IN (${marks}) AND pa.gym_id = ?
+        WHERE pa.anchor_plan_snapshot_id IN (${marks}) AND pa.gym_id = ?
           AND ${isCurrentAssignmentSnapshotSql('pa')}`,
       [...ids, gymId])
     // #3026 stage 3d-1: a version read directly takes its Plan applications from its primary plan
@@ -1368,6 +1369,8 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
            typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
         );
         paidEventId = Number(cashEventId);
+        // #3251 stage 2: the first payment is the checkout's (its set's cart, when it has one).
+        await stampEventPurchase(tx, gymId, paidEventId, await purchaseOfSet(tx, gymId, setId));
         await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
       }
       return committed;
@@ -1600,7 +1603,7 @@ userMembershipsRouter.post('/:id/edit-draft', requireRole('admin'), async (req, 
       if (!active) return { kind: 'not_projected' as const };
       const { rows: owned } = await tx.query<any>(
         // #2125 M6b-51d-3: the Draft assignment is read and locked on its anchor (the set's link).
-        `SELECT ps.id, a.assignment_id AS um_id
+        `SELECT ps.id, a.anchor_plan_snapshot_id AS um_id
            FROM product_sets ps JOIN plan_snapshots a ON a.id = ps.plan_assignment_id AND a.gym_id = ps.gym_id
           WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'in_cart' AND a.assignment_status = 'in_cart'
           FOR UPDATE`,

@@ -686,7 +686,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
          FROM plan_snapshots pa
          JOIN plan_snapshot_beneficiaries pab ON pab.plan_snapshot_id = pa.id AND pab.gym_id = pa.gym_id
          WHERE pa.membership_plan_id = ? AND pa.gym_id = ? AND pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL})
-           AND pa.assignment_id IS NOT NULL
+           AND pa.anchor_plan_snapshot_id IS NOT NULL
            AND ${isCurrentAssignmentSnapshotSql('pa')}
          GROUP BY pa.id
          HAVING COUNT(*) > ?

@@ -3,6 +3,7 @@ import { writeEventLines } from './billing-event-lines-writer';
 import { commitPendingCancellations } from './plan-pending-cancellation';
 import { commitPendingReactivations } from './plan-pending-reactivation';
 import { stampAssignmentId } from './plan-assignment-sync';
+import { stampSnapshotPurchase } from './purchases';
 import { toLineDirectDiscount } from '../domain/lineDirectDiscount';
 import type { ItemOrigin } from '../domain/itemOrigin';
 import { db, Tx } from '../infra/db';
@@ -217,7 +218,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
          (gym_id, member_id, membership_plan_id, status, starts_at, ends_at,
           schedule_id, membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
           auto_renew, recurring_billing_interval, recurring_billing_unit, origin, membership_fee_scope,
-          member_limit, assignment_id, created_by)
+          member_limit, anchor_plan_snapshot_id, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, set.owner_member_id, membershipPlanId, set.status, toDateOnly(set.starts_at),
         set.ends_at != null ? toDateOnly(set.ends_at) : null, ...values, set.user_membership_id ?? null,
@@ -225,6 +226,8 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     snapshotId = Number(insertId);
     await tx.query('INSERT IGNORE INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id) VALUES (?, ?)', [productSetId, snapshotId]);
     await stampAssignmentId(tx, gymId, snapshotId);
+    // #3251 stage 2: the plan is frozen in the set's cart (none for a version that is not a checkout).
+    await stampSnapshotPurchase(tx, gymId, 'plan_snapshots', snapshotId, productSetId);
     await tx.query(
       'INSERT INTO plan_snapshot_beneficiaries (gym_id, plan_snapshot_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
       [gymId, snapshotId, set.owner_member_id]);
