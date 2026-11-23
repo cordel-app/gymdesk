@@ -22,6 +22,7 @@ import { beforeCommit, type Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CART_ITEM_STATUS, CartItemStatus, derivePurchaseStatus } from '../domain/purchaseStatus';
 import { CART_EXPIRES_AT_SQL, cartClockSql, purchaseCartExpiredSql } from '../domain/cartExpiry';
+import { currentRequestChannel } from '../infra/requestChannel';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -70,7 +71,12 @@ export async function refreshSetCart(tx: Conn, gymId: string, productSetId: numb
   return refreshCart(tx, gymId, await purchaseOfSet(tx, gymId, productSetId));
 }
 
-/** A new cart in `status` (a checkout started outside the cart is `pending_payment` from birth). */
+/**
+ * A new cart in `status` (a checkout started outside the cart is `pending_payment` from birth).
+ * #3278: `created_by` (who) and `channel` (which application, from the route the server is
+ * answering, `infra/requestChannel.ts`) are written here once and never updated, so editing,
+ * paying, expiring or recovering the cart, or merging a newer cart into it, keeps both.
+ */
 export async function createPurchase(
   tx: Conn, gymId: string, ownerMemberId: number, status: string, actorName: string | null,
 ): Promise<number> {
@@ -78,10 +84,10 @@ export async function createPurchase(
     // #3270: the name basis is the creation instant (UTC, ISO 8601), written once from the very
     // `UTC_TIMESTAMP()` `created_at` defaults to in this statement; nothing updates it.
     // #3274: a cart opened now has two hours; a checkout started outside the cart has no cart clock.
-    `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, name, created_by)
+    `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, name, created_by, channel)
      VALUES (?, ?, ?, IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL),
-             DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), ?)`,
-    [gymId, ownerMemberId, status, status, actorName ?? SYSTEM_ACTOR]);
+             DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), ?, ?)`,
+    [gymId, ownerMemberId, status, status, actorName ?? SYSTEM_ACTOR, currentRequestChannel()]);
   return Number(insertId);
 }
 

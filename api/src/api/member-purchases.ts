@@ -14,6 +14,7 @@
  * `billing_events.purchase_id` names it — never the Member's latest event, a name, a date or an
  * amount. Each event's payment details come from its own attempts (`domain/purchasePayment.ts`).
  */
+import { toPurchaseChannel, type PurchaseChannel } from '../domain/purchaseChannel';
 import { db } from '../infra/db';
 import { loadRefundSummaries } from './billing-event-refunds';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
@@ -97,6 +98,8 @@ export interface MemberPurchase {
   status: string;
   created_at: string;
   created_by: string | null;
+  /** #3278: the application the purchase was initiated through; null when unknown. */
+  channel: PurchaseChannel | null;
   owner: PurchaseMember;
   plans: PurchasePlan[];
   products: PurchaseProduct[];
@@ -128,7 +131,7 @@ export async function loadMemberPurchases(
   const { rows: countRows } = await db.query<{ total: number }>(
     `SELECT COUNT(*) AS total FROM purchases p WHERE ${MEMBER_PURCHASE_PREDICATE}`, params);
   const { rows: purchaseRows } = await db.query<any>(
-    `SELECT p.id, p.name, p.status, p.created_at, p.created_by, p.owner_member_id, o.name AS owner_name
+    `SELECT p.id, p.name, p.status, p.created_at, p.created_by, p.channel, p.owner_member_id, o.name AS owner_name
        FROM purchases p
        LEFT JOIN members o ON o.id = p.owner_member_id AND o.gym_id = p.gym_id
       WHERE ${MEMBER_PURCHASE_PREDICATE}
@@ -155,6 +158,7 @@ export async function loadMemberPurchases(
       status: r.status,
       created_at: iso(r.created_at) as string,
       created_by: r.created_by ?? null,
+      channel: toPurchaseChannel(r.channel),
       owner: member(r.owner_member_id, r.owner_name) as PurchaseMember,
       plans: plans.get(id) ?? [],
       products: products.get(id) ?? [],
