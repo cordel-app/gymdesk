@@ -1089,19 +1089,16 @@ export async function syncLegacySystemExercisesToBase(): Promise<void> {
 /**
  * #2125 M5c — what a monthly charge starting today owes on its first payment under the
  * billing calendar (Oscar, 2026-11-11): the full period when today is the 1st, otherwise
- * the stretch to the next 1st prorated by the proration rule (monthly price ÷ 31 × days).
+ * the stretch to the next 1st prorated over the actual length of this month (#3280: the
+ * Membership Fee and Plan-included Products divide as #3279's recurring Products do).
  */
 export function proratedToNextFirst(monthly: number, today: Date = new Date()): number {
-  if (today.getUTCDate() === 1) return monthly;
-  const start = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  const next = Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1);
-  const days = Math.min(Math.round((next - start) / 86_400_000), 31);
-  return Math.round(monthly * days / 31 * 100) / 100;
+  return productProratedToNextFirst(monthly, today);
 }
 
 /**
  * #3279 — what a monthly recurring **Product** starting today owes first: the stretch to the next
- * 1st over the actual length of this month (a Membership Fee keeps `proratedToNextFirst()`'s 31).
+ * 1st over the actual length of this month (since #3280 the Membership Fee's figure too).
  */
 export function productProratedToNextFirst(monthly: number, today: Date = new Date()): number {
   if (today.getUTCDate() === 1) return monthly;
