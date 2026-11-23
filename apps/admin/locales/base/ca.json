@@ -528,6 +528,8 @@
     "required_products_title": "Productes addicionals necessaris",
     "required_products_message": "Aquesta promoció requereix incloure els productes addicionals següents:",
     "required_products_question": "Aquests productes s'afegiran a aquest membre i la promoció seleccionada s'aplicarà a tots ells. Vols continuar?",
+    "required_products_promotion": "Promoció",
+    "required_products_items": "Productes necessaris",
     "required_products_confirm": "Confirma",
     "add_product_error_direct_discount_not_allowed": "Només un administrador pot aplicar un descompte directe.",
     "add_product_error_duplicate_promotion": "Aquesta promoció ja està aplicada a aquest producte.",

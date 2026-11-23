@@ -27,8 +27,8 @@ import { PromotionPicker } from '@/components/PromotionPicker';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { promotionBenefitDescription } from '@/lib/promotionSelection';
 import {
-  hasPromotionBlock, parseDiscountInput, purchaseErrorKey, showsAssigneeSelector,
-  type EligibleAssignee, type PurchasableProductOption, type PurchaseQuote,
+  hasPromotionBlock, parseDiscountInput, purchaseErrorKey, requiringPromotions, showsAssigneeSelector,
+  type EligibleAssignee, type RequiredProduct, type PurchasableProductOption, type PurchaseQuote,
 } from './purchasedProductsView';
 
 const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixed(2)}€` : `${n.toFixed(2)} ${currency}`);
@@ -177,6 +177,12 @@ export function useAddProductForm({
   function confirmRequired() {
     setConfirmedKey(selectionKey);
     setDialogConfirmedKey(selectionKey);
+    // #3236: confirming saves at once — the required Products are added and the Promotion
+    // applied without a separate Save. An unsavable form (bad quantity or discount) only confirms.
+    if (quantityValid && !Number.isNaN(discountValue)) {
+      if (edit) void saveEdit(true);
+      else void create(false, true);
+    }
   }
 
   function cancelRequired() {
@@ -197,7 +203,7 @@ export function useAddProductForm({
   const quantityValue = Number(quantity);
   const quantityValid = Number.isInteger(quantityValue) && quantityValue >= 1 && quantityValue <= quantityMax;
 
-  async function saveEdit() {
+  async function saveEdit(requiredConfirmed = false) {
     if (!edit) return;
     setBusy(true);
     setError(null);
@@ -209,7 +215,7 @@ export function useAddProductForm({
           quantity: quantityValue,
           promotion_ids: promotionIds,
           // #3168: confirmed in the dialog, the Promotion's required Products are added with the edit.
-          ...(requiredProducts.length > 0 && dialogConfirmedKey === selectionKey ? { confirm_required_products: true } : {}),
+          ...(requiredProducts.length > 0 && (requiredConfirmed || dialogConfirmedKey === selectionKey) ? { confirm_required_products: true } : {}),
           // The direct discount is the Admin's alone; anyone else leaves it as stored.
           ...(isAdmin ? { direct_discount_percent: discountValue } : oneTime ? { direct_discount_percent: edit.directDiscountPercent } : {}),
         }),
@@ -224,8 +230,8 @@ export function useAddProductForm({
     }
   }
 
-  async function create(confirmBillingFrequency = false) {
-    if (edit) return saveEdit();
+  async function create(confirmBillingFrequency = false, requiredConfirmed = false) {
+    if (edit) return saveEdit(requiredConfirmed);
     if (productId == null || !product) return;
     setFrequencyPrompt(null);
     setBusy(true);
@@ -238,7 +244,7 @@ export function useAddProductForm({
           ...(showAssignee ? { assigned_member_id: assignedMemberId } : {}),
           ...(product.recurring ? { quantity: quantityValue } : { draft: true, quantity: quantityValue }),
           ...(confirmBillingFrequency ? { confirm_billing_frequency: true } : {}),
-          ...(requiredProducts.length > 0 && !requiredPending ? { confirm_required_products: true } : {}),
+          ...(requiredProducts.length > 0 && (requiredConfirmed || !requiredPending) ? { confirm_required_products: true } : {}),
         }),
       });
       if (res.kind === 'one_time_draft') {
@@ -441,13 +447,11 @@ export function AddProductFeedback({ form: f }: { form: AddProductForm }) {
       {error && <p role="alert" style={formErrorStyle}>{error}</p>}
       <ConfirmDialog
         open={requiredPending && !outcome}
-        message={`${t('required_products_title')}. ${t('required_products_message')}`}
-        details={(
-          <>
-            <ul style={{ margin: 0, paddingLeft: 20 }}>{requiredProducts.map((p) => <li key={p.id}>{p.name}</li>)}</ul>
-            <p style={{ margin: '10px 0 0', fontSize: 14 }}>{t('required_products_question')}</p>
-          </>
-        )}
+        title={t('required_products_title')}
+        message={t('required_products_message')}
+        details={<RequiredProductsItems products={requiredProducts} />}
+        question={t('required_products_question')}
+        busy={f.busy}
         confirmLabel={t('required_products_confirm')}
         cancelLabel={t('add_product_cancel')}
         onConfirm={() => f.confirmRequired()}
@@ -580,6 +584,49 @@ export function AddProductPurchase(props: Parameters<typeof useAddProductForm>[0
  */
 export function EditDraftLineForm(props: Omit<Parameters<typeof useAddProductForm>[0], 'recurringOnly' | 'edit'> & { edit: DraftLineEdit }) {
   return <AddProductPurchase {...props} recurringOnly />;
+}
+
+/**
+ * #3236 — what the required-products confirmation is about: the Promotion(s) that triggered it,
+ * then each required Product, each a circular thumbnail that opens its detail modal (the image,
+ * name and description, as on the Products page) — the frequency prompt's own layout.
+ */
+function RequiredProductsItems({ products }: { products: readonly RequiredProduct[] }) {
+  const t = useTranslations('members');
+  const [shown, setShown] = useState<{ name: string; image_url: string | null; description: string | null } | null>(null);
+  const row = (key: string, kind: 'promotion' | 'product', it: {
+    name: string; description?: string | null; image_url?: string | null; image_thumbnail_url?: string | null;
+  }) => (
+    <li key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+      <button type="button" data-required-item-thumbnail={kind} aria-label={it.name}
+        onClick={(e) => { e.stopPropagation(); setShown({ name: it.name, image_url: it.image_url ?? null, description: it.description ?? null }); }}
+        style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
+        <MemberAvatar name={it.name} imageUrl={it.image_thumbnail_url ?? it.image_url ?? null} size={32} />
+      </button>
+      <span style={{ fontSize: 14, minWidth: 0 }}>{it.name}</span>
+    </li>
+  );
+  const listStyle: React.CSSProperties = { margin: '4px 0 0', padding: 0, listStyle: 'none', maxHeight: 180, overflowY: 'auto' };
+  const promotions = requiringPromotions(products);
+  return (
+    <div data-required-products>
+      <ProfessionalServiceImageModal
+        target={shown ? { name: shown.name, imageUrl: shown.image_url, description: shown.description } : null}
+        onClose={() => setShown(null)}
+        closeLabel={t('close')}
+        noImageLabel={t('purchase_exp_image_none')}
+        noDescriptionLabel={t('purchase_exp_no_description')}
+      />
+      {promotions.length > 0 && (
+        <>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>{t('required_products_promotion')}</div>
+          <ul style={listStyle}>{promotions.map((p) => row(`promotion-${p.id}`, 'promotion', p))}</ul>
+        </>
+      )}
+      <div style={{ fontWeight: 600, fontSize: 14, marginTop: promotions.length > 0 ? 12 : 0 }}>{t('required_products_items')}</div>
+      <ul style={listStyle}>{products.map((p) => row(`product-${p.id}`, 'product', p))}</ul>
+    </div>
+  );
 }
 
 /**
