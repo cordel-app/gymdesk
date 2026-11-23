@@ -92,6 +92,8 @@ export interface PurchaseBillingEvent extends PurchasePayment {
 
 export interface MemberPurchase {
   id: number;
+  /** #3270: the name basis, the purchase's creation instant (UTC ISO 8601); the Admin composes the label. */
+  name: string | null;
   status: string;
   created_at: string;
   created_by: string | null;
@@ -126,7 +128,7 @@ export async function loadMemberPurchases(
   const { rows: countRows } = await db.query<{ total: number }>(
     `SELECT COUNT(*) AS total FROM purchases p WHERE ${MEMBER_PURCHASE_PREDICATE}`, params);
   const { rows: purchaseRows } = await db.query<any>(
-    `SELECT p.id, p.status, p.created_at, p.created_by, p.owner_member_id, o.name AS owner_name
+    `SELECT p.id, p.name, p.status, p.created_at, p.created_by, p.owner_member_id, o.name AS owner_name
        FROM purchases p
        LEFT JOIN members o ON o.id = p.owner_member_id AND o.gym_id = p.gym_id
       WHERE ${MEMBER_PURCHASE_PREDICATE}
@@ -149,6 +151,7 @@ export async function loadMemberPurchases(
     const id = Number(r.id);
     return {
       id,
+      name: r.name != null ? String(r.name) : null,
       status: r.status,
       created_at: iso(r.created_at) as string,
       created_by: r.created_by ?? null,

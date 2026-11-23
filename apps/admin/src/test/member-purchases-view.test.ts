@@ -1,19 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseEventPath, purchaseIsEmpty,
-  purchaseStatusLabelKey,
 } from '@/app/[locale]/members/purchasesTabView';
 
 // #3273 — the Purchases tab's presentation decisions.
 const owner = { id: 1, name: 'Owner' };
 
 describe('purchasesTabView (#3273)', () => {
-  it('labels the four purchase statuses and nothing else', () => {
-    expect(['in_cart', 'pending_payment', 'completed', 'cancelled'].map(purchaseStatusLabelKey))
-      .toEqual(['purchases_status_in_cart', 'purchases_status_pending_payment', 'purchases_status_completed', 'purchases_status_cancelled']);
-    expect(purchaseStatusLabelKey('active')).toBeNull();
-  });
-
   it('names the beneficiary only where it is not the buyer', () => {
     expect(beneficiaryNameIfOther(owner, owner)).toBeNull();
     expect(beneficiaryNameIfOther(null, owner)).toBeNull();

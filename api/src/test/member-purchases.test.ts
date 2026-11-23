@@ -23,8 +23,8 @@ async function member(gymId: string, name: string): Promise<number> {
 
 async function purchase(gymId: string, ownerId: number, status: string, createdAt: string): Promise<number> {
   const { insertId } = await db.query(
-    'INSERT INTO purchases (gym_id, owner_member_id, status, created_at, created_by) VALUES (?, ?, ?, ?, ?)',
-    [gymId, ownerId, status, createdAt, 'Tester']);
+    'INSERT INTO purchases (gym_id, owner_member_id, status, name, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+    [gymId, ownerId, status, `${createdAt.replace(' ', 'T')}Z`, createdAt, 'Tester']);
   return Number(insertId);
 }
 
@@ -180,6 +180,8 @@ describe('GET /payments/purchases (#3273)', () => {
     expect(body.items.map((p) => p.id)).toEqual([pCart, pRefund, pChildOnly, pRetry, pPlan]);
     expect(body.total).toBe(5);
     expect(body.items.map((p) => p.status)).toEqual(['in_cart', 'completed', 'cancelled', 'completed', 'completed']);
+    // #3270's name basis, the creation instant, is reported for the Admin to compose the label.
+    expect(body.items[0].name).toBe('2026-11-20T12:00:00Z');
     expect(body.items.find((p) => p.id === pOutsider)).toBeUndefined();
   });
 

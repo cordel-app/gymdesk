@@ -56,6 +56,8 @@ export interface PurchaseBillingEvent {
 
 export interface MemberPurchase {
   id: number;
+  /** #3270: the creation instant the purchase is named after. */
+  name: string | null;
   status: string;
   created_at: string;
   created_by: string | null;
@@ -63,14 +65,6 @@ export interface MemberPurchase {
   plans: PurchasePlan[];
   products: PurchaseProduct[];
   billing_events: PurchaseBillingEvent[];
-}
-
-/** The four lifecycle states of a purchase (#3251), each with its own label key. */
-export const PURCHASE_STATUSES = ['in_cart', 'pending_payment', 'completed', 'cancelled'] as const;
-
-/** The `members.*` key of a purchase status's label; `null` for a value the tab does not know. */
-export function purchaseStatusLabelKey(status: string): string | null {
-  return (PURCHASE_STATUSES as readonly string[]).includes(status) ? `purchases_status_${status}` : null;
 }
 
 /**

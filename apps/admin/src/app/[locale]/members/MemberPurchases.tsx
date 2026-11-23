@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDateTime } from '@/lib/gymFormat';
-import { StatusBadge } from '@/components/StatusBadge';
+import { PurchaseHeading } from './PurchaseHeading';
 import {
   cardDetailLabelStyle, cardDetailRowStyle, cardDetailValueStyle, cardExpandCaretStyle, cardExpandToggleStyle,
   cardMutedTextStyle, cardSubLabelStyle, cardTextLinkStyle, formErrorStyle, innerCardStyle,
@@ -14,7 +14,7 @@ import {
 import { NormalizedPaymentStatusBadge, BillingEventStatusBadge } from '../payments/billing-events/BillingEventShared';
 import {
   beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseEventPath, purchaseIsEmpty,
-  purchaseStatusLabelKey, type MemberPurchase, type PurchaseBillingEvent,
+  type MemberPurchase, type PurchaseBillingEvent,
 } from './purchasesTabView';
 
 /**
@@ -45,7 +45,6 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
   if (items.length === 0) return <p style={cardMutedTextStyle}>{t('members.purchases_empty')}</p>;
 
   const toggle = (id: number) => setOpen((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const statusLabel = (s: string) => { const k = purchaseStatusLabelKey(s); return k ? t(`members.${k}` as any) : s; };
   const typeLabel = (type: string | null) => { const k = productTypeLabelKey(type); return k ? t(k as any) : (type ?? ''); };
   const forName = (name: string | null) => (name ? ` · ${t('members.purchases_for', { name })}` : '');
 
@@ -63,9 +62,9 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
               style={{ ...cardExpandToggleStyle, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', width: '100%' }}
             >
               <span style={{ ...cardExpandCaretStyle, transform: expanded ? 'rotate(90deg)' : 'none' }}>▶</span>
-              <strong>{t('members.purchases_name', { id: p.id })}</strong>
-              <StatusBadge status={p.status} label={statusLabel(p.status)} />
-              <span style={cardMutedTextStyle}>{formatGymDateTime(p.created_at, gym)}</span>
+              {/* #3270's name: the translated label and the creation instant in the browser's locale. */}
+              <PurchaseHeading purchase={{ id: p.id, name: p.name ?? p.created_at, status: p.status }} />
+              <span style={cardMutedTextStyle}>#{p.id}</span>
               {event && <span style={cardMutedTextStyle}>· {t('members.purchases_event_ref', { id: event.id })}</span>}
             </button>
 
