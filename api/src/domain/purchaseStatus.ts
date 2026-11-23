@@ -1,7 +1,7 @@
 /**
  * #3251 — what a cart's status is, from the statuses of what it holds (pure).
  *
- * A cart (`purchases`, migration 463) holds a Product Set version and one-time Product lines. Each
+ * A cart (`purchases`, migration 464) holds a Product Set version and one-time Product lines. Each
  * maps to one of four cart-item states; a status a cart does not answer for (none today) maps to null
  * and is ignored. The cart's status is the most advanced one still in play: a payment in flight beats
  * an open cart, an open cart beats a finished checkout, and a checkout that completed beats one whose

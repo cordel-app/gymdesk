@@ -575,6 +575,7 @@
     "summary_nothing_due": "Nothing is due today.",
     "summary_line_regular": "Regular {amount}",
     "summary_line_promotion": "Promotion: {name}",
+    "summary_line_prorated": "Prorated: {days} of {period} days",
     "summary_line_discount": "Discount −{amount}",
     "summary_line_tax": "VAT {rate}% incl.",
     "summary_total": "Total initial payment",
