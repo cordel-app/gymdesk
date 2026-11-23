@@ -212,12 +212,16 @@ async function loadMemberDetail(gymId: string, id: number | string): Promise<Rec
   // second reader of a Member must not be able to answer it differently.
   const isNewMember = await isNewMemberStatus(db, gymId, Number(rows[0].id));
   const { rows: ps } = await db.query(
-    `SELECT ${memberPaymentStatusSql('m')} AS payment_status FROM members m WHERE m.id = ? AND m.gym_id = ?`,
+    `SELECT ${memberPaymentStatusSql('m')} AS payment_status,
+            ${latestEnrollmentStatusSql('m')} AS enrollment_status
+       FROM members m WHERE m.id = ? AND m.gym_id = ?`,
     [rows[0].id, gymId],
   );
   const paymentStatus = ps[0]?.payment_status ?? null;
   return {
     ...rows[0],
+    // #3281: the header's Membership Plan Status, from the list's own rule.
+    enrollment_status: ps[0]?.enrollment_status ?? null,
     is_new_member: isNewMember,
     payment_status: paymentStatus,
     access_rights_stored: rows[0].access_rights,

@@ -1,4 +1,4 @@
-import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL } from './planAssignments';
+import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL, assignmentCoversMemberSql } from './planAssignments';
 
 /**
  * #809: "the member's enrollment status" — the highest-priority status among their
@@ -30,6 +30,13 @@ import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL } from './p
  * #3113: a member holding several plans reads as the highest-priority status among them —
  * Active (a plan pending cancellation still runs, so it counts as Active), then paused, then
  * Cancel on End Date, then every closed status. Ties go to the latest assignment, as before.
+ *
+ * #3281: "the member's plans" are the plans they **own or are covered by** — the relationship the
+ * Member card's Products tab lists (`MEMBER_MEMBERSHIP_SQL`) — so a Member covered by a family
+ * member's Duo reads that plan's status in the header too. Coverage is asked of each assignment's
+ * **current** snapshot (`assignmentCoversMemberSql()`), never of a copy an uncommitted cart owns, so
+ * a beneficiary proposed in a Draft changes nothing until it is committed. A plan that neither
+ * belongs to nor covers the Member (another family member's own) is not counted.
  */
 export function ENROLLMENT_STATUS_RANK_SQL(col: string): string {
   return `CASE WHEN ${col} IN ('active', 'to_be_canceled') THEN 0
@@ -41,7 +48,8 @@ export function ENROLLMENT_STATUS_RANK_SQL(col: string): string {
 export function latestEnrollmentStatusSql(alias: string): string {
   return `(SELECT pa.status
              FROM ${OWNED_ASSIGNMENTS_FROM_SQL}
-            WHERE pa.member_id = ${alias}.id AND pa.gym_id = ${alias}.gym_id
+            WHERE pa.gym_id = ${alias}.gym_id
+              AND (pa.member_id = ${alias}.id OR ${assignmentCoversMemberSql('pa', `${alias}.id`)})
               AND pa.status NOT IN ('in_cart', 'pending_payment')
               AND ${OWNED_ASSIGNMENT_IS_CURRENT_SQL}
             ORDER BY ${ENROLLMENT_STATUS_RANK_SQL('pa.status')}, anc.created_at DESC, pa.anchor_plan_snapshot_id DESC
