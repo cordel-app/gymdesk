@@ -166,14 +166,15 @@ export async function setTestSetAssignmentLink(
      ON DUPLICATE KEY UPDATE projects_assignment = 1`, [setId, anchorId]);
 }
 
-async function relinkTestSet(setId: number, umId: number, opts: { linkAnchor?: boolean } = {}): Promise<void> {
-  await setTestSetAssignmentLink(setId, umId, opts);
+/** Flags only: a config holder's set is linked to the assignment through the snapshots it links, never by adding one. */
+async function relinkTestSet(setId: number, umId: number): Promise<void> {
+  await setTestSetAssignmentLink(setId, umId, { linkAnchor: false });
 }
 
 /** Copies a config holder's snapshot onto a freshly created Active version. */
 async function adoptConfigHolder(setId: number, umId: number | null): Promise<void> {
   if (umId == null) return;
-  await relinkTestSet(setId, umId, { linkAnchor: false });
+  await relinkTestSet(setId, umId);
   // A version is the assignment's: it carries its plan (a plan-less version is
   // the retirement of a plan, which the projection treats as such).
   await db.query(
@@ -182,10 +183,7 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
               (SELECT membership_plan_id FROM ${fixtureAssignments()} fa WHERE fa.id = ?))
       WHERE id = ?`, [umId, setId]);
   const { rows: own } = await db.query('SELECT plan_snapshot_id AS id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
-  if (own.length > 0) {
-    await relinkTestSet(setId, umId);
-    return;
-  }
+  if (own.length > 0) return;
   const { rows: holder } = await db.query<{ id: number }>(
     `SELECT j.plan_snapshot_id AS id FROM product_set_plan_snapshots j JOIN product_sets ps ON ps.id = j.product_set_id
       WHERE ${productSetOfLegacyAssignmentSql('?', 'ps')} AND ps.id <> ? ORDER BY ps.id DESC, j.plan_snapshot_id DESC LIMIT 1`, [umId, setId]);
