@@ -62,3 +62,24 @@ export function isOwnedBaseMealImageUrl(url: string | null | undefined): boolean
   const key = storageKeyFromObjectUrl(url);
   return !!key && key.startsWith(`${PLATFORM_STORAGE_ROOT}/${MEALS_FOLDER}/`);
 }
+
+/**
+ * #3328 stage 3 — a Base Meal's status. `inactive` keeps the meal (every plan
+ * meal referencing it still reads it) but stops it being offered or accepted as
+ * a new choice. Mirrored by `chk_base_meals_status` (migration 484) and the
+ * admin's Status select; a new status goes in both.
+ */
+export const BASE_MEAL_STATUSES = ['active', 'inactive'] as const;
+export type BaseMealStatus = typeof BASE_MEAL_STATUSES[number];
+
+/** A request's `status`: absent keeps the stored value, anything outside the set is a 400 (never coerced). */
+export function parseBaseMealStatusInput(
+  body: unknown,
+): { value: BaseMealStatus | undefined } | { error: string } {
+  const raw = (body as any)?.status;
+  if (raw === undefined) return { value: undefined };
+  if (typeof raw === 'string' && (BASE_MEAL_STATUSES as readonly string[]).includes(raw)) {
+    return { value: raw as BaseMealStatus };
+  }
+  return { error: `status must be one of: ${BASE_MEAL_STATUSES.join(', ')}` };
+}

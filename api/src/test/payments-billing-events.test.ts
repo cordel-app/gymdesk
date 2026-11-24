@@ -193,6 +193,8 @@ describe('GET /payments/billing-events', () => {
     let statusMemberId: number;
     let paidId: number;
     let failedId: number;
+    let adjustmentId: number;
+    let statusChangedId: number;
 
     beforeAll(async () => {
       statusGymId = await createTestGym('BE Status Gym');
@@ -200,7 +202,8 @@ describe('GET /payments/billing-events', () => {
       statusMemberId = await createMember(statusGymId);
       paidId = await insertBillingEventOfType(statusGymId, statusMemberId, 'payment_recorded');
       failedId = await insertBillingEventOfType(statusGymId, statusMemberId, 'failed_billing');
-      await insertBillingEventOfType(statusGymId, statusMemberId, 'adjustment'); // -> 'recorded'
+      adjustmentId = await insertBillingEventOfType(statusGymId, statusMemberId, 'adjustment'); // -> no status (#3332)
+      statusChangedId = await insertBillingEventOfType(statusGymId, statusMemberId, 'status_changed');
 
       // Also give this gym a scheduled/virtual billing event so 'scheduled' filtering has something to match.
       const planId = await createPlanWithPolicy(statusGymId);
@@ -251,6 +254,26 @@ describe('GET /payments/billing-events', () => {
       expect(res.status).toBe(200);
       expect(res.body.items.length).toBeGreaterThan(0);
       expect(res.body.items.every((i: any) => i.status === 'scheduled')).toBe(true);
+    });
+
+    it('reports no status for an adjustment and never lists a status_changed row (#3332)', async () => {
+      const res = await request
+        .get('/payments/billing-events')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', statusGymId);
+      expect(res.status).toBe(200);
+      const adjustment = res.body.items.find((i: any) => i.id === adjustmentId);
+      expect(adjustment).toBeDefined();
+      expect(adjustment.status).toBeNull();
+      expect(res.body.items.some((i: any) => i.id === statusChangedId)).toBe(false);
+    });
+
+    it('refuses the retired recorded status as a filter value (#3332)', async () => {
+      const res = await request
+        .get('/payments/billing-events?status=recorded')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', statusGymId);
+      expect(res.status).toBe(400);
     });
 
     it('rejects an invalid status value with 400', async () => {

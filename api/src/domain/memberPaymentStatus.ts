@@ -33,7 +33,7 @@ const LATEST_ATTEMPT = (column: string) => `(SELECT pr.${column} FROM payment_re
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1)`;
 
-/** `deriveBillingEventStatus()` in SQL: paid | failed | pending | recorded. */
+/** `deriveBillingEventStatus()` in SQL: paid | failed | pending | waived, NULL = no payment status (#3332). */
 const EVENT_STATUS_SQL = `CASE ${LATEST_ATTEMPT('status')}
       WHEN 'completed' THEN 'paid'
       WHEN 'failed' THEN 'failed'
@@ -43,7 +43,8 @@ const EVENT_STATUS_SQL = `CASE ${LATEST_ATTEMPT('status')}
         WHEN 'recurring_payment' THEN 'paid'
         WHEN 'payment_recorded' THEN 'paid'
         WHEN 'failed_billing' THEN 'failed'
-        ELSE 'recorded' END
+        WHEN 'waived_billing' THEN 'waived'
+        ELSE NULL END
     END`;
 
 /** `normalizePaymentStatus()` in SQL over the latest attempt's raw provider status. */
@@ -75,7 +76,7 @@ export function memberPaymentStatusSql(memberAlias: string): string {
              AND be.is_scheduled = 0
              AND be.cancelled_at IS NULL
              AND be.event_type NOT IN (${excluded})
-             AND ${EVENT_STATUS_SQL} <> 'recorded'
+             AND ${EVENT_STATUS_SQL} IS NOT NULL
            ORDER BY (${EVENT_STATUS_SQL} = 'paid'), be.created_at DESC, be.id DESC
            LIMIT 1)`;
 }

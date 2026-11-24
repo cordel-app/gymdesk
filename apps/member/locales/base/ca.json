@@ -694,7 +694,7 @@
       "failed": "Fallit",
       "pending": "Pendent",
       "scheduled": "Programat",
-      "recorded": "Registrat",
+      "waived": "Condonat",
       "cancelled": "Cancel·lat",
       "expired_24h": "Caducat (24 h)"
     },
