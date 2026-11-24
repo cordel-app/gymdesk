@@ -63,6 +63,9 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   // #1663: Cordel-level catalogue of payment methods.
   base_payment_method:            { kind: 'simple',   label: 'Base Payment Methods',     table: 'base_payment_methods',    nameColumn: 'code' },
 
+  // #3328: Cordel-level catalogue of meals.
+  base_meal:                      { kind: 'simple',   label: 'Base Meals',               table: 'base_meals',              nameColumn: 'name' },
+
   // #1822: Cordel-level templates of the Products a new gym starts with.
   base_product:                   { kind: 'simple',   label: 'Base Products',            table: 'base_products',           nameColumn: 'name' },
 

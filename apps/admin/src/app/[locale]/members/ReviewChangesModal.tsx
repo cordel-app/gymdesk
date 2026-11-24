@@ -17,7 +17,7 @@ import { cardHintStyle, cardSectionLabelStyle, formControlStyle } from '@/compon
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { ProductSetForecast } from './MemberProductSet';
 import { InitialPaymentSection } from './CheckoutSummarySections';
-import type { InitialPaymentLike } from './productsWorkflowView';
+import type { InitialPaymentLike, SubmittedCart } from './productsWorkflowView';
 import { chosenPaymentMethod, paymentActions } from '@/lib/paymentConfirmation';
 import { changeMessage, confirmAction, splitChanges, type ChangeLike, type ReviewLike } from './recurringProductsView';
 
@@ -54,7 +54,7 @@ export function ReviewChangesModal({
   open: boolean;
   onClose: () => void;
   /** The version was activated or saved for payment: re-read the section. `checkoutUrl` is set while a payment is awaited. */
-  onCommitted: (result: { activated: boolean; checkoutUrl: string | null }) => void;
+  onCommitted: (result: { activated: boolean; checkoutUrl: string | null; outcome: SubmittedCart['outcome'] }) => void;
 }) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
@@ -124,20 +124,23 @@ export function ReviewChangesModal({
         // to pick — the picker is not shown — and the cart is committed through the free activation.
         if (next.key !== 'review_confirm_pay') {
           await apiFetch(`/product-sets/${productSetId}/activate`, { method: 'POST', body: JSON.stringify({}) });
-          onCommitted({ activated: true, checkoutUrl: null });
+          onCommitted({ activated: true, checkoutUrl: null, outcome: 'activated' });
           return;
         }
         if (!chosen) { setError(t('pay_error_method_required')); return; }
         const res = await apiFetch<{ checkout_url?: string | null; outcome?: string }>(`/product-sets/${productSetId}/pay`, {
           method: 'POST', body: JSON.stringify({ method: chosen.code }),
         });
-        if (res.outcome === 'failed') { setNotice(null); setError(t('pay_outcome_failed')); onCommitted({ activated: false, checkoutUrl: null }); return; }
-        if (res.outcome === 'pending' || res.outcome === 'unknown') { setNotice(t(res.outcome === 'pending' ? 'pay_outcome_pending' : 'pay_outcome_unknown')); onCommitted({ activated: false, checkoutUrl: null }); return; }
-        onCommitted({ activated: res.outcome === 'paid', checkoutUrl: res.checkout_url ?? null });
+        if (res.outcome === 'failed') { setNotice(null); setError(t('pay_outcome_failed')); onCommitted({ activated: false, checkoutUrl: null, outcome: 'failed' }); return; }
+        if (res.outcome === 'pending' || res.outcome === 'unknown') { setNotice(t(res.outcome === 'pending' ? 'pay_outcome_pending' : 'pay_outcome_unknown')); onCommitted({ activated: false, checkoutUrl: null, outcome: res.outcome }); return; }
+        onCommitted({
+          activated: res.outcome === 'paid', checkoutUrl: res.checkout_url ?? null,
+          outcome: res.outcome === 'paid' ? 'paid' : 'awaiting',
+        });
       } catch (err: any) {
         if ((err?.body?.error ?? err?.message) === 'nothing_to_pay') {
           await apiFetch(`/product-sets/${productSetId}/activate`, { method: 'POST', body: JSON.stringify({}) });
-          onCommitted({ activated: true, checkoutUrl: null });
+          onCommitted({ activated: true, checkoutUrl: null, outcome: 'activated' });
         } else {
           throw err;
         }
