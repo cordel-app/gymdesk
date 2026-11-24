@@ -20,6 +20,7 @@ import { alertTextColor } from '@/components/formChrome';
 import { createLatestWinsSaver, type LatestWinsSaver } from '@/lib/latestWinsSave';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { FoodDetailsModal, type FoodDetailsRow } from '@/components/nutritionLibrary/FoodDetailsModal';
+import { MealThumbnail, type MealImageTarget } from '@/components/meals/MealImage';
 
 /**
  * A Nutrition Library food as the food pickers need it. `categories` is a list
@@ -136,6 +137,13 @@ export interface HierMeal {
   id: number;
   display_name: string;
   meal_type: string | null;
+  /** #3328 stage 2: the Base Meal this meal is, with its localized name, description and image. */
+  base_meal_id?: number | null;
+  meal_name?: string | null;
+  meal_description?: string | null;
+  meal_image_url?: string | null;
+  meal_image_thumbnail_url?: string | null;
+  meal_modified_at?: string | null;
   notes: string | null;
   position: number;
   items: MealItem[];
@@ -172,11 +180,34 @@ export interface Hierarchy {
 /** #1625: one diameter for the meal and restriction avatars, in both the template and assigned-plan trees. */
 const TREE_AVATAR_SIZE = 36;
 
-const MEAL_TYPES = [
-  'recien_levantado', 'breakfast', 'media_manana',
-  'lunch', 'snack', 'dinner', 'antes_de_dormir',
-  'two_three_hours_before_training', 'immediately_before_training', 'immediately_after_training',
-] as const;
+/**
+ * #3328 stage 2: a Base Meal as the meal pickers offer it — `GET <apiBase>/base-meals`,
+ * every live meal Cordel administers, localized by the API. The tree fetches it
+ * once and hands it down through {@link BaseMealsContext}.
+ */
+export interface BaseMealOption extends MealImageTarget {
+  id: number;
+  slug: string;
+}
+const BaseMealsContext = React.createContext<BaseMealOption[]>([]);
+
+/** The image target a meal row's thumbnail opens: its Base Meal as the API reported it beside the meal. */
+function mealImageTarget(meal: HierMeal, label: string): MealImageTarget {
+  return {
+    display_name: meal.meal_name ?? label,
+    display_description: meal.meal_description ?? null,
+    image_url: meal.meal_image_url ?? null,
+    image_thumbnail_url: meal.meal_image_thumbnail_url ?? null,
+    modified_at: meal.meal_modified_at ?? null,
+  };
+}
+
+/** A meal's title: its Base Meal's name, else the legacy type's label, else its own display name. */
+function mealLabel(meal: HierMeal, t: (k: string) => string): string {
+  if (meal.meal_name) return meal.meal_name;
+  if (meal.meal_type) return t(`nutrition_plan_templates.tree_meal_type_${meal.meal_type}`);
+  return meal.display_name;
+}
 
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
@@ -254,6 +285,14 @@ export function NutritionPlanTree({
       .catch(() => setComponentTypes([]));
   }, [apiFetch, apiBase]);
 
+  // #3328 stage 2: the meals a meal may be, from the router serving this tree.
+  const [baseMeals, setBaseMeals] = useState<BaseMealOption[]>([]);
+  useEffect(() => {
+    apiFetch<BaseMealOption[]>(`${apiBase}/base-meals`)
+      .then((data) => setBaseMeals(Array.isArray(data) ? data : []))
+      .catch(() => setBaseMeals([]));
+  }, [apiFetch, apiBase]);
+
   const [addingDay, setAddingDay] = useState(false);
   const [addDayWeekday, setAddDayWeekday] = useState('');
   const [removingDay, setRemovingDay] = useState<HierDay | null>(null);
@@ -310,6 +349,7 @@ export function NutritionPlanTree({
 
   return (
     <FoodDetailsContext.Provider value={openFood}>
+    <BaseMealsContext.Provider value={baseMeals}>
     <div style={{ padding: '12px 20px 18px 44px' }}>
       {detailsFood && <FoodDetailsModal item={detailsFood} onClose={() => setDetailsFood(null)} />}
       {canWrite && availableWeekdays.length > 0 && (
@@ -375,6 +415,7 @@ export function NutritionPlanTree({
         onCancel={() => setRemovingDay(null)}
       />
     </div>
+    </BaseMealsContext.Provider>
     </FoodDetailsContext.Provider>
   );
 }
@@ -404,6 +445,7 @@ function DayRow({
 
   const [addingMeal, setAddingMeal] = useState(false);
   const [addMealType, setAddMealType] = useState('');
+  const baseMeals = React.useContext(BaseMealsContext);
   const [removingMeal, setRemovingMeal] = useState<HierMeal | null>(null);
 
   const base = `${apiBase}/${templateId}/days/${day.id}`;
@@ -451,7 +493,7 @@ function DayRow({
     if (!addMealType) { toast(t('nutrition_plan_templates.tree_select_meal_type_required')); return; }
     setAddingMeal(true);
     try {
-      await apiFetch(`${base}/meals`, { method: 'POST', body: JSON.stringify({ meal_type: addMealType }) });
+      await apiFetch(`${base}/meals`, { method: 'POST', body: JSON.stringify({ base_meal_id: Number(addMealType) }) });
       setAddMealType('');
       await onChanged();
     } catch (err: any) {
@@ -550,8 +592,8 @@ function DayRow({
               style={{ ...selectStyle, flex: 1 }}
             >
               <option value="">{t('nutrition_plan_templates.tree_select_meal_type')}</option>
-              {MEAL_TYPES.map((mt) => (
-                <option key={mt} value={mt}>{t(`nutrition_plan_templates.tree_meal_type_${mt}`)}</option>
+              {baseMeals.map((bm) => (
+                <option key={bm.id} value={String(bm.id)}>{bm.display_name}</option>
               ))}
             </select>
             <button onClick={addMeal} disabled={addingMeal} style={btnSmall()}>
@@ -596,14 +638,16 @@ function MealRow({
   // #2661: an expanded meal is its editor — there is no separate Edit mode and
   // no Save/Cancel. The meal type persists on change, the notes on blur.
   const [expanded, setExpanded] = useState(false);
-  const [mealTypeVal, setMealTypeVal] = useState(meal.meal_type ?? '');
+  const baseMeals = React.useContext(BaseMealsContext);
+  // #3328 stage 2: the meal is chosen by its Base Meal id.
+  const [mealTypeVal, setMealTypeVal] = useState(meal.base_meal_id ? String(meal.base_meal_id) : '');
   const [notesVal, setNotesVal] = useState(meal.notes ?? '');
   const base = `${apiBase}/${templateId}/days/${dayId}/meals/${meal.id}`;
 
   const save = useAutosave<{ meal_type: string; notes: string }>(
     (v) => apiFetch(base, {
       method: 'PUT',
-      body: JSON.stringify({ meal_type: v.meal_type || undefined, notes: v.notes.trim() || null }),
+      body: JSON.stringify({ base_meal_id: v.meal_type ? Number(v.meal_type) : undefined, notes: v.notes.trim() || null }),
     }),
     onChanged,
     (err) => toast(err?.message ?? t('nutrition_plan_templates.error_generic')),
@@ -611,7 +655,7 @@ function MealRow({
 
   useEffect(() => {
     if (save.dirty) return; // never overwrite an edit the server has not acknowledged
-    setMealTypeVal(meal.meal_type ?? '');
+    setMealTypeVal(meal.base_meal_id ? String(meal.base_meal_id) : '');
     setNotesVal(meal.notes ?? '');
   }, [meal]);
 
@@ -655,14 +699,15 @@ function MealRow({
           >⠿</span>
         )}
         <span style={{ color: '#9ca3af', fontSize: 11, flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
-        {/* #1625: a meal has no image of its own; its avatar is the first food that has one. */}
-        <FoodThumbnail imageUrl={meal.items.find((i) => i.item_image_url)?.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
+        {/* #3328 stage 2: a meal's avatar is its Base Meal's image, opening the one shared
+            meal modal; a legacy meal with no Base Meal keeps #1625's first-food avatar. */}
+        {meal.base_meal_id
+          ? <MealThumbnail meal={mealImageTarget(meal, mealLabel(meal, t))} size={TREE_AVATAR_SIZE} />
+          : <FoodThumbnail imageUrl={meal.items.find((i) => i.item_image_url)?.item_image_url ?? null} size={TREE_AVATAR_SIZE} />}
         <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>
-          {/* #1785: the Meal Type identifies the section; display_name is only
+          {/* #1785: the meal identifies the section; display_name is only
               the fallback for a legacy meal that has no type. */}
-          {meal.meal_type
-            ? t(`nutrition_plan_templates.tree_meal_type_${meal.meal_type}`)
-            : meal.display_name}
+          {mealLabel(meal, t)}
         </span>
         {!expanded && compactSummary && (
           <span style={{ fontSize: 12.5, color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -705,9 +750,13 @@ function MealRow({
                 style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const }}
               >
                 <option value="">{t('nutrition_plan_templates.tree_select_meal_type')}</option>
-                {MEAL_TYPES.map((mt) => (
-                  <option key={mt} value={mt}>{t(`nutrition_plan_templates.tree_meal_type_${mt}`)}</option>
+                {baseMeals.map((bm) => (
+                  <option key={bm.id} value={String(bm.id)}>{bm.display_name}</option>
                 ))}
+                {/* A meal whose Base Meal Cordel has since deleted still reads, never as a choice. */}
+                {meal.base_meal_id && !baseMeals.some((bm) => bm.id === meal.base_meal_id) && (
+                  <option value={String(meal.base_meal_id)} disabled>{mealLabel(meal, t)}</option>
+                )}
               </select>
             </div>
           </div>

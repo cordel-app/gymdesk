@@ -78,7 +78,7 @@ interface NotificationItem {
 }
 
 interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
-interface Meal { id: number; meal_type: string | null; display_name: string; items: MealItem[] }
+interface Meal { id: number; meal_type: string | null; display_name: string; items: MealItem[]; meal_name?: string | null }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
 type NutritionGoal = NutritionGoalItem;
 interface NutritionPlan { id: number; name: string; days: NutritionDay[]; goals: NutritionGoal[] }
@@ -425,7 +425,7 @@ export default function HomePage() {
           <div style={styles.card}>
             {todayMeals.map((meal) => (
               <div key={meal.id} style={styles.mealRow}>
-                <p style={styles.mealName}>{mealTitle(meal.display_name, meal.meal_type, meal.meal_type ? t(`nutrition.meal_type.${meal.meal_type}` as any) : null).title}</p>
+                <p style={styles.mealName}>{mealTitle(meal.display_name, meal.meal_type, meal.meal_name ?? (meal.meal_type ? t(`nutrition.meal_type.${meal.meal_type}` as any) : null)).title}</p>
                 <p style={styles.bookingSub}>
                   {meal.items.map((i) => i.item_name).join(' + ')}
                 </p>
