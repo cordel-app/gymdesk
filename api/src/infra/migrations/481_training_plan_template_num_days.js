@@ -4,8 +4,8 @@
  * src/domain/trainingPlanTemplateDays.ts, mirrored by chk_tpt_num_days).
  *
  * Existing templates are filled from their workouts: the number of distinct
- * weekdays they are scheduled on, else (no weekday set) the workout count,
- * capped at 7. Only rows still at the default are touched, so a re-run after a
+ * weekdays they are scheduled on plus one per workout with no weekday, capped
+ * at 7. Only rows still at the default are touched, so a re-run after a
  * partial failure completes the backfill without overwriting anything.
  */
 const hasCheck = (knex) =>
@@ -23,8 +23,7 @@ exports.up = async (knex) => {
   }
   await knex.raw(
     `UPDATE training_plan_templates tpt
-        SET tpt.num_days = (SELECT LEAST(7, IF(COUNT(j.scheduled_weekday) > 0,
-                                               COUNT(DISTINCT j.scheduled_weekday), COUNT(*)))
+        SET tpt.num_days = (SELECT LEAST(7, COUNT(DISTINCT j.scheduled_weekday) + SUM(j.scheduled_weekday IS NULL))
                               FROM training_plan_template_workouts j
                              WHERE j.training_plan_template_id = tpt.id)
       WHERE tpt.num_days = 0
