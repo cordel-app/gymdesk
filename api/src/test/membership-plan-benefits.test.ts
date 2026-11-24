@@ -13,6 +13,7 @@ import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
   createTestGym,
+  createTestDraftAssignment,
   createTestMembership,
   request,
 } from './helpers';
@@ -1210,5 +1211,104 @@ describe('Membership Plan Session Benefit Frequency (#918)', () => {
     expect(res.status).toBe(200);
     expect(res.body.session_benefits.find((b: any) => b.product_id === sessionItemId))
       .toMatchObject({ quantity: 2, frequency: 'week' });
+  });
+});
+
+// ─── #3306: a Session Product that names a renewing period decides the Frequency ─
+describe('Session Benefit Frequency follows the Session Product (#3306)', () => {
+  let gymId: string;
+  let planId: number;
+  let monthlyProductId: number;
+  let onceProductId: number;
+  let unconfiguredProductId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MPB Product Frequency Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, 'MPB Product Frequency Plan');
+    monthlyProductId = await createProduct(gymId, 'Monthly PT Sessions', 'sessions', 'month');
+    onceProductId = await createProduct(gymId, 'PT Package', 'sessions', 'once');
+    unconfiguredProductId = await createProduct(gymId, 'Open Sessions', 'sessions', null);
+  });
+
+  const putSession = (items: unknown[]) => request
+    .put(`/membership-plans/${planId}/session-benefits`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ items });
+
+  const storedFrequency = async (productId: number) => {
+    const { rows } = await db.query<any>(
+      'SELECT frequency FROM membership_plan_session WHERE membership_plan_id = ? AND product_id = ?',
+      [planId, productId],
+    );
+    return rows[0]?.frequency ?? null;
+  };
+
+  it('writes the Product\'s frequency, whatever the request sends', async () => {
+    const res = await putSession([{ product_id: monthlyProductId, quantity: 2, frequency: 'week' }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ product_id: monthlyProductId, frequency: 'month' });
+    expect(await storedFrequency(monthlyProductId)).toBe('month');
+
+    const cleared = await putSession([{ product_id: monthlyProductId, quantity: 2, frequency: null }]);
+    expect(cleared.body[0].frequency).toBe('month');
+    expect(await storedFrequency(monthlyProductId)).toBe('month');
+  });
+
+  it('writes it on a line the request names no frequency for', async () => {
+    await db.query('DELETE FROM membership_plan_session WHERE membership_plan_id = ?', [planId]);
+    const res = await putSession([{ product_id: monthlyProductId, quantity: 3 }]);
+    expect(res.body[0].frequency).toBe('month');
+    expect(await storedFrequency(monthlyProductId)).toBe('month');
+  });
+
+  it('reads a row stored before the rule as the Product\'s frequency', async () => {
+    await db.query(
+      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND product_id = ?',
+      ['week', planId, monthlyProductId],
+    );
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.session_benefits.find((b: any) => b.product_id === monthlyProductId).frequency)
+      .toBe('month');
+  });
+
+  it('leaves the Frequency editable for a Product billed once or with no frequency', async () => {
+    const res = await putSession([
+      { product_id: onceProductId, quantity: 2, frequency: 'week' },
+      { product_id: unconfiguredProductId, quantity: 1, frequency: 'year' },
+    ]);
+    expect(res.status).toBe(200);
+    const byItem = Object.fromEntries(res.body.map((r: any) => [r.product_id, r.frequency]));
+    expect(byItem[onceProductId]).toBe('week');
+    expect(byItem[unconfiguredProductId]).toBe('year');
+
+    const cleared = await putSession([{ product_id: onceProductId, quantity: 2, frequency: null }]);
+    expect(cleared.body[0].frequency).toBeNull();
+  });
+
+  it('freezes the Product\'s frequency onto a new assignment\'s snapshot', async () => {
+    await putSession([{ product_id: monthlyProductId, quantity: 2 }]);
+    // A row stored before the rule: the snapshot copy still takes the Product's.
+    await db.query(
+      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND product_id = ?',
+      ['week', planId, monthlyProductId],
+    );
+    const { insertId: memberId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Freq Member', ?)`,
+      [gymId, `freq-${Date.now()}@test.local`],
+    );
+    const umId = await createTestDraftAssignment(gymId, memberId, planId);
+    const { rows } = await db.query<any>(
+      `SELECT pss.frequency FROM plan_session_snapshots pss
+         JOIN plan_snapshots s ON s.id = pss.plan_snapshot_id
+        WHERE s.anchor_plan_snapshot_id = ? AND pss.product_id = ?`,
+      [umId, monthlyProductId],
+    );
+    expect(rows.map((r: any) => r.frequency)).toEqual(['month']);
   });
 });

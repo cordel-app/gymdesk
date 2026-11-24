@@ -10,6 +10,10 @@ import { toPlanDurationRepeats } from '../domain/planDuration';
 import { toPlanMemberLimit } from '../domain/planBeneficiaries';
 import { promotionHolderSql } from './plan-snapshot-lines';
 import { toMembershipFeeScope } from '../domain/membershipFeeScope';
+import { effectiveSessionFrequencySql } from '../domain/sessionBenefitFrequency';
+
+// #3306: a Session Product that decides its renewal Frequency decides the copy's too.
+const SESSION_FREQUENCY_COPY_SQL = effectiveSessionFrequencySql('gc.billing_frequency', 'b.frequency');
 
 /**
  * #2125 stage 9 — a ProductSet version holding **more than one** Membership Plan: a plan beyond the
@@ -96,7 +100,7 @@ export async function addPlanSnapshotToVersion(tx: Tx, input: {
           unit_price, currency, \`action\`, \`value\`, mandatory, direct_discount_percent${sessionFrequency ? ', frequency' : ''})
        SELECT ?, ?, b.product_id, b.quantity, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
               gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`, b.mandatory,
-              b.direct_discount_percent${sessionFrequency ? ', b.frequency' : ''}
+              b.direct_discount_percent${sessionFrequency ? `, ${SESSION_FREQUENCY_COPY_SQL}` : ''}
          FROM ${t.plan} b
          JOIN products gc ON gc.id = b.product_id
          LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id

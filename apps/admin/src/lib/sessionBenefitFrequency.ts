@@ -47,3 +47,25 @@ export function toSessionBenefitFrequency(raw: string): SessionBenefitFrequency 
     ? (raw as SessionBenefitFrequency)
     : null;
 }
+
+/**
+ * #3306 — the Frequency a Session Product decides, or `null` when it leaves the
+ * choice to the Plan. Mirrors `productSessionFrequency()` in the API's
+ * `domain/sessionBenefitFrequency.ts`, which is what the section `PUT` actually
+ * enforces: a Product billed every week, 4 weeks, month or year renews its
+ * sessions on that period; `once`, the legacy `per_session` and none leave the
+ * editable selector in place.
+ */
+export function productSessionFrequency(
+  productBillingFrequency: string | null | undefined,
+): SessionBenefitFrequency | null {
+  switch (productBillingFrequency) {
+    case 'week':
+    case 'four_weeks':
+    case 'month':
+    case 'year':
+      return productBillingFrequency;
+    default:
+      return null;
+  }
+}
