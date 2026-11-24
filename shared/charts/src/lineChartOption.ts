@@ -63,6 +63,11 @@ export interface LineChartInput {
   xMarker?: { value: number; label?: string } | null;
   /** The smallest gap between two x-axis ticks — a month-labelled time axis passes ~a month. */
   xMinInterval?: number;
+  /**
+   * Where the legend sits (#3311 stage 2). `top` (the default) above the plot; `bottom`
+   * under the x-axis, so a labelled `xMarker` has the space above the plot to itself.
+   */
+  legendPosition?: 'top' | 'bottom';
 }
 
 /** What the tooltip renders for one hovered point. Exported so it is assertable. */
@@ -98,6 +103,9 @@ function escapeHtml(text: string): string {
 const LINE_WIDTH = 2;
 const SYMBOL_SIZE = 8;
 const SELECTED_SYMBOL_SIZE = 14;
+/** #3311 stage 2 — room above the plot for a labelled `xMarker`, so the label clears the data. */
+const MARKER_LABEL_SPACE = 22;
+const LEGEND_SPACE = 26;
 
 /** The option object, loose on purpose: ECharts' own types are the canvas's. */
 export type ChartOption = Record<string, unknown>;
@@ -175,6 +183,9 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
               formatter: input.xMarker.label ?? '',
               show: !!input.xMarker.label,
               position: 'end',
+              // #3311 stage 2 — lifted off the plot's top edge into the room the grid
+              // leaves for it, so it cannot sit on a point or a line.
+              distance: 8,
               color: theme.text,
               fontSize: 11,
             },
@@ -216,6 +227,12 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       : { color: seriesColor(theme, 0), width: LINE_WIDTH },
   }));
 
+  const showLegend = legendNames.length > 1 || !!customLegend;
+  const legendAtBottom = showLegend && input.legendPosition === 'bottom';
+  const markerLabelSpace = input.xMarker?.label ? MARKER_LABEL_SPACE : 0;
+  const gridTop = (showLegend && !legendAtBottom ? 34 : 18) + markerLabelSpace;
+  const gridBottom = legendAtBottom ? 6 + LEGEND_SPACE : 6;
+
   return {
     // ECharts' own palette is replaced rather than merged: the first entry is
     // what a series with no colour of its own would take.
@@ -224,13 +241,14 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
     animation: true,
     textStyle: { color: theme.text },
     // #2198 — a legend only where several named series share the chart.
-    legend: legendNames.length > 1 || customLegend
+    legend: showLegend
       ? {
-          show: true, top: 0, itemWidth: 16, itemHeight: 8, itemGap: 12,
+          show: true, ...(legendAtBottom ? { bottom: 0 } : { top: 0 }),
+          itemWidth: legendAtBottom ? 24 : 16, itemHeight: 8, itemGap: 12,
           textStyle: { color: theme.textMuted, fontSize: 11 }, data: legendNames,
         }
       : undefined,
-    grid: { left: 8, right: 14, top: legendNames.length > 1 || customLegend ? 34 : 18, bottom: 6, containLabel: true },
+    grid: { left: 8, right: 14, top: gridTop, bottom: gridBottom, containLabel: true },
     tooltip: {
       trigger: 'item',
       // A tap is a click: the same tooltip serves desktop, tablet and phone (§16).
