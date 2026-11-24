@@ -257,10 +257,11 @@ export function ContractedItemsSection({ items }: { items: ContractedItemLike[] 
         {list.map((i, n) => (
           <li key={n} data-contracted-kind={i.kind} {...(i.pending_deletion ? { 'data-pending-deletion': true } : {})} {...(i.pending_reactivation ? { 'data-pending-reactivation': true } : {})}
             style={i.pending_deletion ? { color: alertTextColor } : undefined}>
-            <strong>{i.name}</strong>
+            {/* #3302: an item the Draft ends is struck through; a plan says it is being canceled. */}
+            <strong style={i.pending_deletion ? { textDecoration: 'line-through' } : undefined}>{i.name}</strong>
             {i.pending_deletion && (
               <>
-                {' '}<span data-deleted-chip style={{ border: `1px solid ${alertTextColor}`, borderRadius: 10, padding: '0 6px', fontSize: 11, fontWeight: 600 }}>{t('checkout_deleted')}</span>
+                {' '}<span data-deleted-chip style={{ border: `1px solid ${alertTextColor}`, borderRadius: 10, padding: '0 6px', fontSize: 11, fontWeight: 600 }}>{t(i.kind === 'plan' ? 'checkout_to_be_canceled' : 'checkout_deleted')}</span>
                 {i.pending_deletion.ends_on ? ` · ${t('checkout_ends_on', { date: formatGymDateOnly(i.pending_deletion.ends_on, gymFmt) })}` : ''}
               </>
             )}

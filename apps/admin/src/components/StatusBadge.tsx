@@ -31,8 +31,8 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   pending_termination: { bg: '#fff4e0', fg: '#b26a00' },
   // #2625: a cancelled Membership Plan still giving access until its End Date.
   cancels_on_end_date: { bg: '#fff4e0', fg: '#b26a00' },
-  // #2659: its persisted form, read the same way.
-  to_be_canceled: { bg: '#e6f6ec', fg: '#1e7e40' },
+  // #3302: a running plan the open Draft cancels on Save & Pay — the waiting tone, not Active's.
+  to_be_canceled: { bg: '#fff4e0', fg: '#b26a00' },
   active_cancel_at_period_end: { bg: '#fff4e0', fg: '#b26a00' },
   // #3114: a cancelling plan marked for reactivation in the open In Cart.
   to_be_reactivated: { bg: '#fff4e0', fg: '#b26a00' },

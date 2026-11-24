@@ -8,6 +8,7 @@ import { loadServicesForAssignments } from './user-membership-services';
 import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
 import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
+import { ownerInCartSetId, pendingCancellationEndDates } from './plan-pending-cancellation';
 import { CANCELLED_PLAN_SET_SQL } from './cancelled-plan-sets';
 import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
 import { primaryPlanSnapshotSql, promotionHolderSql } from './plan-snapshot-lines';
@@ -109,6 +110,18 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
 
   // #1325: the next billing date of a plan a ProductSet bills is its ledger's.
   const plans = await withDerivedBilling(gymId, rawPlans as any[]);
+  // #3302: a plan marked `to_be_canceled` in its owner's open Draft reads the end date Save & Pay
+  // will give it, from the one helper the commit uses — never its stored (open-ended) `ends_at`.
+  const pendingEnds = new Map<number, string>();
+  const markedOwners = [...new Set(plans.filter((p: any) => p.status === 'to_be_canceled').map((p: any) => Number(p.owner_member_id)))];
+  const todayIso = new Date().toISOString().slice(0, 10);
+  for (const ownerId of markedOwners) {
+    const setId = await ownerInCartSetId(db as any, gymId, ownerId);
+    if (setId == null) continue;
+    for (const [id, endsOn] of await pendingCancellationEndDates(db as any, { gymId, productSetId: setId, today: todayIso })) {
+      pendingEnds.set(id, endsOn);
+    }
+  }
   const livePlans = plans.filter((p: any) => Number(p.is_live) === 1);
   const planNameById = new Map<number, string | null>(livePlans.map((p: any) => [p.id, p.plan_name]));
   const liveIds = livePlans.map((p: any) => p.id as number);
@@ -330,7 +343,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       deleted_at: p.deleted_at ?? null,
       deleted_by: p.deleted_by ?? null,
       starts_at: toDateOnly(p.starts_at),
-      ends_at: toDateOnly(p.ends_at),
+      ends_at: pendingEnds.get(Number(p.id)) ?? toDateOnly(p.ends_at),
       // Derived by `withDerivedBilling()` above (#1325).
       next_billing_date: toDateOnly(p.next_billing_date),
       // #1191 — derived: a covered Member of someone else's Membership sees

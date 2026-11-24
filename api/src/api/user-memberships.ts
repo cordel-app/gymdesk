@@ -236,6 +236,7 @@ export const LIFECYCLE_STATUS_SQL = `
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' THEN 'cancelled'
     WHEN um.status = 'to_be_reactivated' THEN 'to_be_reactivated'
+    WHEN um.status = 'to_be_canceled' THEN 'to_be_canceled'
     WHEN um.status IN ('in_cart', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'

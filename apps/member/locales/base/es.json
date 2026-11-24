@@ -506,6 +506,7 @@
       "pending_payment": "Pendiente de pago",
       "active_cancel_at_period_end": "Se cancela en la fecha de fin",
       "cancels_on_end_date": "Se cancela en la fecha de fin",
+      "to_be_canceled": "Pendiente de cancelar",
       "superseded": "Reemplazado"
     },
     "event": {
