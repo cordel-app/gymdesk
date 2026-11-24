@@ -14,6 +14,7 @@ import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignm
 import { primaryPlanSnapshotSql, promotionHolderSql } from './plan-snapshot-lines';
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { purchaseView } from '../domain/purchaseView';
+import { visiblePaidCartSql } from '../domain/paidCartVisibility';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -277,7 +278,38 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   if (resolved.kind === 'ambiguous') {
     console.error(`member ${memberId}: ambiguous ProductSets (${resolved.reason})`);
   }
+  // #3307 stage 2 — the owner's paid cart the Summary keeps showing: completed within the last hour
+  // and not followed by a newer cart (`domain/paidCartVisibility.ts`), with the Product Set it
+  // holds (if any) and its checkout's Billing Event. Read only; nothing here moves a cart.
+  const { rows: paidRows } = await db.query<any>(
+    `SELECT p.id AS purchase_id, p.name AS purchase_name, p.status AS purchase_status, p.completed_at,
+            (SELECT MAX(ps.id) FROM product_sets ps WHERE ps.gym_id = p.gym_id AND ps.purchase_id = p.id) AS product_set_id,
+            (SELECT be.id FROM billing_events be
+              WHERE be.gym_id = p.gym_id AND be.purchase_id = p.id
+                AND be.event_type IN ('payment_recorded','product_purchase')
+              ORDER BY be.id DESC LIMIT 1) AS billing_event_id
+       FROM purchases p
+      WHERE p.gym_id = ? AND p.owner_member_id = ? AND ${visiblePaidCartSql('p')}
+      ORDER BY p.id DESC LIMIT 1`,
+    [gymId, memberId],
+  );
+  const paid = paidRows[0];
+  let paidAmount: number | null = null;
+  if (paid?.billing_event_id != null) {
+    const { rows: ev } = await db.query<any>(
+      'SELECT amount FROM billing_events WHERE id = ? AND gym_id = ?', [paid.billing_event_id, gymId]);
+    paidAmount = ev[0]?.amount != null ? Number(ev[0].amount) : null;
+  }
+  const paidCart = paid && purchaseView(paid) ? {
+    purchase: purchaseView(paid),
+    product_set_id: paid.product_set_id != null ? Number(paid.product_set_id) : null,
+    billing_event_id: paid.billing_event_id != null ? Number(paid.billing_event_id) : null,
+    amount: paidAmount,
+    completed_at: paid.completed_at instanceof Date ? paid.completed_at.toISOString() : paid.completed_at ?? null,
+  } : null;
+
   res.json({
+    paid_cart: paidCart,
     current_product_set: currentRow ? summary(currentRow) : null,
     past_product_sets: setRows.filter((r: any) => r.status === 'superseded').map(summary),
     product_sets: inFlight.map((r: any) => ({
