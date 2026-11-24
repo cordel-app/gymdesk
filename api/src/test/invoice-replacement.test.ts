@@ -98,6 +98,9 @@ describe('#2648 stage 7 — a complete invoice replaces the simplified one', () 
     const rows = await list(gymOn, ev);
     expect(rows.find((r) => r.id === s.body.id)).toMatchObject({ replaced_by_invoice_id: f.body.id, can_cancel_verifactu: false });
     expect(rows.find((r) => r.id === f.body.id)).toMatchObject({ replaces_invoice_id: s.body.id, replaced_by_invoice_id: null });
+    // #3298 stage 2: each record reports its AEAT TipoFactura for the Admin.
+    expect(rows.find((r) => r.id === s.body.id).verifactu.alta.invoice_kind).toBe('F2');
+    expect(rows.find((r) => r.id === f.body.id).verifactu.alta.invoice_kind).toBe('F3');
 
     // A second request returns the issued complete invoice; nothing new.
     const again = await issue(gymOn, ev, { invoice_type: 'full', ...customer });
@@ -130,6 +133,11 @@ describe('#2648 stage 7 — a complete invoice replaces the simplified one', () 
     expect((await request.post(`/payments/invoices/${s.body.id}/rectify`).set(auth(gymOn)).send({ reason: 'x' })).status).toBe(201);
     const f2 = await issue(gymOn, ev2, { invoice_type: 'full', ...customer });
     expect(f2.body.replaces_invoice_id).toBeNull();
+    // #3298 stage 2: the R5 cancelled the simplified invoice, so the complete one is F1, not F3.
+    const rows2 = await list(gymOn, ev2);
+    const r5 = rows2.find((r) => r.related_invoice_id === s.body.id);
+    expect(r5.verifactu.alta.invoice_kind).toBe('R5');
+    expect(rows2.find((r) => r.id === f2.body.id).verifactu.alta.invoice_kind).toBe('F1');
   });
 
   it('links the replacement with VeriFactu off too, and prints the replaced number on the PDF', async () => {

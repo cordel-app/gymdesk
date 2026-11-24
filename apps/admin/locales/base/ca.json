@@ -1273,7 +1273,12 @@
     "op_full_payment": "Pagament total",
     "op_partial_payment": "Pagament parcial",
     "op_full_refund": "Reemborsament total",
-    "op_partial_refund": "Reemborsament parcial"
+    "op_partial_refund": "Reemborsament parcial",
+    "vf_invoice_kind": "Tipus {kind}",
+    "vf_csv": "CSV AEAT: {csv}",
+    "doc_link_rectifies": "Rectifica {number}",
+    "doc_link_rectified_by": "Rectificada per {number}",
+    "doc_link_replaces": "Substitueix {number}"
   },
   "payment_providers": {
     "title": "Proveïdors de pagament",
