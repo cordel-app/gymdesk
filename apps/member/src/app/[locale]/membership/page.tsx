@@ -2390,19 +2390,9 @@ export default function MembershipPage() {
       {renderMyPlans()}
       {renderMyProducts()}
 
-      {showStartPayment && (
-        <div style={styles.startPaymentRow}>
-          <button style={styles.startPaymentBtn} onClick={openConsent}>
-            {t('payment_banner.start_payment')}
-          </button>
-        </div>
-      )}
-
       {/* #1121 §3 — Additional Products and Services, directly below the
-          membership card. The payment banner and Start payment above it belong
-          to that card (they are about the fee it charges), so the subsection
-          follows them rather than splitting the membership from its own
-          pending payment. */}
+          membership card. (#3294 removed the "Make a payment" button that sat
+          between them; payments go through the cart and the Payments tab.) */}
       {renderOwnPurchases()}
 
       {packages.length > 0 && (
@@ -2504,8 +2494,6 @@ const styles: Record<string, React.CSSProperties> = {
   emptyTitle: { margin: '8px 0 12px', fontSize: 20, fontWeight: 700 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: 0 },
   // Payment banner
-  startPaymentRow: { marginTop: 12, display: 'flex', justifyContent: 'flex-end' },
-  startPaymentBtn: { ...secondaryButtonStyle, padding: '8px 16px', fontSize: 13 },
   // Consent modal
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 },
   modal: { ...sectionCardStyle, borderRadius: 16, padding: 24, maxWidth: 480, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' },
