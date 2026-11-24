@@ -23,8 +23,11 @@ import {
 } from '../domain/memberPlanHistory';
 import {
   pastPlanEndedOn,
+  pastPlanLineGroup,
+  pastPlanLineMeta,
   pastPlanName,
   pastPlanStatusKey,
+  type PastPlanLine,
 } from '../../../apps/member/src/lib/memberPlans';
 import { DEFAULT_GYM_FORMAT } from '../../../apps/member/src/lib/gymFormat';
 
@@ -245,9 +248,16 @@ describe('how the Members App words one', () => {
     expect(payments).not.toMatch(/CollapsibleCard/);
   });
 
-  it('shows no status pill on a past plan — that is the current plan\'s emphasis (§8)', () => {
+  it('#3293 — draws each past plan with My Plans\' own plan card, with no picture and no action', () => {
     const card = withoutComments(read(MEMBER, 'src', 'components', 'PastMembershipPlansCard.tsx'));
-    expect(card).not.toContain('statusPillStyle');
+    expect(card).toContain('<MemberPlanCard');
+    const page = withoutComments(read(MEMBER, 'src', 'app', '[locale]', 'membership', 'page.tsx'));
+    const fn = page.slice(page.indexOf('function pastPlanCardItem'), page.indexOf('function renderPastPlans'));
+    expect(fn).toContain('imageUrl: null');
+    expect(fn).not.toMatch(/\baction:/);
+    // One item-group renderer for active and past plans, never a second one.
+    expect(fn).toContain('renderPlanLineGroups(');
+    expect(page.match(/data-plan-lines/g)).toHaveLength(1);
   });
 
   it('does not decide for itself which plans are past', () => {
@@ -276,5 +286,29 @@ describe('#2747 stage 2 — a plan cancelled while awaiting payment, never assig
     const newer = toMemberPastPlan({ id: 2, membership_plan_id: 2, plan_name: 'New', status: 'expired', starts_at: '2026-12-01', ends_at: null, closed_at: null });
     expect(withCancelledPlanSets([newer, older], []).map((r) => r.plan_name)).toEqual(['New', 'Old']);
     expect(withCancelledPlanSets([newer, older], [set]).map((r) => r.plan_name)).toEqual(['New', 'Gold', 'Old']);
+  });
+});
+
+describe('#3293 — a past plan\'s items read as an active plan\'s', () => {
+  const line = (over: Partial<PastPlanLine>): PastPlanLine => ({
+    category: 'oneoff', product_name: 'Towel', product_type: 'merchandise', billing_frequency: 'once',
+    session_frequency: null, quantity: 2, mandatory: true, action: 'no_benefit', value: null,
+    direct_discount_percent: null, ...over,
+  });
+
+  it('groups a line by its frequency, as My Plans does', () => {
+    expect(pastPlanLineGroup(line({}))).toBe('onetime');
+    expect(pastPlanLineGroup(line({ category: 'periodical', billing_frequency: 'month' }))).toBe('recurring');
+    expect(pastPlanLineGroup(line({ billing_frequency: null }))).toBe('onetime');
+  });
+
+  it('words quantity and frequency only — no Mandatory chip, no type, no price', () => {
+    expect(pastPlanLineMeta(line({ billing_frequency: 'month' }))).toEqual([
+      { key: 'membership.plan_line_quantity', values: { quantity: 2 } },
+      { key: 'membership.frequency.month' },
+    ]);
+    expect(pastPlanLineMeta(line({ billing_frequency: null }))).toEqual([
+      { key: 'membership.plan_line_quantity', values: { quantity: 2 } },
+    ]);
   });
 });

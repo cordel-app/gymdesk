@@ -98,18 +98,13 @@ import {
   planPromotionBenefitNote,
   planPromotionDurationNote,
 } from '@/lib/memberPlanCatalogue';
-import {
-  PastMembershipPlansCard,
-  type PastMembershipPlanItem,
-  type PastPlanExpanded,
-} from '@/components/PastMembershipPlansCard';
+import { PastMembershipPlansCard } from '@/components/PastMembershipPlansCard';
 import {
   type MemberPastPlan,
   type PastPlanText,
-  pastPlanHasDetails,
-  pastPlanLineFacts,
+  pastPlanLineGroup,
+  pastPlanLineMeta,
   pastPlanName,
-  pastPlanPeriod,
   pastPlanStatusKey,
   pastPromotionBenefitText,
   pastPromotionName,
@@ -212,6 +207,15 @@ interface Benefit {
 // #1823 — grouped by what the item is (one-time or recurring), never by its
 // old section: a period-benefit line or a recurring frequency is Recurring.
 type ItemGroup = 'onetime' | 'recurring';
+/** #3293 — one item row of a plan card, active or past, already worded. */
+interface PlanLineRow {
+  key: string;
+  group: ItemGroup;
+  name: string;
+  meta: string;
+  imageUrl: string | null;
+  imageThumbnailUrl: string | null;
+}
 const ITEM_GROUPS: ItemGroup[] = ['onetime', 'recurring'];
 const RECURRING_ITEM_FREQUENCIES = ['week', 'four_weeks', 'month', 'year'];
 /** #2496 stage 4 — `draftBusy` while a plan is being added to or taken off the Draft. */
@@ -986,52 +990,64 @@ export default function MembershipPage() {
               </div>
             </dl>
           )}
-          {benefits.length > 0 && (
-            // #2892 — one plain list per group: no framed card per item and no
-            // section box, smaller detail text, the Product's picture beside it
-            // when it has one and the line's final price right-aligned with its currency.
-            <div style={styles.planLines} data-plan-lines>
-              {ITEM_GROUPS.map((group) => {
-                const rows = benefits.filter((b) => itemGroupOf(b) === group);
-                if (rows.length === 0) return null;
-                return (
-                  <div key={group} style={styles.planLineGroup}>
-                    <h3 style={styles.planLineGroupLabel}>{t(`membership.item_group.${group}`)}</h3>
-                    <ul style={styles.benefitList}>
-                      {rows.map((b, index) => {
-                        // #3235 — quantity, frequency and beneficiary; no price, no Mandatory chip.
-                        const beneficiary = b.member_name ?? (beneficiaryNames.length > 0 ? beneficiaryNames.join(', ') : null);
-                        const meta = [
-                          t('membership.plan_line_quantity', { quantity: b.quantity }),
-                          b.billing_frequency ? t(`membership.frequency.${b.billing_frequency}` as any) : null,
-                          beneficiary ? t('membership.plan_line_beneficiary', { name: beneficiary }) : null,
-                        ].filter(Boolean).join(' · ');
-                        return (
-                          <li key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`}
-                            style={index === 0 ? styles.planLine : { ...styles.planLine, ...rowDividerStyle }}>
-                            {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
-                            {b.image_thumbnail_url && (
-                              <ImagePreviewButton src={b.image_url ?? b.image_thumbnail_url} alt={b.name} title={b.name} style={styles.benefitThumb}>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={b.image_thumbnail_url} alt={b.name} style={styles.benefitThumbImg} />
-                              </ImagePreviewButton>
-                            )}
-                            <span style={styles.planLineText}>
-                              <span style={styles.planLineName}>{b.name}</span>
-                              <span style={styles.planLineMeta}>{meta}</span>
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {benefits.length > 0 && renderPlanLineGroups(benefits.map((b) => {
+            // #3235 — quantity, frequency and beneficiary; no price, no Mandatory chip.
+            const beneficiary = b.member_name ?? (beneficiaryNames.length > 0 ? beneficiaryNames.join(', ') : null);
+            return {
+              key: `${b.category}-${b.product_id}-${b.assigned_member_id ?? ''}`,
+              group: itemGroupOf(b),
+              name: b.name,
+              meta: [
+                t('membership.plan_line_quantity', { quantity: b.quantity }),
+                b.billing_frequency ? t(`membership.frequency.${b.billing_frequency}` as any) : null,
+                beneficiary ? t('membership.plan_line_beneficiary', { name: beneficiary }) : null,
+              ].filter(Boolean).join(' · '),
+              imageUrl: b.image_url ?? null,
+              imageThumbnailUrl: b.image_thumbnail_url ?? null,
+            };
+          }))}
         </>
       ),
     };
+  }
+
+  /**
+   * #2892 — a plan's items, one plain list per group (one-time, recurring): no
+   * framed card per item and no section box, smaller detail text, the
+   * Product's picture beside it when it has one. #3293 — shared by My Plans
+   * and Past Membership Plans, so a past plan's items read as an active one's.
+   */
+  function renderPlanLineGroups(rows: PlanLineRow[]) {
+    return (
+      <div style={styles.planLines} data-plan-lines>
+        {ITEM_GROUPS.map((group) => {
+          const groupRows = rows.filter((r) => r.group === group);
+          if (groupRows.length === 0) return null;
+          return (
+            <div key={group} style={styles.planLineGroup}>
+              <h3 style={styles.planLineGroupLabel}>{t(`membership.item_group.${group}`)}</h3>
+              <ul style={styles.benefitList}>
+                {groupRows.map((r, index) => (
+                  <li key={r.key} style={index === 0 ? styles.planLine : { ...styles.planLine, ...rowDividerStyle }}>
+                    {/* #2798 — the Product's picture on the far left; none means no placeholder. */}
+                    {r.imageThumbnailUrl && (
+                      <ImagePreviewButton src={r.imageUrl ?? r.imageThumbnailUrl} alt={r.name} title={r.name} style={styles.benefitThumb}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={r.imageThumbnailUrl} alt={r.name} style={styles.benefitThumbImg} />
+                      </ImagePreviewButton>
+                    )}
+                    <span style={styles.planLineText}>
+                      <span style={styles.planLineName}>{r.name}</span>
+                      <span style={styles.planLineMeta}>{r.meta}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    );
   }
 
   function renderMyProducts() {
@@ -1422,22 +1438,44 @@ export default function MembershipPage() {
     return t(text.key as any, text.values as any);
   }
 
-  /** #2779: what a past plan expands into, worded from its snapshot details. */
-  function pastPlanExpanded(plan: MemberPastPlan): PastPlanExpanded | null {
-    const details = plan.details;
-    if (!details || !pastPlanHasDetails(details)) return null;
-    const fee = formatPaymentAmount(details.membership_fee_price, null, gymFmt);
+  /**
+   * #3293 — a past plan as My Plans' own plan card: name, status pill, agreed
+   * fee and cadence, plan period, and once expanded the same one-time /
+   * recurring item groups and the Promotions it was agreed with. No picture
+   * (none is drawn and no space is kept for one) and no action (§8).
+   */
+  function pastPlanCardItem(plan: MemberPastPlan): MemberPlanCardItem {
+    const details = plan.details ?? null;
+    const status = plan.lifecycle_status ?? plan.status;
+    const frequencyKey = details
+      ? planFrequencyKey({ billing_interval: details.billing_interval, billing_unit: details.billing_unit as any })
+      : null;
+    const lines = details?.lines ?? [];
+    const promotions = details?.promotions ?? [];
     return {
-      fee: fee ? { label: t('membership.past_plan_fee'), value: fee } : null,
-      linesHeading: t('membership.plan_ov_products'),
-      lines: details.lines.map((line, i) => ({
+      // #2747 stage 2: a cancelled Product Set's id is not an assignment's.
+      key: plan.product_set_id != null ? `ps-${plan.product_set_id}` : String(plan.id),
+      name: pastPlanName(plan),
+      price: formatPaymentAmount(details?.membership_fee_price ?? null, null, gymFmt),
+      frequency: frequencyKey
+        ? t(frequencyKey as any)
+        : (details?.billing_interval != null && details.billing_unit
+          ? formatInterval(details.billing_interval, details.billing_unit, t) : null),
+      imageUrl: null,
+      period: t('membership.plan_period', {
+        start: plan.starts_at ? formatGymDateOnly(plan.starts_at, gymFmt) : '—',
+        end: plan.ended_on ? formatGymDateOnly(plan.ended_on, gymFmt) : '—',
+      }),
+      status: <StatusPill status={status} label={t(pastPlanStatusKey(plan) as any)} />,
+      details: lines.length > 0 ? renderPlanLineGroups(lines.map((line, i) => ({
         key: `${line.category}-${i}`,
+        group: pastPlanLineGroup(line),
         name: line.product_name,
-        facts: pastPlanLineFacts(line).map(pastText).join(' · '),
-      })),
-      promotionsHeading: t('membership.promotion_heading'),
-      promotions: details.promotions.map((promo) => {
-        const revoked = promo.status === 'revoked';
+        meta: pastPlanLineMeta(line).map(pastText).join(' · '),
+        imageUrl: null,
+        imageThumbnailUrl: null,
+      }))) : null,
+      promotions: promotions.map((promo) => {
         const revokedOn = promo.revoked_at ? formatPaymentDate(promo.revoked_at, gymFmt) : null;
         const feeFacts = promo.membership_fee_benefits.flatMap((b) => {
           const benefit = pastPromotionBenefitText(b.action, b.value, null, gymFmt);
@@ -1446,35 +1484,22 @@ export default function MembershipPage() {
             ? ` (${t('membership.promotion_duration_months', { count: b.duration_months })})` : '';
           return [`${t('membership.past_plan_fee')}: ${pastText(benefit)}${duration}`];
         });
+        const productFacts = promo.products.map((g) => {
+          const benefit = pastPromotionBenefitText(g.action, g.value, null, gymFmt);
+          const quantity = t('membership.past_plan_quantity', { count: g.quantity });
+          return `${g.product_name}: ${benefit ? `${quantity} · ${pastText(benefit)}` : quantity}`;
+        });
+        const revoked = promo.status === 'revoked'
+          ? (revokedOn ? `${t('membership.past_plan_promotion_revoked')} · ${revokedOn}` : t('membership.past_plan_promotion_revoked'))
+          : null;
         return {
           key: String(promo.id),
+          heading: t('membership.promotion_heading'),
           name: pastPromotionName(promo) ?? t('membership.promotion_heading'),
-          note: revoked
-            ? (revokedOn ? `${t('membership.past_plan_promotion_revoked')} · ${revokedOn}` : t('membership.past_plan_promotion_revoked'))
-            : null,
-          facts: feeFacts.length > 0 ? feeFacts.join(' · ') : null,
-          products: promo.products.map((g, i) => {
-            const benefit = pastPromotionBenefitText(g.action, g.value, null, gymFmt);
-            const quantity = t('membership.past_plan_quantity', { count: g.quantity });
-            return { key: `${promo.id}-${i}`, name: g.product_name, facts: benefit ? `${quantity} · ${pastText(benefit)}` : quantity };
-          }),
+          benefit: [revoked, ...feeFacts, ...productFacts].filter(Boolean).join(' · ') || null,
         };
       }),
     };
-  }
-
-  function pastPlanItems(plans: MemberPastPlan[]): PastMembershipPlanItem[] {
-    return plans.map((plan) => {
-      const period = pastPlanPeriod(plan, gymFmt);
-      return {
-        // #2747 stage 2: a cancelled Product Set's id is not an assignment's.
-        key: plan.product_set_id != null ? `ps-${plan.product_set_id}` : String(plan.id),
-        name: pastPlanName(plan),
-        period: period ? pastText(period) : null,
-        meta: t(pastPlanStatusKey(plan) as any),
-        details: pastPlanExpanded(plan),
-      };
-    });
   }
 
   /**
@@ -1488,7 +1513,7 @@ export default function MembershipPage() {
       <PastMembershipPlansCard
         title={t('membership.past_plans_heading')}
         summary={t('membership.past_plans_count', { count: pastPlans.length })}
-        items={pastPlanItems(pastPlans)}
+        items={pastPlans.map(pastPlanCardItem)}
       />
     );
   }
