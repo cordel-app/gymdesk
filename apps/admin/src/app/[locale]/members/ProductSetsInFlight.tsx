@@ -37,6 +37,7 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
   const [busyId, setBusyId] = useState<number | null>(null);
   const [link, setLink] = useState<{ id: number; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [waiveBusy, setWaiveBusy] = useState<string | null>(null);
 
   const inFlight = productSets.filter((p) => p.status === 'in_cart' || p.status === 'pending_payment');
   if (inFlight.length === 0) return null;
@@ -52,6 +53,30 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
     } finally {
       setBusyId(null);
     }
+  }
+
+  // #3284 stage 2 — Waive / Revert waive one Initial Payment line; the server re-prices, and the
+  // page re-reads the configuration (and with it the review) afterwards.
+  function waiveControl(setId: number) {
+    if (!canWrite) return null;
+    return {
+      busyKey: waiveBusy,
+      onAction: async (kind: 'waive' | 'revert', lineKey: string) => {
+        setWaiveBusy(lineKey);
+        setError(null);
+        try {
+          await apiFetch(`/product-sets/${setId}/initial-payment/${kind === 'waive' ? 'waive' : 'revert-waive'}`, {
+            method: 'POST', body: JSON.stringify({ line_key: lineKey }),
+          });
+          onChanged();
+        } catch (err: any) {
+          const code = err?.body?.error;
+          setError(typeof code === 'string' && WAIVE_ERROR_KEYS[code] ? t(WAIVE_ERROR_KEYS[code] as any) : (apiErrorMessage(err) ?? t('error_generic')));
+        } finally {
+          setWaiveBusy(null);
+        }
+      },
+    };
   }
 
   return (
@@ -82,7 +107,7 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
               </>
             )}
             {ps.status === 'in_cart' && review && (
-              <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} />
+              <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} waive={waiveControl(ps.id)} />
             )}
             {link?.id === ps.id && (
               <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{link.url}</code></div>
@@ -124,6 +149,13 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
     </div>
   );
 }
+
+/** #3284 stage 2 — the waive refusals the screen words itself; anything else is the server's message. */
+const WAIVE_ERROR_KEYS: Record<string, string> = {
+  prepaid_fee: 'checkout_waive_error_prepaid',
+  would_leave_nothing_to_pay: 'checkout_waive_error_nothing_left',
+  nothing_to_waive: 'checkout_waive_unavailable',
+};
 
 const row: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', margin: '6px 0',

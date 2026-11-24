@@ -1,8 +1,11 @@
-// #3270 — a purchase (cart) carries a persisted name basis — its creation instant, written once —
-// that the Admin's In-Cart Summary is headed by, and the Summary's Initial Payment states each
-// line's persisted Billing Event Line `source` (#3254). Integration against the real stack; only
-// the provider's `createPaymentRequest` is stubbed.
+// #3270 / #3288 / #3287 — a purchase (cart) carries one canonical name, generated once at creation
+// (`<Gym> - Purchase|Compra - <created_at in the gym's Time & Localization>`), which its checkout
+// Billing Event copies verbatim and the provider payment is described with; the Summary's Initial
+// Payment states each line's persisted Billing Event Line `source` (#3254). Integration against the
+// real stack; only the provider's `createPaymentRequest` is stubbed (and records its description).
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+const sentDescriptions = vi.hoisted(() => new Map<string, string>());
 
 vi.mock('../payments', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../payments')>();
@@ -11,9 +14,10 @@ vi.mock('../payments', async (importOriginal) => {
     getPaymentProvider: () => {
       const real = mod.getPaymentProvider();
       return Object.assign(Object.create(real), {
-        createPaymentRequest: async (p: { orderId: string }) => ({
-          providerOrderId: `monei-${p.orderId}`, checkoutUrl: 'https://pay.test/x',
-        }),
+        createPaymentRequest: async (p: { orderId: string; description: string }) => {
+          sentDescriptions.set(`monei-${p.orderId}`, p.description);
+          return { providerOrderId: `monei-${p.orderId}`, checkoutUrl: 'https://pay.test/x' };
+        },
       });
     },
   };
@@ -22,9 +26,9 @@ vi.mock('../payments', async (importOriginal) => {
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { productSetOfLegacyAssignmentSql } from '../domain/planAssignments';
+import { canonicalPurchaseName } from '../domain/purchaseName';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
-const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 let gymId: string;
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -35,9 +39,24 @@ const firstOfNextMonth = () => {
 
 const staff = (method: 'get' | 'post', path: string) =>
   (request as any)[method](path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
-const asMember = (clerk: string, method: 'get' | 'post', path: string) => {
+const asMember = (clerk: string, method: 'get' | 'post', path: string, locale = 'es') => {
   vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any);
-  return (request as any)[method](path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+  return (request as any)[method](path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).set('x-locale', locale);
+};
+
+/** What the purchase `id` should be called, from its own stored created_at and the gym as it is. */
+async function expectedName(id: number, locale: string): Promise<string> {
+  const { rows } = await db.query<any>(
+    `SELECT g.name, g.time_zone, g.date_format, g.time_format, p.created_at
+       FROM purchases p JOIN gyms g ON g.id = p.gym_id WHERE p.id = ?`, [id]);
+  const r = rows[0];
+  return canonicalPurchaseName({ gymName: r.name, locale, createdAt: new Date(r.created_at), settings: r });
+}
+const eventOfPurchase = async (purchaseId: number) =>
+  (await db.query<any>(`SELECT be.id, be.name FROM billing_events be WHERE be.purchase_id = ? ORDER BY be.id`, [purchaseId])).rows;
+const descriptionOfEvent = async (eventId: number) => {
+  const { rows } = await db.query<any>('SELECT provider_ref FROM payment_requests WHERE billing_event_id = ? ORDER BY id DESC LIMIT 1', [eventId]);
+  return sentDescriptions.get(rows[0].provider_ref);
 };
 
 async function member(): Promise<{ clerk: string; id: number }> {
@@ -85,40 +104,113 @@ afterAll(async () => {
   await db.end();
 });
 
-describe('a purchase name, persisted once (#3270)', () => {
-  it('a new cart has its creation instant as its name, unchanged by edits and status moves, and the Member read reports it', async () => {
+describe('a purchase name, generated once in canonical form (#3288)', () => {
+  it('a staff-opened cart is named in English with the gym name, unchanged by edits and status moves; its event and payment carry it (#3287)', async () => {
     const m = await member();
     const add = await staff('post', `/members/${m.id}/product-purchases`).send({ product_id: await product('30.00', 'month') });
     expect(add.status).toBe(201);
     const setId = Number(add.body.product_set_id);
     const cartId = await cartOfSet(setId);
     const born = await purchaseRow(cartId);
-    expect(born.name).toMatch(ISO_INSTANT);
-    expect(born.name).toBe(born.created);
+    expect(born.name).toBe(await expectedName(cartId, 'en'));
+    expect(born.name).toMatch(/^Purchase Name Gym - Purchase - \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/);
 
     const config = await staff('get', `/user-memberships/member/${m.id}/configuration`);
     expect(config.status).toBe(200);
     const inFlight = config.body.product_sets.find((p: any) => p.id === setId);
     expect(inFlight.purchase).toEqual({ id: cartId, name: born.name, status: 'in_cart' });
 
-    // Editing the cart and moving it to Pending Payment leave the name as it was.
+    // Editing the cart (in another language) and moving it to Pending Payment leave the name as it was.
     expect((await asMember(m.clerk, 'post', '/me/cart/purchases').send({ product_id: await product('9.00', 'once') })).status).toBe(201);
-    expect((await staff('post', `/product-sets/${setId}/save-and-pay`).send({})).status).toBe(201);
+    const pay = await staff('post', `/product-sets/${setId}/save-and-pay`).send({});
+    expect(pay.status).toBe(201);
     const after = await purchaseRow(cartId);
     expect(after.status).toBe('pending_payment');
     expect(after.name).toBe(born.name);
+
+    // The checkout's initial Billing Event (once 'Initial Engagement') and the provider payment.
+    const events = await eventOfPurchase(cartId);
+    expect(events).toHaveLength(1);
+    expect(events[0].name).toBe(born.name);
+    expect(await descriptionOfEvent(events[0].id)).toBe(born.name);
+
+    // A renamed gym or new settings never rewrite a stored name.
+    await db.query("UPDATE gyms SET name = 'Renamed Gym', date_format = 'YYYY-MM-DD' WHERE id = ?", [gymId]);
+    try {
+      expect((await purchaseRow(cartId)).name).toBe(born.name);
+    } finally {
+      await db.query("UPDATE gyms SET name = 'Purchase Name Gym', date_format = 'DD/MM/YYYY' WHERE id = ?", [gymId]);
+    }
   });
 
-  it("the standalone cart's Summary reports its purchase and each line's source", async () => {
+  it("a Members App cart is named in the request's language, with the gym's date format, zone and clock", async () => {
+    await db.query("UPDATE gyms SET time_zone = 'America/New_York', date_format = 'MM/DD/YYYY', time_format = '12h' WHERE id = ?", [gymId]);
+    try {
+      const m = await member();
+      const line = await asMember(m.clerk, 'post', '/me/cart/purchases', 'ca').send({ product_id: await product('12.00', 'once') });
+      expect(line.status).toBe(201);
+      const res = await staff('get', `/members/${m.id}/product-purchases/cart-summary`);
+      expect(res.status).toBe(200);
+      expect(res.body.purchase).toMatchObject({ status: 'in_cart' });
+      expect(res.body.purchase.name).toBe(await expectedName(res.body.purchase.id, 'ca'));
+      expect(res.body.purchase.name).toMatch(/^Purchase Name Gym - Compra - \d{2}\/\d{2}\/\d{4} \d{2}:\d{2} (AM|PM)$/);
+      expect(res.body.initial_payment.lines.map((l: any) => l.source)).toEqual(['product']);
+      expect(res.body.initial_payment.total).toBe(12);
+
+      // The standalone cart's checkout: one event and one payment, both named as the purchase.
+      const checkout = await asMember(m.clerk, 'post', '/me/cart/checkout').send({});
+      expect(checkout.status).toBe(201);
+      const { rows } = await db.query<any>('SELECT be.name, p.name AS purchase_name FROM billing_events be JOIN purchases p ON p.id = be.purchase_id WHERE be.id = ?', [checkout.body.billingEventId]);
+      expect(rows[0].name).toBe(rows[0].purchase_name);
+      expect(rows[0].purchase_name).toBe(res.body.purchase.name);
+      expect(await descriptionOfEvent(checkout.body.billingEventId)).toBe(res.body.purchase.name);
+    } finally {
+      await db.query("UPDATE gyms SET time_zone = 'Europe/Madrid', date_format = 'DD/MM/YYYY', time_format = '24h' WHERE id = ?", [gymId]);
+    }
+  });
+
+  it('a one-time purchase bought directly gets a purchase of its own, its event and payment named alike', async () => {
     const m = await member();
-    const line = await asMember(m.clerk, 'post', '/me/cart/purchases').send({ product_id: await product('12.00', 'once') });
-    expect(line.status).toBe(201);
-    const res = await staff('get', `/members/${m.id}/product-purchases/cart-summary`);
-    expect(res.status).toBe(200);
-    expect(res.body.purchase).toMatchObject({ status: 'in_cart' });
-    expect(res.body.purchase.name).toMatch(ISO_INSTANT);
-    expect(res.body.initial_payment.lines.map((l: any) => l.source)).toEqual(['product']);
-    expect(res.body.initial_payment.total).toBe(12);
+    const res = await asMember(m.clerk, 'post', `/me/products/${await product('8.00', 'once')}/purchase`).send({});
+    expect([200, 201]).toContain(res.status);
+    const { rows } = await db.query<any>(
+      `SELECT be.id, be.name, p.id AS purchase_id, p.name AS purchase_name
+         FROM billing_events be JOIN purchases p ON p.id = be.purchase_id
+        WHERE be.member_id = ? AND be.event_type = 'product_purchase'`, [m.id]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].purchase_name).toBe(await expectedName(rows[0].purchase_id, 'es'));
+    expect(rows[0].name).toBe(rows[0].purchase_name);
+    expect(await descriptionOfEvent(rows[0].id)).toBe(rows[0].purchase_name);
+  });
+});
+
+describe('migration 475 converts legacy names and backfills their events (#3288, #3287)', () => {
+  const knexLike = {
+    raw: async (sql: string, bindings: unknown[] = []) => [(await db.query<any>(sql, bindings as any[])).rows],
+    schema: { hasColumn: async () => true },
+  };
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const migration = require('../infra/migrations/475_purchase_canonical_name.js');
+
+  it('an ISO name becomes the English canonical name, its events copy it, and nothing else moves', async () => {
+    const m = await member();
+    const { insertId: legacy } = await db.query(
+      `INSERT INTO purchases (gym_id, owner_member_id, status, name, created_at, created_by)
+       VALUES (?, ?, 'completed', '2026-11-23T10:56:00Z', '2026-11-23 10:56:00', 'Test')`, [gymId, m.id]);
+    const { insertId: linked } = await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, name, amount, source, purchase_id)
+       VALUES (?, ?, 'product_purchase', 'Initial Engagement', 5.00, 'system', ?)`, [gymId, m.id, legacy]);
+    const { insertId: loose } = await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, name, amount, source)
+       VALUES (?, ?, 'product_purchase', 'Gym - Towel', 3.00, 'system')`, [gymId, m.id]);
+
+    await migration.up(knexLike);
+    await migration.up(knexLike); // resumable: a second run changes nothing
+
+    expect((await purchaseRow(legacy)).name).toBe('Purchase Name Gym - Purchase - 23/11/2026 11:56');
+    const nameOf = async (id: number) => (await db.query<any>('SELECT name FROM billing_events WHERE id = ?', [id])).rows[0].name;
+    expect(await nameOf(linked)).toBe('Purchase Name Gym - Purchase - 23/11/2026 11:56');
+    expect(await nameOf(loose)).toBe('Gym - Towel');
   });
 });
 

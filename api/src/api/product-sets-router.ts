@@ -1,6 +1,7 @@
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { cartExpiresAtIso, setCartExpiredSql, setCartExpiresAtSql } from '../domain/cartExpiry';
 import { refreshSetCart } from './purchases';
+import { initialPaymentWaiveHandler } from './initial-payment-waive';
 import { Router } from 'express';
 import { generatePaidRepresentations } from './billing-invoices';
 import { refuseUnlessMayAdd } from './family-add-rights';
@@ -449,8 +450,10 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
         orderId, amount: toMinorUnits(charge.amount), currency: 'EUR',
         paymentToken: token!.payment_token, sequenceId: token!.sequence_id,
       });
-      const raw = normaliseProviderStatus(result.providerStatus ?? (result.success ? 'SUCCEEDED' : 'FAILED'));
-      const cls = classifyProviderStatus(raw);
+      // #3289: only the provider's own status is stored; an answer with none is
+      // still decided by its success flag.
+      const raw = normaliseProviderStatus(result.providerStatus ?? null);
+      const cls = classifyProviderStatus(raw ?? (result.success ? 'SUCCEEDED' : 'FAILED'));
       const settled = result.success === true && cls === 'settled';
       const internal = settled ? 'completed' : cls === 'in_flight' ? 'pending' : 'failed';
       await db.transaction(async (tx) => {
@@ -765,6 +768,13 @@ async function reviewHandler(req: any, res: any, next: any) {
   } catch (err) { next(err); }
 }
 productSetsRouter.get('/:id/review', reviewHandler);
+
+// #3284 stage 2 — staff waive / revert one Initial Payment line of an In Cart set (Admin only: the
+// Members App's `/me/product-sets` router has no such route).
+productSetsRouter.post('/:id/initial-payment/waive', requireModuleWrite('PAYMENTS'),
+  (req, res, next) => initialPaymentWaiveHandler(req, res, next, true));
+productSetsRouter.post('/:id/initial-payment/revert-waive', requireModuleWrite('PAYMENTS'),
+  (req, res, next) => initialPaymentWaiveHandler(req, res, next, false));
 
 productSetsRouter.use('/:id', productSetDraftRouter);
 

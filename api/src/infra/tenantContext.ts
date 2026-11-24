@@ -13,6 +13,7 @@ import { AppRole, AppModule, canAccess, canAccessFeature, canWrite, canWriteFeat
 import { isAllowedWhileRevoked, isMemberAccessRevoked, memberAccessRevokedBody } from '../domain/memberAccessRevocation';
 import { purchaseChannelForPath } from '../domain/purchaseChannel';
 import { runInRequestChannel } from './requestChannel';
+import { getRequestLocale } from './locale';
 
 /** Gym-scoped role stored in gym_memberships.role. */
 export type GymRole = AppRole;
@@ -61,12 +62,13 @@ declare global {
 
 /**
  * #3278: everything after a resolved tenant context runs in the request's channel (`/me` → the
- * Members App, any other tenant route → the Admin App), which `createPurchase()` stamps.
+ * Members App, any other tenant route → the Admin App), which `createPurchase()` stamps, and
+ * (#3288) in the request's locale, which a new Purchase's canonical name is written in.
  */
 export async function tenantContext(req: Request, res: Response, next: NextFunction) {
   const channel = purchaseChannelForPath(req.originalUrl);
   return resolveTenantContext(req, res, (err?: unknown) => (
-    err ? next(err) : runInRequestChannel(channel, () => next())
+    err ? next(err) : runInRequestChannel(channel, () => next(), getRequestLocale(req))
   ));
 }
 

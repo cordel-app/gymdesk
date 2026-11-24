@@ -29,6 +29,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "benefit_types": ["lookup", "global lookup, no runtime writer"],
   "billing_event_lines": ["parent", "billing_events (priced components of one event)"],
   "billing_event_line_reasons": ["parent", "billing_event_lines (the treatments explaining one line's amount)"],
+  "initial_payment_waivers": ["parent", "purchases (#3284 stage 2: the cart's waived Initial Payment lines; each change is an audit row on the Product Set)"],
   "payment_refund_lines": ["parent", "payment_requests (the lines one refund transaction returned, #2480)"],
   "billing_policies": ["parent", "membership_plans (Billing & Duration section)"],
   "billing_run_log": ["ledger", "system run log"],

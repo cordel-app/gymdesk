@@ -231,8 +231,10 @@ export async function executeDueScheduledEvents(opts: {
         paymentToken: event.payment_token as string,
         sequenceId: event.sequence_id as string,
       });
-      const rawStatus = normaliseProviderStatus(result.providerStatus ?? (result.success ? 'SUCCEEDED' : 'FAILED'));
-      const cls = classifyProviderStatus(rawStatus);
+      // #3289: only the provider's own status is stored; the outcome of an answer
+      // that carries none is still decided by its success flag, as before.
+      const rawStatus = normaliseProviderStatus(result.providerStatus ?? null);
+      const cls = classifyProviderStatus(rawStatus ?? (result.success ? 'SUCCEEDED' : 'FAILED'));
       const settled = result.success === true && cls === 'settled';
       // An in-flight status is neither success nor failure: leave the attempt
       // `pending` for the webhook to settle, and the event unresolved.

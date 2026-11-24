@@ -14,7 +14,8 @@ describe('purchasePayment (#3273)', () => {
 
   it('shows the latest attempt, with no payment date, when none succeeded', () => {
     const p = purchasePayment([a(1, 'failed', '2026-11-01T10:00:00Z'), a(2, 'expired', '2026-11-02T10:00:00Z')]);
-    expect(p).toMatchObject({ attempt_id: 2, payment_method_name: 'M2', payment_status: 'expired', paid_at: null, attempt_count: 2 });
+    // #3289: no provider status was received, so the provider status reads nothing.
+    expect(p).toMatchObject({ attempt_id: 2, payment_method_name: 'M2', payment_status: null, paid_at: null, attempt_count: 2 });
   });
 
   it('prefers the provider\'s normalized status over the row status', () => {
@@ -28,6 +29,15 @@ describe('purchasePayment (#3273)', () => {
   });
 
   it('does not apply a refund state to an attempt that never succeeded', () => {
-    expect(purchasePayment([a(1, 'failed', '2026-11-01T10:00:00Z')], 'full').payment_status).toBe('failed');
+    expect(purchasePayment([a(1, 'failed', '2026-11-01T10:00:00Z', { provider_status: 'FAILED' })], 'full').payment_status).toBe('failed');
+  });
+
+  it('#3289: never falls back to the internal request status when the provider sent none', () => {
+    expect(purchasePayment([a(1, 'pending', '2026-11-01T10:00:00Z', { method: 'provider' })]).payment_status).toBeNull();
+    expect(purchasePayment([a(1, 'completed', '2026-11-01T10:00:00Z')]).payment_status).toBeNull();
+  });
+
+  it('#3289: an unrecognised raw provider status normalizes to nothing', () => {
+    expect(purchasePayment([a(1, 'pending', '2026-11-01T10:00:00Z', { provider_status: 'WEIRD' })]).payment_status).toBeNull();
   });
 });

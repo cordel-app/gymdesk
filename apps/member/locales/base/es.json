@@ -703,8 +703,7 @@
   },
   "payment_banner": {
     "pending_heading": "Tienes un pago pendiente",
-    "pay_now": "Pagar ahora",
-    "start_payment": "Iniciar pago"
+    "pay_now": "Pagar ahora"
   },
   "payment_consent": {
     "title_once": "Autorización de pago",

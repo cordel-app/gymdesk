@@ -438,7 +438,11 @@ describe('starting a purchase (#1121 stage 2 §5)', () => {
     // The provider is handed cents, never euros (CLAUDE.md's boundary rule).
     const call = providerCalls.createPaymentRequest.at(-1)!;
     expect(call.amount).toBe(5000);
-    expect(call.description).toBe('Personal Training Session');
+    // #3288: the payment is described by the purchase's canonical name, the one its event carries.
+    const { rows: named } = await db.query<any>(
+      `SELECT p.name FROM purchases p WHERE p.gym_id = ? ORDER BY p.id DESC LIMIT 1`, [gid]);
+    expect(call.description).toBe(named[0].name);
+    expect(call.description).toMatch(/ - Purchase - \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/);
 
     const [row] = await purchaseRows(gid);
     expect(row).toMatchObject({

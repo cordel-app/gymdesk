@@ -24,7 +24,8 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
-import { compactInitialPaymentLabel, contractedMembersText, discountEntries, lineReducedToZero, splitContracted } from './productsWorkflowView';
+import { compactInitialPaymentLabel, contractedMembersText, discountEntries, initialPaymentLineAction, lineReducedToZero, splitContracted } from './productsWorkflowView';
+import { secondaryBtnSmall } from '@/components/formChrome';
 
 const money = (n: number) => `${n.toFixed(2)} €`;
 
@@ -34,7 +35,20 @@ const money = (n: number) => `${n.toFixed(2)} €`;
  * zero lines included, in the server's order; the totals below are the full view's, unchanged.
  * The Products tab's Summary keeps the full breakdown.
  */
-export function InitialPaymentSection({ payment, compact = false }: { payment: InitialPaymentLike | null | undefined; compact?: boolean }) {
+/**
+ * #3284 stage 2 — the staff per-line Waive / Revert waive. Passed only where an In Cart Initial
+ * Payment is editable (the Products tab's Summary); a read-only view passes none and renders no
+ * action column. The server re-prices and re-judges every request; this only asks.
+ */
+export interface InitialPaymentWaiveControl {
+  onAction: (kind: 'waive' | 'revert', lineKey: string) => void;
+  /** The line a request is in flight for; every action is disabled meanwhile. */
+  busyKey: string | null;
+}
+
+export function InitialPaymentSection({ payment, compact = false, waive = null }: {
+  payment: InitialPaymentLike | null | undefined; compact?: boolean; waive?: InitialPaymentWaiveControl | null;
+}) {
   const t = useTranslations('members');
   const tFreq = useTranslations('billing_frequency');
   // #3270 — the Source column reads the Billing Event Line's own `source` (#3254), worded as the
@@ -92,10 +106,12 @@ export function InitialPaymentSection({ payment, compact = false }: { payment: I
             <th style={thNum}>{t('checkout_col_tax_rate')}</th>
             <th style={thNum}>{t('checkout_col_tax')}</th>
             <th style={thNum}>{t('checkout_col_amount')}</th>
+            {waive && <th style={thNum} data-initial-payment-actions>{t('col_actions')}</th>}
           </tr>
         </thead>
         <tbody>
           {payment.lines.map((l, i) => {
+            const action = waive ? initialPaymentLineAction(l) : null;
             const entries = discountEntries(l);
             // #2883 — a Membership Fee charge that collects a Pre-paid Duration says how many billing
             // periods its amount covers, in the plan's cadence; the quantity stays the number of fees.
@@ -155,6 +171,22 @@ export function InitialPaymentSection({ payment, compact = false }: { payment: I
                   {money(l.amount)}
                   {lineReducedToZero(l) && <div style={{ ...cardHintStyle, margin: 0 }} data-line-free>{t('checkout_line_no_charge')}</div>}
                 </td>
+                {waive && (
+                  <td style={tdNum}>
+                    {action && (
+                      <button
+                        type="button"
+                        data-line-action={action.kind}
+                        style={secondaryBtnSmall}
+                        disabled={!action.enabled || waive.busyKey != null}
+                        title={!action.enabled ? t('checkout_waive_unavailable') : undefined}
+                        onClick={() => waive.onAction(action.kind, action.lineKey)}
+                      >
+                        {t(action.kind === 'waive' ? 'checkout_action_waive' : 'checkout_action_revert_waive')}
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -172,9 +204,11 @@ export function InitialPaymentSection({ payment, compact = false }: { payment: I
  * two cannot disagree; it re-renders with the read whenever the cart changes. The header wraps,
  * so on a narrow screen the amount drops under the title rather than covering the breakdown.
  */
-export function CheckoutSummaryPanel({ payment, contracted }: {
+export function CheckoutSummaryPanel({ payment, contracted, waive = null }: {
   payment: InitialPaymentLike | null | undefined;
   contracted: ContractedItemLike[] | null | undefined;
+  /** #3284 stage 2 — the per-line Waive / Revert waive, only where the In Cart payment is editable. */
+  waive?: InitialPaymentWaiveControl | null;
 }) {
   const t = useTranslations('members');
   const total = payment?.total ?? null;
@@ -189,7 +223,7 @@ export function CheckoutSummaryPanel({ payment, contracted }: {
           </div>
         )}
       </div>
-      <InitialPaymentSection payment={payment} />
+      <InitialPaymentSection payment={payment} waive={waive} />
       <div style={{ ...sectionHeading, marginTop: 20 }} data-summary-heading>{t('checkout_contracted')}</div>
       <ContractedItemsSection items={contracted} />
     </div>

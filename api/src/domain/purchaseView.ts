@@ -1,14 +1,14 @@
-// #3270 — a purchase (#3251's cart) as the screens read it: its id, its persisted name basis and its
-// status. The name basis is `purchases.name`, the UTC instant the purchase was created (ISO 8601),
-// written once by `createPurchase()` and never derived from the plan, the Product Set or the cart's
-// contents on a read. What a person reads — a translated "Purchase" label and that instant in the
-// browser's own locale and time zone — is composed by the Admin, so this module formats nothing.
+// #3270 — a purchase (#3251's cart) as the screens read it: its id, its persisted name and its
+// status. Since #3288 the name is the complete canonical string (`<Gym> - Purchase - 23/11/2026 11:56`,
+// `domain/purchaseName.ts`), written once by `createPurchase()` and never derived from the plan, the
+// Product Set or the cart's contents on a read. The screens show it verbatim, so this module formats
+// nothing.
 
 import { PURCHASE_STATUSES, type CartItemStatus } from './purchaseStatus';
 
 export interface PurchaseView {
   id: number;
-  /** The creation instant, UTC ISO 8601 (`2026-11-23T11:56:00Z`). */
+  /** The canonical name, shown verbatim (`Gym - Compra - 23/11/2026 11:56`). */
   name: string;
   status: CartItemStatus;
 }
