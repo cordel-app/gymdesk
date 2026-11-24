@@ -79,3 +79,15 @@ describe('locale parity for the new keys', () => {
     expect(membership.recurrence).toBeUndefined();
   });
 });
+
+describe('My Plans — items separated by spacing, names in bold (#3292)', () => {
+  it('draws no divider between the lines of a group', () => {
+    expect(page).not.toMatch(/styles\.planLine,\s*\.\.\.rowDividerStyle/);
+    expect(page).toMatch(/planLine: \{(?![^}]*rowDividerStyle)[^}]*marginBottom/);
+  });
+
+  it('renders the Product name bold and its supporting line in regular weight', () => {
+    expect(page).toMatch(/planLineName: \{[^}]*fontWeight: 700/);
+    expect(page).not.toMatch(/planLineMeta: \{[^}]*fontWeight/);
+  });
+});
