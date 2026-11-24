@@ -653,14 +653,13 @@ export function draftAddedCount(view: MemberSetView | null): number {
  * #2496 stage 4 — what a plan card offers while the member is building a
  * Draft (the server decides every rule; this only reads the Draft back):
  *  - `added`: this plan is on the Draft — *Remove*;
- *  - `taken`: the Draft already carries another plan (one the member holds, or
- *    one they added) — no action, since a member takes only their first plan;
- *  - `none`: *Add to my selection*;
+ *  - `none`: *Add to my selection* — also beside another plan the Draft carries
+ *    (the member's running plan, or one added earlier), since #3312 a member adds
+ *    further plans to their cart without replacing one;
  *  - `no_draft`: there is no Draft, so the card keeps its own purchase.
  */
 export type DraftPlanState =
   | { state: 'added'; planSnapshotId: number }
-  | { state: 'taken' }
   | { state: 'none' }
   | { state: 'no_draft' };
 
@@ -669,7 +668,6 @@ export function draftPlanState(planId: number, view: MemberSetView | null): Draf
   const plans = view.plans ?? [];
   const added = plans.find((p) => p.change === 'added' && Number(p.membership_plan_id) === planId);
   if (added) return { state: 'added', planSnapshotId: Number(added.plan_snapshot_id) };
-  if (plans.length > 0) return { state: 'taken' };
   return { state: 'none' };
 }
 

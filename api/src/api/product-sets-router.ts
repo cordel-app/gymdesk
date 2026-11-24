@@ -1100,7 +1100,7 @@ meProductSetsRouter.post('/:id/plans', async (req, res, next) => {
       membershipPlanId: planId, beneficiaryIds: picked.ids,
       membershipFeePrice: choice.eff.plan_price_id != null ? choice.eff.price : null,
       declinedBenefits: choice.declinedResult.declined,
-      promotionIds, actor,
+      promotionIds, actor, startsAt: choice.startsAt,
     }), next, { add_plan: planId, promotion_ids: promotionIds, declined_benefits: choice.declinedResult.declined, source: 'members_app' });
   } catch (err) { next(err); }
 });

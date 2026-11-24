@@ -144,47 +144,39 @@ describe('One per Member reads the plans a Member holds from plan_snapshots', ()
   });
 });
 
-describe('the Members App reads "already holds a plan" from plan_snapshots', () => {
+describe('the Members App lets a Member choose a plan beside the ones they hold (#3312)', () => {
   it('is closed to an unauthenticated caller', async () => {
     expect((await request.post(`/me/membership-plans/${await plan()}/assign`).set('x-gym-id', gymId).send({})).status).toBe(401);
   });
 
-  it('refuses a Member with a running or paused plan, and lets them choose once it is cancelled', async () => {
+  it('adds a plan for a Member with a running plan, and keeps the running one', async () => {
     const m = await member();
     const um = await run(m.id, await plan());
-    const next = await plan();
-    const refused = await choose(m.userId, next);
-    expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe('plan_change_via_gym');
-
-    await setStatus(um, 'paused');
-    expect((await choose(m.userId, next)).body.error).toBe('plan_change_via_gym');
-
-    await setStatus(um, 'active');
-    await cancel(um);
-    expect((await choose(m.userId, next)).status).toBe(201);
+    const chosen = await choose(m.userId, await plan());
+    expect(chosen.status).toBe(201);
+    expect(chosen.body.status).toBe('in_cart');
+    const { rows } = await db.query<any>(`SELECT status FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [um]);
+    expect(rows[0].status).toBe('active');
   });
 
-  it('refuses a Member another Member\'s running plan covers', async () => {
+  it('adds a plan for a Member with a paused plan', async () => {
+    const m = await member();
+    const um = await run(m.id, await plan());
+    await setStatus(um, 'paused');
+    expect((await choose(m.userId, await plan())).status).toBe(201);
+  });
+
+  it('adds a plan for a Member another Member\'s running plan covers', async () => {
     const owner = await member();
     const covered = await member();
     const um = await run(owner.id, await plan());
     await cover(um, covered.id);
-    const refused = await choose(covered.userId, await plan());
-    expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe('plan_change_via_gym');
+    expect((await choose(covered.userId, await plan())).status).toBe(201);
   });
 
   it('lets a Member with no plan, or with only a staff Draft assignment of another Member, choose one', async () => {
     const m = await member();
     await createTestDraftAssignment(gymId, (await member()).id, await plan());
     expect((await choose(m.userId, await plan())).status).toBe(201);
-  });
-
-  it('the snapshot is the record: a user_memberships row that disagrees does not open the choice', async () => {
-    const m = await member();
-    const um = await run(m.id, await plan());
-    await testAssignmentWrite("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [um]);
-    expect((await choose(m.userId, await plan())).body.error).toBe('plan_change_via_gym');
   });
 });

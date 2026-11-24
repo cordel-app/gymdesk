@@ -905,9 +905,12 @@ export async function setPlanBeneficiaries(
  * the version (`snapshotProductSetFromPlan()`, at the Draft's own start), the
  * owner covered, each Promotion applied with its own snapshot. The caller has
  * already judged the plan, the Promotions and the declined benefits with the
- * same validations; this refuses only a Draft that already carries a plan,
- * because a member never adds a second plan or replaces one from the Members
- * App (#1288 §28, #2125). Nothing is priced and nothing is committed here.
+ * same validations. Since #3312 a Draft that already carries a plan (the
+ * member's running plan it inherited, or one added earlier in this cart) takes
+ * the new one **beside** it, as a native plan snapshot of the set starting on
+ * `startsAt` (`addStaffPlanToDraft()`, the staff cart's own writer, #2966), so
+ * nothing the member holds is replaced. Nothing is priced and nothing is
+ * committed here.
  */
 export async function addMemberPlanToDraft(tx: Tx, draft: LockedDraft, input: {
   membershipPlanId: number;
@@ -917,10 +920,24 @@ export async function addMemberPlanToDraft(tx: Tx, draft: LockedDraft, input: {
   actor: string | null;
   /** #3091: the beneficiaries the member picked (judged by the caller); absent = the member alone. */
   beneficiaryIds?: readonly number[];
+  /** #3312: the start date of a plan added beside another (the member's choice date). */
+  startsAt?: string;
 }): Promise<{ ok: true; plan_snapshot_id: number } | DraftRefusal> {
   const existing = await primaryPlanSnapshotId(tx, draft.gym_id, draft.id);
   if (draft.membership_plan_id != null || existing != null) {
-    return { kind: 'conflict', error: 'draft_has_plan', message: 'Your selection already includes a plan.' };
+    const added = await addStaffPlanToDraft(tx, draft, {
+      membershipPlanId: input.membershipPlanId, membershipFeePrice: input.membershipFeePrice,
+      startsAt: input.startsAt ?? draft.starts_at, ownerIsBeneficiary: true,
+      declinedBenefits: input.declinedBenefits, actor: input.actor,
+      beneficiaryIds: input.beneficiaryIds ?? [draft.owner_member_id],
+    });
+    if (!('ok' in added)) return added;
+    const { applyPromotionToProductSet } = await import('./membership-promotions');
+    for (const promotionId of input.promotionIds) {
+      await applyPromotionToProductSet(tx, draft.gym_id, input.actor, draft.id, promotionId,
+        { planSnapshotId: added.plan_snapshot_id });
+    }
+    return added;
   }
   await tx.query('UPDATE product_sets SET membership_plan_id = ? WHERE id = ? AND gym_id = ?',
     [input.membershipPlanId, draft.id, draft.gym_id]);

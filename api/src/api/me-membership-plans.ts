@@ -16,15 +16,16 @@ import {
   effectivePrice, planAssignabilityError,
 } from './user-memberships';
 import { resolveDeclinedBenefits, loadNamedPlanBenefitLines } from './declined-plan-benefits';
-import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
-import { addCoverage, createDraft } from './product-sets';
+import { validatePromotionSelection } from './membership-promotions';
 import { ownerFamilyMemberIds } from './owner-family';
 import { toPlanMemberLimit } from '../domain/planBeneficiaries';
-import { applyMemberBeneficiaries, judgeMemberBeneficiaries } from './member-plan-beneficiaries';
-import { snapshotProductSetFromPlan } from './product-set-configuration';
+import { judgeMemberBeneficiaries } from './member-plan-beneficiaries';
+import { ensureRecurringDraft } from './recurring-purchase-draft';
+import { addMemberPlanToDraft, isRefusal, lockDraft } from './product-set-draft';
+import { loadEditLockForDraftEdit } from './product-set-checkout';
+import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { initialCharge } from './product-set-checkout';
 import { PENDING_PAYMENT_STATUS } from './assignment-commit';
-import { LIVE_ASSIGNMENT_STATUSES } from '../domain/oneActivePlan';
 import { isNewMemberStatus } from './new-member-eligibility';
 import {
   PLAN_PROMOTION_TARGET, firstCycleFinalPrice, isOfferableFeeBenefit,
@@ -194,8 +195,9 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
  * writes anything, shared by the immediate purchase (`POST /:id/assign`) and the
  * shared Draft (`POST /me/product-sets/:id/plans`), so the two cannot accept
  * different plans, Promotions or declined benefits:
- *  - a member who holds a live or pending plan is refused (#1288 §28: a plan is
- *    never replaced or added beside another from the Members App);
+ *  - a member whose plan is awaiting payment is refused (a checkout is in
+ *    flight); a member holding live plans is not (#3312: a further plan is added
+ *    beside them in the member's own cart and never replaces one);
  *  - the plan must be assignable (`planAssignabilityError()`, active and public);
  *  - each Promotion is the staff editor's own validation and must be about a
  *    Membership Plan;
@@ -209,20 +211,18 @@ export async function judgeMemberPlanChoice(
       declinedResult: { declined: Array<{ section: string; product_id: number }> } }
 > {
   const fail = (status: number, body: Record<string, unknown>) => ({ error: true as const, status, body });
-  const statusMarks = [...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS].map(() => '?').join(',');
   const { rows: held } = await db.query<{ status: string }>(
     // #2125 M6b-9: an assignment is its current plan snapshot (the owner, or a beneficiary of it).
+    // #3312: only a plan awaiting payment refuses; a live plan is kept and the new one added beside it.
     `SELECT pa.status FROM plan_snapshots pa
-      WHERE pa.gym_id = ? AND pa.status IN (${statusMarks})
+      WHERE pa.gym_id = ? AND pa.status = ?
         AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND (pa.member_id = ? OR ${assignmentCoversMemberSql('pa')})
-      ORDER BY FIELD(pa.status, ?) DESC LIMIT 1`,
-    [gymId, ...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS, memberId, memberId, PENDING_PAYMENT_STATUS],
+      LIMIT 1`,
+    [gymId, PENDING_PAYMENT_STATUS, memberId, memberId],
   );
   if (held[0]) {
-    return held[0].status === PENDING_PAYMENT_STATUS
-      ? fail(409, { error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' })
-      : fail(409, { error: 'plan_change_via_gym', message: 'To change your plan, please contact your gym.' });
+    return fail(409, { error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
   }
 
   const planError = await planAssignabilityError(gymId, planId);
@@ -317,9 +317,9 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // #3305: nothing is added to a cart staff are still preparing, whatever it holds.
     if (await refuseIfStaffPreparesCart(res, gymId, memberId)) return;
 
-    // #1288 §28: no plan is replaced from the Members App, and a Draft or a
-    // payment already in flight blocks a second purchase (stage 4's shared Draft
-    // takes a plan through `POST /me/product-sets/:id/plans` instead).
+    // #3312: a payment already in flight blocks a further purchase; an editable
+    // In Cart Draft does not — the plan is added to it (below), never to a
+    // competing cart, and nothing the member holds is replaced.
     const { rows: inFlight } = await db.query<{ id: number; status: string; linked_user_membership_id: number | null }>(
       `SELECT ps.id, ps.status, ${productSetAssignmentSql('ps')} AS linked_user_membership_id FROM product_sets ps
       WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('in_cart','pending_payment')
@@ -331,7 +331,9 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       if (awaitsStaffSetup(inFlight[0])) {
         return res.status(409).json({ error: AWAITING_STAFF_SETUP, message: 'Your gym is still preparing a change to your plan.' });
       }
-      return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
+      if (inFlight[0].status !== 'in_cart') {
+        return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
+      }
     }
     const choice = await judgeMemberPlanChoice(gymId, memberId, planId, promotionIds, req.body?.declined_benefits);
     if ('error' in choice) return res.status(choice.status).json(choice.body);
@@ -339,36 +341,46 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     // #3091: who the plan covers, chosen while contracting (absent = the member alone).
     const picked = await judgeMemberBeneficiaries(gymId, memberId, planId, req.body?.beneficiary_member_ids);
     if ('status' in picked) return res.status(picked.status).json(picked.body);
+    // #3312: the cart is the one `POST /me/product-sets/draft` opens, so the same edit lock applies.
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, startsAt);
+    if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
-    // #1325 PR 3a: the member's plan is a ProductSet version, not an assignment
-    // Draft. The Draft is created with its frozen plan, its declined benefits and
-    // each applied Promotion (its own snapshot, §16) in one transaction, and is
-    // left a Draft (#2743). The operational assignment the member's screens read
-    // is projected when the Draft is activated (`product-set-projection`).
+    // #3312: the plan goes into the member's own In Cart Draft — the one they
+    // already have, else a new one cloned from their Active version
+    // (`ensureRecurringDraft()`), so every plan and Product they hold is carried
+    // and the new plan is added beside them (`addMemberPlanToDraft()`), with its
+    // declined benefits, its beneficiaries and each applied Promotion (#2743:
+    // left a Draft, nothing charged). The operational assignment is projected
+    // when the Draft is activated (`product-set-projection`).
     const actor = { name: memberRows[0].name, type: 'member' };
     const created = await db.transaction(async (tx) => {
-      const draft = await createDraft(tx, {
-        gymId, ownerMemberId: memberId, membershipPlanId: planId, startsAt, actor,
+      const ensured = await ensureRecurringDraft(tx, { gymId, memberId, actor, today: startsAt });
+      if (ensured.kind === 'in_flight') return { kind: 'in_flight' as const, status: ensured.status };
+      const draft = await lockDraft(tx, gymId, ensured.productSetId);
+      if (isRefusal(draft)) throw Object.assign(new Error('refused'), { refusal: draft });
+      const added = await addMemberPlanToDraft(tx, draft, {
+        membershipPlanId: planId, membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+        declinedBenefits: declinedResult.declined, promotionIds, actor: actor.name,
+        beneficiaryIds: picked.ids, startsAt,
       });
-      if (draft.kind !== 'created') return draft;
-      await snapshotProductSetFromPlan(tx, {
-        gymId, productSetId: draft.productSet.id, membershipPlanId: planId,
-        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
-        startsAt, declinedBenefits: declinedResult.declined, origin: 'members_app',
-      });
-      await addCoverage(tx, {
-        gymId, productSetId: draft.productSet.id, memberId, isOwner: true,
-      });
-      await applyMemberBeneficiaries(tx, gymId, draft.productSet.id, memberId, picked.ids);
-      for (const promotionId of promotionIds) {
-        await applyPromotionToProductSet(tx, gymId, actor.name, draft.productSet.id, promotionId);
-      }
-      return draft;
+      if (!('ok' in added)) throw Object.assign(new Error('refused'), { refusal: added });
+      await syncPlanSnapshot(tx, gymId, draft.id);
+      return { kind: 'ok' as const, productSetId: draft.id, startsAt: draft.membership_plan_id != null ? startsAt : draft.starts_at };
+    }).catch((err) => {
+      if (err?.refusal) return { kind: 'refused' as const, refusal: err.refusal };
+      throw err;
     });
+    if (created.kind === 'refused') {
+      const r = created.refusal;
+      if (r.kind === 'conflict') return res.status(409).json({ error: r.error, message: r.message });
+      if (r.kind === 'expired') return res.status(410).json({ error: 'draft_expired' });
+      if (r.kind === 'invalid') return res.status(400).json({ error: r.message });
+      return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
+    }
     if (created.kind === 'in_flight') {
       return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
     }
-    const setId = created.productSet.id;
+    const setId = created.productSetId;
 
     // #2743: choosing a plan saves it as the member's Draft and nothing else —
     // no Payment Request, no Billing Event, no checkout and no activation. The
@@ -384,7 +396,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     const { rows: planNameRows } = await db.query<{ name: string }>(
       'SELECT name FROM membership_plans WHERE id = ?', [planId]);
     const body = {
-      id: setId, status, starts_at: startsAt, plan_name: planNameRows[0]?.name ?? null,
+      id: setId, status, starts_at: created.startsAt, plan_name: planNameRows[0]?.name ?? null,
     };
     recordAudit(req, {
       action: 'create', entityType: 'product_set', entityId: setId,
