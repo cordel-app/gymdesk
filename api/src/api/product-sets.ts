@@ -12,7 +12,6 @@ import { deleteStandaloneCartPurchases } from './cart-checkout';
 import { openCart, refreshCart, touchPurchases } from './purchases';
 import { setCartExpiredSql, setCartLiveSql } from '../domain/cartExpiry';
 import {
-  PENDING_TTL_MINUTES,
   PendingAttempt,
   canCancelPending,
 } from '../domain/productSet';
@@ -326,28 +325,6 @@ export async function returnPendingToDraft(tx: Tx, gymId: string, id: number, ac
   await syncPlanSnapshot(tx, gymId, id);
   await touchPurchases(tx, gymId, [row.purchase_id]);
   return { kind: 'cancelled' };
-}
-
-/**
- * Returns every Pending Payment that was not confirmed in time to Draft: it has
- * been pending for more than `PENDING_TTL_MINUTES`, or the latest attempt on its
- * initial event is `expired` (the payment link is over). A `failed` attempt
- * alone is not expiry (the member may pay again). A payment of unknown outcome
- * or one that settled is left alone by `returnPendingToDraft()`'s own guard.
- */
-export async function expirePendingPayments(): Promise<number> {
-  const { rows } = await db.query<{ id: number; gym_id: string }>(
-    `SELECT ps.id, ps.gym_id FROM product_sets ps
-      WHERE ps.status = 'pending_payment'
-        AND (COALESCE(ps.pending_at, ps.last_activity_at) < UTC_TIMESTAMP() - INTERVAL ${PENDING_TTL_MINUTES} MINUTE
-         OR (SELECT pr.status FROM payment_requests pr JOIN billing_events be ON be.id = pr.billing_event_id
-              WHERE be.product_set_id = ps.id ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) = 'expired')`);
-  let n = 0;
-  for (const r of rows) {
-    const out = await db.transaction((tx) => returnPendingToDraft(tx, r.gym_id, Number(r.id)));
-    if (out.kind === 'cancelled') n += 1;
-  }
-  return n;
 }
 
 /** Covers a member on one plan snapshot of a version (#2125 stage 21): the version's primary one by default. */

@@ -28,7 +28,7 @@ type T = ReturnType<typeof useTranslations>;
 
 // #2480 follow-up: `refunded` / `partially_refunded` are the API's display statuses of a paid event.
 export const BILLING_EVENT_STATUS_VALUES = [
-  'paid', 'failed', 'pending', 'scheduled', 'waived', 'cancelled', 'refunded', 'partially_refunded',
+  'paid', 'failed', 'pending', 'scheduled', 'waived', 'cancelled', 'refunded', 'partially_refunded', 'expired_24h',
 ] as const;
 
 /** The fields of a list row the header and the actions read. */

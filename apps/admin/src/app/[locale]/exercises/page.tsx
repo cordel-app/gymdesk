@@ -15,6 +15,7 @@ import {
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
+import { SourceChip } from '@/components/SourceChip';
 import { ExerciseGenderMedia } from '@/components/exercises/ExerciseGenderMedia';
 import {
   type GenderMediaKey,
@@ -682,10 +683,7 @@ export default function ExercisesPage() {
             {ex.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.type}>
-            {isSystemSourced
-              ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_system_sourced')}</span>
-              : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_custom')}</span>
-            }
+            <SourceChip system={isSystemSourced} label={isSystemSourced ? t('type_system_sourced') : t('type_custom')} />
           </div>
           <div className={CELL_CLASS.status}>
             <StatusBadge status={ex.status} label={tStatus(ex.status)} />

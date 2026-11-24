@@ -47,3 +47,19 @@ describe('Base Meals (#3328)', () => {
     expect(isOwnedBaseMealImageUrl('https://example.com/x.webp')).toBe(false);
   });
 });
+
+describe('Base Meal status (#3328 stage 3)', () => {
+  it('absent keeps, a listed value is taken, anything else is refused', async () => {
+    const { parseBaseMealStatusInput } = await import('../domain/baseMeals');
+    expect(parseBaseMealStatusInput({})).toEqual({ value: undefined });
+    expect(parseBaseMealStatusInput({ status: 'inactive' })).toEqual({ value: 'inactive' });
+    expect('error' in parseBaseMealStatusInput({ status: 'Active' })).toBe(true);
+    expect('error' in parseBaseMealStatusInput({ status: null })).toBe(true);
+  });
+
+  it('the declared statuses are the CHECK of migration 484', async () => {
+    const { BASE_MEAL_STATUSES } = await import('../domain/baseMeals');
+    const source = readFileSync(join(__dirname, '..', 'infra', 'migrations', '484_base_meal_status.js'), 'utf-8');
+    expect(source).toContain(`status IN (${BASE_MEAL_STATUSES.map((s) => `'${s}'`).join(', ')})`);
+  });
+});

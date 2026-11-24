@@ -24,30 +24,49 @@ export type BaseMealInput =
 
 type Exec = Pick<Tx, 'query'> | typeof db;
 
+/** The plan meal being edited: its stored Base Meal may be resent even once that meal is inactive. */
+export interface CurrentMealRef {
+  table: 'nutrition_plan_template_meals' | 'member_nutrition_plan_meals';
+  mealId: string | number;
+}
+
 /**
  * Judges a request body's meal: `base_meal_id` (preferred) or the legacy
- * `meal_type` slug. Only a live (not soft-deleted) Base Meal may be chosen; an
- * unknown id or slug is a 400, never a coercion. Neither field present is
- * `absent`, which a create refuses and an update reads as "keep".
+ * `meal_type` slug. Only a live (not soft-deleted) Base Meal may be chosen, and
+ * since #3328 stage 3 only an `active` one — except the meal an edited row
+ * already references (`current`), so an unrelated save of a meal whose Base
+ * Meal was deactivated is not refused. An unknown or unavailable id or slug is
+ * a 400, never a coercion. Neither field present is `absent`, which a create
+ * refuses and an update reads as "keep".
  */
-export async function resolveBaseMealInput(body: any, exec: Exec = db): Promise<BaseMealInput> {
+export async function resolveBaseMealInput(
+  body: any,
+  exec: Exec = db,
+  current?: CurrentMealRef,
+): Promise<BaseMealInput> {
   const hasId = body && body.base_meal_id !== undefined && body.base_meal_id !== null && body.base_meal_id !== '';
   const hasType = body && body.meal_type !== undefined && body.meal_type !== null && body.meal_type !== '';
   if (!hasId && !hasType) return { kind: 'absent' };
+  let currentId: number | null = null;
+  if (current) {
+    const { rows } = await exec.query<any>(`SELECT base_meal_id FROM ${current.table} WHERE id = ?`, [current.mealId]);
+    currentId = rows[0]?.base_meal_id != null ? Number(rows[0].base_meal_id) : null;
+  }
+  const available = (row: any) => row && (row.status === 'active' || Number(row.id) === currentId);
   if (hasId) {
     const id = Number(body.base_meal_id);
     if (!Number.isInteger(id) || id <= 0) return { kind: 'error', message: 'base_meal_id must be a positive integer' };
     const { rows } = await exec.query<any>(
-      'SELECT id, slug, name FROM base_meals WHERE id = ? AND deleted_at IS NULL', [id],
+      'SELECT id, slug, name, status FROM base_meals WHERE id = ? AND deleted_at IS NULL', [id],
     );
-    if (!rows[0]) return { kind: 'error', message: 'base_meal_id does not name an available meal' };
+    if (!available(rows[0])) return { kind: 'error', message: 'base_meal_id does not name an available meal' };
     return { kind: 'ok', id: Number(rows[0].id), slug: rows[0].slug, name: rows[0].name };
   }
   if (typeof body.meal_type !== 'string') return { kind: 'error', message: 'meal_type must be a meal slug' };
   const { rows } = await exec.query<any>(
-    'SELECT id, slug, name FROM base_meals WHERE slug = ? AND deleted_at IS NULL', [body.meal_type],
+    'SELECT id, slug, name, status FROM base_meals WHERE slug = ? AND deleted_at IS NULL', [body.meal_type],
   );
-  if (!rows[0]) return { kind: 'error', message: 'meal_type does not name an available meal' };
+  if (!available(rows[0])) return { kind: 'error', message: 'meal_type does not name an available meal' };
   return { kind: 'ok', id: Number(rows[0].id), slug: rows[0].slug, name: rows[0].name };
 }
 
@@ -68,7 +87,7 @@ export function baseMealColumnsSql(locale: SupportedLocale): string {
          bm.modified_at AS meal_modified_at`;
 }
 
-/** The meals a picker may offer: every live Base Meal, in Cordel's order, localized. */
+/** The meals a picker may offer: every live, active Base Meal, in Cordel's order, localized (#3328 stage 3). */
 export async function listSelectableBaseMeals(locale: SupportedLocale) {
   const { rows } = await db.query(
     `SELECT bm.id, bm.slug,
@@ -76,7 +95,7 @@ export async function listSelectableBaseMeals(locale: SupportedLocale) {
             ${localizedGoalColumn('description', 'bm', locale, 'base_meal')} AS display_description,
             bm.image_url, bm.image_thumbnail_url, bm.modified_at
        FROM base_meals bm
-      WHERE bm.deleted_at IS NULL
+      WHERE bm.deleted_at IS NULL AND bm.status = 'active'
       ORDER BY bm.position ASC, bm.name ASC, bm.id ASC`,
   );
   return rows;

@@ -30,8 +30,12 @@
 export const PRODUCT_SET_STATUSES = ['in_cart', 'pending_payment', 'active', 'superseded', 'cancelled'] as const;
 export type ProductSetStatus = (typeof PRODUCT_SET_STATUSES)[number];
 
-/** #1991: a Pending Payment that is not confirmed within two hours returns to Draft. */
-export const PENDING_TTL_MINUTES = 120;
+/**
+ * #3307 stage 3 (replacing #1991's two-hour return to Draft): a Pending Payment
+ * not paid within 24 hours of being saved for payment expires
+ * (`expirePendingPayments()` in `api/product-set-cancellation.ts`).
+ */
+export const PENDING_EXPIRY_HOURS = 24;
 
 const TRANSITIONS: Readonly<Record<ProductSetStatus, readonly ProductSetStatus[]>> = {
   in_cart: ['pending_payment', 'active'],

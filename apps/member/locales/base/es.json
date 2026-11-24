@@ -695,7 +695,8 @@
       "pending": "Pendiente",
       "scheduled": "Programado",
       "waived": "Condonado",
-      "cancelled": "Cancelado"
+      "cancelled": "Cancelado",
+      "expired_24h": "Caducado (24 h)"
     },
     "prepaid_payment_month": "Prepago de {count, plural, one {# mes} other {# meses}}",
     "prepaid_payment_week": "Prepago de {count, plural, one {# semana} other {# semanas}}",

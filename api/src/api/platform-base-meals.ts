@@ -23,6 +23,7 @@ import {
 } from './member-image-storage';
 import { normalizeDescription } from '../domain/nutritionLibrary';
 import { resolvePlatformActor } from '../domain/auditActor';
+import { BASE_MEAL_STATUSES, parseBaseMealStatusInput } from '../domain/baseMeals';
 
 /**
  * #3328 stage 1 — Cordel → Base Meals, the only writer of `base_meals` (a
@@ -40,7 +41,7 @@ const TABLE = 'base_meals';
 const KIND = 'base_meal' as const;
 const entityType = 'base_meal';
 
-const columnsFor = (locale: SupportedLocale) => `m.id, m.slug, m.name, m.description, m.position,
+const columnsFor = (locale: SupportedLocale) => `m.id, m.slug, m.name, m.description, m.position, m.status,
     m.image_url, m.image_thumbnail_url,
     ${localizedGoalExprs('m', locale, KIND)}, ${goalTranslationsExpr('m', 'translations', KIND)},
     m.created_at, m.created_by, m.modified_at, m.modified_by, m.deleted_at, m.deleted_by`;
@@ -65,6 +66,15 @@ platformBaseMealsRouter.get('/locales', requireSuperadmin, (_req, res) => {
 platformBaseMealsRouter.get('/', requireSuperadmin, async (req, res, next) => {
   const where = ['m.deleted_at IS NULL'];
   const params: unknown[] = [];
+  const status = typeof req.query.status === 'string' ? req.query.status : '';
+  if (status) {
+    // #3328 stage 3: a closed set, so an unknown value is refused rather than matching nothing.
+    if (!(BASE_MEAL_STATUSES as readonly string[]).includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${BASE_MEAL_STATUSES.join(', ')}` });
+    }
+    where.push('m.status = ?');
+    params.push(status);
+  }
   const term = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   if (term) {
     where.push(goalTranslatedSearchSql('m', KIND));
@@ -96,6 +106,8 @@ platformBaseMealsRouter.post('/', requireSuperadmin, async (req: AuditRequest, r
   if ('error' in description) return res.status(400).json({ error: description.error });
   const translations = parseGoalTranslations(body);
   if (translations.error) return res.status(400).json({ error: translations.error });
+  const status = parseBaseMealStatusInput(body);
+  if ('error' in status) return res.status(400).json({ error: status.error });
   try {
     const { rows: existing } = await db.query(
       `SELECT id FROM ${TABLE} WHERE name = ? AND deleted_at IS NULL`, [name.value],
@@ -106,9 +118,9 @@ platformBaseMealsRouter.post('/', requireSuperadmin, async (req: AuditRequest, r
       // #2951: generated once from the name, never rewritten by an edit.
       const slug = await allocateGlobalSlug('base_meals', name.value, tx);
       const { insertId } = await tx.query(
-        `INSERT INTO ${TABLE} (slug, name, description, position, created_by)
-         SELECT ?, ?, ?, COALESCE(MAX(position), 0) + 1, ? FROM ${TABLE}`,
-        [slug, name.value, description.value ?? null, actor],
+        `INSERT INTO ${TABLE} (slug, name, description, position, status, created_by)
+         SELECT ?, ?, ?, COALESCE(MAX(position), 0) + 1, ?, ? FROM ${TABLE}`,
+        [slug, name.value, description.value ?? null, status.value ?? 'active', actor],
       );
       if (translations.translations) await replaceGoalTranslations(tx, insertId, translations.translations, KIND);
       return insertId as number;
@@ -132,6 +144,8 @@ platformBaseMealsRouter.put('/:id', requireSuperadmin, async (req: AuditRequest,
   if ('error' in description) return res.status(400).json({ error: description.error });
   const translations = parseGoalTranslations(body);
   if (translations.error) return res.status(400).json({ error: translations.error });
+  const status = parseBaseMealStatusInput(body);
+  if ('error' in status) return res.status(400).json({ error: status.error });
   try {
     const previous = await loadBaseMeal(id);
     if (!previous || previous.deleted_at) return res.status(404).json({ error: 'Meal not found' });
@@ -145,6 +159,7 @@ platformBaseMealsRouter.put('/:id', requireSuperadmin, async (req: AuditRequest,
     const params: unknown[] = [actorOf(req)];
     if (name.value !== undefined) { updates.push('name = ?'); params.push(name.value); }
     if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
+    if (status.value !== undefined) { updates.push('status = ?'); params.push(status.value); }
     await db.transaction(async (tx) => {
       await tx.query(`UPDATE ${TABLE} SET ${updates.join(', ')} WHERE id = ?`, [...params, id]);
       if (translations.translations) await replaceGoalTranslations(tx, id, translations.translations, KIND);

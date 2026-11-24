@@ -95,9 +95,11 @@ describe('#1011 — Admin list columns declare their mobile behaviour', () => {
     // Exact, because #1011's adoption is complete: every card list of the Admin
     // app lays its rows out from one declaration now, so a page that quietly
     // went back to hand-sized cells would drop this count. A new list that adopts
-    // the declaration raises it: the twentieth is Cordel → Mobile builds (#1077).
+    // the declaration raises it: the twentieth is Cordel → Mobile builds (#1077),
+    // the twenty-first Cordel → Base Nutrition Plan Templates (#3333 stage 2),
+    // the twenty-second Cordel → Base Meals (#3328 stage 3).
     expect(declarations.flatMap((d) => d.arrays).filter((a) => a.shape === 'grid'))
-      .toHaveLength(20);
+      .toHaveLength(22);
   });
 
   it('gives every column a mobile behaviour', () => {

@@ -159,8 +159,8 @@ which cancels the pending version with it (`cancelPendingSetForAssignment()`; re
 **Cancelling a Pending Payment Product Set (#2747).** Staff (`POST /product-sets/:id/cancel`,
 PAYMENTS write) and the owning member (`POST /me/product-sets/:id/cancel`) can cancel a set that
 awaits its first payment, and the set is **kept** as `cancelled` (migration 410: the status plus
-`cancelled_at` / `cancelled_by`), unlike the expiry and the `DELETE` route, which return it to
-Draft (#1991 stage 4). `api/src/api/product-set-cancellation.ts` is the one place:
+`cancelled_at` / `cancelled_by`), unlike the `DELETE` route, which returns it to Draft (#1991
+stage 4). `api/src/api/product-set-cancellation.ts` is the one place:
 
 1. **Ask the provider first** (`reconcileSetPayments()`, outside any transaction): every attempt
    that was submitted and is still `pending` is read back through `settleFromProviderLookup()`.
@@ -180,6 +180,19 @@ Draft (#1991 stage 4). `api/src/api/product-set-cancellation.ts` is the one plac
 
 Since stage 2 this is what every Cancel button on a version awaiting payment does in the Admin,
 after a confirmation. The Members App's Cancel is #3309's, below.
+
+**A checkout awaiting payment expires after 24 hours (#3307 stage 3, migration 483).** This
+replaces #1991 stage 4's two-hour return to Draft (and its "the latest attempt is `expired`"
+trigger): `POST /billing/cleanup` runs `expirePendingPayments()` (same module) over every set
+pending for `PENDING_EXPIRY_HOURS` (24) since `product_sets.pending_at`. Each one goes through
+steps 1 and 2 above and then step 3 with `{ expire: true }`, which differs only in what it writes:
+the events also take `billing_events.expired_at` (so they are shown as **`expired_24h`**, *24h
+expired*, by `displayBillingEventStatus()`, while every reader of money, actions and queues sees
+the cancelled event it already handles), and the one-time purchases still `pending_payment` —
+linked to the set or joined from the cart — become **`expired_24h`** instead of `cancelled`. The
+actor is `System`. A captured payment activates the set; an in-flight or unknown one leaves it
+pending for the next run; a second run finds no pending set and changes nothing. The response
+reports `pending_payments_expired`.
 
 **A member cancelling their own pending payment (#3309).** `POST /me/product-sets/:id/cancel`
 ends the **payment attempt**, not the purchase: `returnCancelledCheckoutToCart()` (same module)
