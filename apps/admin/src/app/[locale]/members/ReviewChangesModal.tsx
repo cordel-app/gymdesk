@@ -18,6 +18,7 @@ import type { BillingEventSimulationData } from '@/components/BillingEventSimula
 import { ProductSetForecast } from './MemberProductSet';
 import { InitialPaymentSection } from './CheckoutSummarySections';
 import type { InitialPaymentLike } from './productsWorkflowView';
+import { chosenPaymentMethod, paymentActions } from '@/lib/paymentConfirmation';
 import { changeMessage, confirmAction, splitChanges, type ChangeLike, type ReviewLike } from './recurringProductsView';
 
 interface Review extends ReviewLike {
@@ -93,7 +94,9 @@ export function ReviewChangesModal({
   const action = confirmAction(review);
   const owes = action?.key === 'review_confirm_pay';
   const methods = review?.payment_methods ?? [];
-  const chosen = methods.find((m) => m.code === method && m.available) ?? null;
+  // #3313 — choosing a method only enables Pay; the Billing Event is written by Pay's own request.
+  const chosen = chosenPaymentMethod(methods, method);
+  const actions = paymentActions({ chosen: owes ? chosen : { code: '', available: true }, loading: loading || action == null, busy });
   const saveLabel = action == null
     ? t('review_confirm')
     : owes
@@ -153,8 +156,8 @@ export function ReviewChangesModal({
       title={t('review_title')}
       error={error ?? notice}
       saving={busy}
-      saveDisabled={loading || busy || action == null || (owes && !chosen)}
-      cancelLabel={t('close')}
+      saveDisabled={!actions.pay}
+      cancelLabel={t('cancel')}
       saveLabel={saveLabel}
       onCancel={onClose}
       onSave={confirm}
