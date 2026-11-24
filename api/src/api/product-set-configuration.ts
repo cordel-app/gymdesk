@@ -21,7 +21,10 @@ import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation } 
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { findScheduleWithIdentity } from '../domain/scheduleConsolidation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
-import { PLAN_SCHEDULE_KEY, allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
+import {
+  PLAN_SCHEDULE_KEY, allocateSchedule, billsOnOwnCalendar, cadenceForFrequency, sameCadence,
+  type Cadence, type CadenceUnit, type ExistingSchedule,
+} from '../domain/scheduleAllocation';
 import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPlanPromotionGrantSnapshots, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
@@ -138,6 +141,59 @@ async function adoptScheduleAsPlan(tx: Tx, input: {
   }
 }
 
+/**
+ * #3280 — the schedule a Membership Plan newly added to a version bills on: the calendar of the
+ * plan's **own** cadence (monthly on the 1st, the 4-week grid, Mondays, a yearly plan on its own
+ * anniversary), never another plan's off-calendar schedule the owner happens to hold with the same
+ * cadence (a plan opened on the 7th before #2125 M5c). The owner's `plan` schedule, or any other of
+ * theirs, is joined only when it bills on that calendar (`billsOnOwnCalendar()`); otherwise a
+ * schedule of its own is opened on the grid, and the engine prorates the first stretch to the next
+ * grid date (`alignTo`). An owner with no `plan` schedule yet gets one under that key (adopting an
+ * on-calendar schedule of the cadence, e.g. a recurring Product bought first). Nothing existing is
+ * moved, re-anchored or deleted.
+ */
+export async function allocatePlanSchedule(tx: Tx, input: {
+  gymId: string; productSetId: number; startsAt: string; cadence: Cadence;
+}): Promise<number> {
+  const { rows } = await tx.query<any>(
+    `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit, opened_by_product_set_id
+       FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()} ORDER BY id FOR UPDATE`, [input.productSetId]);
+  const schedules: ExistingSchedule[] = rows.map((r: any) => ({
+    id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
+    cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
+  }));
+  const ensure = (key: string, anchorDate: string) => ensureSchedule(tx, {
+    gymId: input.gymId, productSetId: input.productSetId, key, anchorDate,
+    cadenceInterval: input.cadence.interval, cadenceUnit: input.cadence.unit,
+  });
+  const planRow = rows.find((r: any) => String(r.schedule_key) === PLAN_SCHEDULE_KEY);
+  const planOfThisChain = planRow != null && planRow.opened_by_product_set_id != null
+    && (await productSetHistoryIds(tx, input.gymId, input.productSetId)).includes(Number(planRow.opened_by_product_set_id));
+  if (planRow && !planOfThisChain) {
+    // A finished chain's `plan` schedule: `ensureSchedule()` decides whether it is the same schedule
+    // (and re-keys it out of the way when not). An off-calendar one is never the same as this plan's.
+    const plan = schedules.find((s) => s.key === PLAN_SCHEDULE_KEY)!;
+    if (!billsOnOwnCalendar(plan, input.cadence, input.startsAt)) {
+      await tx.query('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?',
+        [`${PLAN_SCHEDULE_KEY}-${plan.id}`.slice(0, 40), plan.id]);
+    }
+    return ensure(PLAN_SCHEDULE_KEY, input.startsAt);
+  }
+  if (!planRow) {
+    const onCalendar = schedules.find((s) => billsOnOwnCalendar(s, input.cadence, input.startsAt));
+    if (onCalendar?.id != null) {
+      await tx.query('UPDATE product_set_schedules SET schedule_key = ? WHERE id = ?', [PLAN_SCHEDULE_KEY, onCalendar.id]);
+      return onCalendar.id;
+    }
+    return ensure(PLAN_SCHEDULE_KEY, input.startsAt);
+  }
+  const allocation = allocateSchedule({
+    cadence: input.cadence, purchaseDate: input.startsAt, schedules, ownCalendar: true,
+  });
+  if (allocation.kind === 'new') return ensure(allocation.key, allocation.anchorDate);
+  return schedules.find((s) => s.key === allocation.key)!.id!;
+}
+
 /* ── Writing a version's configuration ───────────────────────────────────── */
 
 /**
@@ -173,15 +229,25 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   const plan = planRows[0] ?? {};
 
   let scheduleId: number | null = null;
+  // #3280: a version being re-snapshotted keeps its plan's established schedule; a plan frozen onto
+  // the version for the first time follows its own cadence's calendar (`allocatePlanSchedule()`).
+  const resnapshot = await primaryPlanSnapshotId(tx, gymId, productSetId);
   if (plan.recurring_billing_interval != null && plan.recurring_billing_unit != null) {
-    await adoptScheduleAsPlan(tx, {
-      gymId, productSetId, anchorDate: input.startsAt,
-      cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
-    });
-    scheduleId = await ensureSchedule(tx, {
-      gymId, productSetId, key: PLAN_SCHEDULE_KEY, anchorDate: input.startsAt,
-      cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
-    });
+    if (resnapshot != null) {
+      await adoptScheduleAsPlan(tx, {
+        gymId, productSetId, anchorDate: input.startsAt,
+        cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
+      });
+      scheduleId = await ensureSchedule(tx, {
+        gymId, productSetId, key: PLAN_SCHEDULE_KEY, anchorDate: input.startsAt,
+        cadenceInterval: Number(plan.recurring_billing_interval), cadenceUnit: String(plan.recurring_billing_unit),
+      });
+    } else {
+      scheduleId = await allocatePlanSchedule(tx, {
+        gymId, productSetId, startsAt: input.startsAt,
+        cadence: { interval: Number(plan.recurring_billing_interval), unit: String(plan.recurring_billing_unit) as CadenceUnit },
+      });
+    }
   }
 
   // #2125 stage 17: the plan snapshot is written directly (it is the plan's configuration). A version
@@ -204,7 +270,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
     // #2879 stage 2 — the Plan's Members per Membership, frozen: staff may change it on a Draft.
     toPlanMemberLimit(plan.member_limit),
   ];
-  let snapshotId = await primaryPlanSnapshotId(tx, gymId, productSetId);
+  let snapshotId = resnapshot;
   if (snapshotId != null) {
     await tx.query(
       `UPDATE plan_snapshots SET schedule_id = ?, membership_fee_price = ?, free_periods = ?, paid_periods = ?,
@@ -289,17 +355,27 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
   }));
 
   const allocate = async (
-    candidates: Array<{ id: number; frequency: string | null; startsAt: unknown }>,
+    candidates: Array<{ id: number; frequency: string | null; startsAt: unknown; planScheduleId?: number | null }>,
     table: 'plan_periodical_snapshots' | 'product_periodical_snapshots',
   ) => {
     for (const row of candidates) {
       const cadence = cadenceForFrequency(row.frequency as any);
       if (!cadence) continue;
       const purchaseDate = row.startsAt ? toDateOnly(row.startsAt) : setStart;
-      // #3165 stage 2 — an ad-hoc Product line follows its own frequency calendar, never the
-      // plan's billing date; a plan's included Products keep joining the plan's schedule.
+      // #3280 — a plan's included Product on the plan's own cadence bills on its plan's schedule
+      // (the one the plan snapshot is linked to, not whichever plan holds the `plan` key).
+      const planSchedule = row.planScheduleId != null
+        ? schedules.find((s) => s.id === row.planScheduleId) : undefined;
+      if (planSchedule && sameCadence(planSchedule.cadence, cadence)) {
+        await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE id = ? AND gym_id = ?`, [planSchedule.id, row.id, gymId]);
+        continue;
+      }
+      // #3165 stage 2 / #3280 — any other recurring line (an ad-hoc Product, or a plan's included
+      // Product on another cadence than its plan's) follows its own frequency calendar: it joins an
+      // existing schedule only when that schedule bills on that calendar, else it opens its own.
       const allocation = allocateSchedule({
-        cadence, purchaseDate, schedules, ownCalendar: table === 'product_periodical_snapshots',
+        cadence, purchaseDate, schedules,
+        ownCalendar: table === 'product_periodical_snapshots' || row.planScheduleId !== undefined,
       });
       let scheduleId: number | null = null;
       if (allocation.kind === 'new') {
@@ -325,13 +401,17 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
 
   // A plan's periodical lines hang off its snapshot; every plan of the version is allocated.
   const { rows: planLines } = await tx.query<any>(
-    `SELECT id, item_billing_frequency
-       FROM plan_periodical_snapshots
-      WHERE gym_id = ? AND schedule_id IS NULL
-        AND plan_snapshot_id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 0)`,
+    `SELECT l.id, l.item_billing_frequency, ps.schedule_id AS plan_schedule_id, ps.starts_at AS plan_starts_at
+       FROM plan_periodical_snapshots l
+       JOIN plan_snapshots ps ON ps.id = l.plan_snapshot_id
+      WHERE l.gym_id = ? AND l.schedule_id IS NULL
+        AND l.plan_snapshot_id IN (SELECT plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ? AND entitlement_only = 0)
+      ORDER BY l.id`,
     [gymId, productSetId]);
-  await allocate(planLines.map((r: any) => ({ id: Number(r.id), frequency: r.item_billing_frequency, startsAt: null })),
-    'plan_periodical_snapshots');
+  await allocate(planLines.map((r: any) => ({
+    id: Number(r.id), frequency: r.item_billing_frequency, startsAt: r.plan_starts_at,
+    planScheduleId: r.plan_schedule_id != null ? Number(r.plan_schedule_id) : null,
+  })), 'plan_periodical_snapshots');
 
   // #2126 stage 3t — the version's recurring Product lines are read from
   // `product_periodical_snapshots`, written by its one writer (`recurring-line-writer.ts`,

@@ -41,8 +41,8 @@ describe('a plan-included Product on another cadence than the plan', () => {
 
   it('monthly line of a 4-weekly plan: prorated to the 1st, then the 1st of each month', () => {
     const rows = forecast(4, 'week')('Monthly');
-    expect(rows[0].l.proration).toEqual({ prorated_days: 12, period_days: 31 });
-    expect(rows[0].l.actual_charge).toBe(12);
+    expect(rows[0].l.proration).toEqual({ prorated_days: 12, period_days: 30 });
+    expect(rows[0].l.actual_charge).toBe(12.4);
     expect(rows[1].date).toBe('2026-12-01');
     expect(rows[1].l.actual_charge).toBe(31);
   });
