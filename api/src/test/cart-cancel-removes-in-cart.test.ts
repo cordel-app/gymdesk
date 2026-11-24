@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, openMemberCart } from './helpers';
 import { TEST_PURCHASES } from './productSnapshotReads';
 
 let gymId: string;
@@ -45,6 +45,8 @@ describe('Cancel cart removes In Cart products (#2967)', () => {
   it('deletes the owner\'s standalone In Cart purchases with the Draft, and only theirs', async () => {
     const m = await member();
     const other = await member();
+    // #3305: the member opens the cart, so it stays theirs while staff add to it.
+    await openMemberCart(gymId, m.clerk);
     const draft = await staff('post', `/members/${m.id}/product-purchases`).send({ product_id: await product('30.00', 'month') });
     expect(draft.status).toBe(201);
     const setId = Number(draft.body.product_set_id);

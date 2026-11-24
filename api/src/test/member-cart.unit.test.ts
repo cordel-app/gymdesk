@@ -17,6 +17,7 @@ import {
   cartErrorKey,
   cartItems,
   cartItemsRemovable,
+  cartLockedForStaff,
   cartPendingAmount,
   cartPhase,
   cartProductState,
@@ -25,6 +26,7 @@ import {
   pendingCartCancelErrorKey,
   pendingCheckoutSetId,
   separateStandaloneCart,
+  standaloneAwaitsStaff,
   standaloneCommitAction,
   standaloneSecondsLeft,
   type MemberStandaloneCart,
@@ -324,5 +326,43 @@ describe('pendingCheckoutSetId', () => {
     expect(pendingCheckoutSetId(draft({ owner_member_id: 5 }), 5)).toBeNull();
     expect(pendingCheckoutSetId(draft({ status: 'pending_payment', owner_member_id: 5 }), 6)).toBeNull();
     expect(pendingCheckoutSetId(null, 5)).toBeNull();
+  });
+});
+
+describe('a cart staff are still preparing, whatever it holds (#3305)', () => {
+  const standalone = (over: Partial<MemberStandaloneCart> = {}): MemberStandaloneCart => ({
+    purchases: [{ id: 51, product_id: 17, product_name: 'Gym bag', amount: 25, currency: 'EUR' }],
+    total: 25, currency: 'EUR', awaiting_staff_setup: true, ...over,
+  });
+  const active = draft({ id: 3, status: 'active', owner_member_id: 5 } as any);
+
+  it('a standalone-only staff cart is the preparing card, with its items, and nothing to pay or cancel', () => {
+    expect(standaloneAwaitsStaff(standalone())).toBe(true);
+    for (const view of [null, active]) {
+      expect(cartPhase(view, 5, standalone())).toBe('awaiting_staff');
+      expect(cartLockedForStaff(view, 5, standalone())).toBe(true);
+      expect(cartItems(view, 5, standalone()).map((i) => i.key)).toEqual(['standalone-51']);
+      expect(cartCommitAction(view, null, 5, standalone())).toBeNull();
+      expect(separateStandaloneCart(view, 5, standalone())).toBe(false);
+    }
+    expect(standaloneCommitAction(standalone())).toBeNull();
+  });
+
+  it('a staff Product Set cart lists its standalone purchases inside the one preparing card', () => {
+    const view = draft({ owner_member_id: 5, awaiting_staff_setup: true } as any);
+    expect(cartPhase(view, 5, standalone())).toBe('awaiting_staff');
+    expect(separateStandaloneCart(view, 5, standalone())).toBe(false);
+    expect(cartItems(view, 5, standalone()).map((i) => i.key)).toContain('standalone-51');
+    expect(cartItemsRemovable(view)).toBe(false);
+  });
+
+  it('a cart the member created keeps its self-service', () => {
+    const own = standalone({ awaiting_staff_setup: false });
+    expect(cartPhase(null, 5, own)).toBe('standalone');
+    expect(cartLockedForStaff(null, 5, own)).toBe(false);
+    expect(standaloneCommitAction(own)).toBe('cart_checkout');
+    const view = draft({ owner_member_id: 5, awaiting_staff_setup: false } as any);
+    expect(cartPhase(view, 5, own)).toBe('draft');
+    expect(cartLockedForStaff(view, 5, own)).toBe(false);
   });
 });

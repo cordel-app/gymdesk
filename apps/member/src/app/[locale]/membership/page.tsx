@@ -59,6 +59,7 @@ import {
   cartItemRemovePath,
   cartItems,
   cartItemsRemovable,
+  cartLockedForStaff,
   cartPendingAmount,
   cartPhase,
   cartProductState,
@@ -493,7 +494,10 @@ export default function MembershipPage() {
   async function loadSetView() {
     // #2949 stage 6: a failed read is an empty standalone cart, never a reason to hide the set's.
     const standalone = apiFetch<MemberStandaloneCart>('/me/cart/purchases')
-      .then((c) => ({ purchases: c?.purchases ?? [], total: c?.total == null ? null : Number(c.total), currency: c?.currency ?? null }))
+      .then((c) => ({
+        purchases: c?.purchases ?? [], total: c?.total == null ? null : Number(c.total), currency: c?.currency ?? null,
+        awaiting_staff_setup: c?.awaiting_staff_setup === true,
+      }))
       .catch(() => EMPTY_STANDALONE_CART)
       .then((c) => { setStandaloneCart(c); setStandaloneSeconds(standaloneSecondsLeft(c, Date.now())); });
     try {
@@ -1602,6 +1606,16 @@ export default function MembershipPage() {
     if (product.addable_to_draft) return draftAction(product);
     // #2746 stage 2 — a one-time Product joins the cart, or is already in it.
     const inCart = cartProductState(product.id, setView, standaloneCart);
+    // #3305: a cart staff are still preparing takes nothing from the member — no add, no Cancel.
+    const locked = cartLockedForStaff(setView, viewerId, standaloneCart);
+    if (inCart.state === 'in_cart' && locked) return <StatusPill status="pending" label={t('membership.cart_in_cart')} />;
+    if (locked && showsBuyAction(product)) {
+      return (
+        <button type="button" style={{ ...styles.buyBtn, opacity: 0.5, cursor: 'not-allowed' }} disabled title={t('membership.cart_error_awaiting_staff')}>
+          {t('membership.cart_add')}
+        </button>
+      );
+    }
     if (inCart.state === 'in_cart') {
       const item = [...cartItems(setView, viewerId, standaloneCart), ...standaloneCartItems(standaloneCart)]
         .find((i) => i.key === inCart.key);
@@ -1645,8 +1659,18 @@ export default function MembershipPage() {
     const placed = draftProductState(product, setView);
     const busy = draftBusy !== null;
     const error = draftError?.productId === product.id ? draftError.key : null;
+    // #3305: a cart staff are still preparing takes nothing from the member — no add, no Cancel.
+    const locked = cartLockedForStaff(setView, viewerId, standaloneCart);
     let control: React.ReactNode;
-    if (placed.state === 'added') {
+    if (placed.state === 'added' && locked) {
+      control = <StatusPill status="pending" label={t('membership.cart_in_cart')} />;
+    } else if (locked && placed.state !== 'held') {
+      control = (
+        <button type="button" style={{ ...styles.buyBtn, opacity: 0.5, cursor: 'not-allowed' }} disabled title={t('membership.cart_error_awaiting_staff')}>
+          {t('membership.cart_add')}
+        </button>
+      );
+    } else if (placed.state === 'added') {
       control = (
         <>
           <StatusPill status="pending" label={t('membership.cart_in_cart')} />

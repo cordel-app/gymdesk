@@ -24,7 +24,7 @@ import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { createDraft } from '../api/product-sets';
 import { expireCarts } from '../api/cart-expiry';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, openMemberCart } from './helpers';
 
 const SECRET = 'test-3251-purchases-webhook';
 let gymId: string;
@@ -82,6 +82,8 @@ const orderOfEvent = async (eventId: number) =>
 /** A member whose cart holds a Draft Product Set with one monthly Product. */
 async function memberWithDraft() {
   const m = await member();
+  // #3305: the member opens the cart, so it stays theirs while staff add to it.
+  await openMemberCart(gymId, m.clerk);
   const res = await staff('post', `/members/${m.id}/product-purchases`).send({ product_id: await product('30.00', 'month') });
   expect(res.status).toBe(201);
   return { ...m, setId: Number(res.body.product_set_id) };

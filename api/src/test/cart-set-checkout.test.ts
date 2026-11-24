@@ -22,7 +22,7 @@ vi.mock('../payments', async (importOriginal) => {
 
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, openMemberCart, request } from './helpers';
 import { TEST_PURCHASES } from './productSnapshotReads';
 
 const SECRET = 'test-2949-stage-5-webhook';
@@ -101,6 +101,8 @@ afterAll(async () => {
 /** A member with a Draft Product Set holding one monthly Product, and its id. */
 async function memberWithDraft(): Promise<{ clerk: string; id: number; setId: number }> {
   const m = await member();
+  // #3305: the member opens the cart, so it stays theirs to pay while staff add to it.
+  await openMemberCart(gymId, m.clerk);
   const res = await staff('post', `/members/${m.id}/product-purchases`).send({ product_id: await product('30.00', 'month') });
   expect(res.status).toBe(201);
   return { ...m, setId: Number(res.body.product_set_id) };
