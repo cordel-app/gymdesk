@@ -10,6 +10,8 @@ export interface VerifactuRecordView {
   id: number;
   record_type: 'alta' | 'anulacion';
   chain_seq: number;
+  /** #3298: AEAT's TipoFactura of the record (F1/F2/F3/R1/R5); null on an Anulación. */
+  invoice_kind?: string | null;
   submission_status: VerifactuSubmissionStatus;
   submission_attempts: number;
   last_submission_at: string | null;
