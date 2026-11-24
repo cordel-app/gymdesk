@@ -76,9 +76,21 @@ export interface LineReason {
 
 export const roundCents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
-/** The benefit that explains the line's price, if any: a promotion first. */
-function primaryBenefit(benefits: readonly SimulationBenefit[]): SimulationBenefit | null {
-  return benefits.find((b) => b.source === 'promotion') ?? benefits[0] ?? null;
+/**
+ * The benefit that explains the line's price, if any: a promotion first — unless another benefit
+ * takes the line to nothing on its own (a Waive, or a 100% discount). The engine folds every
+ * benefit over the line (`resolveCoveredCharge()`), so once one of them leaves nothing to charge
+ * the rest discount nothing, and naming a 50% Promotion beside a €0.00 line reports a waiver it
+ * did not give (#3282).
+ */
+export function primaryBenefit(benefits: readonly SimulationBenefit[]): SimulationBenefit | null {
+  return benefits.find(takesLineToZero)
+    ?? benefits.find((b) => b.source === 'promotion') ?? benefits[0] ?? null;
+}
+
+function takesLineToZero(b: SimulationBenefit): boolean {
+  return b.action === 'waive' || b.action === 'included'
+    || (b.action === 'percentage_discount' && Number(b.value) >= 100);
 }
 
 /**
