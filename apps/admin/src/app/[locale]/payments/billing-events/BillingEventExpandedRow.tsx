@@ -9,7 +9,6 @@ import { useTranslations } from 'next-intl';
 import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import { discountEntries, type LineReasonLike } from '../../members/productsWorkflowView';
 import { useApiClient } from '@/lib/apiClient';
-import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { ReceiptsInvoicesSection } from './InvoicesSection';
@@ -298,10 +297,7 @@ export function ExpandedRow({
                 <DetailField label={t('billing_events_page.det_notes')}>{details.notes}</DetailField>
               )}
             </div>
-            {/* #675: same deep link every Details view offers — filtered to this event. */}
-            <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <ViewAuditLogButton entityType="billing_event" entityId={details.id} size="small" />
-            </div>
+            {/* #3300: View Audit Log lives in the ⋮ → Details modal. */}
           </CollapsibleSection>
         )}
 

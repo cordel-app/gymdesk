@@ -1259,7 +1259,10 @@
     "full_inv_name_required": "El nombre del cliente es obligatorio.",
     "full_inv_tax_id_required": "El NIF es obligatorio.",
     "full_inv_address_required": "La dirección fiscal es obligatoria.",
-    "full_inv_cancel": "Cancelar"
+    "full_inv_cancel": "Cancelar",
+    "action_details": "Detalles",
+    "details_modal_title": "Detalles del evento de facturación",
+    "details_load_error": "No se ha podido cargar el evento de facturación."
   },
   "payment_providers": {
     "title": "Proveedores de pago",

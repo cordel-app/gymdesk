@@ -1259,7 +1259,10 @@
     "full_inv_name_required": "The customer name is required.",
     "full_inv_tax_id_required": "The tax ID is required.",
     "full_inv_address_required": "The fiscal address is required.",
-    "full_inv_cancel": "Cancel"
+    "full_inv_cancel": "Cancel",
+    "action_details": "Details",
+    "details_modal_title": "Billing Event Details",
+    "details_load_error": "The billing event could not be loaded."
   },
   "payment_providers": {
     "title": "Payment Providers",
