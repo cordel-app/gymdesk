@@ -6,6 +6,8 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
+import { copyTemplateContentTx } from './nutrition-plan-template-copy';
+import { parseNumDaysInput, templateResyncChanges } from '../domain/nutritionPlanTemplateDays';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -25,6 +27,23 @@ const MAX_LIMIT = 100;
 const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 const COMPONENT_TYPES = TEMPLATE_COMPONENT_TYPES;
+
+const MAX_IMPORT_IDS = 100;
+
+/**
+ * #3333: where a gym template came from — `system` when its `cloned_from_id`
+ * names a System template (gym_id IS NULL), else `custom` (created by the gym,
+ * or a Clone/Duplicate of one of its own). Derived from provenance, never stored.
+ */
+const SOURCE_COLUMNS_SQL = `IF(EXISTS(SELECT 1 FROM nutrition_plan_templates src
+                                      WHERE src.id = npt.cloned_from_id AND src.gym_id IS NULL),
+                               'system', 'custom') AS source`;
+
+/** The gym's live copy of the System template `npt` (binds the gym id). */
+const IMPORTED_COPY_SQL = `(SELECT c.id FROM nutrition_plan_templates c
+                             WHERE c.gym_id = ? AND c.status != 'deleted'
+                               AND (c.cloned_from_id = npt.id OR c.name = npt.name)
+                             ORDER BY c.id ASC LIMIT 1)`;
 
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
@@ -130,12 +149,10 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
-    // Scope: gym-owned rows always included; base (gym_id IS NULL) included unless type=gym
-    const scopeClause = type === 'base'
-      ? 'npt.gym_id IS NULL'
-      : type === 'gym'
-        ? 'npt.gym_id = ?'
-        : '(npt.gym_id = ? OR npt.gym_id IS NULL)';
+    // #3333: the gym's list is its own templates (custom and imported) only;
+    // a System template reaches the gym by import. `type=base` still reads the
+    // System catalogue for a caller that asks for it explicitly.
+    const scopeClause = type === 'base' ? 'npt.gym_id IS NULL' : 'npt.gym_id = ?';
     const scopeParams: any[] = type === 'base' ? [] : [gymId];
 
     const where: string[] = [scopeClause, "npt.status != 'deleted'"];
@@ -152,7 +169,8 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT npt.*,
               IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type,
-              (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count
+              (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count,
+              ${SOURCE_COLUMNS_SQL}
        FROM nutrition_plan_templates npt
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
@@ -176,11 +194,189 @@ nutritionPlanTemplatesRouter.get('/created-by-options', async (req, res, next) =
   } catch (err) { next(err); }
 });
 
+/**
+ * #3333: the System Nutrition Plan Templates a gym may import, each with the
+ * gym's live copy of it (`imported_template_id`, NULL when not imported). A copy
+ * is recognised by its provenance (`cloned_from_id`) or, for a template copied
+ * before provenance existed, by its name — the same rule `POST /import` skips on.
+ * Gym-facing on purpose (`/platform/*` is superadmin-only), as `GET /exercises/base`.
+ */
+nutritionPlanTemplatesRouter.get('/base', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+  try {
+    const params: any[] = [gymId];
+    let nameSql = '';
+    if (name) { nameSql = ' AND npt.name LIKE ?'; params.push(`%${name}%`); }
+    const { rows } = await db.query(
+      `SELECT npt.id, npt.name, npt.description, npt.num_days, npt.status, npt.created_at,
+              (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count,
+              ${IMPORTED_COPY_SQL} AS imported_template_id
+         FROM nutrition_plan_templates npt
+        WHERE npt.gym_id IS NULL AND npt.status = 'active'${nameSql}
+        ORDER BY npt.name ASC`,
+      params,
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+/**
+ * #3333: import selected System templates into the gym, in one request — the
+ * Exercises' import (#718) for Nutrition Plan Templates. Each import is a deep
+ * copy (`copyTemplateContentTx()`, the copy Clone and Duplicate make) that keeps
+ * the System name, records `cloned_from_id` and is `active`. An id that is not an
+ * active System template is a 400 for the whole batch; an id the gym already has
+ * a copy of comes back under `skipped`.
+ */
+nutritionPlanTemplatesRouter.post('/import', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const raw = req.body?.baseTemplateIds;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return res.status(400).json({ error: 'baseTemplateIds must be a non-empty array of base template ids' });
+  }
+  if (raw.length > MAX_IMPORT_IDS) {
+    return res.status(400).json({ error: `baseTemplateIds may not contain more than ${MAX_IMPORT_IDS} ids` });
+  }
+  const ids: number[] = [];
+  for (const value of raw) {
+    const id = Number(value);
+    if (typeof value === 'boolean' || !Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: `invalid base template id: ${JSON.stringify(value)}` });
+    }
+    if (!ids.includes(id)) ids.push(id);
+  }
+  try {
+    const marks = ids.map(() => '?').join(',');
+    const { rows: baseRows } = await db.query(
+      `SELECT * FROM nutrition_plan_templates WHERE id IN (${marks}) AND gym_id IS NULL AND status = 'active'`,
+      ids,
+    );
+    const base = new Map<number, any>(baseRows.map((row: any) => [Number(row.id), row]));
+    const invalidIds = ids.filter((id) => !base.has(id));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({ error: 'Some ids are not importable base templates.', invalid_ids: invalidIds });
+    }
+
+    const actor = resolveRequestActor(ctx);
+    const { insertedIds, skipped } = await db.transaction(async (tx) => {
+      const insertedIds: number[] = [];
+      const skipped: { id: number; name: string; reason: string; template_id: number }[] = [];
+      for (const id of ids) {
+        const src = base.get(id);
+        const { rows: existing } = await tx.query(
+          `SELECT id FROM nutrition_plan_templates
+            WHERE gym_id = ? AND status != 'deleted' AND (cloned_from_id = ? OR name = ?)
+            ORDER BY id ASC LIMIT 1`,
+          [gymId, id, src.name],
+        );
+        if (existing.length > 0) {
+          skipped.push({ id, name: src.name, reason: 'already_imported', template_id: Number(existing[0].id) });
+          continue;
+        }
+        const { insertId } = await tx.query(
+          `INSERT INTO nutrition_plan_templates
+             (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id)
+           VALUES (?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?, ?)`,
+          [gymId, src.name, src.description ?? null, src.num_days ?? 0, actor, actor, id],
+        );
+        await copyTemplateContentTx(tx, id, insertId, gymId);
+        insertedIds.push(insertId);
+      }
+      return { insertedIds, skipped };
+    });
+
+    let imported: any[] = [];
+    if (insertedIds.length > 0) {
+      const { rows } = await db.query(
+        `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type,
+                (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count,
+                ${SOURCE_COLUMNS_SQL}
+           FROM nutrition_plan_templates npt
+          WHERE npt.id IN (${insertedIds.map(() => '?').join(',')}) AND npt.gym_id = ?
+          ORDER BY npt.name ASC`,
+        [...insertedIds, gymId],
+      );
+      imported = rows;
+      for (const row of rows) {
+        recordAudit(req, { action: 'create', entityType: 'nutrition_plan_template', entityId: row.id, next: row });
+      }
+    }
+    res.status(insertedIds.length > 0 ? 201 : 200).json({ imported, skipped });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #3333: "Resync with System" — the Exercises' #2302 for a Nutrition Plan
+ * Template. Moves the System template's name, description and `num_days` onto
+ * the gym's imported copy (`templateResyncChanges()` decides which differ). The
+ * copy's content — days, meals, restrictions, goals — is the gym's own once
+ * imported and is never replaced, so a resync cannot discard what the gym edited.
+ */
+nutritionPlanTemplatesRouter.post('/:id/resync-with-system', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const { rows: own } = await db.query(
+      `SELECT npt.id, npt.name, npt.description, npt.num_days, npt.cloned_from_id,
+              (SELECT src.gym_id IS NULL FROM nutrition_plan_templates src WHERE src.id = npt.cloned_from_id) AS from_system
+         FROM nutrition_plan_templates npt
+        WHERE npt.id = ? AND npt.gym_id = ? AND npt.status != 'deleted'`,
+      [req.params.id, gymId],
+    );
+    if (own.length === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
+    const copy = own[0];
+    if (!copy.cloned_from_id || Number(copy.from_system) !== 1) {
+      return res.status(400).json({ code: 'no_base_template', error: 'This template was not imported from the System catalogue.' });
+    }
+    const { rows: baseRows } = await db.query(
+      "SELECT id, name, description, num_days FROM nutrition_plan_templates WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      [copy.cloned_from_id],
+    );
+    if (baseRows.length === 0) {
+      return res.status(409).json({ code: 'base_unavailable', error: 'The originating System template no longer exists.' });
+    }
+    const base = baseRows[0];
+    const changed = templateResyncChanges(copy, base);
+    if (changed.length === 0) return res.json({ updated: [], message: 'up_to_date' });
+    if (changed.includes('name')) {
+      const { rows: taken } = await db.query(
+        "SELECT id FROM nutrition_plan_templates WHERE gym_id = ? AND status != 'deleted' AND name = ? AND id <> ? LIMIT 1",
+        [gymId, base.name, copy.id],
+      );
+      if (taken.length > 0) {
+        return res.status(409).json({ code: 'name_taken', error: 'Another template in this gym already uses the System name.' });
+      }
+    }
+    await db.query(
+      `UPDATE nutrition_plan_templates
+          SET name = ?, description = ?, num_days = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ?`,
+      [base.name, base.description ?? null, base.num_days ?? 0, resolveRequestActor(ctx), copy.id, gymId],
+    );
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'nutrition_plan_template',
+      entityId: copy.id,
+      next: { resync_with_system: changed },
+    });
+    const { rows } = await db.query(
+      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type,
+              (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count,
+              ${SOURCE_COLUMNS_SQL}
+         FROM nutrition_plan_templates npt WHERE npt.id = ? AND npt.gym_id = ?`,
+      [copy.id, gymId],
+    );
+    res.json({ updated: changed, template: rows[0] ?? null });
+  } catch (err) { next(err); }
+});
+
 nutritionPlanTemplatesRouter.get('/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type
+      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type, ${SOURCE_COLUMNS_SQL}
        FROM nutrition_plan_templates npt
        WHERE npt.id = ? AND (npt.gym_id = ? OR npt.gym_id IS NULL) AND npt.status != 'deleted'`,
       [req.params.id, gymId],
@@ -263,10 +459,12 @@ nutritionPlanTemplatesRouter.post('/', requireModuleWrite('NUTRITION'), async (r
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const row = await insertAndFetch(
-      'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-      [gymId, name.trim(), description ?? null, status ?? 'active', actor, actor],
+      'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [gymId, name.trim(), description ?? null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'active', actor, actor],
       'SELECT * FROM nutrition_plan_templates WHERE id = ?',
       (id) => [id],
     );
@@ -284,13 +482,17 @@ nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async 
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const { rowCount } = await db.query(
       `UPDATE nutrition_plan_templates SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
+        num_days = IF(?, ?, num_days),
         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, actor, id, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null,
+       numDays.kind === 'value' ? 1 : 0, numDays.kind === 'value' ? numDays.value : 0, actor, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
     const { rows } = await db.query(
@@ -344,65 +546,11 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-        [gymId, copyName, src.description ?? null, 'draft', actor, actor],
+        'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+        [gymId, copyName, src.description ?? null, src.num_days ?? 0, 'draft', actor, actor],
       );
 
-      // Clone days → meals → meal_items
-      const { rows: days } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const day of days) {
-        const { insertId: newDayId } = await tx.query(
-          'INSERT INTO nutrition_plan_template_days (gym_id, nutrition_plan_template_id, weekday, position) VALUES (?, ?, ?, ?)',
-          [gymId, insertId, day.weekday, day.position],
-        );
-        const { rows: meals } = await tx.query(
-          'SELECT * FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ? ORDER BY position ASC',
-          [day.id],
-        );
-        for (const meal of meals) {
-          const { insertId: newMealId } = await tx.query(
-            'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, meal_type, base_meal_id, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [gymId, newDayId, meal.meal_type ?? null, meal.base_meal_id ?? null, meal.display_name, meal.notes ?? null, meal.position],
-          );
-          const { rows: items } = await tx.query(
-            'SELECT * FROM nutrition_plan_template_meal_items WHERE meal_id = ? ORDER BY position ASC',
-            [meal.id],
-          );
-          for (const item of items) {
-            await tx.query(
-              'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
-              [gymId, newMealId, (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
-            );
-          }
-        }
-      }
-
-      // Clone restrictions
-      const { rows: restrictions } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_restrictions WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const r of restrictions) {
-        await tx.query(
-          'INSERT INTO nutrition_plan_template_restrictions (gym_id, nutrition_plan_template_id, nutrition_library_item_id, base_nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?)',
-          [gymId, insertId, (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), r.applies_all_days, r.position],
-        );
-      }
-
-      // Clone goals
-      const { rows: goals } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const g of goals) {
-        await tx.query(
-          'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
-          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null), (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null)],
-        );
-      }
+      await copyTemplateContentTx(tx, id, insertId, gymId);
 
       return insertId;
     });
@@ -445,62 +593,11 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
-        [gymId, baseName, src.description ?? null, 'draft', actor, actor, src.id],
+        'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
+        [gymId, baseName, src.description ?? null, src.num_days ?? 0, 'draft', actor, actor, src.id],
       );
 
-      const { rows: days } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const day of days) {
-        const { insertId: newDayId } = await tx.query(
-          'INSERT INTO nutrition_plan_template_days (gym_id, nutrition_plan_template_id, weekday, position) VALUES (?, ?, ?, ?)',
-          [gymId, insertId, day.weekday, day.position],
-        );
-        const { rows: meals } = await tx.query(
-          'SELECT * FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ? ORDER BY position ASC',
-          [day.id],
-        );
-        for (const meal of meals) {
-          const { insertId: newMealId } = await tx.query(
-            'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, meal_type, base_meal_id, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [gymId, newDayId, meal.meal_type ?? null, meal.base_meal_id ?? null, meal.display_name, meal.notes ?? null, meal.position],
-          );
-          const { rows: items } = await tx.query(
-            'SELECT * FROM nutrition_plan_template_meal_items WHERE meal_id = ? ORDER BY position ASC',
-            [meal.id],
-          );
-          for (const item of items) {
-            await tx.query(
-              'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, base_nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?, ?, ?)',
-              [gymId, newMealId, (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), (item.base_nutrition_library_item_id ?? item.nutrition_library_item_id), item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
-            );
-          }
-        }
-      }
-
-      const { rows: restrictions } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_restrictions WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const r of restrictions) {
-        await tx.query(
-          'INSERT INTO nutrition_plan_template_restrictions (gym_id, nutrition_plan_template_id, nutrition_library_item_id, base_nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?), ?, ?)',
-          [gymId, insertId, (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), (r.base_nutrition_library_item_id ?? r.nutrition_library_item_id), r.applies_all_days, r.position],
-        );
-      }
-
-      const { rows: goals } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const g of goals) {
-        await tx.query(
-          'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
-          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null), (g.base_nutrition_library_item_id ?? g.nutrition_library_item_id ?? null)],
-        );
-      }
+      await copyTemplateContentTx(tx, id, insertId, gymId);
 
       return insertId;
     });
