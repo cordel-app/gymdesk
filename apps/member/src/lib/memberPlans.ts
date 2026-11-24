@@ -16,10 +16,11 @@
 //    page never filters a list by status for itself — a client-side rule is how
 //    a plan comes to be named in the card above *and* listed in the history
 //    under it.
-//  - **A past plan shows no money and no action** (§8: the section exists for
-//    historical visibility and must not carry an active plan's actions), so a
-//    row is a name and one muted line. There is no price, no pill and no
-//    control to word here.
+//  - **A past plan carries no action** (§8: the section exists for historical
+//    visibility and must not carry an active plan's actions). Since #3293 it is
+//    drawn with My Plans' own plan card — status pill, agreed fee, cadence, plan
+//    period and the same one-time / recurring item groups — minus the picture;
+//    `pastPlanLineGroup()` and `pastPlanLineMeta()` are what an item reads as.
 //  - **A missing date is an absence, never a guess.** A row that carries
 //    neither an end date nor a closing stamp reads as its status alone rather
 //    than falling back to the day it *started*, which would tell a member their
@@ -175,6 +176,23 @@ export function pastPlanLineFacts(line: PastPlanLine): PastPlanText[] {
     facts.push({ key: 'membership.past_plan_direct_discount', values: { value: line.direct_discount_percent } });
   }
   return facts;
+}
+
+/** #3293 — the My Plans item group a past line sits in: a recurring frequency is Recurring. */
+const RECURRING_LINE_FREQUENCIES = ['week', 'four_weeks', 'month', 'year'];
+export function pastPlanLineGroup(line: PastPlanLine): 'onetime' | 'recurring' {
+  return RECURRING_LINE_FREQUENCIES.includes(line.billing_frequency ?? '') ? 'recurring' : 'onetime';
+}
+
+/**
+ * #3293 — the meta line under a past line's name, as My Plans words an active
+ * plan's item: its quantity and its frequency (#3235: no Mandatory chip, no price).
+ */
+export function pastPlanLineMeta(line: PastPlanLine): PastPlanText[] {
+  const meta: PastPlanText[] = [{ key: 'membership.plan_line_quantity', values: { quantity: line.quantity } }];
+  const frequencyKey = pastPlanLineFrequencyKey(line);
+  if (frequencyKey) meta.push({ key: frequencyKey });
+  return meta;
 }
 
 /** A Promotion's own treatment of a Product or the fee — the five Promotion actions. */

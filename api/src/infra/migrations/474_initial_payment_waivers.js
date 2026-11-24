@@ -6,7 +6,8 @@
  * `domain/initialPaymentWaiver.ts`). The row is the whole waiver: `initialCharge()` applies it to
  * the line after the engine priced it, so the plan, its Promotions, its direct discounts and every
  * recurring obligation are untouched. Reverting deletes the row. A row whose line no longer exists
- * applies to nothing; the cart's own lifecycle removes them (the cart's deletion cascades). Written
+ * applies to nothing; a cart merged into another (`syncPurchase()`) brings its waivers along, and a deleted
+ * cart takes its own (cascade). Written
  * only by `api/initial-payment-waivers.ts`; the actor is the audit row's (`waive_initial_payment_line`
  * / `revert_initial_payment_waive` on the Product Set), so the table carries no actor column.
  *
