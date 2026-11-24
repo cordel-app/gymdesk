@@ -5,6 +5,7 @@ import { nameSimulatedEvents } from './billing-event-name';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { ownPrimaryPlanSnapshot } from './plan-snapshot-ownership';
 import { db } from '../infra/db';
+import { refuseWhilePurchasePending } from './pending-purchase-guard';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { computeAssignmentBillingEventSimulation, sharedCycleHorizon } from '../domain/assignmentBillingEventSimulation';
@@ -168,6 +169,8 @@ productSetDraftRouter.post('/plans', requireModuleWrite('PAYMENTS'), async (req,
     }
     const { rows } = await db.query<any>('SELECT starts_at, owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [Number(req.params.id), gymId]);
     if (!rows[0]) return res.status(404).json({ error: 'not_found' });
+    // #3355 stage 1: no plan joins a cart while the owner's previous purchase awaits payment.
+    if (await refuseWhilePurchasePending(db, gymId, Number(rows[0].owner_member_id), res)) return;
     // #2966 stage 6: the beneficiaries staff picked, judged by the assignment's own rule against the
     // cart owner's family; absent keeps the pre-stage-6 behaviour (`owner_is_beneficiary`).
     const judged = await judgeMemberBeneficiaries(gymId, Number(rows[0].owner_member_id), planId, req.body?.beneficiary_member_ids);

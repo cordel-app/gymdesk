@@ -21,6 +21,7 @@ import { expireCarts } from './cart-expiry';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { Router } from 'express';
 import { db } from '../infra/db';
+import { refuseWhilePurchasePending } from './pending-purchase-guard';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -267,6 +268,9 @@ async function createPurchase(req: any, res: any, next: any, isRequiredExtra: bo
   try {
     const member = await loadMember(gymId, memberId);
     if (!member) return res.status(404).json({ error: 'Member not found' });
+    // #3355 stage 1: no new purchase while one awaits payment (a required extra rides on a request
+    // that already passed this check).
+    if (!isRequiredExtra && await refuseWhilePurchasePending(db, gymId, memberId, res)) return;
     const productId = Number((req.body ?? {}).product_id);
     if (!Number.isInteger(productId) || productId <= 0) return res.status(400).json({ error: 'product_id is required' });
     const discount = directDiscountFrom(req, res);

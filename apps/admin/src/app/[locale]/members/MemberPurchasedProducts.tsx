@@ -49,6 +49,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel } from '@/lib/billingFrequency';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { cardMutedTextStyle, formErrorStyle } from '@/components/formChrome';
+import { addPurchaseAction, PENDING_PURCHASE_BLOCKED_KEY } from './pendingPurchaseBlock';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -83,7 +84,7 @@ import {
 export type { PurchasedProduct, PurchasedProductPromotion };
 
 export function MemberPurchasedProducts({
-  items, memberId, canWrite, canPay, isAdmin, onChanged, committedKey,
+  items, memberId, canWrite, canPay, isAdmin, onChanged, committedKey, purchasePending = false,
 }: {
   items: PurchasedProduct[];
   memberId: number;
@@ -96,6 +97,8 @@ export function MemberPurchasedProducts({
   onChanged: () => void;
   /** Bumped when Save & Pay committed a version: the inline Add form closes (#1918). */
   committedKey?: number;
+  /** #3355 stage 1 — the member owns a Purchase awaiting payment: `+ Add Product` opens nothing. */
+  purchasePending?: boolean;
 }) {
   const t = useTranslations('members');
   // The Promotion voice (*Promotion* / *No promotion*), which this namespace
@@ -109,6 +112,9 @@ export function MemberPurchasedProducts({
 
   const [adding, setAdding] = useState(false);
   useEffect(() => { if (committedKey) setAdding(false); }, [committedKey]);
+  // #3355 stage 1: the red notice a blocked `+ Add Product` shows; gone once nothing is pending.
+  const [addBlocked, setAddBlocked] = useState(false);
+  useEffect(() => { if (!purchasePending) setAddBlocked(false); }, [purchasePending]);
   // #2372 follow-up: the form's fields are the draft row's own cells.
   const addForm = useAddProductForm({
     memberId, isAdmin, canPay, recurringOnly: false, embedded: true, enabled: adding,
@@ -520,11 +526,19 @@ export function MemberPurchasedProducts({
           type="button"
           disabled={!canWrite || adding}
           title={canWrite ? undefined : t('products_add_read_only')}
-          onClick={() => setAdding(true)}
+          onClick={() => {
+            if (addPurchaseAction(purchasePending) === 'blocked') { setAddBlocked(true); return; }
+            setAdding(true);
+          }}
           style={{ ...primaryBtnSmall(), opacity: !canWrite || adding ? 0.5 : 1, cursor: !canWrite || adding ? 'not-allowed' : 'pointer' }}
         >
           {t('products_add')}
         </button>
+        {addBlocked && (
+          <p role="alert" style={{ ...formErrorStyle, margin: '6px 0 0' }} data-pending-purchase-blocked>
+            {t(PENDING_PURCHASE_BLOCKED_KEY)}
+          </p>
+        )}
       </div>
 
       <ConfirmDialog

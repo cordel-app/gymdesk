@@ -540,6 +540,7 @@ export function MemberExpandedRow({
               onCancelPlan={setCancelling}
               onReactivatePlan={handleReactivatePlan}
               assignBusy={assigningFor !== null}
+              purchasePending={configuration.has_pending_payment_purchase === true}
               renderAssignEditor={(m) => (
                 // #628: Assign New Plan stays an explicit supersede action, edited
                 // inline under the list it acts on — distinct from "+ Add
@@ -594,6 +595,7 @@ export function MemberExpandedRow({
               isAdmin={isAdmin}
               onChanged={reloadProducts}
               committedKey={committedKey}
+              purchasePending={configuration.has_pending_payment_purchase === true}
             />
           </Section>
 
