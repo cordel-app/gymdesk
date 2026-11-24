@@ -14,9 +14,10 @@ import {
 } from '../domain/billingDocumentKeys';
 import {
   AUTO_INVOICE_BATCH_SIZE, autoInvoiceEventTypes, autoInvoiceFromDate, shouldAutoIssueSimplified,
-  formatFiscalNumber, formatRectifyingNumber, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, replacementTarget, representationToCreate,
+  formatFiscalNumber, formatRectifyingNumber, refundRectificationTarget, type RefundRectificationSkip, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, replacementTarget, representationToCreate,
 } from '../domain/billingInvoice';
 import { loadInvoiceFigures } from './invoice-figures';
+import { refundState, toCents } from '../domain/billingEventRefund';
 import { anulacionRefusal } from '../domain/verifactuRecords';
 import {
   enabledVerifactuIntegration, loadInvoiceVerifactuQr, loadInvoiceVerifactuRecords, recordVerifactuAlta, recordVerifactuAnulacion,
@@ -237,7 +238,7 @@ billingInvoicesRouter.get('/billing-events/:id/invoices', requireModuleAccess('P
     if (!ev) return res.status(404).json({ error: 'Billing event not found' });
     const { rows } = await db.query<any>(
       `SELECT id, invoice_type, status, fiscal_number, issued_at, payment_status, related_invoice_id, rectification_reason,
-              replaces_invoice_id,
+              replaces_invoice_id, refund_payment_request_id,
               simplified_not_paid_pdf_key IS NOT NULL AS has_simplified_not_paid,
               simplified_paid_pdf_key IS NOT NULL AS has_simplified_paid,
               full_not_paid_pdf_key IS NOT NULL AS has_full_not_paid,
@@ -360,9 +361,140 @@ billingInvoicesRouter.get('/invoices/:id/pdf', requireModuleAccess('PAYMENTS'), 
   } catch (err) { if (!answerVerifactuRefusal(err, res)) next(err); }
 });
 
-// POST /invoices/:id/rectify — { reason }. A rectifying invoice is its own row
-// and number (R series), linked to the original, which it cancels in full.
-// The original is never edited; one rectification per original.
+type RectifyOutcome = { status: number; error?: string; id?: number };
+
+/**
+ * Issues the rectifying invoice of invoice `id` inside `tx`: its own row and
+ * number (R series), linked to the original, which it cancels in full, with its
+ * VERI*FACTU Alta (R1/R5). The original is never edited; one rectification per
+ * original. #3298 stage 3: `refundId` names the refund whose completion issued
+ * it (`invoices.refund_payment_request_id`). Answers 201 with the new id, or the
+ * refusal. The PDF is rendered after commit (`renderRectifyingInvoice()`).
+ */
+export async function rectifyInvoiceInTx(
+  tx: Tx, gymId: string, id: number, reason: string, actor: string | null, refundId: number | null = null,
+): Promise<RectifyOutcome> {
+  const { rows } = await tx.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ? FOR UPDATE', [id, gymId]);
+  const orig = rows[0];
+  if (!orig) return { status: 404, error: 'Invoice not found' };
+  if (orig.status !== 'issued') return { status: 409, error: 'Only an issued invoice can be rectified' };
+  if (orig.related_invoice_id) return { status: 409, error: 'A rectifying invoice cannot be rectified' };
+  const { rows: existing } = await tx.query<any>(
+    'SELECT id FROM invoices WHERE gym_id = ? AND related_invoice_id = ?', [gymId, id]);
+  if (existing[0]) return { status: 409, error: 'Invoice already rectified' };
+  // #2648 stage 7: a replaced simplified invoice is corrected through the complete invoice that replaced it.
+  const { rows: replacing } = await tx.query<any>(
+    'SELECT id FROM invoices WHERE gym_id = ? AND replaces_invoice_id = ?', [gymId, id]);
+  if (replacing[0]) {
+    return { status: 409, error: 'This simplified invoice was replaced by a complete invoice; rectify the complete invoice instead' };
+  }
+  await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
+  const year = new Date().getUTCFullYear();
+  const { rows: nums } = await tx.query<any>(
+    'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND fiscal_year = ? AND related_invoice_id IS NOT NULL FOR SHARE', [gymId, year]);
+  const seq = nums.reduce((m: number, r: any) => Math.max(m, parseFiscalSeq(r.fiscal_number ?? '')), 0) + 1;
+  const { insertId } = await tx.query(
+    `INSERT INTO invoices (gym_id, billing_event_id, invoice_type, status, fiscal_number, fiscal_year,
+        customer_name, customer_tax_id, customer_address, issued_at, payment_status,
+        related_invoice_id, rectification_reason, refund_payment_request_id, created_by)
+     VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?, ?)`,
+    [gymId, orig.billing_event_id, orig.invoice_type, formatRectifyingNumber(year, seq), year,
+      orig.customer_name, orig.customer_tax_id, orig.customer_address, orig.payment_status,
+      id, reason, refundId, actor],
+  );
+  await recordVerifactuAlta(tx, gymId, insertId as number, actor);
+  return { status: 201, id: insertId as number };
+}
+
+/** Renders a committed rectifying invoice's PDF. Answers the invoice row. */
+async function renderRectifyingInvoice(gymId: string, invoiceId: number): Promise<any> {
+  const { rows: invRows } = await db.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ?', [invoiceId, gymId]);
+  const inv = invRows[0];
+  const { rows: origRows } = await db.query<any>(
+    'SELECT fiscal_number FROM invoices WHERE id = ? AND gym_id = ?', [inv.related_invoice_id, gymId]);
+  const ev = await loadEvent(gymId, inv.billing_event_id);
+  if (ev) {
+    await renderRepresentation(inv, ev, 'not-paid', { number: origRows[0].fiscal_number, reason: inv.rectification_reason });
+  }
+  return inv;
+}
+
+export type RefundRectificationResult =
+  | { issued: true; invoiceId: number; rectifiesInvoiceId: number }
+  | { issued: false; reason: RefundRectificationSkip | 'not_completed' | 'already_issued' | 'storage_not_configured' };
+
+/**
+ * #3298 stage 3 — the rectifying invoice a completed refund owes. Called once a
+ * refund is `completed` (the manual refund after its commit, the provider
+ * refund once MONEI confirms it, the cleanup's reconciliation), after the
+ * Refund Receipt: the receipt is the financial proof that money went back, this
+ * is the fiscal correction, and the two stay separate records linked by
+ * `invoices.refund_payment_request_id`. `refundRectificationTarget()` decides
+ * which invoice it rectifies, if any; a refund issues at most one (the UNIQUE
+ * column, checked under the event lock). Nothing is issued while the private
+ * bucket is not configured, as for every other invoice.
+ */
+export async function issueRefundRectification(
+  gymId: string, refundId: number, actor: string | null,
+): Promise<RefundRectificationResult> {
+  if (!isPrivateStorageConfigured()) return { issued: false, reason: 'storage_not_configured' };
+  const outcome = await db.transaction(async (tx): Promise<RefundRectificationResult> => {
+    const { rows: refRows } = await tx.query<any>(
+      `SELECT r.id, r.status, o.id AS original_id, o.amount AS collected, o.billing_event_id
+         FROM payment_requests r JOIN payment_requests o ON o.id = r.refund_of_payment_request_id
+        WHERE r.id = ? AND r.gym_id = ? AND r.transaction_type = 'refund'`, [refundId, gymId]);
+    const refund = refRows[0];
+    if (!refund || refund.status !== 'completed' || refund.billing_event_id == null) {
+      return { issued: false, reason: 'not_completed' };
+    }
+    await tx.query('SELECT id FROM billing_events WHERE id = ? AND gym_id = ? FOR UPDATE', [refund.billing_event_id, gymId]);
+    const { rows: done } = await tx.query<any>(
+      'SELECT id FROM invoices WHERE gym_id = ? AND refund_payment_request_id = ?', [gymId, refundId]);
+    if (done[0]) return { issued: false, reason: 'already_issued' };
+    const { rows: refunded } = await tx.query<any>(
+      `SELECT COALESCE(SUM(amount), 0) AS total FROM payment_requests
+        WHERE refund_of_payment_request_id = ? AND transaction_type = 'refund' AND status = 'completed'`,
+      [refund.original_id]);
+    const fullyRefunded = refundState(toCents(refund.collected), toCents(refunded[0].total)) === 'full';
+    const { rows: invoices } = await tx.query<any>(
+      `SELECT i.id, i.invoice_type, i.status, i.related_invoice_id, i.replaces_invoice_id,
+              EXISTS (SELECT 1 FROM verifactu_records v WHERE v.invoice_id = i.id AND v.record_type = 'anulacion') AS has_anulacion
+         FROM invoices i WHERE i.gym_id = ? AND i.billing_event_id = ?`, [gymId, refund.billing_event_id]);
+    const target = refundRectificationTarget(invoices.map((r: any) => ({
+      id: r.id, invoiceType: r.invoice_type, status: r.status, relatedInvoiceId: r.related_invoice_id,
+      replacesInvoiceId: r.replaces_invoice_id, hasAnulacion: !!r.has_anulacion,
+    })), fullyRefunded);
+    if ('skip' in target) return { issued: false, reason: target.skip };
+    const { rows: rr } = await tx.query<any>(
+      'SELECT receipt_number FROM refund_receipts WHERE payment_request_id = ?', [refundId]);
+    const reason = `Refund ${rr[0]?.receipt_number ?? `#${refundId}`}`;
+    const res = await rectifyInvoiceInTx(tx, gymId, target.invoiceId, reason, actor, refundId);
+    if (!res.id) throw new Error(`Refund #${refundId}: rectification of invoice #${target.invoiceId} refused: ${res.error}`);
+    return { issued: true, invoiceId: res.id, rectifiesInvoiceId: target.invoiceId };
+  });
+  if (outcome.issued) await renderRectifyingInvoice(gymId, outcome.invoiceId);
+  return outcome;
+}
+
+/**
+ * The best-effort wrapper every refund path calls once a refund completes: the
+ * refund is already recorded and the money moved, so a rectification that
+ * cannot be issued (an invalid issuer NIF, storage down) is logged and never
+ * undoes or hides it. Staff can still rectify the invoice by hand.
+ */
+export async function issueRefundRectificationSafely(
+  gymId: string, refundId: number, actor: string | null, log: (msg: string, err: unknown) => void = defaultLog,
+): Promise<RefundRectificationResult | null> {
+  try {
+    return await issueRefundRectification(gymId, refundId, actor);
+  } catch (err) {
+    log(`Rectifying invoice for refund #${refundId} could not be issued:`, err);
+    return null;
+  }
+}
+const defaultLog = (msg: string, err: unknown) => console.error(msg, err);
+
+// POST /invoices/:id/rectify — { reason }. See `rectifyInvoiceInTx()`.
 billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   try {
     const tctx = getTenantContext(req);
@@ -374,48 +506,9 @@ billingInvoicesRouter.post('/invoices/:id/rectify', requireModuleWrite('PAYMENTS
     if (!isPrivateStorageConfigured()) return res.status(503).json({ error: 'Private document storage is not configured' });
 
     const actor = resolveRequestActor(tctx);
-    let outcome: { status: number; error?: string; id?: number } = { status: 0 };
-    await db.transaction(async (tx) => {
-      const { rows } = await tx.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ? FOR UPDATE', [id, gymId]);
-      const orig = rows[0];
-      if (!orig) { outcome = { status: 404, error: 'Invoice not found' }; return; }
-      if (orig.status !== 'issued') { outcome = { status: 409, error: 'Only an issued invoice can be rectified' }; return; }
-      if (orig.related_invoice_id) { outcome = { status: 409, error: 'A rectifying invoice cannot be rectified' }; return; }
-      const { rows: existing } = await tx.query<any>(
-        'SELECT id FROM invoices WHERE gym_id = ? AND related_invoice_id = ?', [gymId, id]);
-      if (existing[0]) { outcome = { status: 409, error: 'Invoice already rectified' }; return; }
-      // #2648 stage 7: a replaced simplified invoice is corrected through the complete invoice that replaced it.
-      const { rows: replacing } = await tx.query<any>(
-        'SELECT id FROM invoices WHERE gym_id = ? AND replaces_invoice_id = ?', [gymId, id]);
-      if (replacing[0]) {
-        outcome = { status: 409, error: 'This simplified invoice was replaced by a complete invoice; rectify the complete invoice instead' };
-        return;
-      }
-      await tx.query('SELECT id FROM gyms WHERE id = ? FOR UPDATE', [gymId]);
-      const year = new Date().getUTCFullYear();
-      const { rows: nums } = await tx.query<any>(
-        'SELECT fiscal_number FROM invoices WHERE gym_id = ? AND fiscal_year = ? AND related_invoice_id IS NOT NULL FOR SHARE', [gymId, year]);
-      const seq = nums.reduce((m: number, r: any) => Math.max(m, parseFiscalSeq(r.fiscal_number ?? '')), 0) + 1;
-      const { insertId } = await tx.query(
-        `INSERT INTO invoices (gym_id, billing_event_id, invoice_type, status, fiscal_number, fiscal_year,
-            customer_name, customer_tax_id, customer_address, issued_at, payment_status,
-            related_invoice_id, rectification_reason, created_by)
-         VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?)`,
-        [gymId, orig.billing_event_id, orig.invoice_type, formatRectifyingNumber(year, seq), year,
-          orig.customer_name, orig.customer_tax_id, orig.customer_address, orig.payment_status,
-          id, parsed.value, actor],
-      );
-      await recordVerifactuAlta(tx, gymId, insertId as number, actor);
-      outcome = { status: 201, id: insertId as number };
-    });
+    const outcome = await db.transaction((tx) => rectifyInvoiceInTx(tx, gymId, id, parsed.value, actor));
     if (outcome.error) return res.status(outcome.status).json({ error: outcome.error });
-
-    const { rows: invRows } = await db.query<any>('SELECT * FROM invoices WHERE id = ? AND gym_id = ?', [outcome.id, gymId]);
-    const { rows: origRows } = await db.query<any>('SELECT fiscal_number FROM invoices WHERE id = ? AND gym_id = ?', [id, gymId]);
-    const inv = invRows[0];
-    const ev = await loadEvent(gymId, inv.billing_event_id);
-    if (!ev) return res.status(404).json({ error: 'Billing event not found' });
-    await renderRepresentation(inv, ev, 'not-paid', { number: origRows[0].fiscal_number, reason: parsed.value });
+    const inv = await renderRectifyingInvoice(gymId, outcome.id as number);
     recordAudit(req, { action: 'rectify_invoice', entityType: 'billing_event', entityId: inv.billing_event_id,
       next: { invoice_id: inv.id, rectifies_invoice_id: id, fiscal_number: inv.fiscal_number } });
     res.status(201).json({ id: inv.id, invoice_type: inv.invoice_type, status: inv.status,

@@ -852,8 +852,8 @@ answer of `REFUNDED`/`PARTIALLY_REFUNDED` completes the row (with `provider_stat
 `provider_refund_ref`); an HTTP 4xx fails it; a transport error leaves it pending. The
 event's displayed payment status reads `refunded` / `partially_refunded` from completed
 refunds. Nothing else moves: the original attempt, the ledger row, its lines, a receipt
-or invoice, the attempt counter and every contracted item stay as they were (a rectifying
-invoice is the existing manual `POST /payments/invoices/:id/rectify`, never automatic).
+or invoice, the attempt counter and every contracted item stay as they were (since #3298 stage 3 a
+refund that leaves the payment fully refunded issues a *new* rectifying invoice, below).
 
 **A pending Monei refund is settled later from Monei's own record** (#2480 follow-up).
 `POST /billing/cleanup` runs `reconcilePendingProviderRefunds()`
@@ -889,7 +889,22 @@ A pending or failed refund gets none, and each partial refund gets its own. The 
 own gapless per-gym, per-year series, `R-YYYY-NNNN` (`refund_receipt_sequences`, never
 `receipt_sequences`), allocated only by `issueRefundReceipt()` (`api/src/api/refund-receipts.ts`)
 under the refund row's lock. The original receipt number, its PDF and every invoice are not
-touched, and no invoice is issued: a fiscal correction stays the manual rectifying invoice.
+touched.
+
+**A full refund issues the rectifying invoice of the invoice it refunds** (#3298 stage 3,
+migration 476). Once a refund is `completed` and the payment's completed refunds equal what was
+collected, `issueRefundRectification()` (`api/src/api/billing-invoices.ts`) rectifies the event's
+standing invoice through `rectifyInvoiceInTx()`, the manual rectify route's own writer: its own
+`R-` number, the original cancelled in full by differences (R5 for a simplified invoice, R1 for a
+complete one), its VERI*FACTU Alta in the same transaction, and `invoices.refund_payment_request_id`
+naming the refund. The Refund Receipt (the proof the money went back) stays its own record; the
+Admin links the two (*For refund …* / *Rectified in …*). Which invoice is `refundRectificationTarget()`'s:
+issued, not rectifying, not already rectified, not replaced (a complete invoice that replaced the
+simplified one is the one rectified) and not cancelled by an Anulación. It runs after the refund
+commits on all three completion paths (manual, Monei's answer, the cleanup's reconciliation),
+best-effort: a failure is logged and staff can still rectify by hand. Decisions: a partial refund
+issues no rectification yet (a rectification by differences of part of the lines is a later
+stage); the reason printed is `Refund <refund receipt number>`.
 
 The PDF ("JUSTIFICANTE DE DEVOLUCIÓN / REFUND RECEIPT", `lib/refund-receipt-pdf.ts`) prints the
 gym's legal name, NIF and fiscal address; the payer's name and tax id (the event's issued full
