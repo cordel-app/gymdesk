@@ -160,6 +160,12 @@ describe('the purchase follows its checkout (#3251)', () => {
     const order = await orderOfEvent(Number(res.body.billing_event_id));
     expect((await webhook(order, 'SUCCEEDED')).status).toBe(200);
     expect((await purchase(cart))?.status).toBe('completed');
+    // #3307 — the version's own read reports its purchase, so the Admin Summary can keep showing it.
+    const read = await staff('get', `/product-sets/${m.setId}`);
+    expect(read.status).toBe(200);
+    expect(read.body.status).toBe('active');
+    expect(read.body.purchase).toMatchObject({ id: cart, status: 'completed' });
+    expect(typeof read.body.purchase.name).toBe('string');
     // The duplicate delivery neither re-opens nor duplicates anything.
     expect((await webhook(order, 'SUCCEEDED')).status).toBe(200);
     expect(await purchasesOf(m.id)).toEqual([{ id: cart, status: 'completed' }]);
