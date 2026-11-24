@@ -13,7 +13,7 @@ import { NutritionItemRow, nutritionItemGridStyle } from '@/components/Nutrition
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { NUTRITION_DAY_STATUSES, type NutritionDayStatus } from '@/lib/trainingDayStatus';
-import { ProgressCounts, deviceToday, mondayIndex, canShowNextWeek, shiftWeekWithin, swipeWeekDelta, weekDates, weekStart } from '@/lib/trainingWeek';
+import { ProgressCounts, dayCardLabel, deviceToday, mondayIndex, canShowNextWeek, shiftWeekWithin, swipeWeekDelta, weekDates, weekStart } from '@/lib/trainingWeek';
 import { memberTheme, primaryButtonStyle, sectionCardStyle, statusPillStyle, statusTone } from '@/lib/memberChrome';
 import {
   NutritionFoodItem,
@@ -27,6 +27,11 @@ import {
 // Weekday / date names are locale-driven, not a gym format setting (allowlisted in member-gym-format-allowlist).
 function dayText(locale: string, ymd: string, opts: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' }).format(new Date(`${ymd}T00:00:00Z`));
+}
+
+// `lunes` / `dilluns` read as a card title.
+function capitalize(text: string): string {
+  return text.charAt(0).toLocaleUpperCase() + text.slice(1);
 }
 
 interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[]; meal_name?: string | null }
@@ -69,6 +74,8 @@ export default function NutritionPage() {
   const [today, setToday] = useState<string>(deviceToday());
   const [selectedDate, setSelectedDate] = useState<string>(deviceToday());
   const [progress, setProgress] = useState<NutritionProgress>(EMPTY_PROGRESS);
+  // #3331: the date `progress` was read for, so a stale answer is never shown as the selected day's.
+  const [progressDate, setProgressDate] = useState<string | null>(null);
   // The summary cards are always today's day, week and month, whichever week the calendar shows.
   const [summary, setSummary] = useState<NutritionProgress>(EMPTY_PROGRESS);
   const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set());
@@ -121,9 +128,13 @@ export default function NutritionPage() {
     try {
       const p = await apiFetch<NutritionProgress>(`/me/nutrition-progress?date=${date}`);
       setProgress(p);
+      setProgressDate(date);
       const anchor = p.today ?? today;
       if (p.today && p.today !== today) {
-        if (selectedDate === today) setSelectedDate(p.today);
+        // #3331: a functional update, so a day picked while this request was in
+        // flight is never reset to today by a stale closure.
+        const gymToday = p.today;
+        setSelectedDate((s) => (s === today ? gymToday : s));
         setToday(p.today);
       }
       if (date === anchor) setSummary(p);
@@ -217,9 +228,18 @@ export default function NutritionPage() {
   // #1874: another week shows its own dates and results; the month card stays today's.
   const otherWeek = weekStart(selectedDate) !== weekStart(today);
   const ddmm = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
-  const dayLabel = otherWeek ? ddmm(selectedDate) : t('nutrition.progress_day');
+  // #3331: the day card follows the selected date in the current week too —
+  // *Today* for today, the weekday's name for another day, its own figures.
+  const dayKind = dayCardLabel(selectedDate, today);
+  const dayLabel = dayKind === 'today' ? t('nutrition.progress_day')
+    : dayKind === 'weekday' ? capitalize(dayText(locale, selectedDate, { weekday: 'long' }))
+    : ddmm(selectedDate);
   const weekLabel = otherWeek ? t('nutrition.progress_week_of', { date: ddmm(weekStart(selectedDate)) }) : t('nutrition.progress_week');
-  const dayCounts = otherWeek ? progress.day : summary.day;
+  // `progress` is the selected date's read; only show it once it answers for that date.
+  // Another week keeps its pre-#3331 reading of `progress` untouched.
+  const dayCounts = dayKind === 'today' ? summary.day
+    : dayKind === 'weekday' ? (progressDate === selectedDate ? progress.day : EMPTY_COUNTS)
+    : progress.day;
   const weekCounts = otherWeek ? progress.week : summary.week;
   const selectedWeekday = mondayIndex(selectedDate);
   const mealsForDate: Meal[] = (shown?.days ?? [])
