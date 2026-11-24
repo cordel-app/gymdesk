@@ -68,6 +68,7 @@ import { themesRouter, themesPublicRouter } from './api/themes';
 import { gymThemesRouter } from './api/gym-themes';
 import { staffRouter, staffLinkRouter } from './api/staff';
 import { staffCentersRouter } from './api/staff-centers';
+import { paymentsTimelineRouter } from './api/payments-timeline';
 import { paymentsRouter } from './api/payments';
 import { paymentsDashboardRouter } from './api/payments-dashboard';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
@@ -473,6 +474,8 @@ app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requi
 // whenever Transactions is switched off.
 app.use('/payments/dashboard', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.dashboard'), paymentsDashboardRouter);
 app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentsRouter);
+// #3311 — the Member card's Payments History and Forecast (read-only).
+app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentsTimelineRouter);
 app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentRequestsRouter);
 app.use('/payment-methods',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentMethodsRouter);
 
