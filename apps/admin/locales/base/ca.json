@@ -1255,7 +1255,10 @@
     "full_inv_name_required": "El nom del client és obligatori.",
     "full_inv_tax_id_required": "El NIF és obligatori.",
     "full_inv_address_required": "L'adreça fiscal és obligatòria.",
-    "full_inv_cancel": "Cancel·lar"
+    "full_inv_cancel": "Cancel·lar",
+    "action_details": "Detalls",
+    "details_modal_title": "Detalls de l'esdeveniment de facturació",
+    "details_load_error": "No s'ha pogut carregar l'esdeveniment de facturació."
   },
   "payment_providers": {
     "title": "Proveïdors de pagament",

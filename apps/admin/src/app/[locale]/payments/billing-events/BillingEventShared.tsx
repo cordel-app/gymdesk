@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CompleteInvoiceModal } from './CompleteInvoiceModal';
 import { menuDocumentBlocks, refundReceiptMenuEntries, type FullInvoiceForm } from './receiptsInvoicesView';
 import { notifyBillingEventDocumentsChanged } from './documentsChanged';
+import { BillingEventDetailsModal } from './BillingEventDetailsModal';
 
 type T = ReturnType<typeof useTranslations>;
 
@@ -304,6 +305,8 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
   const [cancelling, setCancelling] = useState<R | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [refunding, setRefunding] = useState<R | null>(null);
+  /** #3300: the event `⋮ → Details` shows in its modal. */
+  const [detailsId, setDetailsId] = useState<number | null>(null);
 
   const closePending = useCallback(() => setPending(null), []);
 
@@ -383,8 +386,8 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
 
   function menuItems(row: R): ContextMenuItem[] {
     const id = row.id!;
-    // #2836: no Details item — it only expanded the row, which the row's own
-    // chevron already does, so the menu holds the event's actions alone.
+    // #3300: Details is a modal of its own (the last item below), no longer the
+    // row expansion #2836 removed from the menu.
     const items: ContextMenuItem[] = [];
     // §1: payment actions are hidden — not merely disabled — where the API's
     // flags say they don't apply. Closing a confirmation never alters the
@@ -445,6 +448,11 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
     if (row.can_cancel) {
       items.push({ label: t('billing_events_page.action_cancel_event'), onClick: () => setCancelling(row), disabled: !canWrite, title: readOnlyTitle, danger: true });
     }
+    // #3300: Details opens the event's modal (View Audit Log lives there), and is
+    // always the last option (#802/#1188). A read, so no write gate.
+    if (row.id != null) {
+      items.push({ label: t('billing_events_page.action_details'), onClick: () => setDetailsId(id) });
+    }
     return items;
   }
 
@@ -503,7 +511,9 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
     />
   ) : null;
 
-  const modal = <>{paymentModal}{extraModals}</>;
+  const detailsModal = <BillingEventDetailsModal billingEventId={detailsId} onClose={() => setDetailsId(null)} />;
+
+  const modal = <>{paymentModal}{extraModals}{detailsModal}</>;
 
   return { menuItems, modal, closePending, canWrite, readOnlyTitle };
 }
