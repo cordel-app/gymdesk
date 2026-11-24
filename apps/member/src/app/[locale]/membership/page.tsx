@@ -30,6 +30,7 @@ import {
   statusTone,
 } from '@/lib/memberChrome';
 import {
+  BillingEventBadges,
   BillingEventCard,
   type BillingEventCardLine,
   PaymentsSection,
@@ -1375,8 +1376,8 @@ export default function MembershipPage() {
           {sections.past.length === 0 ? (
             <p style={styles.hint}>{t('payments.past_empty')}</p>
           ) : (
-            // #2937 — one compact, independently collapsible row per payment.
-            sections.past.map((event) => renderPaymentRow(event))
+            // #3299 — each past payment on Next Payment's detailed card.
+            sections.past.map((event) => renderPastPaymentCard(event))
           )}
         </PaymentsSubcard>
       </PaymentsSection>
@@ -2092,49 +2093,94 @@ export default function MembershipPage() {
     }));
   }
 
-  /**
-   * #2937 / #3297 — one payment: title, scheduled date, status, its payment-type
-   * and refund chips and amount in the header; its own stored lines, its
-   * documents and the payment details (method, notes) once expanded. Every
-   * figure is the ledger's.
-   */
-  function renderPaymentRow(event: BillingEvent, opts: { anchorId?: string; highlighted?: boolean } = {}) {
+  /** #2937 / #3297 — a payment's title, notes, chips and details, shared by both payment layouts. */
+  function paymentTitle(event: BillingEvent): string {
+    // #2940: the event's own name when it has one; an event written before names
+    // existed keeps the label it had.
+    return event.name
+      ?? (t(`membership.event.${event.event_type}` as any)
+        + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''));
+  }
+
+  function paymentNotes(event: BillingEvent): string | null {
     const transition = event.event_type === 'status_changed' && event.new_status
       ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
         + ` → ${t(`membership.status.${event.new_status}` as any)}`
       : null;
-    // #2940: the event's own name when it has one; an event written before names
-    // existed keeps the label it had.
-    const title = event.name
-      ?? (t(`membership.event.${event.event_type}` as any)
-        + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''));
-    const notes = [transition, event.notes].filter(Boolean).join(' · ') || null;
+    return [transition, event.notes].filter(Boolean).join(' · ') || null;
+  }
+
+  function paymentChips(event: BillingEvent) {
     const paymentKey = paymentTypeKey(event);
     const refundKey = refundTypeKey(event);
+    if (!paymentKey && !refundKey) return null;
+    return (
+      <>
+        {paymentKey && <span style={statusPillStyle('neutral')}>{t(`payments.${paymentKey}` as any)}</span>}
+        {refundKey && <span style={statusPillStyle('info')}>{t(`payments.${refundKey}` as any)}</span>}
+      </>
+    );
+  }
+
+  function paymentDetails(event: BillingEvent) {
+    const notes = paymentNotes(event);
+    if (!event.payment_method_name && !notes) return null;
+    return (
+      <>
+        {event.payment_method_name && <span>{event.payment_method_name}</span>}
+        {notes && <span>{notes}</span>}
+      </>
+    );
+  }
+
+  /**
+   * #3299 — one past payment on the same detailed card Next Payment draws (not
+   * prominent): its name, scheduled date, status and type chips, total, its own
+   * stored lines, its documents and the payment details. Nothing is collapsed
+   * inside it; the Past Payments subcard is what opens and closes.
+   */
+  function renderPastPaymentCard(event: BillingEvent) {
+    return (
+      <BillingEventCard
+        key={event.id}
+        title={paymentTitle(event)}
+        date={formatPaymentDate(paymentScheduledDate(event), gymFmt)}
+        total={money(billingEventAmount(event))}
+        totalLabel={t('payments.total')}
+        lines={paymentCardLines(event)}
+        badge={(
+          <BillingEventBadges>
+            {paymentStatusPill(event)}
+            {paymentChips(event)}
+          </BillingEventBadges>
+        )}
+        documents={renderPaymentDocuments(event)}
+        details={paymentDetails(event)}
+      />
+    );
+  }
+
+  /**
+   * #2937 / #3297 — a compact payment row (Next Payment's further unresolved
+   * payments, Planned Payments): title, scheduled date, status, chips and amount
+   * in the header; lines, documents and details once expanded. Every figure is
+   * the ledger's.
+   */
+  function renderPaymentRow(event: BillingEvent, opts: { anchorId?: string; highlighted?: boolean } = {}) {
     return (
       <PastBillingEventRow
         key={event.id}
         anchorId={opts.anchorId}
         highlighted={opts.highlighted}
-        title={title}
+        title={paymentTitle(event)}
         date={formatPaymentDate(paymentScheduledDate(event), gymFmt)}
         status={paymentStatusPill(event)}
-        chips={(paymentKey || refundKey) ? (
-          <>
-            {paymentKey && <span style={statusPillStyle('neutral')}>{t(`payments.${paymentKey}` as any)}</span>}
-            {refundKey && <span style={statusPillStyle('info')}>{t(`payments.${refundKey}` as any)}</span>}
-          </>
-        ) : null}
+        chips={paymentChips(event)}
         amount={money(billingEventAmount(event))}
         lines={paymentCardLines(event)}
         documents={renderPaymentDocuments(event)}
         expandable={billingEventHasDetails(event)}
-        details={(event.payment_method_name || notes) ? (
-          <>
-            {event.payment_method_name && <span>{event.payment_method_name}</span>}
-            {notes && <span>{notes}</span>}
-          </>
-        ) : null}
+        details={paymentDetails(event)}
       />
     );
   }

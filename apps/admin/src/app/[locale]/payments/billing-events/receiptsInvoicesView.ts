@@ -38,6 +38,40 @@ export interface BillingDocumentRow {
   refundReceiptId: number | null;
   /** #3298: a superseded simplified invoice's replacement number, when the API listed it. */
   replacedByNumber: string | null;
+  /** #3298 stage 2: the document links of an invoice, each the other invoice's number. */
+  links: DocumentLink[];
+}
+
+/** #3298 stage 2: one link from an invoice to another invoice of the same event. */
+export interface DocumentLink {
+  /** The `billing_events_page` key the link reads under. */
+  key: 'doc_link_rectifies' | 'doc_link_rectified_by' | 'doc_link_replaces';
+  number: string;
+}
+
+/**
+ * #3298 stage 2 — the links an invoice carries to the other invoices of its
+ * event, all derived from the two stored references (`related_invoice_id` on a
+ * rectifying invoice, `replaces_invoice_id` on a complete invoice issued in
+ * place of a simplified one): a rectifying invoice names the invoice it
+ * rectifies, a rectified invoice names its rectifying ones, a replacement names
+ * the simplified invoice it replaces. The replaced simplified invoice's own link
+ * is `replacedByNumber`. A reference to an invoice without a number links nothing.
+ */
+export function invoiceLinks(inv: InvoiceRow, invoices: InvoiceRow[]): DocumentLink[] {
+  const numberOf = (id: number | null | undefined) =>
+    id == null ? null : (invoices.find((i) => i.id === id)?.fiscal_number ?? null);
+  const links: DocumentLink[] = [];
+  const rectifies = numberOf(inv.related_invoice_id);
+  if (rectifies) links.push({ key: 'doc_link_rectifies', number: rectifies });
+  for (const other of invoices) {
+    if (other.related_invoice_id === inv.id && other.fiscal_number) {
+      links.push({ key: 'doc_link_rectified_by', number: other.fiscal_number });
+    }
+  }
+  const replaces = numberOf(inv.replaces_invoice_id);
+  if (replaces) links.push({ key: 'doc_link_replaces', number: replaces });
+  return links;
 }
 
 /**
@@ -53,7 +87,7 @@ export function billingDocuments(
     rows.push({
       key: 'receipt', kind: 'receipt', rectifying: false,
       number: receipt.number, issuedAt: receipt.issuedAt, status: 'issued', invoice: null,
-      refundReceiptId: null, replacedByNumber: null,
+      refundReceiptId: null, replacedByNumber: null, links: [],
     });
   }
   const numberById = new Map(invoices.map((inv) => [inv.id, inv.fiscal_number]));
@@ -65,13 +99,14 @@ export function billingDocuments(
       status: replaced ? 'replaced' : inv.status, invoice: inv,
       refundReceiptId: null,
       replacedByNumber: replaced ? (numberById.get(inv.replaced_by_invoice_id as number) ?? null) : null,
+      links: invoiceLinks(inv, invoices),
     });
   }
   for (const rr of refundReceipts) {
     rows.push({
       key: `refund-receipt-${rr.id}`, kind: 'refund_receipt', rectifying: false,
       number: rr.receipt_number, issuedAt: rr.issued_at ?? null, status: 'issued', invoice: null,
-      refundReceiptId: rr.id, replacedByNumber: null,
+      refundReceiptId: rr.id, replacedByNumber: null, links: [],
     });
   }
   return rows;

@@ -212,7 +212,7 @@ export async function loadInvoiceVerifactuRecords(
   const out = new Map<number, { alta: VerifactuRecordView | null; anulacion: VerifactuRecordView | null }>();
   if (invoiceIds.length === 0) return out;
   const { rows } = await exec.query<any>(
-    `SELECT id, invoice_id, record_type, chain_seq, submission_status, submission_attempts, last_submission_at,
+    `SELECT id, invoice_id, record_type, chain_seq, invoice_kind, submission_status, submission_attempts, last_submission_at,
             next_attempt_at, accepted_at, aeat_response_code, aeat_response_description, aeat_csv,
             record_hash, created_at
        FROM verifactu_records

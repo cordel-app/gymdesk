@@ -163,3 +163,40 @@ describe('Summary financial view (#2446 stage 3)', () => {
     expect(out.initial_payment).toBe(46);
   });
 });
+
+describe('plan instance identity (#3303)', () => {
+  const plan = (key: string | null, extra: any = {}) => asg([], { planName: 'Standard (Duo)', planInstanceKey: key, ...extra });
+
+  it('reports the same Membership Plan added again as a change, even with the same name, fee and dates', () => {
+    // The Add Membership Plan Draft holds only the new instance until its commit merges the running one.
+    expect(diffConfigurations([plan('10')], [plan('20')])).toEqual([
+      { kind: 'plan_changed', from: 'Standard (Duo)', to: 'Standard (Duo)' },
+    ]);
+    // A cart that carries both instances reports exactly the added one.
+    expect(diffConfigurations([plan('10')], [plan('10'), plan('20')])).toEqual([
+      { kind: 'plan_changed', from: null, to: 'Standard (Duo)' },
+    ]);
+  });
+
+  it('reports nothing for the same instance carried unchanged, edited or copied', () => {
+    expect(diffConfigurations([plan('10')], [plan('10')])).toEqual([]);
+    expect(diffConfigurations([plan('10'), plan('20')], [plan('10'), plan('20')])).toEqual([]);
+    expect(diffConfigurations([plan('10')], [plan('10', { membershipFeePrice: 50 })]))
+      .toEqual([{ kind: 'fee_changed', from: 40, to: 50 }]);
+  });
+
+  it('tells removing one of two identical plans from removing the other', () => {
+    expect(diffConfigurations([plan('10'), plan('20')], [plan('10')])).toEqual([
+      { kind: 'plan_changed', from: 'Standard (Duo)', to: null },
+    ]);
+  });
+
+  it('lists both instances in the Summary, each in its own state', () => {
+    const out = summaryItems([plan('10')], [plan('10'), plan('20')]).map((i) => `${i.name}:${i.state}:${i.source}`);
+    expect(out).toEqual(['Standard (Duo):active:0', 'Standard (Duo):draft:1']);
+  });
+
+  it('keeps the name identity for an assignment with no instance key', () => {
+    expect(diffConfigurations([plan(null)], [plan(null)])).toEqual([]);
+  });
+});

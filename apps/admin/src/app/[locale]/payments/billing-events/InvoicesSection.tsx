@@ -40,6 +40,7 @@ function RecordStatus({ r, t, gymFmt }: { r: VerifactuRecordView; t: ReturnType<
     <div>
       <StatusBadge status={verifactuBadgeTone(r.submission_status)} label={t(`billing_events_page.${verifactuStatusKey(r.submission_status)}` as any)} />
       <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+        {r.invoice_kind && <>{t('billing_events_page.vf_invoice_kind', { kind: r.invoice_kind })}{' · '}</>}
         {t('billing_events_page.vf_record', { id: r.id, seq: r.chain_seq })}
         {' · '}{t('billing_events_page.vf_attempts', { count: r.submission_attempts })}
         {r.last_submission_at && <> · {t('billing_events_page.vf_last_sent', { at: fmtDateTime(r.last_submission_at, gymFmt) })}</>}
@@ -47,6 +48,9 @@ function RecordStatus({ r, t, gymFmt }: { r: VerifactuRecordView; t: ReturnType<
           <> · {t('billing_events_page.vf_next_attempt', { at: fmtDateTime(r.next_attempt_at, gymFmt) })}</>
         )}
       </div>
+      {r.aeat_csv && (
+        <div style={{ fontSize: 12, color: '#6b7280' }}>{t('billing_events_page.vf_csv', { csv: r.aeat_csv })}</div>
+      )}
       {response && (
         <div style={{ fontSize: 12, color: r.submission_status === 'rejected' ? '#991b1b' : '#6b7280' }}>
           {t('billing_events_page.vf_last_response', { text: response })}
@@ -167,7 +171,14 @@ export function ReceiptsInvoicesSection({
                           {t(`billing_events_page.${documentTypeKey(doc.kind, doc.rectifying)}` as any)}
                         </span>
                       </td>
-                      <td style={cell}>{doc.number ?? '—'}</td>
+                      <td style={cell}>
+                        {doc.number ?? '—'}
+                        {doc.links.map((link) => (
+                          <div key={`${link.key}-${link.number}`} style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                            {t(`billing_events_page.${link.key}` as any, { number: link.number })}
+                          </div>
+                        ))}
+                      </td>
                       <td style={cell}>{fmtDateTime(doc.issuedAt, gymFmt)}</td>
                       <td style={cell}>
                         <StatusBadge status={doc.status === 'issued' ? 'recorded' : 'pending'}

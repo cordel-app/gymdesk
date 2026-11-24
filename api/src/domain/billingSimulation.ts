@@ -263,6 +263,13 @@ export interface SimulationPlanBenefit {
 export interface SimulationAssignment {
   userMembershipId: number;
   planName: string | null;
+  /**
+   * #3303 — which plan instance this is, across versions of a Product Set: for a copy, the anchor
+   * of the snapshot it was copied from (so an edited plan is still the plan it edits), else its own
+   * anchor (`anchor_plan_snapshot_id`), else its own id. Two instances of one Membership Plan never share it. The engine never reads it; the
+   * review's diff (`domain/productSetDiff.ts`) does. Absent: the plan is identified by its name.
+   */
+  planInstanceKey?: string | null;
   startsAt: string;
   endsAt: string | null;
   /** The Plan's regular price at the assignment date — before any Promotion. */
