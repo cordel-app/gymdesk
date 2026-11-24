@@ -11,7 +11,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence, toPlanDurationRepeats } from '../domain/planDuration';
 import { toProductBenefit } from '../domain/productBenefitActions';
-import { toSessionBenefitFrequency } from '../domain/sessionBenefitFrequency';
+import { effectiveSessionFrequencySql, toSessionBenefitFrequency } from '../domain/sessionBenefitFrequency';
 import {
   BillingUnit, ProductFrequency, SimulationAssignment, SimulationLine, SimulationPlanBenefit,
   SimulationService, computeBillingSimulation,
@@ -39,6 +39,9 @@ import { membershipFeeUnitsSql, toMembershipFeeScope } from '../domain/membershi
 import { feeMemberDiscountsSql, parseFeeMemberDiscounts } from '../domain/feeMemberDiscounts';
 import { toPlanMemberLimit } from '../domain/planBeneficiaries';
 import { recurringEventNameFor } from './billing-event-name';
+
+// #3306: a Session Product that decides its renewal Frequency decides the copy's too.
+const SESSION_FREQUENCY_COPY_SQL = effectiveSessionFrequencySql('gc.billing_frequency', 'b.frequency');
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -320,7 +323,7 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
        SELECT ?, ?, b.product_id, b.quantity,
               ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
               gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
-              b.\`action\`, b.\`value\`, b.mandatory, b.direct_discount_percent${sessionFrequency ? ', b.frequency' : ''}
+              b.\`action\`, b.\`value\`, b.mandatory, b.direct_discount_percent${sessionFrequency ? `, ${SESSION_FREQUENCY_COPY_SQL}` : ''}
          FROM ${source} b
          JOIN products gc ON gc.id = b.product_id
          LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id

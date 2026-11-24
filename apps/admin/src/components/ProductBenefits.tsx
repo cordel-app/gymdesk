@@ -51,6 +51,7 @@ import {
 import {
   SESSION_BENEFIT_FREQUENCIES,
   SessionBenefitFrequency,
+  productSessionFrequency,
   sessionFrequencyLabelKey,
   toSessionBenefitFrequency,
 } from '@/lib/sessionBenefitFrequency';
@@ -635,6 +636,13 @@ export function ProductBenefitEditor({
                   )}
                 </span>
                 {showFrequency && (frequencyColumn === 'benefit' ? (
+                  // #3306: a Session Product that names a renewing period decides
+                  // the Frequency, so it reads as a value rather than a control.
+                  productSessionFrequency(row.product_billing_frequency) ? (
+                    <span style={{ fontSize: 13, color: '#666' }}>
+                      {t(sessionFrequencyLabelKey(productSessionFrequency(row.product_billing_frequency)))}
+                    </span>
+                  ) : (
                   // #918: the one editable Frequency — how often this benefit's
                   // sessions are renewed. `—` is a real stored value (no
                   // frequency, a one-time allowance), not a placeholder.
@@ -650,6 +658,7 @@ export function ProductBenefitEditor({
                       <option key={f} value={f}>{t(sessionFrequencyLabelKey(f))}</option>
                     ))}
                   </select>
+                  )
                 ) : (
                   <span style={{ fontSize: 13, color: '#666' }}>
                     {billingFrequencyLabel(row.product_billing_frequency, tFreq) ?? '—'}
@@ -803,6 +812,7 @@ export function ProductBenefitEditor({
               ...(showRequirement ? { requirement: DEFAULT_PROMOTION_ITEM_REQUIREMENT } : {}),
               ...(showPlanMandatory ? { mandatory: true } : {}),
               ...(showDirectDiscount ? { direct_discount_percent: null } : {}),
+              ...(showFrequency && frequencyColumn === 'benefit' ? { frequency: null } : {}),
             },
           )}
           style={primaryBtnSmall()}

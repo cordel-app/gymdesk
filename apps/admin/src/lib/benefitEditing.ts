@@ -18,7 +18,7 @@ import {
   isPercentageBenefitAction,
 } from '@/lib/productBenefitActions';
 import { PromotionItemRequirement } from '@/lib/promotionItemRequirement';
-import { SessionBenefitFrequency } from '@/lib/sessionBenefitFrequency';
+import { SessionBenefitFrequency, productSessionFrequency } from '@/lib/sessionBenefitFrequency';
 
 /** One saved/drafted benefit row. `product_*` is joined server-side, so an
  *  item that has since gone inactive still renders with its real name. */
@@ -197,6 +197,11 @@ export function addBenefitRow(
       // Item's own price, and only an explicit choice can make it cheaper.
       action: DEFAULT_BENEFIT_ACTION, value: null,
       ...seed,
+      // #3306: a section that configures the Frequency starts the line on the
+      // one its Product decides, when it decides one.
+      ...(seed && 'frequency' in seed && productSessionFrequency(next.billing_frequency)
+        ? { frequency: productSessionFrequency(next.billing_frequency) }
+        : {}),
     },
   ]);
 }
@@ -219,6 +224,14 @@ export function updateBenefitRow(
         next.product_billing_frequency = item.billing_frequency;
         next.product_status = item.status;
         next.product_mandatory = item.mandatory ?? 0;
+        // #3306: on a row that carries a Session Benefit Frequency, a Product
+        // that decides one sets it, and leaving such a Product clears the value
+        // it had set rather than keeping it as if the Plan had chosen it.
+        if ('frequency' in r && !('frequency' in patch)) {
+          const decided = productSessionFrequency(item.billing_frequency);
+          if (decided) next.frequency = decided;
+          else if (productSessionFrequency(r.product_billing_frequency)) next.frequency = null;
+        }
       }
     }
     return next;
