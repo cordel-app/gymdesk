@@ -19,7 +19,7 @@
  */
 import type { Tx } from '../infra/db';
 import { PURCHASE_EVENT_JUNCTIONS } from './snapshot-junction-sync';
-import { createPurchase, openCart, purchasesOfLine, touchPurchases } from './purchases';
+import { createPurchase, openCart, purchasesOfLine, stampEventPurchase, touchPurchases, type PlannedPurchaseName } from './purchases';
 import { CART_ITEM_STATUS } from '../domain/purchaseStatus';
 
 type Conn = Pick<Tx, 'query'>;
@@ -65,6 +65,8 @@ export interface PurchaseValues {
   billingEventId: number | null;
   /** #3251: the cart the line belongs to; by default the owner's open cart (`in_cart`) or a new checkout. */
   cartId?: number | null;
+  /** #3288: the name (and instant) a new checkout purchase gets, when already sent to the provider. */
+  plannedName?: PlannedPurchaseName;
 }
 
 /**
@@ -86,7 +88,7 @@ export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<numbe
   const purchaseId = await allocateLineId(tx, v.gymId);
   const cartId = v.cartId ?? (v.status === 'in_cart'
     ? await openCart(tx, v.gymId, v.memberId, v.createdBy)
-    : await createPurchase(tx, v.gymId, v.memberId, CART_ITEM_STATUS.line(v.status) ?? 'pending_payment', v.createdBy));
+    : await createPurchase(tx, v.gymId, v.memberId, CART_ITEM_STATUS.line(v.status) ?? 'pending_payment', v.createdBy, v.plannedName));
   const table = purchaseSnapshotTable(v.productType);
   const { insertId: snapshotId } = await tx.query(
     `INSERT INTO ${table}
@@ -111,8 +113,8 @@ export async function insertPurchase(tx: Conn, v: PurchaseValues): Promise<numbe
     );
     // #3251 stage 2: the purchase's own Billing Event is its checkout's (an event that already names
     // a cart, a Product Set's initial event, keeps it).
-    await tx.query('UPDATE billing_events SET purchase_id = COALESCE(purchase_id, ?) WHERE id = ? AND gym_id = ?',
-      [cartId, v.billingEventId, v.gymId]);
+    // #3287: and its name with it (`stampEventPurchase()`).
+    await stampEventPurchase(tx, v.gymId, v.billingEventId, cartId, { keepExisting: true });
   }
   return purchaseId;
 }

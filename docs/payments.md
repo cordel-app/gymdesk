@@ -1456,6 +1456,8 @@ is refused while any assignment is `active`/`paused` with a `next_billing_date`,
 run skips a card-less assignment *silently*); the provider call, insert and reads live in
 `api/src/api/card-updates.ts`.
 
+**The payment's description is the purchase's name** (#3288). A checkout that charges a Purchase (a Product Set's Save & Pay, a standalone cart checkout, a direct one-time purchase, and any retry raised on such a checkout's Billing Event) sends the purchase's canonical name (`purchases.name`, e.g. `Gym Name - Compra - 23/11/2026 11:56`) as the provider's `description`, the very string its Billing Event carries (#3287). Where the purchase is created inside the checkout's transaction (a split-off cart, a direct purchase), the name is planned before the provider call (`planCheckoutPurchase()`) and the transaction refuses with `409 cart_changed` if the purchase it ends up charging is named otherwise. A payment no purchase owns keeps its generic description (`Membership fee`). The card-statement `descriptor` (25 characters at most, MONEI) is a different field and is not sent.
+
 ### Money rules
 
 Stated in full in `CLAUDE.md`; linked here so one page can point at all of them.

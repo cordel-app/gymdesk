@@ -81,3 +81,36 @@ export function parseGymLocalizationInput(body: unknown): LocalizationParse {
   }
   return { ok: true, changes };
 }
+
+// ── #3288: the server's date-time spelling ──────────────────────────────────
+//
+// The API writes one gym-formatted date-time into a stored string (a Purchase's
+// canonical name), so it needs the same spelling the two apps' `gymFormat.ts`
+// produce (`23/11/2026 11:56`, `11/23/2026 11:56 AM`, `2026-11-23 11:56`): the
+// instant in the gym's IANA zone, its date format, its 24h/12h clock. An
+// unusable zone falls back to the default rather than throwing.
+
+type FormatSettings = Pick<GymLocalization, 'time_zone' | 'date_format' | 'time_format'>;
+
+function dateTimeParts(value: Date, timeZone: string, hour12: boolean): Record<string, string> {
+  const zone = isValidTimeZone(timeZone) ? timeZone : DEFAULT_GYM_LOCALIZATION.time_zone;
+  const out: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat('en-GB', {
+    timeZone: zone, hourCycle: hour12 ? 'h12' : 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(value)) out[p.type] = p.value;
+  return out;
+}
+
+/** `value` as the gym writes a date and time, e.g. `23/11/2026 11:56`. */
+export function formatGymDateTime(value: Date, s: FormatSettings = DEFAULT_GYM_LOCALIZATION): string {
+  const hour12 = s.time_format === '12h';
+  const p = dateTimeParts(value, s.time_zone, hour12);
+  const date = s.date_format === 'MM/DD/YYYY' ? `${p.month}/${p.day}/${p.year}`
+    : s.date_format === 'YYYY-MM-DD' ? `${p.year}-${p.month}-${p.day}`
+      : `${p.day}/${p.month}/${p.year}`;
+  const time = hour12
+    ? `${p.hour}:${p.minute} ${(p.dayPeriod ?? '').toUpperCase()}`.trim()
+    : `${p.hour}:${p.minute}`;
+  return `${date} ${time}`;
+}

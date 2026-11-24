@@ -22,7 +22,9 @@ import { beforeCommit, type Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CART_ITEM_STATUS, CartItemStatus, derivePurchaseStatus } from '../domain/purchaseStatus';
 import { CART_EXPIRES_AT_SQL, cartClockSql, purchaseCartExpiredSql } from '../domain/cartExpiry';
-import { currentRequestChannel } from '../infra/requestChannel';
+import { currentRequestChannel, currentRequestLocale } from '../infra/requestChannel';
+import { canonicalPurchaseName } from '../domain/purchaseName';
+import { DEFAULT_GYM_LOCALIZATION } from '../domain/gymLocalization';
 
 type Conn = Pick<Tx, 'query'>;
 
@@ -71,24 +73,60 @@ export async function refreshSetCart(tx: Conn, gymId: string, productSetId: numb
   return refreshCart(tx, gymId, await purchaseOfSet(tx, gymId, productSetId));
 }
 
+/** #3288: a purchase's canonical name and creation instant, decided before the row exists. */
+export interface PlannedPurchaseName { createdAt: Date; name: string }
+
+/**
+ * #3288 — the canonical name a purchase created at `createdAt` gets (`domain/purchaseName.ts`): the
+ * gym's current name and Time & Localization, and the language of the request creating it. Exported
+ * so a checkout that must send the name to the payment provider before its purchase exists can plan
+ * both and hand them to `createPurchase()`.
+ */
+export async function planPurchaseName(
+  exec: Conn, gymId: string, createdAt: Date = new Date(),
+): Promise<PlannedPurchaseName> {
+  const at = new Date(Math.floor(createdAt.getTime() / 1000) * 1000);
+  const { rows } = await exec.query<any>(
+    'SELECT name, time_zone, date_format, time_format FROM gyms WHERE id = ?', [gymId]);
+  const g = rows[0] ?? {};
+  const name = canonicalPurchaseName({
+    gymName: g.name, locale: currentRequestLocale(), createdAt: at,
+    settings: {
+      time_zone: g.time_zone ?? DEFAULT_GYM_LOCALIZATION.time_zone,
+      date_format: g.date_format ?? DEFAULT_GYM_LOCALIZATION.date_format,
+      time_format: g.time_format ?? DEFAULT_GYM_LOCALIZATION.time_format,
+    },
+  });
+  return { createdAt: at, name };
+}
+
 /**
  * A new cart in `status` (a checkout started outside the cart is `pending_payment` from birth).
  * #3278: `created_by` (who) and `channel` (which application, from the route the server is
  * answering, `infra/requestChannel.ts`) are written here once and never updated, so editing,
  * paying, expiring or recovering the cart, or merging a newer cart into it, keeps both.
+ * #3288: so is the canonical `name`, generated from the very instant written as `created_at`
+ * (`planned`, when the caller already sent that name to the provider, else now).
  */
 export async function createPurchase(
   tx: Conn, gymId: string, ownerMemberId: number, status: string, actorName: string | null,
+  planned?: PlannedPurchaseName,
 ): Promise<number> {
+  const { createdAt, name } = planned ?? await planPurchaseName(tx, gymId);
   const { insertId } = await tx.query(
-    // #3270: the name basis is the creation instant (UTC, ISO 8601), written once from the very
-    // `UTC_TIMESTAMP()` `created_at` defaults to in this statement; nothing updates it.
     // #3274: a cart opened now has two hours; a checkout started outside the cart has no cart clock.
-    `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, name, created_by, channel)
-     VALUES (?, ?, ?, IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL),
-             DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), ?, ?)`,
-    [gymId, ownerMemberId, status, status, actorName ?? SYSTEM_ACTOR, currentRequestChannel()]);
+    `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, name, created_at, created_by, channel)
+     VALUES (?, ?, ?, IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL), ?, ?, ?, ?)`,
+    [gymId, ownerMemberId, status, status, name, createdAt, actorName ?? SYSTEM_ACTOR, currentRequestChannel()]);
   return Number(insertId);
+}
+
+/** #3288: a purchase's stored canonical name (null for none). */
+export async function purchaseName(exec: Conn, gymId: string, purchaseId: number | null | undefined): Promise<string | null> {
+  if (purchaseId == null) return null;
+  const { rows } = await exec.query<{ name: string }>(
+    'SELECT name FROM purchases WHERE id = ? AND gym_id = ?', [purchaseId, gymId]);
+  return rows[0]?.name ?? null;
 }
 
 /** The cart a Product Set belongs to, or null. */
@@ -147,6 +185,49 @@ export async function touchPurchases(tx: Conn, gymId: string, ids: Iterable<numb
   for (const id of list) pending.set(id, gymId);
 }
 
+/** The carts the lines are in, and the one that holds nothing else (it is then the checkout itself). */
+async function cartsOfLines(tx: Conn, gymId: string, lineIds: number[]): Promise<{ carts: Set<number>; sole: number | null }> {
+  const carts = new Set<number>();
+  for (const id of lineIds) for (const c of await purchasesOfLine(tx, gymId, id)) carts.add(c);
+  const cartId = carts.size === 1 ? [...carts][0] : null;
+  if (cartId != null && lineIds.length > 0) {
+    const { rows } = await tx.query<{ n: number }>(
+      `SELECT (SELECT COUNT(*) FROM product_sets WHERE gym_id = ? AND purchase_id = ?)
+            + (SELECT COUNT(*) FROM product_session_snapshots WHERE gym_id = ? AND purchase_id = ? AND source_id NOT IN (${lineIds.map(() => '?').join(',')}))
+            + (SELECT COUNT(*) FROM product_oneoff_snapshots WHERE gym_id = ? AND purchase_id = ? AND source_id NOT IN (${lineIds.map(() => '?').join(',')})) AS n`,
+      [gymId, cartId, gymId, cartId, ...lineIds, gymId, cartId, ...lineIds]);
+    if (Number(rows[0].n) === 0) return { carts, sole: cartId };
+  }
+  return { carts, sole: null };
+}
+
+/**
+ * #3288 — the canonical name of the purchase a checkout of the one-time lines `lineIds` will charge,
+ * known before the transaction so it can be the provider payment's `description`: the cart's own
+ * name when the cart is the checkout, else a name planned for the new purchase, which the caller hands
+ * to `splitOffCheckout()` / `insertPurchase()`. `lineIds` empty: a purchase of its own (a direct one).
+ */
+export async function planCheckoutPurchase(
+  exec: Conn, gymId: string, lineIds: number[],
+): Promise<{ name: string; planned?: PlannedPurchaseName }> {
+  const { sole } = await cartsOfLines(exec, gymId, lineIds);
+  const existing = sole != null ? await purchaseName(exec, gymId, sole) : null;
+  if (existing != null) return { name: existing };
+  const planned = await planPurchaseName(exec, gymId);
+  return { name: planned.name, planned };
+}
+
+/**
+ * #3288 — refuses a checkout whose purchase no longer carries the name already sent to the provider
+ * (the cart changed between the plan and the transaction), so the payment's description, the
+ * purchase and its Billing Event are always one string. The caller maps the throw to its 409.
+ */
+export async function checkoutNameStillHolds(
+  tx: Conn, gymId: string, purchaseId: number, sentName: string,
+): Promise<boolean> {
+  return (await purchaseName(tx, gymId, purchaseId)) === sentName;
+}
+
 /**
  * A checkout of the one-time lines `lineIds` out of their cart: when the cart holds anything else
  * (the rest of the cart, or its Product Set), the lines move to a new purchase in `pending_payment`;
@@ -154,19 +235,12 @@ export async function touchPurchases(tx: Conn, gymId: string, ids: Iterable<numb
  */
 export async function splitOffCheckout(
   tx: Conn, gymId: string, ownerMemberId: number, lineIds: number[], actorName: string | null,
+  /** #3288: the name (and instant) a new checkout purchase gets, when already sent to the provider. */
+  planned?: PlannedPurchaseName,
 ): Promise<number> {
-  const carts = new Set<number>();
-  for (const id of lineIds) for (const c of await purchasesOfLine(tx, gymId, id)) carts.add(c);
-  const cartId = carts.size === 1 ? [...carts][0] : null;
-  if (cartId != null) {
-    const { rows } = await tx.query<{ n: number }>(
-      `SELECT (SELECT COUNT(*) FROM product_sets WHERE gym_id = ? AND purchase_id = ?)
-            + (SELECT COUNT(*) FROM product_session_snapshots WHERE gym_id = ? AND purchase_id = ? AND source_id NOT IN (${lineIds.map(() => '?').join(',')}))
-            + (SELECT COUNT(*) FROM product_oneoff_snapshots WHERE gym_id = ? AND purchase_id = ? AND source_id NOT IN (${lineIds.map(() => '?').join(',')})) AS n`,
-      [gymId, cartId, gymId, cartId, ...lineIds, gymId, cartId, ...lineIds]);
-    if (Number(rows[0].n) === 0) return cartId;
-  }
-  const checkout = await createPurchase(tx, gymId, ownerMemberId, 'pending_payment', actorName);
+  const { carts, sole } = await cartsOfLines(tx, gymId, lineIds);
+  if (sole != null) return sole;
+  const checkout = await createPurchase(tx, gymId, ownerMemberId, 'pending_payment', actorName, planned);
   for (const id of lineIds) {
     for (const table of LINE_TABLES) {
       await tx.query(`UPDATE ${table} SET purchase_id = ? WHERE gym_id = ? AND source_id = ?`, [checkout, gymId, id]);
@@ -287,10 +361,36 @@ export async function stampSnapshotPurchase(
     [productSetId, copiedFromId, snapshotId, gymId]);
 }
 
-/** #3251 stage 2 — a checkout's Billing Event is the cart's (`billing_events.purchase_id`). */
+/**
+ * #3251 stage 2 — a checkout's Billing Event is the cart's (`billing_events.purchase_id`).
+ * #3287 — and carries the purchase's canonical name, copied verbatim into `billing_events.name` in the
+ * same statement, so the event keeps that identity whatever later happens to the purchase row. The
+ * #2940 name it was inserted with is replaced only here, for an event a purchase owns.
+ * `keepExisting`: an event that already names a purchase keeps it, and its name (a one-time line
+ * joining a Product Set's initial event).
+ */
 export async function stampEventPurchase(
   tx: Conn, gymId: string, billingEventId: number, purchaseId: number | null,
+  opts: { keepExisting?: boolean } = {},
 ): Promise<void> {
   if (purchaseId == null) return;
-  await tx.query('UPDATE billing_events SET purchase_id = ? WHERE id = ? AND gym_id = ?', [purchaseId, billingEventId, gymId]);
+  await tx.query(
+    `UPDATE billing_events be JOIN purchases p ON p.id = ? AND p.gym_id = be.gym_id
+        SET be.name = p.name, be.purchase_id = p.id
+      WHERE be.id = ? AND be.gym_id = ?${opts.keepExisting ? ' AND be.purchase_id IS NULL' : ''}`,
+    [purchaseId, billingEventId, gymId]);
+}
+
+/**
+ * #3288 — the provider description of a new attempt on the Billing Event `billingEventId`: the
+ * purchase name the event carries (#3287) when a purchase owns it, so a retry of a checkout sends
+ * the same string as its first attempt; else `fallback`.
+ */
+export async function paymentDescriptionForEvent(
+  exec: Conn, gymId: string, billingEventId: number | null | undefined, fallback: string,
+): Promise<string> {
+  if (billingEventId == null) return fallback;
+  const { rows } = await exec.query<{ name: string | null }>(
+    'SELECT name FROM billing_events WHERE id = ? AND gym_id = ? AND purchase_id IS NOT NULL', [billingEventId, gymId]);
+  return rows[0]?.name || fallback;
 }

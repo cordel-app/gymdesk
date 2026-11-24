@@ -707,7 +707,6 @@
     "review_initial_payment": "Pagament inicial",
     "checkout_initial_payment": "Pagament inicial",
     "checkout_contracted": "Productes i plans contractats",
-    "purchase_name": "Compra - {date}",
     "purchase_status_completed": "Completada",
     "checkout_col_item": "Concepte",
     "checkout_col_quantity": "Quant.",
