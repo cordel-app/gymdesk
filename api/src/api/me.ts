@@ -104,6 +104,7 @@ import {
 } from '../domain/memberPlanHistory';
 import { attachPastPlanDetails } from './me-past-plan-details';
 import { ledgerEventStatus, paymentCoverage, refundCoverage, scheduledExecutionDate } from '../domain/memberPaymentView';
+import { displayBillingEventStatus } from '../domain/billingEventStatus';
 import { loadRefundSummaries } from './billing-event-refunds';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -3173,7 +3174,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // Payments dashboard calls failed.
     const { rows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.name, be.previous_status, be.new_status,
-              be.amount, be.notes, be.created_at, be.receipt_number, be.receipt_issued_at, be.cancelled_at,
+              be.amount, be.notes, be.created_at, be.receipt_number, be.receipt_issued_at, be.cancelled_at, be.expired_at,
               be.billing_date, be.is_scheduled,
               ct.code AS charge_type_code,
               (SELECT pr.amount FROM payment_requests pr
@@ -3198,13 +3199,16 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // #3297 — full or partial refund, from the one refund summary (#2480).
     const refundsByEvent = await loadRefundSummaries(gymId, rows.map((r: any) => Number(r.id)));
     const items = rows.map(({
-      latest_tx_status, receipt_issued_at: _receiptIssuedAt, billing_date, is_scheduled, collected_amount, ...row
+      latest_tx_status, receipt_issued_at: _receiptIssuedAt, billing_date, is_scheduled, collected_amount, expired_at, ...row
     }) => ({
       ...row,
       // #3297 — a persisted, not-yet-executed obligation reads `scheduled`, as on
       // the staff list (`ledgerEventStatus()`), and every event carries the day it
       // is (or was) executed on, which is what the Payments view groups by.
-      status: ledgerEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null, Number(is_scheduled) === 1),
+      // #3307 stage 3: a checkout's event the 24-hour expiry closed reads `expired_24h`.
+      status: displayBillingEventStatus(
+        ledgerEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null, Number(is_scheduled) === 1),
+        null, expired_at != null),
       scheduled_date: scheduledExecutionDate(billing_date, row.created_at),
       payment_type: paymentCoverage(collected_amount, row.amount),
       refund_type: refundCoverage(refundsByEvent.get(Number(row.id))?.refund_state),

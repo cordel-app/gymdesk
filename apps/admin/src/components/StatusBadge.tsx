@@ -8,6 +8,8 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   paused:       { bg: '#fff4e0', fg: '#b26a00' },
   cancelled:    { bg: '#fdeaea', fg: '#c0392b' },
   expired:      { bg: '#f3eafd', fg: '#7d3cbd' },
+  // #3307 stage 3: a checkout that expired after 24 hours wears the expired tone.
+  expired_24h:  { bg: '#f3eafd', fg: '#7d3cbd' },
   draft:        { bg: '#eef2f7', fg: '#5a6b7b' },
   // #2949: an item in the member's cart wears the `draft` tone it replaces.
   in_cart:      { bg: '#eef2f7', fg: '#5a6b7b' },

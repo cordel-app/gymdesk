@@ -26,7 +26,7 @@ import { DateTime } from 'luxon';
 import type { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { computeValidUntil } from '../domain/productValidity';
-import { IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS } from '../domain/memberProductPurchase';
+import { EXPIRED_PURCHASE_STATUS, IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS } from '../domain/memberProductPurchase';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { deletePurchase, updatePurchase } from './purchase-writer';
 import { PURCHASE_EVENT_JUNCTIONS } from './snapshot-junction-sync';
@@ -137,9 +137,11 @@ export function purchaseStatusForSet(setStatus: 'in_cart' | 'pending_payment' | 
 export async function moveSetPurchases(
   tx: Conn, gymId: string, productSetId: number,
   fromSet: 'in_cart' | 'pending_payment', toSet: 'in_cart' | 'pending_payment' | 'cancelled',
+  opts: { expired?: boolean } = {},
 ): Promise<void> {
   const from = purchaseStatusForSet(fromSet);
-  const to = purchaseStatusForSet(toSet);
+  // #3307 stage 3: a checkout that expired after 24 hours moves its pending purchases to `expired_24h`.
+  const to = opts.expired ? EXPIRED_PURCHASE_STATUS : purchaseStatusForSet(toSet);
   for (const p of await loadSetPurchases(tx, gymId, productSetId)) {
     if (p.status !== from) continue;
     try {

@@ -396,6 +396,7 @@
     "purchase_status_pending_payment": "Pending payment",
     "purchase_status_active": "Active",
     "purchase_status_cancelled": "Cancelled",
+    "purchase_status_expired_24h": "24h expired",
     "purchase_status_in_cart": "In Cart",
     "purchase_cart_expires_in": "Expires in {time}",
     "purchase_cart_expired": "Expired",
@@ -1022,7 +1023,8 @@
     "purchases_billing_event": "Billing Event",
     "purchases_payment_method": "Payment method",
     "purchases_payment_status": "Payment status",
-    "purchases_payment_date": "Payment date"
+    "purchases_payment_date": "Payment date",
+    "timeline_status_expired_24h": "24h expired"
   },
   "member_payments": {
     "title": "Member Payments",
@@ -1300,7 +1302,8 @@
     "doc_link_for_refund": "For refund {number}",
     "doc_link_rectified_in": "Rectified in {number}",
     "doc_link_rectified_by": "Rectified by {number}",
-    "doc_link_replaces": "Replaces {number}"
+    "doc_link_replaces": "Replaces {number}",
+    "status_expired_24h": "24h expired"
   },
   "payment_providers": {
     "title": "Payment Providers",

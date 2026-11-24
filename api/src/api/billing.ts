@@ -9,7 +9,7 @@ import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { buildJobMetrics } from '../domain/jobRuns';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
 import { issueDueSimplifiedInvoices } from './billing-invoices';
-import { expirePendingPayments } from './product-sets';
+import { expirePendingPayments } from './product-set-cancellation';
 import { reconcileAbandonedRequests } from './payment-settlement';
 import { reconcilePendingProviderRefunds } from './billing-event-refunds';
 
@@ -264,8 +264,9 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     const cartsExpired = await expireCarts();
     const draftsExpired = cartsExpired.productSets;
     const purchaseDraftsExpired = cartsExpired.lines.length;
-    // #1991 stage 4: a Pending Payment whose link expired returns to Draft.
-    const pendingReturned = await expirePendingPayments();
+    // #3307 stage 3: a Pending Payment not paid within 24 hours expires (replacing #1991's
+    // two-hour return to Draft), its initial Billing Event reading *24h expired*.
+    const pendingExpired = await expirePendingPayments(req.log);
     // #2480 follow-up: a provider refund left pending is settled from the provider's own record.
     const refunds = await reconcilePendingProviderRefunds(req.log);
 
@@ -284,7 +285,7 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       carts_expired: cartsExpired.carts,
       drafts_expired: draftsExpired,
       purchase_drafts_expired: purchaseDraftsExpired,
-      pending_returned_to_draft: pendingReturned,
+      pending_payments_expired: pendingExpired,
       refunds_completed: refunds.completed,
       refunds_failed: refunds.failed,
     };
@@ -293,7 +294,7 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     // was considered and left pending, which is not counted anywhere.
     const metrics = buildJobMetrics(
       expired + reconciled + purchasesCancelled + draftsExpired + purchaseDraftsExpired
-        + pendingReturned + refunds.completed + refunds.failed,
+        + pendingExpired + refunds.completed + refunds.failed,
     );
     await finishJobRun(jobRunId, 'completed', { httpStatus: 200, details: { ...cleanupBody, metrics } });
     res.json(cleanupBody);
