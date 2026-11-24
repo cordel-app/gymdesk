@@ -348,7 +348,7 @@ export function MemberPurchasedProducts({
                 {
                   // #3070 — a one-time draft is edited like any other product line; paying it is the cart's
                   // Save & Pay (no Pay in this menu).
-                  label: t('edit'),
+                  kind: 'edit' as const, label: t('edit'),
                   onClick: () => startEdit(item, item.id, 'one_time'),
                   disabled: !canWrite || draftBusy,
                   title: canWrite ? undefined : t('products_add_read_only'),
@@ -363,20 +363,20 @@ export function MemberPurchasedProducts({
               ] : []),
               ...(draftLineId != null ? [
                 {
-                  label: t('edit'),
+                  kind: 'edit' as const, label: t('edit'),
                   onClick: () => startEdit(item, draftLineId),
                   disabled: !canWrite || deleteBusy,
                   title: canWrite ? undefined : t('products_add_read_only'),
                 },
                 {
-                  label: t('draft_line_delete'),
+                  kind: 'delete' as const, label: t('draft_line_delete'),
                   onClick: () => { lineDelete.clearError(); setDeleting(item); },
                   disabled: !canWrite || deleteBusy,
                   danger: true,
                   title: canWrite ? undefined : t('products_add_read_only'),
                 },
               ] : []),
-              { label: t('action_details'), onClick: () => setDetail(item) },
+              { kind: 'details' as const, label: t('action_details'), onClick: () => setDetail(item) },
               ...(item.status === 'active' && !item.cancelled_on && !item.pending_termination
                 ? [{
                     label: t('purchase_cancel_action'),

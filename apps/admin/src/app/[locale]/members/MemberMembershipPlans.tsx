@@ -237,7 +237,7 @@ export function MemberMembershipPlans({
     return [
       ...lifecycleItems,
       ...reactivationItems,
-      { label: t('action_details'), onClick: () => setDetailsPlanId(plan.id) },
+      { kind: 'details' as const, label: t('action_details'), onClick: () => setDetailsPlanId(plan.id) },
       // #2553: shared with the Assigned Plans page.
       {
         label: t('action_view_billing_events'),

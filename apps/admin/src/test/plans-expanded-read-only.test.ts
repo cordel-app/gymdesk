@@ -130,7 +130,7 @@ describe('Plans: the expanded card is read-only (#816 §1, §12)', () => {
 
 describe('Plans: ⋮ → Edit is the single entry point (#816 §13)', () => {
   it('keeps the Edit action in the context menu, gated like any write', () => {
-    expect(pageSrc).toContain("{ label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle }");
+    expect(pageSrc).toContain("{ kind: 'edit' as const, label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle }");
   });
 
   it('expands the card it opens, so Cancel reveals the read-only view', () => {

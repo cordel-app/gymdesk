@@ -1125,10 +1125,10 @@ export default function ActivityTypesPage() {
     const isEditing = editingId === row.id;
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => { setDetails(row); if (!eligibleServicesMap.has(row.id)) fetchEligibleServices(row.id); } },
-      { label: t('edit'), onClick: () => openEdit(row), disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'details' as const, label: t('details'), onClick: () => { setDetails(row); if (!eligibleServicesMap.has(row.id)) fetchEligibleServices(row.id); } },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(row), disabled: !canWrite, title: readOnlyTitle },
       { label: t('duplicate'), onClick: () => handleDuplicate(row), disabled: !canWrite, title: readOnlyTitle },
-      { label: t('delete'), onClick: () => setDeleting(row), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(row), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
 
     const filteredSpaces = spaces.filter((s) =>

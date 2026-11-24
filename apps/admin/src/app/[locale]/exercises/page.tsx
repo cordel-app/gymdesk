@@ -610,12 +610,12 @@ export default function ExercisesPage() {
     const isBase = ex.gym_id === null;
     return isBase
       ? [
-          { label: t('details'), onClick: () => setDetailFor(ex) },
+          { kind: 'details' as const, label: t('details'), onClick: () => setDetailFor(ex) },
           { label: t('clone'), onClick: () => handleClone(ex), disabled: !canWrite, title: readOnlyTitle },
         ]
       : [
-          { label: t('details'), onClick: () => setDetailFor(ex) },
-          { label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
+          { kind: 'details' as const, label: t('details'), onClick: () => setDetailFor(ex) },
+          { kind: 'edit' as const, label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
           { label: t('duplicate'), onClick: () => handleDuplicate(ex), disabled: !canWrite, title: readOnlyTitle },
           ...(ex.cloned_from_id != null
             ? [{ label: t('resync_with_system'), onClick: () => handleResync(ex), disabled: !canWrite, title: readOnlyTitle }]
@@ -623,7 +623,7 @@ export default function ExercisesPage() {
           ex.status === 'active'
             ? { label: t('deactivate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle }
             : { label: t('activate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle },
-          { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true, disabled: !canWrite, title: readOnlyTitle },
+          { kind: 'delete' as const, label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true, disabled: !canWrite, title: readOnlyTitle },
         ];
   }
 

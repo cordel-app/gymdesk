@@ -903,9 +903,9 @@ export default function ThemesPage() {
       render: (th) => {
         if (th.id === NEW_ID) return null;
         const items = [];
-        items.push({ label: t('action_details'), onClick: () => openDetails(th) });
+        items.push({ kind: 'details' as const, label: t('action_details'), onClick: () => openDetails(th) });
         if (th.status !== 'deleted') {
-          items.push({ label: t('edit'), onClick: () => enterEdit(th) });
+          items.push({ kind: 'edit' as const, label: t('edit'), onClick: () => enterEdit(th) });
           items.push({ label: t('action_duplicate'), onClick: () => handleDuplicate(th) });
         }
         if (th.status === 'active' && !th.is_system_default) {
@@ -919,7 +919,7 @@ export default function ThemesPage() {
             onClick: () => handleInitializeBucket(th.id),
             disabled: initializingBucketId === th.id,
           });
-          items.push({ label: t('delete'), onClick: () => setDeleting(th), danger: true });
+          items.push({ kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(th), danger: true });
         }
         return <ContextMenu items={items} ariaLabel={t('col_actions')} />;
       },

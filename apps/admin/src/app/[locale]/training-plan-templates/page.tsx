@@ -284,14 +284,14 @@ export default function TrainingPlanTemplatesPage() {
   function templateMenuItems(row: TrainingPlanTemplate): ContextMenuItem[] {
     const roTitle = canWrite ? undefined : readOnlyTitle;
     return [
-      { label: t('details'), onClick: () => setDetailsTemplate(row) },
-      { label: t('edit'), onClick: () => startEdit(row), disabled: !canWrite, title: roTitle },
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetailsTemplate(row) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => startEdit(row), disabled: !canWrite, title: roTitle },
       { label: t('duplicate'), onClick: () => handleDuplicate(row), disabled: !canWrite, title: roTitle },
       ...(canResyncWithSystem(row)
         ? [{ label: t('resync_with_system'), onClick: () => handleResync(row), disabled: !canWrite, title: roTitle }]
         : []),
       ...(row.status === 'active' ? [{ label: t('assign_to_member'), onClick: () => setAssigning(row), disabled: !canWrite, title: roTitle }] : []),
-      { label: t('delete'), onClick: () => setDeleting(row), danger: true, disabled: !canWrite, title: roTitle },
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(row), danger: true, disabled: !canWrite, title: roTitle },
     ];
   }
 

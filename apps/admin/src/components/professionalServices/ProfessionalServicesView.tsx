@@ -382,20 +382,21 @@ export function ProfessionalServicesView(cfg: ProfessionalServicesConfig) {
     const isExpanded = expanded.has(item.id);
     const isEditing = form?.id === item.id;
 
-    // #802: Duplicate first, the Deactivate · Activate slot second (the
-    // destructive one carries `danger`), Details always last; Edit and Delete sit
-    // between and a read-only definition hides both. A Base service has no
-    // status, so it keeps just Edit / Delete / Details.
+    // #3347: Edit first, Delete penultimate, Details last (the shared menu
+    // orders by `kind`); between them #802's Duplicate, then the Deactivate ·
+    // Activate slot (the destructive one carries `danger`). A read-only
+    // definition hides Edit and Delete; a Base service has no status, so it
+    // keeps just Edit / Delete / Details.
     const menuItems: ContextMenuItem[] = [
+      ...(!isSystem ? [{ kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       ...(cfg.hasStatus ? [{ label: t('duplicate'), onClick: () => handleDuplicate(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       ...(cfg.hasStatus ? [item.status === 'active'
         ? { label: t('deactivate'), onClick: () => handleDeactivate(item), danger: true, disabled: !canWrite, title: readOnlyTitle }
         : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       ...(cfg.hasStatus && item.base_professional_service_id
         ? [{ label: t('update_system_data'), onClick: () => handleUpdateSystemData(item), disabled: !canWrite, title: readOnlyTitle }] : []),
-      ...(!isSystem ? [{ label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
-      ...(!isSystem ? [{ label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
-      { label: t('details'), onClick: () => setDetails(item) },
+      ...(!isSystem ? [{ kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(item) },
     ];
 
     return (

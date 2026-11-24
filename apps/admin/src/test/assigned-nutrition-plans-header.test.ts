@@ -127,7 +127,7 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
     // The day count the header already showed is still there.
     expect(collapsedHeaderSrc).toContain("t('nutrition_plans.day_count', { count: plan.day_count })");
     // The ⋮ menu still opens the inline form, and it still submits the same payload.
-    expect(pageSrc).toMatch(/\{ label: t\('nutrition_plans\.edit'\), onClick: onEdit, disabled: !canWrite, title: roTitle \}/);
+    expect(pageSrc).toMatch(/\{ kind: 'edit' as const, label: t\('nutrition_plans\.edit'\), onClick: onEdit, disabled: !canWrite, title: roTitle \}/);
     expect(pageSrc).toMatch(/const body = \{ name: editForm\.name\.trim\(\), description: editForm\.description\.trim\(\) \|\| null, start_date: editForm\.start_date \|\| null \};/);
     for (const handler of ['handleDuplicate', 'async function complete()', 'async function del()']) {
       expect(pageSrc, `${handler} is gone`).toContain(handler);

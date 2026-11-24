@@ -268,8 +268,8 @@ export function CurrentProductSetCard({
         <ContextMenu
           ariaLabel={t('product_set_card_title')}
           items={[
-            { label: t('action_details'), onClick: () => setDetailsOpen(true) },
-            { label: t('edit'), onClick: onEdit, disabled: !editable },
+            { kind: 'details' as const, label: t('action_details'), onClick: () => setDetailsOpen(true) },
+            { kind: 'edit' as const, label: t('edit'), onClick: onEdit, disabled: !editable },
           ]}
         />
       </div>

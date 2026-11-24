@@ -2428,33 +2428,32 @@ const menuItems: ContextMenuItem[] = [
 - Gate the **entry points** (Add button, ⋮ menu write items, in-row action buttons, Save). Inline edit forms that only open from a gated entry point need nothing extra.
 - **Pass the page's feature key when its feature overrides the module** (#1070): `useModuleAccess('NUTRITION', 'nutrition.personal_goals')`. The key is the one the route is mounted behind in `app.ts`, where the API reads the same override through `requireFeatureAccess` / `requireFeatureWrite`, so the control and the route agree. It changes nothing for a key with no override declared, so a page may always pass the key it is gated by — and a page must never derive a permission from an override itself (see CLAUDE.md's bullet; the declaration lives in `config/permissions.ts`, mirrored from the API's).
 
-### ⋮ menu order and the destructive style (#802)
+### ⋮ menu order and the destructive style (#802, #3347)
 
-The snippet above orders its two items to show the *gating*, not the order. Most list pages
-put `Details` first because that is simply how they were written; **a page whose order a ticket
-fixes keeps it**, and the only page with a decided order today is Professional Services (#802):
+Every ⋮ menu in the admin app shows its actions in one order (#3347):
 
 ```text
-Duplicate            ← first
-Deactivate  (red)    ← second; Activate takes the same slot, unstyled
-Edit*                ← the remaining write actions sit between the two fixed ends
-Delete* (red)
-Details              ← always last
-                       * hidden for a system row, which leaves exactly
-                         Duplicate / Deactivate / Details
+Edit                 ← always first, when offered
+Other actions…       ← in the order the page declares them (Duplicate, Deactivate, …)
+Delete      (red)    ← always penultimate, when offered
+Details              ← always last, when offered
 ```
+
+The order is the shared `ContextMenu`'s, not the page's: `orderContextMenuItems()` sorts the
+items by their `kind` (`'edit' | 'delete' | 'details'`; every other item leaves it unset and keeps
+its declared order). A page tags those three actions — `{ kind: 'edit' as const, label: t('edit'), … }`
+— and never sorts a menu itself. `apps/admin/src/test/context-menu-order.test.ts` pins the rule and
+fails on an Edit/Delete/Details item with no `kind`.
 
 Two rules come with it:
 
 - **Red is `ContextMenu`'s own `danger: true` flag**, never a colour in the page — that is where
-  `#c0392b`, the disabled opacity and the hover state live, so one flag covers §4's text, icon
-  and hover/focus requirements at once. Mark only the genuinely destructive item: `Deactivate`
-  and `Delete` are, **`Activate` is not**.
-- **Order is presentation.** Reordering the array must not move a handler, a `disabled: !canWrite`
-  gate, a `title: readOnlyTitle`, or which items a conditional hides — `Details` stays last among
-  whatever remains *visible*. `apps/admin/src/test/professional-services-context-menu.test.ts`
-  pins the order, the two `danger` flags and every handler/gate pairing together, so a later
-  alignment sweep cannot quietly restore "Details first" or drop a gate while reordering.
+  the alert red, the disabled opacity and the hover state live. Mark only the genuinely
+  destructive item: `Deactivate` and `Delete` are, **`Activate` is not**.
+- **Order is presentation.** Ordering must not move a handler, a `disabled: !canWrite` gate, a
+  `title: readOnlyTitle`, or which items a conditional hides — the rule applies to whatever remains
+  *visible* (a System professional service, with Edit and Delete hidden, reads
+  Duplicate / Deactivate / Details).
 
 
 ## Renaming an Entity, All the Way Down (#949)

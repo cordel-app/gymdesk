@@ -134,6 +134,7 @@ export default function CordelTrainingPlanTemplatesPage() {
   function menuItems(tpl: BaseTemplate): ContextMenuItem[] {
     return [
       {
+        kind: 'edit' as const,
         label: t('edit'),
         onClick: () => {
           setEditing(tpl);
@@ -141,7 +142,7 @@ export default function CordelTrainingPlanTemplatesPage() {
           setFormError(null);
         },
       },
-      { label: t('delete'), danger: true, onClick: () => setDeleting(tpl) },
+      { kind: 'delete' as const, label: t('delete'), danger: true, onClick: () => setDeleting(tpl) },
     ];
   }
 

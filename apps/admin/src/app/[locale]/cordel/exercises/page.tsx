@@ -417,9 +417,9 @@ export default function CordelExercisesPage() {
         <ContextMenu items={[
           // §11: Details is the modal, not a second way to expand the row — the
           // chevron is what reads the configuration.
-          { label: t('details'), onClick: () => setDetailFor(row) },
-          { label: t('edit'), onClick: () => openInlineEdit(row) },
-          { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
+          { kind: 'details' as const, label: t('details'), onClick: () => setDetailFor(row) },
+          { kind: 'edit' as const, label: t('edit'), onClick: () => openInlineEdit(row) },
+          { kind: 'delete' as const, label: t('delete'), danger: true, onClick: () => setDeleting(row) },
         ]} />
       ),
     },
@@ -505,9 +505,9 @@ export default function CordelExercisesPage() {
                 exercise={row}
                 muscleLabel={muscleLabel}
                 menuItems={[
-                  { label: t('details'), onClick: () => setDetailFor(row) },
-                  { label: t('edit'), onClick: () => openInlineEdit(row) },
-                  { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
+                  { kind: 'details' as const, label: t('details'), onClick: () => setDetailFor(row) },
+                  { kind: 'edit' as const, label: t('edit'), onClick: () => openInlineEdit(row) },
+                  { kind: 'delete' as const, label: t('delete'), danger: true, onClick: () => setDeleting(row) },
                 ]}
                 attributes={renderReadOnly(row)}
               />

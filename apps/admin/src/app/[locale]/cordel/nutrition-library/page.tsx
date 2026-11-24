@@ -507,10 +507,10 @@ export default function CordelNutritionLibraryPage() {
       // read. Edit and Delete stay hidden for it, as they were.
       render: (item) => (
         <ContextMenu items={[
-          { label: t('details'), onClick: () => setDetailItem(item) },
+          { kind: 'details' as const, label: t('details'), onClick: () => setDetailItem(item) },
           ...(item.status !== 'deleted' ? [
-            { label: t('edit'), onClick: () => openInlineEdit(item) },
-            { label: t('delete'), danger: true, onClick: () => setDeleting(item) },
+            { kind: 'edit' as const, label: t('edit'), onClick: () => openInlineEdit(item) },
+            { kind: 'delete' as const, label: t('delete'), danger: true, onClick: () => setDeleting(item) },
           ] : []),
         ]} />
       ),

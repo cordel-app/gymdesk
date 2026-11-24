@@ -1014,11 +1014,11 @@ export default function PlansPage() {
 
   function planMenuItems(plan: Plan): ContextMenuItem[] {
     return [
-        { label: t('plans.details'), onClick: () => setDetailFor(plan) },
-        { label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle },
+        { kind: 'details' as const, label: t('plans.details'), onClick: () => setDetailFor(plan) },
+        { kind: 'edit' as const, label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle },
         { label: t('plans.assign_to_member'), onClick: () => openAssign(plan), disabled: !canAssign, title: assignReadOnlyTitle },
         { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan), disabled: !canWrite, title: readOnlyTitle },
-        { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true, disabled: !canWrite, title: readOnlyTitle },
+        { kind: 'delete' as const, label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true, disabled: !canWrite, title: readOnlyTitle },
       ];
   }
 

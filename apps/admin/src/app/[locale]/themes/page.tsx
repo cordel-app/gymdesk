@@ -989,9 +989,9 @@ export default function GymThemesPage() {
         disabled: !!storageBlock || initializingBucketId === theme.id,
         title: storageBlock ? t(`initialize_bucket_${storageBlock}`) : undefined,
       });
-      menuItems.push({ label: t('delete'), onClick: () => setDeleting(theme), danger: true });
+      menuItems.push({ kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(theme), danger: true });
     }
-    menuItems.push({ label: t('details'), onClick: () => setDetails(theme) });
+    menuItems.push({ kind: 'details' as const, label: t('details'), onClick: () => setDetails(theme) });
 
     return (
       <div key={theme.id} style={{ ...cardSurfaceStyle, marginBottom: 10, overflow: 'hidden' }}>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { orderContextMenuItems, type ContextMenuItemKind } from '../components/ContextMenu';
 
 // #802 — the Professional Services context menu (⋮) orders its actions
 // Duplicate → Deactivate → … → Details, and Deactivate carries the shared
@@ -52,45 +53,46 @@ function labelOrder(block: string): string[] {
 const block = menuItemsBlock();
 const order = labelOrder(block);
 
-describe('#802 Professional Services context menu — ordering', () => {
-  it('declares exactly the five existing actions, and no new one', () => {
+/** Each `label: t('<key>')` of the literal with the `kind` it carries, if any. */
+function labelledItems(src: string): { key: string; kind?: ContextMenuItemKind }[] {
+  return [...src.matchAll(/(?:kind: '(edit|delete|details)' as const, )?label: t\('([a-z_]+)'\)/g)]
+    .map((m) => ({ key: m[2], kind: m[1] as ContextMenuItemKind | undefined }));
+}
+
+/** What the shared menu displays: the declared items through its one ordering rule. */
+function displayed(items: { key: string; kind?: ContextMenuItemKind }[]): string[] {
+  return orderContextMenuItems(items).map((i) => i.key);
+}
+
+describe('#802/#3347 Professional Services context menu — ordering', () => {
+  it('declares exactly the existing actions, and no new one', () => {
     expect([...order].sort()).toEqual(
-      ['activate', 'deactivate', 'delete', 'details', 'duplicate', 'edit'].sort(),
+      ['activate', 'deactivate', 'delete', 'details', 'duplicate', 'edit', 'update_system_data'].sort(),
     );
   });
 
-  it('puts Duplicate first', () => {
-    expect(order[0]).toBe('duplicate');
+  it('tags Edit, Delete and Details for the shared ordering', () => {
+    const kinds = Object.fromEntries(labelledItems(block).map((i) => [i.key, i.kind]));
+    expect(kinds.edit).toBe('edit');
+    expect(kinds.delete).toBe('delete');
+    expect(kinds.details).toBe('details');
+    for (const key of ['duplicate', 'deactivate', 'activate', 'update_system_data']) expect(kinds[key]).toBeUndefined();
   });
 
-  it('puts the Deactivate / Activate pair second', () => {
-    // The two share one slot through a ternary on item.status.
-    expect(order[1]).toBe('deactivate');
-    expect(order[2]).toBe('activate');
-  });
-
-  it('puts Details last', () => {
-    expect(order[order.length - 1]).toBe('details');
-  });
-
-  it('keeps Edit and Delete between the two fixed ends', () => {
-    const editAt = order.indexOf('edit');
-    const deleteAt = order.indexOf('delete');
-    for (const at of [editAt, deleteAt]) {
-      expect(at).toBeGreaterThan(order.indexOf('activate'));
-      expect(at).toBeLessThan(order.indexOf('details'));
-    }
-    expect(editAt).toBeLessThan(deleteAt);
+  it('displays Edit first, Duplicate and the status pair next, then Delete, then Details', () => {
+    expect(displayed(labelledItems(block))).toEqual(
+      ['edit', 'duplicate', 'deactivate', 'activate', 'update_system_data', 'delete', 'details'],
+    );
   });
 
   it('leaves a System professional service with exactly Duplicate / Deactivate / Details', () => {
     // Edit and Delete are the only two gated on !isSystem, so dropping them is
     // what a System row renders.
-    const systemGated = [...block.matchAll(/\.\.\.\(!isSystem \? \[\{ label: t\('([a-z_]+)'\)/g)]
+    const systemGated = [...block.matchAll(/\.\.\.\(!isSystem \? \[\{ kind: '[a-z]+' as const, label: t\('([a-z_]+)'\)/g)]
       .map((m) => m[1]);
     expect(systemGated.sort()).toEqual(['delete', 'edit']);
-    expect(order.filter((k) => !systemGated.includes(k) && k !== 'activate'))
-      .toEqual(['duplicate', 'deactivate', 'details']);
+    const rest = labelledItems(block).filter((i) => !systemGated.includes(i.key) && !['activate', 'update_system_data'].includes(i.key));
+    expect(displayed(rest)).toEqual(['duplicate', 'deactivate', 'details']);
   });
 });
 

@@ -239,9 +239,9 @@ export default function BaseMealsPage() {
   }
 
   const menuFor = (m: Meal) => [
-    { label: t('edit'), onClick: () => openForm(m) },
-    { label: t('details'), onClick: () => setDetails(m) },
-    { label: t('delete'), onClick: () => setDeleting(m), danger: true },
+    { kind: 'edit' as const, label: t('edit'), onClick: () => openForm(m) },
+    { kind: 'details' as const, label: t('details'), onClick: () => setDetails(m) },
+    { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(m), danger: true },
   ];
 
   const editor = form && (

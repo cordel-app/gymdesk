@@ -619,11 +619,11 @@ function PlanCard({
 
   const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
-    ...(!isCompleted ? [{ label: t('training_plan_templates.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
-    { label: t('training_plans.details'), onClick: onDetails },
+    ...(!isCompleted ? [{ kind: 'edit' as const, label: t('training_plan_templates.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
+    { kind: 'details' as const, label: t('training_plans.details'), onClick: onDetails },
     { label: t('training_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
     ...(row.status === 'active' ? [{ label: t('training_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
-    { label: t('training_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
+    { kind: 'delete' as const, label: t('training_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
   ];
 
   return (

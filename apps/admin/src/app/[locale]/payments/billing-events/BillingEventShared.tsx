@@ -481,7 +481,7 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
     // #3300: Details opens the event's modal (View Audit Log lives there), and is
     // always the last option (#802/#1188). A read, so no write gate.
     if (row.id != null) {
-      items.push({ label: t('billing_events_page.action_details'), onClick: () => setDetailsId(id) });
+      items.push({ kind: 'details' as const, label: t('billing_events_page.action_details'), onClick: () => setDetailsId(id) });
     }
     return items;
   }

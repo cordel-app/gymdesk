@@ -96,7 +96,7 @@ describe('#801 — what the Space form still does (AC7)', () => {
   });
 
   it('keeps Edit behind the context menu and the write gate (AC13)', () => {
-    expect(page).toContain("{ label: t('edit'), onClick: () => openEdit(space), disabled: !canWrite");
+    expect(page).toContain("{ kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(space), disabled: !canWrite");
   });
 
   it('seeds the edit form synchronously, since nothing has to be loaded first', () => {

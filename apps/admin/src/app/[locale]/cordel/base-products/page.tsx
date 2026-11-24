@@ -514,9 +514,9 @@ export default function BaseProductsPage() {
                 text={listText}
                 onToggle={() => toggleExpand(p.id)}
                 menuItems={[
-                  { label: t('edit'), onClick: () => { setView('list'); setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
-                  { label: t('details'), onClick: () => setDetails(p) },
-                  { label: t('delete'), onClick: () => setDeleting(p), danger: true },
+                  { kind: 'edit' as const, label: t('edit'), onClick: () => { setView('list'); setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
+                  { kind: 'details' as const, label: t('details'), onClick: () => setDetails(p) },
+                  { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(p), danger: true },
                 ]}
               />
               {expanded.has(p.id) && (
@@ -542,9 +542,9 @@ export default function BaseProductsPage() {
                   onToggle={() => toggleExpand(p.id)}
                   onImageClick={() => setImageOf(p)}
                   menuItems={[
-                    { label: t('edit'), onClick: () => { setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
-                    { label: t('details'), onClick: () => setDetails(p) },
-                    { label: t('delete'), onClick: () => setDeleting(p), danger: true },
+                    { kind: 'edit' as const, label: t('edit'), onClick: () => { setExpanded((prev) => new Set(prev).add(p.id)); setForm(formFor(p)); setError(null); } },
+                    { kind: 'details' as const, label: t('details'), onClick: () => setDetails(p) },
+                    { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(p), danger: true },
                   ]}
                 />
                 {(expanded.has(p.id) || form?.id === p.id) && (

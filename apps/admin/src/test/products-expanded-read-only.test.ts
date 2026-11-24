@@ -336,7 +336,7 @@ describe('expanded means read-only (#974 §2)', () => {
   });
 
   it('leaves the ⋮ menu the single entry point into the form (#797)', () => {
-    expect(pageSrc).toContain("{ label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite");
+    expect(pageSrc).toContain("{ kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite");
     expect(pageSrc).toContain('setExpanded((prev) => new Set([...prev, item.id]));');
   });
 });

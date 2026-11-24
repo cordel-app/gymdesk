@@ -166,8 +166,8 @@ describe('⋮ → Details is the one place the metadata lives (§11, §12)', () 
   });
 
   it('is opened from the context menu, which no longer uses Details to expand', () => {
-    expect(basePage).toContain("{ label: t('details'), onClick: () => setDetailFor(row) }");
-    expect(basePage).not.toContain("{ label: t('details'), onClick: () => toggleExpand(row.id) }");
+    expect(basePage).toContain("{ kind: 'details' as const, label: t('details'), onClick: () => setDetailFor(row) }");
+    expect(basePage).not.toContain("{ kind: 'details' as const, label: t('details'), onClick: () => toggleExpand(row.id) }");
   });
 });
 

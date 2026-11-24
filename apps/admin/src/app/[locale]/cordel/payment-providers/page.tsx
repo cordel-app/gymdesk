@@ -395,9 +395,9 @@ export default function CordelPaymentProvidersPage() {
     const isEditing = editingId === provider.id;
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetails(provider) },
-      { label: t('edit'), onClick: () => openEdit(provider) },
-      { label: t('delete'), onClick: () => setDeleting(provider), danger: true },
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(provider) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(provider) },
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(provider), danger: true },
     ];
 
     return (

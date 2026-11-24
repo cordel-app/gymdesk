@@ -692,7 +692,7 @@ export default function MembersPage() {
     if (canSendCommunication) {
       items.push({ label: t('members.action_send_communication'), onClick: () => guardUnsaved(() => setCommunicationFor(m)) });
     }
-    items.push({ label: t('members.action_details'), onClick: () => guardUnsaved(() => setDetailFor(m)) });
+    items.push({ kind: 'details' as const, label: t('members.action_details'), onClick: () => guardUnsaved(() => setDetailFor(m)) });
     if (canWrite) {
       if (m.access_rights_stored === 'revoked') {
         items.push({ label: t('members.action_grant_access'), onClick: () => guardUnsaved(() => handleGrantAccess(m.id)) });
@@ -700,7 +700,7 @@ export default function MembersPage() {
         items.push({ label: t('members.action_revoke_access'), onClick: () => guardUnsaved(() => setConfirming({ kind: 'access_revoke', id: m.id })), danger: true });
       }
     }
-    items.push({ label: t('members.delete'), onClick: () => guardUnsaved(() => handleDelete(m.id)), danger: true });
+    items.push({ kind: 'delete' as const, label: t('members.delete'), onClick: () => guardUnsaved(() => handleDelete(m.id)), danger: true });
 
     return items;
   }
