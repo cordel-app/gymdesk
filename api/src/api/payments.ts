@@ -383,6 +383,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       from_product_set: number | boolean;
       latest_provider_status: string | null;
       cancelled_at: Date | null;
+      expired_at: Date | null;
       attempt_count: number | string | null;
       payment_method_name: string | null;
       receipt_number: string | null;
@@ -398,7 +399,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               be.created_at, be.amount, be.event_type, NULL AS currency,
               be.billing_date AS event_billing_date, be.is_scheduled,
               (be.product_set_id IS NOT NULL) AS from_product_set,
-              be.cancelled_at, be.attempt_count,
+              be.cancelled_at, be.expired_at, be.attempt_count,
               (SELECT pr.payment_method_name FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name,
@@ -508,7 +509,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         normalized_payment_status: withRefundState(normalizePaymentStatus(r.latest_provider_status), refund?.refund_state),
         amount: r.amount,
         event_type: r.event_type,
-        status: displayBillingEventStatus(status, refund?.refund_state),
+        status: displayBillingEventStatus(status, refund?.refund_state, r.expired_at != null),
         currency: r.currency,
         payment_method_name: r.payment_method_name ?? null,
         attempt_count: Number(r.attempt_count ?? 0),
@@ -745,7 +746,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
               be.previous_status, be.new_status,
               be.receipt_number, be.receipt_issued_at,
               be.modified_at, be.modified_by,
-              be.cancelled_at, be.cancelled_by, be.attempt_count,
+              be.cancelled_at, be.cancelled_by, be.expired_at, be.attempt_count,
               (SELECT pr.payment_method_name FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name,
@@ -824,7 +825,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       purchase_id: ev.purchase_id != null ? Number(ev.purchase_id) : null,
       amount: ev.amount,
       currency: 'EUR',
-      status: displayBillingEventStatus(status, refund?.refund_state),
+      status: displayBillingEventStatus(status, refund?.refund_state, ev.expired_at != null),
       payment_status: ev.latest_provider_status ?? null,
       normalized_payment_status: withRefundState(normalizePaymentStatus(ev.latest_provider_status), refund?.refund_state),
       payment_method_name: ev.payment_method_name ?? null,

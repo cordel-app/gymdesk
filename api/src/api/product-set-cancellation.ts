@@ -2,7 +2,7 @@ import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../dom
 import type { logger } from '../lib/logger';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { db, type Tx } from '../infra/db';
-import { pendingCancellation, type PendingAttempt } from '../domain/productSet';
+import { PENDING_EXPIRY_HOURS, pendingCancellation, type PendingAttempt } from '../domain/productSet';
 import { getPaymentProvider } from '../payments';
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { settleFromProviderLookup } from './payment-settlement';
@@ -105,8 +105,13 @@ export async function reconcileSetPayments(gymId: string, productSetId: number, 
 export async function cancelPendingProductSet(
   tx: Tx, gymId: string, productSetId: number,
   who: { actor: string | null; actorUserId: string | null; source: string },
+  opts: { expire?: boolean } = {},
 ): Promise<CancelPendingOutcome> {
   const { actor } = who;
+  // #3307 stage 3: the 24-hour expiry is this same terminal close, told apart by
+  // `billing_events.expired_at` (the event reads *24h expired*) and by the purchases'
+  // `expired_24h` status (instead of `cancelled`).
+  const expire = opts.expire === true;
   const { rows: sets } = await tx.query<{ id: number; status: string; user_membership_id: number | null }>(
     `SELECT ps.id, ps.status, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
        FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ? FOR UPDATE`,
@@ -140,7 +145,9 @@ export async function cancelPendingProductSet(
         WHERE gym_id = ? AND transaction_type = 'payment' AND status = 'pending' AND billing_event_id IN (${marks})`,
       [actor, gymId, ...eventIds]);
     await tx.query(
-      `UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP(), cancelled_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+      `UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP(), cancelled_by = ?,
+              expired_at = ${expire ? 'UTC_TIMESTAMP()' : 'expired_at'},
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE gym_id = ? AND cancelled_at IS NULL AND id IN (${marks})`,
       [actor, actor, gymId, ...eventIds]);
   }
@@ -150,9 +157,9 @@ export async function cancelPendingProductSet(
       WHERE gym_id = ? AND status = 'pending' AND id = (SELECT payment_request_id FROM product_sets WHERE id = ?)`,
     [actor, gymId, productSetId]);
 
-  await moveSetPurchases(tx, gymId, productSetId, 'pending_payment', 'cancelled');
-  // #2949 stage 5: the standalone cart purchases this checkout joined are cancelled with it.
-  await releaseJoinedCartPurchases(tx, gymId, productSetId, 'cancelled', actor ?? undefined);
+  await moveSetPurchases(tx, gymId, productSetId, 'pending_payment', 'cancelled', { expired: expire });
+  // #2949 stage 5: the standalone cart purchases this checkout joined are cancelled (or expired) with it.
+  await releaseJoinedCartPurchases(tx, gymId, productSetId, expire ? 'expired_24h' : 'cancelled', actor ?? undefined);
   await tx.query(
     `UPDATE product_sets SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(), cancelled_by = ?
       WHERE id = ? AND status = 'pending_payment'`,
@@ -296,4 +303,41 @@ export function cancelPendingResponse(out: CancelPendingOutcome): { status: numb
     case 'payment_unresolved':
       return { status: 409, body: { error: 'payment_unresolved', message: 'A payment for this Product Set is still being processed.' } };
   }
+}
+
+/**
+ * #3307 stage 3 — a Pending Payment checkout that was not paid within
+ * `PENDING_EXPIRY_HOURS` (24) of being saved for payment expires, as a whole:
+ * the set's initial Billing Event reads **24h expired** (`expired_at` beside
+ * `cancelled_at`), its open attempts close as `expired`, every one-time Product
+ * of the checkout still `pending_payment` (linked or joined from the cart)
+ * becomes `expired_24h`, and the set and its assignment are closed as a
+ * cancellation is (`cancelPendingProductSet()`, the one terminal writer). Nothing
+ * is deleted; a payment that settles later is recorded on its attempt and
+ * activates nothing (#2533 stage 2).
+ *
+ * The provider is asked first about every submitted attempt
+ * (`reconcileSetPayments()`, outside any transaction): a payment it reports
+ * captured activates the set instead, and an attempt it still holds in flight
+ * or whose outcome is unknown leaves the set pending for the next run. Each set
+ * is re-checked under its locks, so a repeated or concurrent run changes nothing
+ * twice. Returns how many checkouts expired.
+ */
+export async function expirePendingPayments(log?: Log): Promise<number> {
+  const { rows } = await db.query<{ id: number; gym_id: string }>(
+    `SELECT ps.id, ps.gym_id FROM product_sets ps
+      WHERE ps.status = 'pending_payment'
+        AND COALESCE(ps.pending_at, ps.last_activity_at) < UTC_TIMESTAMP() - INTERVAL ${PENDING_EXPIRY_HOURS} HOUR
+      ORDER BY ps.id`);
+  const lg = log ?? (await import('../lib/logger')).logger;
+  let n = 0;
+  for (const r of rows) {
+    const gymId = r.gym_id;
+    const id = Number(r.id);
+    await reconcileSetPayments(gymId, id, lg);
+    const out = await db.transaction((tx) => cancelPendingProductSet(tx, gymId, id,
+      { actor: SYSTEM_ACTOR, actorUserId: null, source: 'system' }, { expire: true }));
+    if (out.kind === 'cancelled') n += 1;
+  }
+  return n;
 }

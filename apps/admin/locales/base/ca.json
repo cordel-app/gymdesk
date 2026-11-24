@@ -397,6 +397,7 @@
     "purchase_status_pending_payment": "Pagament pendent",
     "purchase_status_active": "Actiu",
     "purchase_status_cancelled": "Cancel·lada",
+    "purchase_status_expired_24h": "Caducat (24 h)",
     "purchase_status_in_cart": "A la cistella",
     "purchase_cart_expires_in": "Caduca en {time}",
     "purchase_cart_expired": "Caducat",
@@ -1023,7 +1024,8 @@
     "purchases_billing_event": "Esdeveniment de facturació",
     "purchases_payment_method": "Mètode de pagament",
     "purchases_payment_status": "Estat del pagament",
-    "purchases_payment_date": "Data de pagament"
+    "purchases_payment_date": "Data de pagament",
+    "timeline_status_expired_24h": "Caducat (24 h)"
   },
   "member_payments": {
     "title": "Pagaments del membre",
@@ -1301,7 +1303,8 @@
     "doc_link_for_refund": "Per la devolució {number}",
     "doc_link_rectified_in": "Rectificada a {number}",
     "doc_link_rectified_by": "Rectificada per {number}",
-    "doc_link_replaces": "Substitueix {number}"
+    "doc_link_replaces": "Substitueix {number}",
+    "status_expired_24h": "Caducat (24 h)"
   },
   "payment_providers": {
     "title": "Proveïdors de pagament",

@@ -216,14 +216,13 @@ describe('Members App Cancel returns the purchase to In Cart (#3309)', () => {
     expect((await one('SELECT status FROM payment_requests WHERE id = ?', [staffSet.request.id])).status).toBe('expired');
   });
 
-  it('a payment link that actually expired still returns to the cart as expired, not cancelled', async () => {
+  it('a payment link that expired leaves the checkout pending until its 24 hours are up (#3307 stage 3)', async () => {
     const p = await pending(undefined, { assignment: false });
     await db.query(`UPDATE payment_requests SET status = 'expired' WHERE id = ?`, [p.request.id]);
-    const { expirePendingPayments } = await import('../api/product-sets');
+    const { expirePendingPayments } = await import('../api/product-set-cancellation');
     await expirePendingPayments();
-    expect((await one('SELECT status FROM product_sets WHERE id = ?', [p.id])).status).toBe('in_cart');
-    // #1991 stage 4's expiry is unchanged: the unpaid event and its attempt are removed, never relabelled.
-    expect(await one('SELECT status FROM payment_requests WHERE id = ?', [p.request.id])).toBeUndefined();
+    expect((await one('SELECT status FROM product_sets WHERE id = ?', [p.id])).status).toBe('pending_payment');
+    expect((await one('SELECT status FROM payment_requests WHERE id = ?', [p.request.id])).status).toBe('expired');
   });
 
   it('only the owner may cancel, and only their own gym\'s set', async () => {

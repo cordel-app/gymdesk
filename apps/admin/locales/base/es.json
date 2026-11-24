@@ -396,6 +396,7 @@
     "purchase_status_pending_payment": "Pago pendiente",
     "purchase_status_active": "Activo",
     "purchase_status_cancelled": "Cancelada",
+    "purchase_status_expired_24h": "Caducado (24 h)",
     "purchase_status_in_cart": "En el carrito",
     "purchase_cart_expires_in": "Caduca en {time}",
     "purchase_cart_expired": "Caducado",
@@ -1022,7 +1023,8 @@
     "purchases_billing_event": "Evento de facturación",
     "purchases_payment_method": "Método de pago",
     "purchases_payment_status": "Estado del pago",
-    "purchases_payment_date": "Fecha de pago"
+    "purchases_payment_date": "Fecha de pago",
+    "timeline_status_expired_24h": "Caducado (24 h)"
   },
   "member_payments": {
     "title": "Pagos del miembro",
@@ -1300,7 +1302,8 @@
     "doc_link_for_refund": "Por la devolución {number}",
     "doc_link_rectified_in": "Rectificada en {number}",
     "doc_link_rectified_by": "Rectificada por {number}",
-    "doc_link_replaces": "Sustituye {number}"
+    "doc_link_replaces": "Sustituye {number}",
+    "status_expired_24h": "Caducado (24 h)"
   },
   "payment_providers": {
     "title": "Proveedores de pago",
