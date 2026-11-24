@@ -258,3 +258,53 @@ describe('versions that are not checkouts (#3251)', () => {
     expect(await purchasesOf(m.id)).toEqual([]);
   });
 });
+
+// #3307 stage 2 — a paid cart stays in Admin → Member → Products for one hour after it was paid,
+// or until a newer cart is opened; both are read from persisted rows.
+describe('the paid cart the Products view keeps showing (#3307 stage 2)', () => {
+  const config = (memberId: number) => staff('get', `/user-memberships/member/${memberId}/configuration`);
+
+  async function paidCart() {
+    const m = await memberWithDraft();
+    const cart = await cartOfSet(m.setId);
+    const res = await staff('post', `/product-sets/${m.setId}/save-and-pay`).send({});
+    expect(res.status).toBe(201);
+    // Awaiting payment: not a paid cart yet.
+    expect((await config(m.id)).body.paid_cart).toBeNull();
+    const order = await orderOfEvent(Number(res.body.billing_event_id));
+    expect((await webhook(order, 'SUCCEEDED')).status).toBe(200);
+    return { ...m, cart: cart!, eventId: Number(res.body.billing_event_id) };
+  }
+
+  it('stamps when the cart was paid and reports it, with its set and Billing Event', async () => {
+    const m = await paidCart();
+    const row = await purchase(m.cart);
+    expect(row.status).toBe('completed');
+    expect(row.completed_at).not.toBeNull();
+    const body = (await config(m.id)).body;
+    expect(body.paid_cart).toMatchObject({
+      purchase: { id: m.cart, status: 'completed' },
+      product_set_id: m.setId,
+      billing_event_id: m.eventId,
+    });
+    expect(body.paid_cart.amount).toBeGreaterThan(0);
+  });
+
+  it('stops reporting it once an hour has passed since it was paid', async () => {
+    const m = await paidCart();
+    await db.query('UPDATE purchases SET completed_at = UTC_TIMESTAMP() - INTERVAL 61 MINUTE WHERE id = ?', [m.cart]);
+    expect((await config(m.id)).body.paid_cart).toBeNull();
+  });
+
+  it('stops reporting it as soon as a newer cart is opened, inside the hour', async () => {
+    const m = await paidCart();
+    const next = await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('3.00') });
+    expect(next.status).toBe(201);
+    expect((await config(m.id)).body.paid_cart).toBeNull();
+  });
+
+  it('never reports a cart that is not paid', async () => {
+    const m = await memberWithDraft();
+    expect((await config(m.id)).body.paid_cart).toBeNull();
+  });
+});
