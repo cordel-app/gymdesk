@@ -13,6 +13,7 @@ import {
   replaceGoalTranslations,
   withGoalTranslations,
 } from '../domain/nutritionGoalTranslations';
+import { countBaseMealReferences } from './base-meal-reference';
 import { clearBaseMealImage, storeBaseMealImage } from './base-meal-image-storage';
 import {
   isMemberImageRefusal,
@@ -32,8 +33,8 @@ import { resolvePlatformActor } from '../domain/auditActor';
  * module (kind `base_meal`), so the fallback, omit-keeps and `{}`-clears rules
  * are the same ones. The slug is generated once from the name and never
  * rewritten; the image is the server-made WebP pair under `cordel/meals/`.
- * Delete is soft. Nothing references a Base Meal yet (stage 2 links the
- * nutrition plans' meals to it and refuses deleting a referenced one).
+ * Delete is soft and refused (409 `base_meal_in_use`) while a nutrition plan's
+ * or template's meal references the meal (#3328 stage 2).
  */
 const TABLE = 'base_meals';
 const KIND = 'base_meal' as const;
@@ -162,6 +163,15 @@ platformBaseMealsRouter.delete('/:id', requireSuperadmin, async (req: AuditReque
   try {
     const previous = await loadBaseMeal(id);
     if (!previous || previous.deleted_at) return res.status(404).json({ error: 'Meal not found' });
+    // #3328 stage 2: a meal a nutrition plan or template still uses is not deleted.
+    const references = await countBaseMealReferences(id);
+    if (references > 0) {
+      return res.status(409).json({
+        error: 'This meal is used by nutrition plans and cannot be deleted',
+        code: 'base_meal_in_use',
+        references,
+      });
+    }
     await db.query(
       `UPDATE ${TABLE} SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND deleted_at IS NULL`,
