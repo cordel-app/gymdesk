@@ -36,6 +36,37 @@ export function standaloneCartCount(purchases: Array<{ status: string; cart_expi
   return purchases.filter((p) => p.status === 'in_cart' && p.cart_expires_at != null).length;
 }
 
+/**
+ * #3274 follow-up — the cart's one countdown, in seconds, or `null` when nothing is In Cart.
+ * The clock is the purchase's (`purchases.expires_at`): the server reports it as the in-cart
+ * Product Set's `expires_in_seconds` and as each standalone purchase's `cart_expires_at`, and
+ * both read that one value, so the earliest is the cart's. The Product Set itself shows none.
+ */
+export function cartExpirySeconds(
+  current: Pick<ProductSetSummary, 'status' | 'expired' | 'expires_in_seconds'> | null,
+  purchases: Array<{ status: string; cart_expires_at?: string | null }>,
+  nowMs: number,
+): number | null {
+  const candidates: number[] = [];
+  if (current?.status === 'in_cart' && !current.expired && current.expires_in_seconds != null) {
+    candidates.push(Math.max(0, current.expires_in_seconds));
+  }
+  for (const p of purchases) {
+    if (p.status !== 'in_cart' || !p.cart_expires_at) continue;
+    const at = Date.parse(p.cart_expires_at);
+    if (Number.isFinite(at)) candidates.push(Math.max(0, Math.floor((at - nowMs) / 1000)));
+  }
+  return candidates.length === 0 ? null : Math.min(...candidates);
+}
+
+/** #3274 follow-up — whether the member has a cart In Cart (an in-cart set or standalone purchases). */
+export function hasCartInCart(
+  current: Pick<ProductSetSummary, 'status' | 'expired'> | null,
+  purchases: Array<{ status: string; cart_expires_at?: string | null }>,
+): boolean {
+  return (current?.status === 'in_cart' && !current.expired) || standaloneCartCount(purchases) > 0;
+}
+
 /** The review answer reduced to what the mode needs. */
 export interface ReviewSummary {
   changes: unknown[];

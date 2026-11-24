@@ -17,7 +17,7 @@ describe('#3164 the Products table refreshes when the cart ends', () => {
   it('wires the cart Cancel, the cart expiry and the in-flight sets to it', () => {
     expect(src).toContain('onDiscarded={reloadProducts}');
     expect(src).not.toContain('onDiscarded={reloadConfiguration}');
-    expect(src).toContain('onDraftExpired={reloadProducts}');
+    expect(src).toContain('<CartStatusBar seconds={cartSeconds} onExpire={reloadProducts} />');
     expect(src).toMatch(/review=\{draftReview\}\s*onChanged=\{reloadProducts\}/);
   });
 });
