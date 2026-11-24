@@ -14,22 +14,25 @@ import {
   type MemberBillingEvent,
   EMPTY_FORECAST,
   billingEventAmount,
-  forecastDatesAfterNext,
   formatPaymentAmount,
   formatPaymentDate,
   lineKindKey,
   lineTreatmentKey,
   lineTreatmentName,
-  nextPaymentDate,
   billingEventHasDetails,
   billingEventIssuedDate,
   billingEventLineAmount,
   billingEventLineRegularAmount,
   showsRegularPrice,
   paymentDocumentFileName,
-  paymentDocumentRows,
+  paymentScheduledDate,
+  paymentSections,
+  paymentTypeKey,
+  refundTypeKey,
+  isPlannedPayment,
 } from '../../../apps/member/src/lib/memberPayments';
 import { DEFAULT_GYM_FORMAT } from '../../../apps/member/src/lib/gymFormat';
+import { ledgerEventStatus, paymentCoverage, refundCoverage, scheduledExecutionDate } from '../domain/memberPaymentView';
 
 function line(over: Partial<ForecastLine> = {}): ForecastLine {
   return {
@@ -73,39 +76,89 @@ function event(over: Partial<MemberBillingEvent> = {}): MemberBillingEvent {
   };
 }
 
-describe('Next Payment is the forecast’s first group', () => {
-  it('is the next billing event in time', () => {
-    const f = forecast([{ date: '2026-10-15', total: 150 }, { date: '2026-11-15', total: 150 }]);
-    expect(nextPaymentDate(f)?.date).toBe('2026-10-15');
+describe('#3297 — the Payments tab is grouped by scheduled execution date', () => {
+  const TODAY = '2026-10-10';
+  const at = (id: number, date: string, status: MemberBillingEvent['status']) =>
+    event({ id, scheduled_date: date, status, created_at: '2026-01-01T00:00:00.000Z' });
+
+  it('puts a future date under Planned and a past one under Past, whatever the status', () => {
+    const s = paymentSections([
+      at(1, '2026-11-15', 'scheduled'),
+      at(2, '2026-10-15', 'scheduled'),
+      at(3, '2026-09-15', 'paid'),
+      // A failed charge of a past date stays Past; its status never moves it.
+      at(4, '2026-08-15', 'failed'),
+      // A record created today for a later date is Planned, not "recorded".
+      at(5, '2026-12-15', 'recorded'),
+    ], TODAY);
+    expect(s.planned.map((e) => e.id)).toEqual([2, 1, 5]);
+    expect(s.past.map((e) => e.id)).toEqual([3, 4]);
   });
 
-  it('is null when there is no projection at all', () => {
-    expect(nextPaymentDate(null)).toBeNull();
-    expect(nextPaymentDate(EMPTY_FORECAST)).toBeNull();
+  it('keeps a payment due today Planned until it has been executed', () => {
+    expect(isPlannedPayment(at(1, TODAY, 'scheduled'), TODAY)).toBe(true);
+    expect(isPlannedPayment(at(2, TODAY, 'paid'), TODAY)).toBe(false);
   });
 
-  // `available: false` is a legitimate state (no plan, or one that bills nothing
-  // further), and it must not be read as "the next payment is the first group of
-  // an empty list".
-  it('is null for an unavailable forecast even if it carries dates', () => {
-    const f = { ...forecast([{ date: '2026-10-15', total: 150 }]), available: false };
-    expect(nextPaymentDate(f)).toBeNull();
+  it('falls back to the day a payment was written when the API names no date', () => {
+    expect(paymentScheduledDate(event({ created_at: '2026-09-15T08:00:00.000Z' }))).toBe('2026-09-15');
+  });
+
+  it('summarises the nearest planned payment and every unresolved one, each once', () => {
+    const s = paymentSections([
+      at(1, '2026-11-15', 'scheduled'),
+      at(2, '2026-10-15', 'scheduled'),
+      at(3, '2026-09-15', 'failed'),
+      at(4, '2026-10-20', 'pending'),
+      at(5, '2026-09-01', 'paid'),
+    ], TODAY);
+    expect(s.next.map((e) => e.id)).toEqual([2, 3, 4]);
+    // The next payment is still listed under Planned.
+    expect(s.planned.map((e) => e.id)).toContain(2);
+  });
+
+  it('does not repeat a planned payment that is also unresolved', () => {
+    const s = paymentSections([at(1, '2026-10-15', 'pending')], TODAY);
+    expect(s.next.map((e) => e.id)).toEqual([1]);
+  });
+
+  it('has nothing next when nothing is planned or unresolved', () => {
+    expect(paymentSections([at(1, '2026-09-01', 'paid')], TODAY).next).toEqual([]);
+  });
+
+  it('names the payment-type and refund chips from the server’s answer alone', () => {
+    expect(paymentTypeKey(event({ payment_type: 'full' }))).toBe('payment_type_full');
+    expect(paymentTypeKey(event({ payment_type: 'partial' }))).toBe('payment_type_partial');
+    expect(paymentTypeKey(event({}))).toBeNull();
+    expect(refundTypeKey(event({ refund_type: 'partial' }))).toBe('refund_type_partial');
+    expect(refundTypeKey(event({ refund_type: null }))).toBeNull();
+  });
+
+  it('opens a row that has documents, even with no lines', () => {
+    expect(billingEventHasDetails(event({ documents: [{ kind: 'receipt', id: 1, number: '1' }] }))).toBe(true);
   });
 });
 
-describe('the Forecast subcard lists everything after the next payment', () => {
-  it('excludes the next payment, which is the card above it', () => {
-    const f = forecast([
-      { date: '2026-10-15', total: 150 },
-      { date: '2026-11-15', total: 150 },
-      { date: '2026-12-15', total: 150 },
-    ]);
-    expect(forecastDatesAfterNext(f).map((g) => g.date)).toEqual(['2026-11-15', '2026-12-15']);
+describe('#3297 — the API’s answers', () => {
+  it('reads a persisted, not-yet-executed obligation as scheduled', () => {
+    expect(ledgerEventStatus('charge_created', null, false, true)).toBe('scheduled');
+    expect(ledgerEventStatus('charge_created', null, false, false)).toBe('recorded');
+    expect(ledgerEventStatus('payment_recorded', 'completed', false, false)).toBe('paid');
   });
 
-  it('is empty when the forecast holds only the next payment', () => {
-    expect(forecastDatesAfterNext(forecast([{ date: '2026-10-15', total: 150 }]))).toEqual([]);
-    expect(forecastDatesAfterNext(EMPTY_FORECAST)).toEqual([]);
+  it('dates a payment by its billing date, else the day it was written', () => {
+    expect(scheduledExecutionDate('2099-01-01', '2026-01-01T10:00:00.000Z')).toBe('2099-01-01');
+    expect(scheduledExecutionDate(null, new Date('2026-03-04T23:30:00.000Z'))).toBe('2026-03-04');
+    expect(scheduledExecutionDate(new Date('2026-05-06T00:00:00.000Z'), '2026-01-01')).toBe('2026-05-06');
+  });
+
+  it('calls a payment full only when the money collected covers the amount', () => {
+    expect(paymentCoverage('40.00', '40.00')).toBe('full');
+    expect(paymentCoverage('15.00', '40.00')).toBe('partial');
+    expect(paymentCoverage(null, '40.00')).toBeNull();
+    expect(paymentCoverage('0.00', '0.00')).toBeNull();
+    expect(refundCoverage('full')).toBe('full');
+    expect(refundCoverage('none')).toBeNull();
   });
 });
 
@@ -135,8 +188,6 @@ describe('#2937 — each Past Billing Event is its own row', () => {
     expect(billingEventHasDetails(event({}))).toBe(false);
     expect(billingEventHasDetails(event({ lines: [stored()] }))).toBe(true);
     expect(billingEventHasDetails(event({ payment_method_name: 'Card' }))).toBe(true);
-    // #3242 — documents are listed in their own section, so they no longer open a row.
-    expect(billingEventHasDetails(event({ documents: [{ kind: 'receipt', id: 1, number: 'R-1' }] }))).toBe(false);
     expect(billingEventHasDetails(event({ notes: 'Manual' }))).toBe(true);
   });
 
@@ -218,34 +269,7 @@ describe('formatting', () => {
   });
 });
 
-describe('#3242 — the Documents section', () => {
-  it('lists every document of every payment once, newest first, dated by its own issue time', () => {
-    const rows = paymentDocumentRows([
-      event({
-        id: 1, created_at: '2026-09-15T08:00:00.000Z',
-        documents: [
-          { kind: 'receipt', id: 1, number: '2026-0001', issued_at: '2026-09-15T08:01:00.000Z' },
-          { kind: 'refund_receipt', id: 4, number: 'R-2026-0001', issued_at: '2026-10-20T10:00:00.000Z' },
-        ],
-      }),
-      event({
-        id: 2, created_at: '2026-10-01T08:00:00.000Z',
-        documents: [{ kind: 'simplified_invoice', id: 7, number: 'S-2026-0002', issued_at: null }],
-      }),
-      event({ id: 3, documents: [] }),
-    ]);
-    expect(rows.map((r) => [r.key, r.date])).toEqual([
-      ['refund_receipt:4', '2026-10-20T10:00:00.000Z'],
-      // No recorded issue time: the payment's own date, never an invented one.
-      ['simplified_invoice:7', '2026-10-01T08:00:00.000Z'],
-      ['receipt:1', '2026-09-15T08:01:00.000Z'],
-    ]);
-  });
-
-  it('lists nothing when no payment has a stored document', () => {
-    expect(paymentDocumentRows([event({}), event({ id: 2, documents: [] })])).toEqual([]);
-  });
-
+describe('#3242 — a downloaded document', () => {
   it('names the saved file after the document kind and number', () => {
     expect(paymentDocumentFileName({ kind: 'simplified_invoice', id: 7, number: 'S-2026/0002' }))
       .toBe('simplified-invoice-S-2026-0002.pdf');
