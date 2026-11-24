@@ -4,6 +4,7 @@ import { requireSuperadmin } from '../infra/tenantContext';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
+import { parseNumDaysInput } from '../domain/trainingPlanTemplateDays';
 
 export const platformTrainingPlanTemplatesRouter = Router();
 
@@ -85,10 +86,12 @@ platformTrainingPlanTemplatesRouter.post('/', requireSuperadmin, async (req, res
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const row = await insertAndFetch(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-      [name.trim(), description ?? null, status ?? 'active', actor, actor],
+      'INSERT INTO training_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [name.trim(), description ?? null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'active', actor, actor],
       'SELECT * FROM training_plan_templates WHERE id = ?',
       (id) => [id],
     );
@@ -102,13 +105,17 @@ platformTrainingPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, r
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const { rowCount } = await db.query(
       `UPDATE training_plan_templates SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
+        num_days = IF(?, ?, num_days),
         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id IS NULL AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, actor, id],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null,
+        numDays.kind === 'value' ? 1 : 0, numDays.kind === 'value' ? numDays.value : 0, actor, id],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan template not found' });
     const { rows } = await db.query('SELECT * FROM training_plan_templates WHERE id = ?', [id]);
