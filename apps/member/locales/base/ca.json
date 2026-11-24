@@ -595,6 +595,7 @@
     "cart_heading": "La teva cistella",
     "cart_standalone_heading": "També a la teva cistella",
     "cart_standalone_hint": "No formen part del pagament anterior: es paguen per separat.",
+    "cart_error_amount_changed": "El total ha canviat des que es va mostrar el teu carretó. Revisa el nou total i torna a prémer Paga.",
     "cart_error_changed": "La teva cistella ha canviat. Revisa-la i torna-ho a provar.",
     "cart_error_family_owner_pays": "El titular de la teva família paga les compres.",
     "cart_plans": "{count, plural, one {# pla} other {# plans}}",

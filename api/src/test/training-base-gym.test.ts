@@ -373,16 +373,21 @@ describe('gym-level training-plan-templates: base resource visibility', () => {
     basePlanTemplateIds.push(basePlanId);
   });
 
-  it('GET /training-plan-templates includes the base template in items', async () => {
+  // #3334 §4: the gym's list holds its own templates only; a System one is
+  // read through GET /base and imported.
+  it('GET /training-plan-templates excludes the base template; GET /base lists it', async () => {
     const res = await request
       .get('/training-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     const items = res.body.items ?? res.body;
-    const found = items.find((t: any) => t.id === basePlanId);
-    expect(found).toBeDefined();
-    expect(found.gym_id).toBeNull();
+    expect(items.find((t: any) => t.id === basePlanId)).toBeUndefined();
+    const base = await request
+      .get('/training-plan-templates/base')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(base.body.find((t: any) => t.id === basePlanId)).toBeDefined();
   });
 
   it('GET /training-plan-templates/:id returns 200 for a base template', async () => {

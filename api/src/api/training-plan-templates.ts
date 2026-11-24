@@ -8,6 +8,7 @@ import { createTrainingPlanTx } from './training-plan-creation';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
+import { parseNumDaysInput, templateResyncChanges, templateSource } from '../domain/trainingPlanTemplateDays';
 
 /**
  * #55: TrainingPlanTemplate (reusable multi-day program) + the ordered
@@ -33,6 +34,29 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
   for (let i = 0; i < orderedIds.length; i++) {
     await tx.query(`UPDATE ${table} SET position = ? WHERE id = ? AND ${parentColumn} = ?`, [i + 1, orderedIds[i], parentId]);
   }
+}
+
+/**
+ * #3334: copies one template's workout list (order and weekday) onto another.
+ * The one content copy Duplicate, Clone and Import share. A System template's
+ * workouts name System workout templates, and the copy keeps naming them — the
+ * cascade that imports those workout templates too is #3337's.
+ */
+async function copyTemplateWorkoutsTx(tx: Tx, gymId: string, sourceId: number | string, targetId: number | string) {
+  await tx.query(
+    `INSERT INTO training_plan_template_workouts (gym_id, training_plan_template_id, workout_template_id, position, scheduled_weekday)
+     SELECT ?, ?, workout_template_id, position, scheduled_weekday
+       FROM training_plan_template_workouts WHERE training_plan_template_id = ? ORDER BY position ASC`,
+    [gymId, targetId, sourceId],
+  );
+}
+
+const LIST_COLUMNS = `tpt.*,
+              (SELECT COUNT(*) FROM training_plan_template_workouts WHERE training_plan_template_id = tpt.id) AS workout_count`;
+
+/** #3334: every gym row reports a derived `source`, never stored. */
+function withSource<T extends { cloned_from_id?: number | null }>(row: T): T & { source: string } {
+  return { ...row, source: templateSource(row.cloned_from_id) };
 }
 
 async function templateExists(id: string, gymId: string): Promise<boolean> {
@@ -62,7 +86,9 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
-    const where: string[] = ['(tpt.gym_id = ? OR tpt.gym_id IS NULL)', "tpt.status != 'deleted'"];
+    // #3334: the gym's list holds the gym's own templates only — custom and
+    // imported. System templates are read through GET /base and imported.
+    const where: string[] = ['tpt.gym_id = ?', "tpt.status != 'deleted'"];
     const params: any[] = [gymId];
     if (status) { where.push('tpt.status = ?'); params.push(status); }
     if (name) { where.push('tpt.name LIKE ?'); params.push(`%${name}%`); }
@@ -81,8 +107,102 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
       params,
     );
-    res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+    res.json({ items: rows.map(withSource), total: Number(countRows[0].total), limit, offset });
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * #3334: the System Training Plan Templates a gym may import, each with the
+ * gym's own copy (`imported_template_id`, matched by provenance, else by name —
+ * the Exercises import's rule), NULL when the gym has none. Gym-facing, like
+ * GET /exercises/base.
+ */
+trainingPlanTemplatesRouter.get('/base', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT ${LIST_COLUMNS},
+              (SELECT g.id FROM training_plan_templates g
+                WHERE g.gym_id = ? AND g.status != 'deleted'
+                  AND (g.cloned_from_id = tpt.id OR g.name = tpt.name)
+                ORDER BY (g.cloned_from_id = tpt.id) DESC, g.id ASC LIMIT 1) AS imported_template_id
+         FROM training_plan_templates tpt
+        WHERE tpt.gym_id IS NULL AND tpt.status = 'active'
+        ORDER BY tpt.name ASC`,
+      [gymId],
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const MAX_IMPORT_IDS = 100;
+
+/**
+ * #3334: imports System templates into the gym, as POST /exercises/import does.
+ * Each becomes an `active` gym template under the System name with
+ * `cloned_from_id` set and its workouts copied; one the gym already has (by
+ * provenance or by name) is reported under `skipped`. An id that is not an
+ * active System template refuses the whole batch.
+ */
+trainingPlanTemplatesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  const raw = req.body?.baseTemplateIds;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return res.status(400).json({ error: 'baseTemplateIds must be a non-empty array' });
+  }
+  if (raw.length > MAX_IMPORT_IDS) {
+    return res.status(400).json({ error: `baseTemplateIds may hold at most ${MAX_IMPORT_IDS} ids` });
+  }
+  if (!raw.every((v: unknown) => typeof v === 'number' && Number.isInteger(v) && v > 0)) {
+    return res.status(400).json({ error: 'baseTemplateIds must hold positive integer ids' });
+  }
+  const ids = [...new Set(raw as number[])];
+  try {
+    const result = await db.transaction(async (tx) => {
+      const placeholders = ids.map(() => '?').join(', ');
+      const { rows: bases } = await tx.query(
+        `SELECT id, name, description, num_days FROM training_plan_templates
+          WHERE id IN (${placeholders}) AND gym_id IS NULL AND status = 'active'`,
+        ids,
+      );
+      const found = new Set(bases.map((b: any) => Number(b.id)));
+      const invalid = ids.filter((id) => !found.has(id));
+      if (invalid.length > 0) {
+        throw Object.assign(new Error('Some ids are not active System training plan templates'), { status: 400, invalid_ids: invalid });
+      }
+      const imported: number[] = [];
+      const skipped: number[] = [];
+      for (const id of ids) {
+        const base = bases.find((b: any) => Number(b.id) === id);
+        const { rows: existing } = await tx.query(
+          `SELECT id FROM training_plan_templates
+            WHERE gym_id = ? AND status != 'deleted' AND (cloned_from_id = ? OR name = ?) LIMIT 1`,
+          [gymId, id, base.name],
+        );
+        if (existing.length > 0) { skipped.push(id); continue; }
+        const { insertId } = await tx.query(
+          `INSERT INTO training_plan_templates
+             (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id)
+           VALUES (?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?, ?)`,
+          [gymId, base.name, base.description ?? null, base.num_days ?? 0, actor, actor, id],
+        );
+        await copyTemplateWorkoutsTx(tx, gymId, id, insertId);
+        imported.push(Number(insertId));
+      }
+      return { imported, skipped };
+    });
+    for (const newId of result.imported) {
+      recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: newId });
+    }
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err.status === 400) return res.status(400).json({ error: err.message, invalid_ids: err.invalid_ids });
     next(err);
   }
 });
@@ -202,10 +322,12 @@ trainingPlanTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const row = await insertAndFetch(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-      [gymId, name.trim(), description ?? null, status ?? 'active', actor, actor],
+      'INSERT INTO training_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [gymId, name.trim(), description ?? null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'active', actor, actor],
       'SELECT * FROM training_plan_templates WHERE id = ?',
       (id) => [id],
     );
@@ -227,18 +349,22 @@ trainingPlanTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (r
   }
   const { name, description, status } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const { rowCount } = await db.query(
       `UPDATE training_plan_templates SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
+        num_days = IF(?, ?, num_days),
         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, actor, id, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null,
+        numDays.kind === 'value' ? 1 : 0, numDays.kind === 'value' ? numDays.value : 0, actor, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan template not found' });
     const { rows } = await db.query('SELECT * FROM training_plan_templates WHERE id = ? AND gym_id = ?', [id, gymId]);
     recordAudit(req, { action: 'update', entityType: 'training_plan_template', entityId: id, next: rows[0] });
-    res.json(rows[0]);
+    res.json(withSource(rows[0]));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A template with this name already exists.');
   }
@@ -285,21 +411,14 @@ trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'
       copyName = `${src.name} (Copy ${existing.length + 1})`;
     }
 
-    const { insertId: newId } = await db.query(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-      [gymId, copyName, src.description ?? null, 'draft', actor, actor],
-    );
-
-    const { rows: workouts } = await db.query(
-      'SELECT * FROM training_plan_template_workouts WHERE training_plan_template_id = ? ORDER BY position ASC',
-      [id],
-    );
-    for (const w of workouts) {
-      await db.query(
-        'INSERT INTO training_plan_template_workouts (gym_id, training_plan_template_id, workout_template_id, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?)',
-        [gymId, newId, w.workout_template_id, w.position, w.scheduled_weekday],
+    const newId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        'INSERT INTO training_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
+        [gymId, copyName, src.description ?? null, src.num_days ?? 0, 'draft', actor, actor, null],
       );
-    }
+      await copyTemplateWorkoutsTx(tx, gymId, id, insertId);
+      return insertId;
+    });
 
     const { rows: newRows } = await db.query(
       `SELECT tpt.*,
@@ -309,7 +428,7 @@ trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'
       [newId],
     );
     recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: newId, next: newRows[0] });
-    res.status(201).json(newRows[0]);
+    res.status(201).json(withSource(newRows[0]));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A template with this name already exists.');
   }
@@ -331,21 +450,14 @@ trainingPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), a
 
     const copyName = `${src.name} (Copy)`;
 
-    const { insertId: newId } = await db.query(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
-      [gymId, copyName, src.description ?? null, 'draft', actor, actor, id],
-    );
-
-    const { rows: workouts } = await db.query(
-      'SELECT * FROM training_plan_template_workouts WHERE training_plan_template_id = ? ORDER BY position ASC',
-      [id],
-    );
-    for (const w of workouts) {
-      await db.query(
-        'INSERT INTO training_plan_template_workouts (gym_id, training_plan_template_id, workout_template_id, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?)',
-        [gymId, newId, w.workout_template_id, w.position, w.scheduled_weekday],
+    const newId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        'INSERT INTO training_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
+        [gymId, copyName, src.description ?? null, src.num_days ?? 0, 'draft', actor, actor, id],
       );
-    }
+      await copyTemplateWorkoutsTx(tx, gymId, id, insertId);
+      return insertId;
+    });
 
     const { rows: newRows } = await db.query(
       `SELECT tpt.*,
@@ -355,8 +467,61 @@ trainingPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), a
       [newId],
     );
     recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: newId, next: newRows[0] });
-    res.status(201).json(newRows[0]);
+    res.status(201).json(withSource(newRows[0]));
   } catch (err) { next(err); }
+});
+
+/**
+ * #3334: "Resync with System", as the Exercises resync (#2302): the System
+ * template's name, description and num_days move onto the gym's copy. The
+ * copy's workouts are the gym's own once imported and are never replaced.
+ */
+trainingPlanTemplatesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: own } = await db.query(
+      "SELECT id, name, description, num_days, cloned_from_id FROM training_plan_templates WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+      [id, gymId],
+    );
+    if (own.length === 0) return res.status(404).json({ error: 'Training plan template not found' });
+    const copy = own[0];
+    if (copy.cloned_from_id == null) {
+      return res.status(400).json({ code: 'no_base_template', error: 'This template was not imported from the System catalogue.' });
+    }
+    const { rows: baseRows } = await db.query(
+      "SELECT id, name, description, num_days FROM training_plan_templates WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      [copy.cloned_from_id],
+    );
+    if (baseRows.length === 0) {
+      return res.status(409).json({ code: 'base_unavailable', error: 'The originating System template no longer exists.' });
+    }
+    const base = baseRows[0];
+    const changed = templateResyncChanges(copy, base);
+    if (changed.length === 0) return res.json({ updated: [], message: 'up_to_date' });
+    if (changed.includes('name')) {
+      const { rows: taken } = await db.query(
+        "SELECT id FROM training_plan_templates WHERE gym_id = ? AND status != 'deleted' AND name = ? AND id <> ? LIMIT 1",
+        [gymId, base.name, copy.id],
+      );
+      if (taken.length > 0) {
+        return res.status(409).json({ code: 'name_taken', error: 'Another template in this gym already uses the System name.' });
+      }
+    }
+    const actor = resolveRequestActor(ctx);
+    await db.query(
+      `UPDATE training_plan_templates SET name = ?, description = ?, num_days = ?,
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ?`,
+      [base.name, base.description ?? null, base.num_days, actor, copy.id, gymId],
+    );
+    const { rows } = await db.query(`SELECT ${LIST_COLUMNS} FROM training_plan_templates tpt WHERE tpt.id = ?`, [copy.id]);
+    recordAudit(req, { action: 'update', entityType: 'training_plan_template', entityId: copy.id, previous: copy, next: rows[0] });
+    res.json({ updated: changed, template: withSource(rows[0]) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** Assign a training plan template (gym-owned or base) to a member. */

@@ -1,6 +1,7 @@
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { cartExpiresAtIso, setCartExpiredSql, setCartExpiresAtSql } from '../domain/cartExpiry';
 import { refreshSetCart } from './purchases';
+import { amountChangedBody, isStaleAmount, parseExpectedAmountInput, sameAmount } from '../domain/expectedCheckoutAmount';
 import { initialPaymentWaiveHandler } from './initial-payment-waive';
 import { Router } from 'express';
 import { generatePaidRepresentations } from './billing-invoices';
@@ -24,7 +25,7 @@ import { memberProductCatalogueParams, memberProductCatalogueSql } from '../doma
 import { findLiveAssignmentsForMembers } from './one-active-plan';
 import { activePlanConflictBody, addPlanUnsupportedBody, parseConflictResolution } from '../domain/oneActivePlan';
 import {
-  Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment,
+  Actor, cancelInFlight, createDraft, returnPendingToDraft, submitForPayment, lockSet,
 } from './product-sets';
 import { ensureRecurringDraft } from './recurring-purchase-draft';
 import { diffConfigurations, summaryItems, recurringFinalPrices, itemFinalPrice, financialSummary, type RecurringFinalPrices } from '../domain/productSetDiff';
@@ -287,6 +288,9 @@ async function syncLinkedAssignmentToPendingPayment(
  */
 async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } = {}) {
   const { gymId } = getTenantContext(req);
+  // #3312 stage 2: the amount the caller showed is compared, never charged.
+  const expected = parseExpectedAmountInput(req.body?.expected_amount);
+  if (!expected.ok) return res.status(400).json({ error: expected.error });
   const set = await loadSet(gymId, req.params.id);
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
   if (set.status === 'in_cart' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
@@ -301,12 +305,23 @@ async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } 
   // #1521: a version that replaces a running one owes only what is new, dated
   // today — never the plan's first cycle again.
   const { startsAt, charge } = await commitCharge(gymId, set);
+  if (charge && isStaleAmount(expected.value, charge.amount)) {
+    return res.status(409).json(amountChangedBody(charge.amount));
+  }
   if (!charge || charge.amount <= 0) {
     return res.status(409).json({ error: 'nothing_to_pay', message: 'No initial payment is owed; activate the ProductSet instead.' });
   }
 
   if (set.status === 'in_cart') {
     const moved = await db.transaction(async (tx) => {
+      // #3312 stage 2: re-price under the set's lock (every Draft writer takes it through
+      // `lockDraft()`), so an edit that landed after the read above refuses this checkout instead
+      // of being charged at the figure computed before it.
+      if (!(await lockSet(tx, gymId, Number(set.id)))) return { kind: 'not_found' as const };
+      const fresh = await commitCharge(gymId, set, tx);
+      if (!fresh.charge || !sameAmount(fresh.charge.amount, charge.amount)) {
+        return { kind: 'amount_changed' as const, amount: fresh.charge?.amount ?? 0 };
+      }
       const out = await submitForPayment(tx, gymId, Number(set.id));
       // The Admin's Draft assignment is a cache of this version (#1325 PR
       // 3e-1), so it moves with it: left `draft`, the Member card's plan row
@@ -316,6 +331,7 @@ async function saveAndPayHandler(req: any, res: any, opts: { member?: boolean } 
       }
       return out;
     });
+    if (moved.kind === 'amount_changed') return res.status(409).json(amountChangedBody(moved.amount));
     if (moved.kind !== 'ok') return res.status(409).json({ error: moved.kind });
   }
   const { rows: m } = await db.query<{ email: string | null }>('SELECT email FROM members WHERE id = ? AND gym_id = ?', [set.owner_member_id, gymId]);

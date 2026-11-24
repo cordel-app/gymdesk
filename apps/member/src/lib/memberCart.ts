@@ -415,6 +415,7 @@ export function cartErrorKey(message: string | null | undefined): string {
     case 'family_owner_only': return 'membership.family_owner_only';
     case 'awaiting_staff_setup': return 'membership.cart_error_awaiting_staff';
     // #2949 stage 6: the standalone cart's checkout refusals (`POST /me/cart/checkout`).
+    case 'amount_changed': return 'membership.cart_error_amount_changed';
     case 'cart_changed':
     case 'cart_empty':
     case 'nothing_to_pay':

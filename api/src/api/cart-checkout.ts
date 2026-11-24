@@ -33,6 +33,7 @@
  * The amounts are the purchases' frozen ones (`resolvePurchase()` priced each when it entered the
  * cart): a cart is paid at the price it shows, exactly as a cart Product Set's linked purchases are.
  */
+import { amountChangedBody, isStaleAmount } from '../domain/expectedCheckoutAmount';
 import { checkoutNameStillHolds, planCheckoutPurchase, splitOffCheckout, stampEventPurchase } from './purchases';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
@@ -82,7 +83,7 @@ export interface CartPurchase {
 
 /** A refusal the routes answer as `{ status, error }`. */
 export class CartCheckoutRefused extends Error {
-  constructor(public readonly status: number, public readonly code: string, message: string) {
+  constructor(public readonly status: number, public readonly code: string, message: string, public readonly amount?: number) {
     super(message);
   }
 }
@@ -205,12 +206,17 @@ export async function startCartCheckout(input: {
   actorName: string | null;
   purchaseIds?: number[] | null;
   requestLocale?: string;
+  /** #3312 stage 2: the total the member was shown; compared, never charged. */
+  expectedAmount?: number | null;
 }): Promise<CartCheckoutResult> {
   const { gymId, memberId } = input;
   const selected = selectCartPurchases(await loadCartPurchases(db, gymId, memberId), input.purchaseIds ?? null);
   if (!selected.ok) throw new CartCheckoutRefused(selected.status, selected.code, selected.message);
   const purchases = selected.purchases;
   const amount = cartTotal(purchases);
+  if (isStaleAmount(input.expectedAmount ?? null, amount)) {
+    throw new CartCheckoutRefused(409, 'amount_changed', amountChangedBody(amount).message, amount);
+  }
   const currency = purchases[0].currency;
   const names = purchases.map((p) => p.product_name);
 
