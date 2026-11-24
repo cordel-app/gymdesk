@@ -15,7 +15,7 @@ import { secondaryBtnSmall } from '@/components/formChrome';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { ProductSetSummary } from './membershipConfiguration';
 import { cancelRequestFor, cartCancelContents, cartCancelIntroKey, pendingCancelErrorKey, psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
-import { DraftExpiryIndicator } from './DraftExpiryIndicator';
+import { CartExpiryIndicator } from './CartExpiryIndicator';
 
 /** The Draft's review (`changes` + `amount_due`), re-read whenever the configuration was. */
 export function useDraftReview(current: ProductSetSummary | null, reloadKey: unknown): ReviewSummary | null {
@@ -43,18 +43,15 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
 /**
  * The PS Status header only (#2446): the actions live in the Summary.
  *
- * #2815 — a Draft's expiry countdown sits beside the chip. It is the one
- * `DraftExpiryIndicator` (#2477), counting down from the server's
- * `expires_in_seconds`; nothing here computes an expiry.
+ * #3274 follow-up — no expiry countdown here: In-Cart expiry belongs to the
+ * purchase (the cart), so it is shown once by `CartStatusBar` in the Summary.
  */
 export function ProductsWorkflowBar({
-  current, loading, error, onDraftExpired,
+  current, loading, error,
 }: {
   current: ProductSetSummary | null;
   loading: boolean;
   error: boolean;
-  /** The Draft's time ran out; the page re-reads the configuration. */
-  onDraftExpired?: () => void;
 }) {
   const t = useTranslations('members');
   const statusKey = psStatusKey(current);
@@ -73,9 +70,22 @@ export function ProductsWorkflowBar({
       ) : (
         <StatusBadge status="none" label={t('ps_status_none')} />
       )}
-      {!loading && !error && current?.status === 'in_cart' && !current.expired && (
-        <DraftExpiryIndicator seconds={current.expires_in_seconds} onExpire={onDraftExpired} />
-      )}
+    </div>
+  );
+}
+
+/**
+ * #3274 follow-up — the cart's header in the Summary: its In Cart status and
+ * the one countdown of the purchase, whatever the cart holds (a Product Set,
+ * standalone Products or both). The seconds are the server's (`cartExpirySeconds()`).
+ */
+export function CartStatusBar({ seconds, onExpire }: { seconds: number | null; onExpire?: () => void }) {
+  const t = useTranslations('members');
+  return (
+    <div data-cart-status-bar style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+      <span style={{ ...cardSectionLabelStyle, margin: 0 }}>{t('cart_label')}</span>
+      <StatusBadge status="in_cart" label={t('ps_status_in_cart')} />
+      <CartExpiryIndicator seconds={seconds} onExpire={onExpire} />
     </div>
   );
 }

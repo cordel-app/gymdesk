@@ -338,8 +338,8 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
     const exact = withExact && secondsLeft != null && showsDraftExactTime(secondsLeft)
       ? formatGymTime(new Date(Date.now() + secondsLeft * 1000), gymFmt) : null;
     return (
-      <span data-draft-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
-        {t('membership.draft_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
+      <span data-cart-expiry style={warn ? { ...cartMutedStyle, color: memberTheme.statusWarning, fontWeight: 600 } : cartMutedStyle}>
+        {t('membership.cart_expires_in')} {remaining}{exact ? ` (${exact})` : ''}
       </span>
     );
   };
@@ -394,7 +394,9 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
         total={total}
         hintKeys={beside ? ['membership.cart_standalone_hint'] : []}
         summary={!beside && cartSummary ? <CartSummary review={cartSummary} /> : undefined}
-        extra={!beside ? countdown(false) : undefined}
+        // #3274 follow-up — an In Cart cart shows its one countdown; a standalone cart beside a checkout
+        // awaiting payment is a separate purchase, and then the countdown is that purchase's alone.
+        extra={!beside || view?.status === 'pending_payment' ? countdown(false) : undefined}
         items={cardItems(items)}
         actions={payCancel(checkoutStandalone, () => setConfirmDiscard(true), !!action)}
         itemAction={itemCancel(items, () => true)}
