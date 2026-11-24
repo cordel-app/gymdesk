@@ -1367,9 +1367,13 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 
 ### The shell's own configuration (#1074 — each of these is a file or a value, not code)
 
-- [ ] **Icon and splash artwork.** The committed projects carry Capacitor's placeholders. Put
-      `icon.png` (1024×1024) and `splash.png` (2732×2732) in `apps/mobile/profiles/cordel-fitness/`
-      and run `npx @capacitor/assets generate --assetPath profiles/cordel-fitness`.
+- [x] **Icon and splash artwork.** Done (#1077): the Cordel logo (orange `#F84D02` tile, white
+      glyph) is in both native projects — Android legacy, round and adaptive launcher icons (adaptive
+      background `#F84D02`), the Android splash drawables, the iOS 1024 App Icon and the iOS splash
+      set — with the sources in `apps/mobile/profiles/cordel-fitness/` (`icon.png` 1024×1024,
+      `splash.png` 2732×2732). The dev and pro apps share it. To change it, replace the two sources
+      and run `npx @capacitor/assets generate --assetPath profiles/cordel-fitness`, then check the
+      adaptive icon keeps the glyph inside Android's 66dp safe zone.
 - [ ] **The Firebase iOS SDK**, added in Xcode (*Add Package Dependencies…* →
       `firebase-ios-sdk`, product **FirebaseMessaging**, on the `App` target). The Swift that uses
       it is already in `AppDelegate.swift` behind `#if canImport(FirebaseMessaging)`, so the
