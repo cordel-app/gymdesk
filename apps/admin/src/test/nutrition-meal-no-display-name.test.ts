@@ -12,7 +12,9 @@ describe('meal sections have no Display Name field (#1785)', () => {
     expect(tree).not.toMatch(/tree_label_display_name/);
     expect(tree).not.toMatch(/displayNameVal/);
   });
-  it('titles a meal by its Meal Type', () => {
-    expect(tree).toMatch(/meal\.meal_type\s*\?\s*t\(`nutrition_plan_templates\.tree_meal_type_/);
+  it('titles a meal by its Base Meal, then its legacy Meal Type (#3328 stage 2)', () => {
+    expect(tree).toMatch(/if \(meal\.meal_name\) return meal\.meal_name;/);
+    expect(tree).toMatch(/if \(meal\.meal_type\) return t\(`nutrition_plan_templates\.tree_meal_type_/);
+    expect(tree).toContain('{mealLabel(meal, t)}');
   });
 });

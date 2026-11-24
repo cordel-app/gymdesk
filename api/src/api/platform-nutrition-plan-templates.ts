@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
+import { BASE_MEAL_JOIN_SQL, baseMealColumnsSql, listBaseMealsHandler, resolveBaseMealInput } from './base-meal-reference';
 import { goalRowsSql, parseGoalIllustrationInput, validateGoalIllustration } from './nutrition-goal-illustration';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { resolvePlatformActor } from '../domain/auditActor';
@@ -12,11 +13,6 @@ export const platformNutritionPlanTemplatesRouter = Router();
 
 const STATUSES = ['active', 'inactive', 'draft', 'deleted'];
 const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
-const MEAL_TYPES = [
-  'recien_levantado', 'breakfast', 'media_manana',
-  'lunch', 'snack', 'dinner', 'antes_de_dormir',
-  'two_three_hours_before_training', 'immediately_before_training', 'immediately_after_training',
-] as const;
 const COMPONENT_TYPES = TEMPLATE_COMPONENT_TYPES;
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
@@ -65,14 +61,17 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
   }
 }
 
-const MEAL_SELECT = `
+// #3328 stage 2: a meal reports its Base Meal (name, description, image) beside its own fields.
+const mealSelect = (locale: SupportedLocale) => `
   SELECT m.id, m.gym_id, m.nutrition_plan_template_day_id,
-         m.meal_type, m.display_name, m.notes, m.position
+         m.meal_type, m.display_name, m.notes, m.position,
+         ${baseMealColumnsSql(locale)}
   FROM nutrition_plan_template_meals m
+  ${BASE_MEAL_JOIN_SQL}
 `;
 
 async function fetchMealWithItems(mealId: string | number, locale: SupportedLocale) {
-  const { rows: mealRows } = await db.query(`${MEAL_SELECT} WHERE m.id = ?`, [mealId]);
+  const { rows: mealRows } = await db.query(`${mealSelect(locale)} WHERE m.id = ?`, [mealId]);
   if (mealRows.length === 0) return null;
   const meal = mealRows[0];
   const { rows: items } = await db.query(
@@ -94,6 +93,9 @@ async function fetchMealWithItems(mealId: string | number, locale: SupportedLoca
 // routes validate against — so the admin's Food Type selector cannot offer a
 // value the CHECK would refuse, and does not carry a second copy of the set.
 // Registered before `/:id`, or Express reads `component-types` as an id.
+
+// #3328 stage 2: the Base Meals a meal may be (the picker's list). Before `/:id`.
+platformNutritionPlanTemplatesRouter.get('/base-meals', requireSuperadmin, listBaseMealsHandler);
 
 platformNutritionPlanTemplatesRouter.get('/component-types', requireSuperadmin, (_req, res) => {
   res.json({ component_types: COMPONENT_TYPES });
@@ -149,7 +151,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
     );
     const days = await Promise.all(dayRows.map(async (day: any) => {
       const { rows: mealRows } = await db.query(
-        `${MEAL_SELECT} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id IS NULL ORDER BY m.position ASC`,
+        `${mealSelect(getRequestLocale(req))} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id IS NULL ORDER BY m.position ASC`,
         [day.id],
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {
@@ -361,7 +363,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals', requireSupera
   try {
     if (!(await baseDayExists(id, dayId))) return res.status(404).json({ error: 'Day not found' });
     const { rows: mealRows } = await db.query(
-      `${MEAL_SELECT} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id IS NULL ORDER BY m.position ASC`,
+      `${mealSelect(getRequestLocale(req))} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id IS NULL ORDER BY m.position ASC`,
       [dayId],
     );
     const meals = await Promise.all(mealRows.map(async (meal: any) => {
@@ -382,18 +384,21 @@ platformNutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals', requireSupera
 platformNutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals', requireSuperadmin, async (req, res, next) => {
   const { id, dayId } = req.params as { id: string; dayId: string };
   if (!(await baseDayExists(id, dayId))) return res.status(404).json({ error: 'Day not found' });
-  const { meal_type, display_name, notes } = req.body;
-  if (!meal_type || !(MEAL_TYPES as readonly string[]).includes(meal_type)) {
-    return res.status(400).json({ error: `meal_type must be one of: ${MEAL_TYPES.join(', ')}` });
-  }
+  const { display_name, notes } = req.body;
+  // #3328 stage 2: the meal is a Base Meal (`base_meal_id`, or its slug as the legacy `meal_type`).
+  const baseMeal = await resolveBaseMealInput(req.body);
+  if (baseMeal.kind === 'error') return res.status(400).json({ error: baseMeal.message });
+  if (baseMeal.kind === 'absent') return res.status(400).json({ error: 'base_meal_id is required' });
+  const meal_type = baseMeal.slug;
+  const resolvedDisplayName = display_name?.trim() || meal_type;
   try {
     const { rows: posRows } = await db.query(
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ?',
       [dayId],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, meal_type, display_name, notes, position) VALUES (NULL, ?, ?, ?, ?, ?)',
-      [dayId, meal_type, display_name?.trim() || meal_type, notes ?? null, posRows[0].next_position],
+      'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, meal_type, base_meal_id, display_name, notes, position) VALUES (NULL, ?, ?, ?, ?, ?, ?)',
+      [dayId, meal_type, baseMeal.id, resolvedDisplayName, notes ?? null, posRows[0].next_position],
     );
     const meal = await fetchMealWithItems(insertId, getRequestLocale(req));
     res.status(201).json(meal);
@@ -410,7 +415,7 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requi
   try {
     await db.transaction(async (tx) => reorder(tx, 'nutrition_plan_template_meals', 'nutrition_plan_template_day_id', dayId, order));
     const { rows: mealRows } = await db.query(
-      `${MEAL_SELECT} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id IS NULL ORDER BY m.position ASC`,
+      `${mealSelect(getRequestLocale(req))} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id IS NULL ORDER BY m.position ASC`,
       [dayId],
     );
     const meals = await Promise.all(mealRows.map(async (meal: any) => {
@@ -433,12 +438,11 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requi
   if (!(await baseMealExists(dayId, mealId))) return res.status(404).json({ error: 'Meal not found' });
   const updates: string[] = [];
   const params: any[] = [];
-  const { meal_type, display_name, notes } = req.body;
-  if (meal_type !== undefined) {
-    if (!(MEAL_TYPES as readonly string[]).includes(meal_type)) {
-      return res.status(400).json({ error: `meal_type must be one of: ${MEAL_TYPES.join(', ')}` });
-    }
-    updates.push('meal_type = ?'); params.push(meal_type);
+  const { display_name, notes } = req.body;
+  const baseMeal = await resolveBaseMealInput(req.body);
+  if (baseMeal.kind === 'error') return res.status(400).json({ error: baseMeal.message });
+  if (baseMeal.kind === 'ok') {
+    updates.push('meal_type = ?', 'base_meal_id = ?'); params.push(baseMeal.slug, baseMeal.id);
   }
   if (display_name !== undefined) {
     if (!display_name?.trim()) return res.status(400).json({ error: 'display_name cannot be empty' });

@@ -29,7 +29,7 @@ function dayText(locale: string, ymd: string, opts: Intl.DateTimeFormatOptions):
   return new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' }).format(new Date(`${ymd}T00:00:00Z`));
 }
 
-interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[] }
+interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[]; meal_name?: string | null }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
 interface NutritionPlan {
   id: number;
@@ -194,7 +194,8 @@ export default function NutritionPage() {
   }
 
   function mealTitleOf(meal: Meal) {
-    return mealTitle(meal.display_name, meal.meal_type, mealTypeLabel(meal.meal_type));
+    // #3328 stage 2: the Base Meal's own localized name, when the API reports one.
+    return mealTitle(meal.display_name, meal.meal_type, meal.meal_name ?? mealTypeLabel(meal.meal_type));
   }
 
   if (loading) {
