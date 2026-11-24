@@ -1,6 +1,7 @@
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { cartExpiresAtIso, setCartExpiredSql, setCartExpiresAtSql } from '../domain/cartExpiry';
 import { refreshSetCart } from './purchases';
+import { initialPaymentWaiveHandler } from './initial-payment-waive';
 import { Router } from 'express';
 import { generatePaidRepresentations } from './billing-invoices';
 import { refuseUnlessMayAdd } from './family-add-rights';
@@ -765,6 +766,13 @@ async function reviewHandler(req: any, res: any, next: any) {
   } catch (err) { next(err); }
 }
 productSetsRouter.get('/:id/review', reviewHandler);
+
+// #3284 stage 2 — staff waive / revert one Initial Payment line of an In Cart set (Admin only: the
+// Members App's `/me/product-sets` router has no such route).
+productSetsRouter.post('/:id/initial-payment/waive', requireModuleWrite('PAYMENTS'),
+  (req, res, next) => initialPaymentWaiveHandler(req, res, next, true));
+productSetsRouter.post('/:id/initial-payment/revert-waive', requireModuleWrite('PAYMENTS'),
+  (req, res, next) => initialPaymentWaiveHandler(req, res, next, false));
 
 productSetsRouter.use('/:id', productSetDraftRouter);
 
