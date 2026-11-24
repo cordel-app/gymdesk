@@ -190,3 +190,55 @@ describe('Initial Payment per-line waive (#3284 stage 2)', () => {
     expect(rows.map((r: any) => [r.action, Number(r.value)])).toEqual([['percentage_discount', 20]]);
   });
 });
+
+// #3284 stage 3 — reported on the PR's issue: Waive had no effect. A plan starting mid-period charges
+// a prorated Membership Fee, whose `fee_split` was read as a Pre-paid Duration, so its Waive was
+// always disabled. A prorated fee with no Pre-paid Duration is waived like any other line.
+describe('Initial Payment waive of a prorated Membership Fee (#3284 stage 3)', () => {
+  it('the prorated fee is offered Waive, waived, and persisted at zero by Save & Pay', async () => {
+    const d = new Date();
+    const startsAt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 10)).toISOString().slice(0, 10);
+    const { insertId: productId } = await db.query(
+      `INSERT INTO products (gym_id, name, type, billing_frequency, status, enrollment_status, currency, amount, tax_behavior)
+       VALUES (?, ?, 'fee', 'month', 'active', 'public', 'EUR', '15.00', 'inclusive')`, [gymId, `Locker ${uniq()}`]);
+    const { insertId: planId } = await db.query(
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit,
+          free_periods, paid_periods, bonus_periods, pay_beforehand_periods)
+       VALUES (?, ?, 'active', 'public', '1', 0, 12, 0, 0)`, [gymId, `Prorated Plan ${uniq()}`]);
+    await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+       VALUES (?, ?, 40, '2025-01-01', 'active')`, [gymId, planId]);
+    await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+       VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    await db.query(`INSERT INTO membership_plan_periodical (gym_id, membership_plan_id, product_id, quantity, action, value)
+       VALUES (?, ?, ?, 2, 'no_benefit', NULL)`, [gymId, planId, productId]);
+    const { insertId: memberId } = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
+      [gymId, 'Prorated Member', `prorated-${uniq()}@t.com`]);
+    const res = await staff('post', `/membership-plans/${planId}/assign`)
+      .send({ starts_at: startsAt, owner_member_id: memberId, beneficiary_member_ids: [memberId] });
+    expect(res.status).toBe(201);
+    const { rows } = await db.query<any>(
+      `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`, [res.body.id]);
+    const setId = Number(rows[0].id);
+
+    const before = await review(setId);
+    const fee = before.initial_payment.lines.find((l: any) => l.fee_split != null);
+    expect(fee.fee_split.prepaid).toBeNull();
+    expect(fee).toMatchObject({ waivable: true, waive_refusal: null });
+    expect(fee.amount).toBeGreaterThan(0);
+
+    expect((await waive(setId, fee.line_key)).status).toBe(200);
+    const after = await review(setId);
+    expect(after.initial_payment.lines.find((l: any) => l.line_key === fee.line_key)).toMatchObject({ amount: 0, waived: true });
+    expect(after.amount_due).toBeCloseTo(before.amount_due - fee.amount, 2);
+    // The other line is now the last one to pay: disabled, with the reason it is.
+    const other = after.initial_payment.lines.find((l: any) => l.line_key !== fee.line_key);
+    expect(other).toMatchObject({ waivable: false, waive_refusal: 'would_leave_nothing_to_pay' });
+
+    const pay = await staff('post', `/product-sets/${setId}/save-and-pay`).send({});
+    expect(pay.status).toBe(201);
+    expect(pay.body.amount).toBeCloseTo(after.amount_due, 2);
+    const { rows: lines } = await db.query<any>(
+      'SELECT amount, line_key FROM billing_event_lines WHERE billing_event_id = ? ORDER BY id', [pay.body.billing_event_id]);
+    expect(lines.find((l: any) => l.line_key === fee.line_key).amount).toBe('0.00');
+  });
+});

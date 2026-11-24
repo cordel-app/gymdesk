@@ -136,6 +136,8 @@ export interface InitialPaymentLike {
     line_key?: string | null;
     waived?: boolean;
     waivable?: boolean;
+    /** #3284 stage 3 — why the server disabled Waive on this line; `null` when it did not. */
+    waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | 'would_leave_nothing_to_pay' | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;
@@ -273,12 +275,23 @@ export const INITIAL_PAYMENT_WAIVE_CODE = 'initial_payment_waive';
  * Waive otherwise (disabled when the server says the line cannot be waived), none on a line the
  * read gave no identity. The server re-judges every request; this only picks the button.
  */
-export function initialPaymentLineAction(l: Pick<InitialPaymentLike['lines'][number], 'line_key' | 'waived' | 'waivable'>):
-  { kind: 'waive' | 'revert'; lineKey: string; enabled: boolean } | null {
+export function initialPaymentLineAction(
+  l: Pick<InitialPaymentLike['lines'][number], 'line_key' | 'waived' | 'waivable' | 'waive_refusal'>,
+): { kind: 'waive' | 'revert'; lineKey: string; enabled: boolean; disabledReasonKey?: string } | null {
   if (!l.line_key) return null;
   if (l.waived) return { kind: 'revert', lineKey: l.line_key, enabled: true };
-  return { kind: 'waive', lineKey: l.line_key, enabled: l.waivable === true };
+  if (l.waivable === true) return { kind: 'waive', lineKey: l.line_key, enabled: true };
+  // #3284 stage 3 — a disabled Waive says why, beside the button (a tooltip alone reads as a button
+  // that does nothing). The reason is the server's code; this only picks its locale key.
+  return { kind: 'waive', lineKey: l.line_key, enabled: false, disabledReasonKey: WAIVE_REFUSAL_KEYS[l.waive_refusal ?? ''] ?? 'checkout_waive_unavailable' };
 }
+
+/** #3284 — the locale key each waive refusal code is worded with (`members` namespace). */
+export const WAIVE_REFUSAL_KEYS: Record<string, string> = {
+  prepaid_fee: 'checkout_waive_error_prepaid',
+  would_leave_nothing_to_pay: 'checkout_waive_error_nothing_left',
+  nothing_to_waive: 'checkout_waive_unavailable',
+};
 
 /** #2890 — a line a benefit or discount takes all the way down to €0.00. */
 export function lineReducedToZero(l: Pick<InitialPaymentLike['lines'][number], 'amount' | 'discount'>): boolean {
