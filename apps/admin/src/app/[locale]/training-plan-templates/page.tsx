@@ -7,22 +7,34 @@ import { useApiClient } from '@/lib/apiClient';
 import { formatGymDate } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
-import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { type ContextMenuItem } from '@/components/ContextMenu';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
+import { CardGrid } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
+import { btnSmall, cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import {
-  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
-  listCellClasses, listScrollerClass,
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS,
+  listScrollerClass,
 } from '@/components/listChrome';
 import { inlineActionsRowStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
+import { ImportTrainingPlanTemplatesModal, type ImportTemplatesResult } from './ImportTrainingPlanTemplatesModal';
+import { TrainingPlanTemplateCard } from './TrainingPlanTemplateCard';
+import {
+  EMPTY_TEMPLATE_FORM, NUM_DAYS_OPTIONS, canResyncWithSystem, templateFormFromRow, templatePayload,
+  templateSource, toNumDays, type TemplateForm,
+} from './trainingPlanTemplateList';
+import {
+  CELL_CLASS, LIST_COLUMNS, LIST_COLUMN_GAP, LIST_GRID_COLUMNS, LIST_MIN_WIDTH, ROW_PADDING_X, TemplateRowCells,
+} from './TemplateRowCells';
 
 export interface TrainingPlanTemplate {
   id: number;
@@ -30,6 +42,11 @@ export interface TrainingPlanTemplate {
   description: string | null;
   status: 'active' | 'inactive' | 'draft';
   workout_count: number;
+  /** #3334: the number of days the plan covers, 0..7. */
+  num_days: number;
+  /** #3334: derived by the API — 'system' for a copy of a System template, else 'custom'. */
+  source?: 'system' | 'custom';
+  cloned_from_id?: number | null;
   gym_id: string | null;
   created_by: string | null;
   created_at: string;
@@ -52,63 +69,10 @@ type SortKey = 'name' | 'created_at' | 'status';
 
 const STATUSES = ['active', 'inactive', 'draft'] as const;
 const LIMIT = 20;
-const emptyEditForm = { name: '', description: '', status: 'active' as TrainingPlanTemplate['status'] };
-type EditForm = typeof emptyEditForm;
+const emptyEditForm: TemplateForm = EMPTY_TEMPLATE_FORM;
+type EditForm = TemplateForm;
 
-type InlineNew = { name: string; description: string; saving: boolean; error: string | null };
-
-// ─── List columns ─────────────────────────────────────────────────────────────
-
-/**
- * #1011 stage 4 — the row and the header band are laid out from one declaration
- * rather than restating widths at each other (#637's shape, which stage 3's
- * eight card lists already adopted). The header's chevron spacer was 20px wide
- * against the row's 14px chevron, so every title after it sat 6px off its own
- * values.
- *
- * `mobile` says what each column is on a phone. The template's name is the row's
- * identity and its status is the one state worth seeing without tapping; the
- * description, its Base/Gym type, the workout count, the author and the date are
- * read in the expanded card.
- */
-interface ListColumn extends ListGridColumn {
-  /** Header label, a key in the `training_plan_templates` namespace. Absent = no title. */
-  labelKey?: string;
-  /** Fixed track width in px — also the minimum for a flexible column. */
-  width: number;
-  /** Set on a flexible column: it becomes minmax(width, growfr). */
-  grow?: number;
-}
-
-const LIST_COLUMNS: ListColumn[] = [
-  // The chevron is the row's own affordance rather than a value, so it stays.
-  { key: 'expand', width: 14, mobile: 'keep' },
-  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
-  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
-  { key: 'type', labelKey: 'col_type', width: 64, mobile: 'secondary' },
-  { key: 'workout_count', labelKey: 'col_workout_count', width: 90, mobile: 'secondary' },
-  { key: 'created_at', labelKey: 'col_created_at', width: 100, mobile: 'secondary' },
-  { key: 'created_by', labelKey: 'col_created_by', width: 110, mobile: 'secondary' },
-  { key: 'status', labelKey: 'col_status', width: 80, mobile: 'keep' },
-  { key: 'actions', width: 44, mobile: 'actions' },
-];
-
-/** The mobile class a column's header cell and its row cells share (#1011). */
-const CELL_CLASS = listCellClasses(LIST_COLUMNS);
-
-const LIST_COLUMN_GAP = 12;
-/** This list's own horizontal inset — a card row. */
-const ROW_PADDING_X = 14;
-
-const LIST_GRID_COLUMNS = LIST_COLUMNS
-  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
-  .join(' ');
-
-/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
-const LIST_MIN_WIDTH =
-  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
-  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
-  + ROW_PADDING_X * 2;
+type InlineNew = { form: TemplateForm; saving: boolean; error: string | null };
 
 export default function TrainingPlanTemplatesPage() {
   const t = useTranslations('training_plan_templates');
@@ -151,6 +115,10 @@ export default function TrainingPlanTemplatesPage() {
 
   // Assign to member
   const [assigning, setAssigning] = useState<TrainingPlanTemplate | null>(null);
+
+  // #3334 stage 2: Cards by default, the saved choice afterwards (the Exercises toggle).
+  const [viewMode, setViewMode] = useExerciseViewMode();
+  const [importOpen, setImportOpen] = useState(false);
 
   // Row expansion + per-template lazy-loaded hierarchy
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -213,7 +181,8 @@ export default function TrainingPlanTemplatesPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', description: '', saving: false, error: null });
+    if (viewMode !== 'list') setViewMode('list');
+    setInlineNew({ form: emptyEditForm, saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -223,15 +192,16 @@ export default function TrainingPlanTemplatesPage() {
 
   async function saveInlineNew() {
     if (!inlineNew) return;
-    if (!inlineNew.name.trim()) {
-      setInlineNew({ ...inlineNew, error: t('error_required') });
+    const payload = templatePayload(inlineNew.form);
+    if (!payload.ok) {
+      setInlineNew({ ...inlineNew, error: t(payload.errorKey) });
       return;
     }
     setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
       await apiFetch<TrainingPlanTemplate>('/training-plan-templates', {
         method: 'POST',
-        body: JSON.stringify({ name: inlineNew.name.trim(), description: inlineNew.description.trim() || null }),
+        body: JSON.stringify(payload.body),
       });
       setInlineNew(null);
       load();
@@ -243,8 +213,10 @@ export default function TrainingPlanTemplatesPage() {
   // ─── Edit ─────────────────────────────────────────────────────────────────
 
   function startEdit(tpl: TrainingPlanTemplate) {
+    // The editor and the workout tree live in the List view.
+    if (viewMode !== 'list') setViewMode('list');
     setEditingId(tpl.id);
-    setEditForm({ name: tpl.name, description: tpl.description ?? '', status: tpl.status });
+    setEditForm(templateFormFromRow(tpl));
     setEditError(null);
     setExpanded((prev) => new Set([...prev, tpl.id]));
     loadHierarchy(tpl.id);
@@ -256,12 +228,13 @@ export default function TrainingPlanTemplatesPage() {
   }
 
   async function saveEdit() {
-    if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
+    const payload = templatePayload(editForm);
+    if (!payload.ok) { setEditError(t(payload.errorKey)); return; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/training-plan-templates/${editingId}`, {
         method: 'PUT',
-        body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null, status: editForm.status }),
+        body: JSON.stringify(payload.body),
       });
       setEditingId(null);
       load();
@@ -284,16 +257,42 @@ export default function TrainingPlanTemplatesPage() {
     }
   }
 
-  // ─── Clone base template ─────────────────────────────────────────────────────
+  // ─── Resync with System (#3334, the Exercises' #2302) ──────────────────────
 
-  async function handleClone(tpl: TrainingPlanTemplate) {
+  async function handleResync(tpl: TrainingPlanTemplate) {
     try {
-      await apiFetch(`/training-plan-templates/${tpl.id}/clone`, { method: 'POST' });
-      toast(t('cloned'), 'success');
+      const res = await apiFetch<{ updated: string[] }>(`/training-plan-templates/${tpl.id}/resync-with-system`, { method: 'POST' });
+      toast(res.updated.length > 0 ? t('resync_done') : t('resync_up_to_date'), res.updated.length > 0 ? 'success' : 'info');
       load();
     } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
+      const code = err?.body?.code;
+      toast(code === 'base_unavailable' ? t('resync_base_gone')
+        : code === 'name_taken' ? t('resync_name_taken')
+        : (err.message ?? t('error_generic')));
     }
+  }
+
+  function handleImported(result: ImportTemplatesResult) {
+    setImportOpen(false);
+    const parts = [t('imported', { n: result.imported.length })];
+    if (result.skipped.length > 0) parts.push(t('imported_skipped', { n: result.skipped.length }));
+    toast(parts.join(' '), 'success');
+    load();
+  }
+
+  /** The `⋮` actions of one template — shared by the list row and the card. */
+  function templateMenuItems(row: TrainingPlanTemplate): ContextMenuItem[] {
+    const roTitle = canWrite ? undefined : readOnlyTitle;
+    return [
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetailsTemplate(row) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => startEdit(row), disabled: !canWrite, title: roTitle },
+      { label: t('duplicate'), onClick: () => handleDuplicate(row), disabled: !canWrite, title: roTitle },
+      ...(canResyncWithSystem(row)
+        ? [{ label: t('resync_with_system'), onClick: () => handleResync(row), disabled: !canWrite, title: roTitle }]
+        : []),
+      ...(row.status === 'active' ? [{ label: t('assign_to_member'), onClick: () => setAssigning(row), disabled: !canWrite, title: roTitle }] : []),
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(row), danger: true, disabled: !canWrite, title: roTitle },
+    ];
   }
 
   // ─── Delete ──────────────────────────────────────────────────────────────────
@@ -368,31 +367,50 @@ export default function TrainingPlanTemplatesPage() {
 
   return (
     <div>
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+      {/* Header (#3334 stage 2: the Exercises page's title + actions) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            placeholder={t('filter_name')}
-            style={filterInputStyle}
-          />
-          <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterInputStyle}>
-            <option value="">{t('filter_created_by_all')}</option>
-            {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
-          </select>
-          <StatusFilter
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
-            allLabel={tStatus('all')}
-          />
-          <button onClick={openInlineNew} disabled={!canWrite || inlineNew !== null} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>
+            {t('import_system_templates')}
+          </button>
+          <button onClick={openInlineNew} disabled={!canWrite || inlineNew !== null} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>
             {t('add')}
           </button>
         </div>
       </div>
+
+      <FilterBar>
+        <FilterField label={t('filter_search')} htmlFor="tpt-search">
+          <input
+            id="tpt-search"
+            type="search"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            placeholder={t('filter_name')}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <FilterField label={t('label_created_by')} htmlFor="tpt-created-by">
+          <select id="tpt-created-by" value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
+            <option value="">{t('filter_created_by_all')}</option>
+            {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label={t('label_status')} htmlFor="tpt-status">
+          <StatusFilter
+            id="tpt-status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
+            allLabel={tStatus('all')}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <div style={{ marginLeft: 'auto' }}>
+          <ExerciseViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      </FilterBar>
 
       {/* Sort controls */}
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 12, fontSize: 13, color: '#666' }}>
@@ -414,7 +432,15 @@ export default function TrainingPlanTemplatesPage() {
           line, and a narrow viewport scrolls the list instead of the page
           (#1011). The wrapper exists only when there is a list to lay out, so
           an empty state is not pinned to the track sum. */}
-      {(rows.length > 0 || inlineNew !== null) && (
+      {viewMode === 'cards' && rows.length > 0 && inlineNew === null && (
+        <CardGrid>
+          {rows.map((row) => (
+            <TrainingPlanTemplateCard key={row.id} template={row} menuItems={templateMenuItems(row)} />
+          ))}
+        </CardGrid>
+      )}
+
+      {viewMode === 'list' && (rows.length > 0 || inlineNew !== null) && (
       <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
       <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
 
@@ -436,8 +462,8 @@ export default function TrainingPlanTemplatesPage() {
                 <label style={inlineLabelStyle}>{t('label_name')} *</label>
                 <input
                   ref={newNameRef}
-                  value={inlineNew.name}
-                  onChange={(e) => setInlineNew({ ...inlineNew, name: e.target.value })}
+                  value={inlineNew.form.name}
+                  onChange={(e) => setInlineNew({ ...inlineNew, form: { ...inlineNew.form, name: e.target.value } })}
                   onKeyDown={(e) => { if (e.key === 'Enter') saveInlineNew(); if (e.key === 'Escape') cancelInlineNew(); }}
                   placeholder={t('placeholder_name')}
                   style={inlineInputStyle}
@@ -446,11 +472,16 @@ export default function TrainingPlanTemplatesPage() {
               <div>
                 <label style={inlineLabelStyle}>{t('label_description')}</label>
                 <input
-                  value={inlineNew.description}
-                  onChange={(e) => setInlineNew({ ...inlineNew, description: e.target.value })}
+                  value={inlineNew.form.description}
+                  onChange={(e) => setInlineNew({ ...inlineNew, form: { ...inlineNew.form, description: e.target.value } })}
                   style={inlineInputStyle}
                 />
               </div>
+              <NumDaysField
+                value={inlineNew.form.num_days}
+                label={t('label_num_days')}
+                onChange={(n) => setInlineNew({ ...inlineNew, form: { ...inlineNew.form, num_days: n } })}
+              />
             </div>
             {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
             <div style={inlineActionsRowStyle}>
@@ -485,12 +516,7 @@ export default function TrainingPlanTemplatesPage() {
               tStatus={tStatus}
               fmtDate={fmtDate}
               onToggleExpand={() => toggleExpand(row)}
-              onEdit={() => startEdit(row)}
-              onDetails={() => setDetailsTemplate(row)}
-              onDuplicate={() => handleDuplicate(row)}
-              onClone={() => handleClone(row)}
-              onDelete={() => setDeleting(row)}
-              onAssign={() => setAssigning(row)}
+              menuItems={templateMenuItems(row)}
               onEditFormChange={(f) => setEditForm(f)}
               onSave={saveEdit}
               onCancel={cancelEdit}
@@ -512,6 +538,12 @@ export default function TrainingPlanTemplatesPage() {
           <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={pagerStyle(pageEnd >= total)}>›</button>
         </div>
       )}
+
+      <ImportTrainingPlanTemplatesModal
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onImported={handleImported}
+      />
 
       {/* Details dialog */}
       <DetailsDialog template={detailsTemplate} locale={locale} t={t} tStatus={tStatus} onClose={() => setDetailsTemplate(null)} />
@@ -541,8 +573,8 @@ export default function TrainingPlanTemplatesPage() {
 
 function TemplateCard({
   template, expanded, editing, editForm, editError, editSaving,
-  hierarchy, hierLoading, hierError, canWrite, locale, t, tStatus, fmtDate,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onClone, onDelete, onAssign,
+  hierarchy, hierLoading, hierError, canWrite, locale, t, tStatus, fmtDate, menuItems,
+  onToggleExpand,
   onEditFormChange, onSave, onCancel, onChanged, onRetryHierarchy,
 }: {
   template: TrainingPlanTemplate;
@@ -559,39 +591,14 @@ function TemplateCard({
   t: ReturnType<typeof useTranslations>;
   tStatus: ReturnType<typeof useTranslations>;
   fmtDate: (iso: string) => string;
+  menuItems: ContextMenuItem[];
   onToggleExpand: () => void;
-  onEdit: () => void;
-  onDetails: () => void;
-  onDuplicate: () => void;
-  onClone: () => void;
-  onDelete: () => void;
-  onAssign: () => void;
   onEditFormChange: (f: EditForm) => void;
   onSave: () => void;
   onCancel: () => void;
   onChanged: () => void;
   onRetryHierarchy: () => void;
 }) {
-  const isBase = template.gym_id === null;
-  const roTitle = useReadOnlyTitle(canWrite);
-  const menuItems: ContextMenuItem[] = isBase
-    ? [
-        { kind: 'details' as const, label: t('details'), onClick: onDetails },
-        { label: t('clone'), onClick: onClone, disabled: !canWrite, title: roTitle },
-        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
-      ]
-    : [
-        { kind: 'details' as const, label: t('details'), onClick: onDetails },
-        { kind: 'edit' as const, label: t('edit'), onClick: onEdit, disabled: !canWrite, title: roTitle },
-        { label: t('duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
-        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
-        { kind: 'delete' as const, label: t('delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
-      ];
-
-  const descText = template.description
-    ? template.description.length > 60 ? template.description.slice(0, 60) + '…' : template.description
-    : '—';
-
   return (
     <div style={cardStyle(editing)}>
       {/* Collapsed header — always visible */}
@@ -603,34 +610,7 @@ function TemplateCard({
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}
       >
-        <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', display: 'inline-block', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-        <span className={CELL_CLASS.name} title={template.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {template.name}
-        </span>
-        <span className={CELL_CLASS.description} style={{ fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {descText}
-        </span>
-        <span className={CELL_CLASS.type}>
-          {isBase
-            ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
-            : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
-          }
-        </span>
-        <span className={CELL_CLASS.workout_count} style={{ fontSize: 13, color: '#666' }}>
-          {t('n_workouts', { count: template.workout_count })}
-        </span>
-        <span className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
-          {fmtDate(template.created_at)}
-        </span>
-        <span className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {template.created_by ?? '—'}
-        </span>
-        <span className={CELL_CLASS.status}>
-          <StatusBadge status={template.status} label={tStatus(template.status)} />
-        </span>
-        <span className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
-          <ContextMenu ariaLabel={t('col_actions')} items={menuItems} />
-        </span>
+        <TemplateRowCells template={template} expanded={expanded} menuItems={menuItems} fmtDate={fmtDate} />
       </div>
 
       {/* Inline edit form — shown when editing */}
@@ -651,7 +631,7 @@ function TemplateCard({
               <label style={inlineLabelStyle}>{t('label_status')}</label>
               <select
                 value={editForm.status}
-                onChange={(e) => onEditFormChange({ ...editForm, status: e.target.value as TrainingPlanTemplate['status'] })}
+                onChange={(e) => onEditFormChange({ ...editForm, status: e.target.value as EditForm['status'] })}
                 style={inlineSelectStyle}
               >
                 {(['active', 'inactive', 'draft'] as const).map((s) => (
@@ -659,6 +639,11 @@ function TemplateCard({
                 ))}
               </select>
             </div>
+            <NumDaysField
+              value={editForm.num_days}
+              label={t('label_num_days')}
+              onChange={(n) => onEditFormChange({ ...editForm, num_days: n })}
+            />
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={inlineLabelStyle}>{t('label_description')}</label>
               <textarea
@@ -740,6 +725,8 @@ function DetailsDialog({
         <DetailRow label={t('label_name')} value={template.name} />
         <DetailRow label={t('label_description')} value={template.description ?? '—'} />
         <DetailRow label={t('label_status')} value={<StatusBadge status={template.status} label={tStatus(template.status)} />} />
+        <DetailRow label={t('label_num_days')} value={toNumDays(template.num_days)} />
+        <DetailRow label={t('col_source')} value={templateSource(template) === 'system' ? t('source_system') : t('source_custom')} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('label_created_at')} value={fmtDate(template.created_at)} />
         <DetailRow label={t('label_created_by')} value={template.created_by ?? '—'} />
@@ -770,6 +757,18 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+/** #3334: the template's number of days — a choice of 0..7, so an out-of-range value cannot be entered. */
+function NumDaysField({ value, label, onChange }: { value: number; label: string; onChange: (n: number) => void }) {
+  return (
+    <div>
+      <label style={inlineLabelStyle}>{label}</label>
+      <select value={value} onChange={(e) => onChange(Number(e.target.value))} style={{ ...inlineSelectStyle, width: 'auto' }}>
+        {NUM_DAYS_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: 12 }}>
@@ -781,9 +780,6 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 /* ---- Styles ---- */
 
-const filterInputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff',
-};
 const pagerStyle = (disabled: boolean): React.CSSProperties => ({
   background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '4px 12px',
   cursor: disabled ? 'default' : 'pointer', color: disabled ? '#bbb' : '#333', fontSize: 16,

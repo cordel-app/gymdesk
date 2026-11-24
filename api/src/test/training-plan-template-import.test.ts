@@ -70,6 +70,12 @@ describe('GET /training-plan-templates/base', () => {
     expect(res.body.find((t: any) => t.id === inactiveBaseId)).toBeUndefined();
   });
 
+  it('narrows by name for the Import modal search (#3334 stage 2)', async () => {
+    const res = await request.get(`/training-plan-templates/base?name=${encodeURIComponent(`Base Two ${stamp}`)}`).set(as(gymId));
+    expect(res.status).toBe(200);
+    expect(res.body.map((t: any) => t.id)).toEqual([secondBaseId]);
+  });
+
   it('requires auth', async () => {
     expect((await request.get('/training-plan-templates/base')).status).toBe(401);
   });

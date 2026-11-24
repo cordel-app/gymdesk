@@ -184,7 +184,8 @@ describe('Refund — Cash', () => {
     const { rows: orig } = await db.query<any>('SELECT status, amount FROM payment_requests WHERE billing_event_id = ?', [e.billingEventId]);
     expect(orig).toEqual([{ status: 'completed', amount: '40.00' }]);
     const row = await listRow(e.memberId, e.billingEventId);
-    expect(row).toMatchObject({ attempt_count: 1, payment_method_name: 'Cash', status: 'refunded', refund_state: 'full', can_refund: false, normalized_payment_status: 'refunded' });
+    expect(row).toMatchObject({ attempt_count: 1, payment_method_name: 'Cash', status: 'refunded', refund_state: 'full', can_refund: false, normalized_payment_status: null });
+    // #3352: a cash payment has no provider status, so its normalized status stays null after a refund.
     // Shown in the event's transaction history.
     const txs = await get(`/payments/billing-events/${e.billingEventId}/transactions`);
     expect(txs.body.items.map((t: any) => t.transaction_type).sort()).toEqual(['payment', 'refund']);
@@ -207,7 +208,8 @@ describe('Refund — Cash', () => {
     expect(second.body.balance).toMatchObject({ refunded_amount: '35.50', refundable_amount: '4.50', refund_state: 'partial' });
     const full = await post(e.billingEventId, 'refund', { kind: 'full', method: 'cash' });
     expect(full.body.amount).toBe('4.50');
-    expect((await listRow(e.memberId, e.billingEventId)).normalized_payment_status).toBe('refunded');
+    expect((await listRow(e.memberId, e.billingEventId)).status).toBe('refunded');
+    expect((await listRow(e.memberId, e.billingEventId)).normalized_payment_status).toBeNull();
   });
 
   it('selected line items refund each line once and never above the balance', async () => {
@@ -255,6 +257,20 @@ describe('Refund — MONEI', () => {
     expect(res.body).toMatchObject({ status: 'completed', provider_status: 'PARTIALLY_REFUNDED' });
     const [r] = await refundRows(e.billingEventId);
     expect(r).toMatchObject({ status: 'completed', method: 'provider', provider_refund_ref: 'pay_123', provider_status: 'PARTIALLY_REFUNDED', payment_method_name: 'Monei' });
+  });
+
+  // #3352 regression: changing the Billing Event's status (a refund) cannot change the normalized
+  // payment status while the provider's own payment status stays the same.
+  it('keeps normalized_payment_status on the provider status when the event becomes partially refunded', async () => {
+    refundPayment.mockResolvedValue({ providerStatus: 'PARTIALLY_REFUNDED', providerRefundRef: 'pay_123', errorCode: null, errorMessage: null });
+    const e = await paidMonei();
+    await db.query("UPDATE payment_requests SET provider_status = 'SUCCEEDED' WHERE billing_event_id = ?", [e.billingEventId]);
+    expect((await listRow(e.memberId, e.billingEventId)).normalized_payment_status).toBe('completed');
+    expect((await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'provider', amount: '10' })).status).toBe(201);
+    const row = await listRow(e.memberId, e.billingEventId);
+    expect(row.status).toBe('partially_refunded');
+    expect(row.normalized_payment_status).toBe('completed');
+    expect((await get(`/payments/billing-events/${e.billingEventId}`)).body.normalized_payment_status).toBe('completed');
   });
 
   it('a rejected provider refund is not recorded as completed and releases the amount', async () => {
@@ -402,7 +418,9 @@ describe('Pending MONEI refund reconciliation', () => {
     expect(rows).toHaveLength(1);
     const row = await listRow(e.memberId, e.billingEventId);
     expect(row.refund_state).toBe('full');
-    expect(row.normalized_payment_status).toBe('refunded');
+    expect(row.status).toBe('refunded');
+    // #3352: the refund shows on the event's status; the original attempt carries no provider status.
+    expect(row.normalized_payment_status).toBeNull();
     // A second run changes nothing.
     await reconcilePendingProviderRefunds(log);
     expect((await db.query<any>('SELECT id FROM refund_receipts WHERE payment_request_id = ?', [refund.id])).rows).toHaveLength(1);
@@ -483,7 +501,8 @@ describe('Refunded statuses of a Billing Event', () => {
     await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'cash', amount: '10' });
     let row = await listRow(e.memberId, e.billingEventId);
     expect(row.status).toBe('partially_refunded');
-    expect(row.normalized_payment_status).toBe('partially_refunded');
+    // #3352: a cash payment has no provider status, so nothing normalizes; the refund is the event's status.
+    expect(row.normalized_payment_status).toBeNull();
     expect(row.can_refund).toBe(true);
     expect((await detail(e.billingEventId)).status).toBe('partially_refunded');
     expect(await filtered(e.memberId, 'partially_refunded')).toEqual([e.billingEventId]);

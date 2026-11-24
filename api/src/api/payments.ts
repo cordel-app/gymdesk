@@ -104,12 +104,6 @@ async function callerMayRefund(req: Request): Promise<boolean> {
   return isFeatureEnabled(REFUND_FEATURE_KEY);
 }
 
-/** #2480: a refund shows in the payment status column as the provider's own vocabulary does. */
-function withRefundState(normalized: string | null, refundState: string | undefined): string | null {
-  if (refundState === 'full') return 'refunded';
-  if (refundState === 'partial') return 'partially_refunded';
-  return normalized;
-}
 
 paymentsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -513,7 +507,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           : new Date(r.created_at).toISOString().slice(0, 10),
         created_at: new Date(r.created_at).toISOString(),
         next_payment_date: r.membership_status === 'active' ? (derivedByUm.get(Number(r.user_membership_id))?.next_billing_date ?? null) : null,
-        normalized_payment_status: withRefundState(normalizePaymentStatus(r.latest_provider_status), refund?.refund_state),
+        // #3352: the provider's own status alone; a refund is the event's `status`, never this field.
+        normalized_payment_status: normalizePaymentStatus(r.latest_provider_status),
         amount: r.amount,
         event_type: r.event_type,
         status: displayBillingEventStatus(status, refund?.refund_state, r.expired_at != null),
@@ -834,7 +829,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       currency: 'EUR',
       status: displayBillingEventStatus(status, refund?.refund_state, ev.expired_at != null),
       payment_status: ev.latest_provider_status ?? null,
-      normalized_payment_status: withRefundState(normalizePaymentStatus(ev.latest_provider_status), refund?.refund_state),
+      normalized_payment_status: normalizePaymentStatus(ev.latest_provider_status),
       payment_method_name: ev.payment_method_name ?? null,
       attempt_count: Number(ev.attempt_count ?? 0),
       cancelled_at: ev.cancelled_at ? new Date(ev.cancelled_at).toISOString() : null,

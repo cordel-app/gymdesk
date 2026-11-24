@@ -121,6 +121,8 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
  */
 trainingPlanTemplatesRouter.get('/base', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  // #3334 stage 2: the Import modal's search box (a substring of the name).
+  const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
   try {
     const { rows } = await db.query(
       `SELECT ${LIST_COLUMNS},
@@ -129,9 +131,9 @@ trainingPlanTemplatesRouter.get('/base', async (req, res, next) => {
                   AND (g.cloned_from_id = tpt.id OR g.name = tpt.name)
                 ORDER BY (g.cloned_from_id = tpt.id) DESC, g.id ASC LIMIT 1) AS imported_template_id
          FROM training_plan_templates tpt
-        WHERE tpt.gym_id IS NULL AND tpt.status = 'active'
+        WHERE tpt.gym_id IS NULL AND tpt.status = 'active'${name ? ' AND tpt.name LIKE ?' : ''}
         ORDER BY tpt.name ASC`,
-      [gymId],
+      name ? [gymId, `%${name}%`] : [gymId],
     );
     res.json(rows);
   } catch (err) {
