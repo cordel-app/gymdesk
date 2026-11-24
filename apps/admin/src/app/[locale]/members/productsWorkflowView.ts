@@ -416,15 +416,25 @@ export function submittedCartNoteKey(outcome: SubmittedCart['outcome']): string 
 /**
  * #3307 — how the Summary shows the cart Save & Pay submitted. `in_flight`: the version still awaits
  * payment and is already one of the in-flight rows, drawn there with its own actions. `committed`:
- * it left the in-flight list (paid or activated) and is drawn as a retained row. `null`: nothing was
- * submitted, or a new cart was opened since, which replaces it on screen.
+ * the server reports a paid cart still inside its visibility window (stage 2: one hour after it was
+ * paid, or until a newer cart is opened — persisted, so a reload keeps it), drawn as a retained row.
+ * `null`: nothing to show.
  */
 export function submittedCartView(
   submitted: Pick<SubmittedCart, 'productSetId'> | null,
   inFlight: Array<{ id: number; status: string }>,
+  paidCart: { purchase: { id: number } } | null | undefined,
 ): 'in_flight' | 'committed' | null {
-  if (!submitted) return null;
   const live = inFlight.filter((p) => p.status === 'in_cart' || p.status === 'pending_payment');
-  if (live.some((p) => p.id === submitted.productSetId)) return 'in_flight';
-  return live.length > 0 ? null : 'committed';
+  if (submitted && live.some((p) => p.id === submitted.productSetId)) return 'in_flight';
+  return paidCart && live.length === 0 ? 'committed' : null;
+}
+
+/** #3307 stage 2 — the submission's note applies to the retained paid cart only when it is the cart this page submitted. */
+export function retainedCartNoteKey(
+  submitted: SubmittedCart | null,
+  paidCart: { product_set_id: number | null } | null | undefined,
+): string | null {
+  if (!submitted || !paidCart || paidCart.product_set_id !== submitted.productSetId) return null;
+  return submittedCartNoteKey(submitted.outcome);
 }

@@ -145,6 +145,20 @@ export interface MemberConfiguration {
   past_product_sets: ProductSetSummary[];
   /** #2747 stage 2 — plans cancelled while awaiting payment, never assigned: listed under Past. */
   cancelled_product_sets?: ProductSetRow[];
+  /**
+   * #3307 stage 2 — the owner's paid cart the Summary keeps showing: completed within the last hour
+   * and not followed by a newer cart (decided by the API, `domain/paidCartVisibility.ts`).
+   */
+  paid_cart?: PaidCart | null;
+}
+
+/** #3307 stage 2 — a recently paid cart as the configuration read reports it. */
+export interface PaidCart {
+  purchase: { id: number; name: string; status: string };
+  product_set_id: number | null;
+  billing_event_id: number | null;
+  amount: number | null;
+  completed_at: string | null;
 }
 
 export const EMPTY_CONFIGURATION: MemberConfiguration = {
