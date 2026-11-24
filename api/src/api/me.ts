@@ -1,4 +1,5 @@
 import { paymentDescriptionForEvent } from './purchases';
+import { BASE_MEAL_JOIN_SQL, baseMealColumnsSql } from './base-meal-reference';
 import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { splitPastBookingAttendees, type PastBookingAttendees } from '../domain/pastBookingAttendees';
 import { familyWalletOf } from './family-wallet';
@@ -1618,7 +1619,10 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     );
     const days = await Promise.all(dayRows.map(async (day: any) => {
       const { rows: mealRows } = await db.query(
-        'SELECT id, meal_type, display_name, notes, position FROM member_nutrition_plan_meals WHERE member_nutrition_plan_day_id = ? AND gym_id = ? ORDER BY position ASC',
+        // #3328 stage 2: the meal's Base Meal (localized name, description, image) rides beside it.
+        `SELECT m.id, m.meal_type, m.display_name, m.notes, m.position, ${baseMealColumnsSql(getRequestLocale(req))}
+           FROM member_nutrition_plan_meals m ${BASE_MEAL_JOIN_SQL}
+          WHERE m.member_nutrition_plan_day_id = ? AND m.gym_id = ? ORDER BY m.position ASC`,
         [day.id, gymId],
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {

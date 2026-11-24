@@ -103,7 +103,7 @@ export const SYSTEM_PERSONAL_GOAL_TRANSLATIONS: Record<string, { es: string; ca:
   energy: { es: 'Energía', ca: 'Energia' },
 };
 
-function column(col: 'name' | 'description', alias: string, locale: SupportedLocale, kind: TranslatedGoalKind): string {
+export function localizedGoalColumn(col: 'name' | 'description', alias: string, locale: SupportedLocale, kind: TranslatedGoalKind): string {
   const { table, fk, read } = KIND_TABLES[kind];
   const literal = localeLiteral(locale);
   if (!literal) return `${alias}.${col}`;
@@ -113,8 +113,8 @@ function column(col: 'name' | 'description', alias: string, locale: SupportedLoc
 
 /** `display_name` and `display_description`, resolved for `locale` with the base value as fallback. */
 export function localizedGoalExprs(alias: string, locale: SupportedLocale, kind: TranslatedGoalKind = 'nutrition'): string {
-  return `${column('name', alias, locale, kind)} AS display_name,
-    ${column('description', alias, locale, kind)} AS display_description`;
+  return `${localizedGoalColumn('name', alias, locale, kind)} AS display_name,
+    ${localizedGoalColumn('description', alias, locale, kind)} AS display_description`;
 }
 
 /**

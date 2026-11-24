@@ -115,8 +115,8 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
       );
       for (const meal of meals) {
         const { insertId: newMealId } = await tx.query(
-          'INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
-          [gymId, newDayId, meal.meal_type ?? null, meal.display_name, meal.notes ?? null, meal.position],
+          'INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, base_meal_id, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [gymId, newDayId, meal.meal_type ?? null, meal.base_meal_id ?? null, meal.display_name, meal.notes ?? null, meal.position],
         );
         const { rows: items } = await tx.query(
           'SELECT * FROM nutrition_plan_template_meal_items WHERE meal_id = ? ORDER BY position ASC',
