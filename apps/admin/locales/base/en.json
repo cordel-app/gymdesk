@@ -6581,6 +6581,9 @@
     "translations_close": "Close",
     "translations_cancel": "Cancel",
     "translations_save": "Save",
-    "translations_empty": "No translation (falls back to English)"
+    "translations_empty": "No translation (falls back to English)",
+    "label_status": "Status",
+    "col_status": "Status",
+    "col_actions": "Actions"
   }
 }

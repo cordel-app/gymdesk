@@ -6594,6 +6594,9 @@
     "translations_close": "Tanca",
     "translations_cancel": "Cancel·la",
     "translations_save": "Desa",
-    "translations_empty": "Sense traducció (s'usa l'anglès)"
+    "translations_empty": "Sense traducció (s'usa l'anglès)",
+    "label_status": "Estat",
+    "col_status": "Estat",
+    "col_actions": "Accions"
   }
 }
