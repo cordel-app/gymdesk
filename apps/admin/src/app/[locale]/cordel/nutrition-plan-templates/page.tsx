@@ -115,14 +115,14 @@ export default function CordelNutritionPlanTemplatesPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1>Base Nutrition Plan Templates</h1>
+        <h1>Base Nutrition Templates</h1>
         <button style={btnStyle()} onClick={() => setCreating(true)}>+ New Template</button>
       </div>
 
       {loading ? (
         <p>Loading…</p>
       ) : templates.length === 0 ? (
-        <p style={{ color: '#9ca3af' }}>No base templates yet.</p>
+        <p style={{ color: '#9ca3af' }}>No base nutrition templates yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {templates.map(tpl => (
@@ -176,7 +176,7 @@ export default function CordelNutritionPlanTemplatesPage() {
 
       <CrudModal
         open={creating}
-        title="New Base Template"
+        title="New Base Nutrition Template"
         onCancel={() => setCreating(false)}
         onSave={handleCreate}
         saving={saving}
@@ -197,7 +197,7 @@ export default function CordelNutritionPlanTemplatesPage() {
 
       <CrudModal
         open={editing !== null}
-        title="Edit Base Template"
+        title="Edit Base Nutrition Template"
         onCancel={() => setEditing(null)}
         onSave={handleEdit}
         saving={saving}
