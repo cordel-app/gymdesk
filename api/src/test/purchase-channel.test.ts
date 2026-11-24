@@ -102,8 +102,10 @@ describe('a purchase records who managed it and through which app (#3278)', () =
     expect(born.created_by).not.toBe('Owner Admin');
     expect(born.created_by).not.toBe('System');
 
-    // The member adding to the same cart, then staff paying it, change neither field.
-    expect((await asMember(m.clerk, 'post', '/me/cart/purchases').send({ product_id: await product('9.00', 'once') })).status).toBe(201);
+    // The member cannot add to a cart staff are preparing (#3305); staff paying it changes neither field.
+    const refused = await asMember(m.clerk, 'post', '/me/cart/purchases').send({ product_id: await product('9.00', 'once') });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe('awaiting_staff_setup');
     expect((await staff('post', `/product-sets/${add.body.product_set_id}/save-and-pay`).send({})).status).toBe(201);
     const after = await purchaseRow(cartId);
     expect(after.status).toBe('pending_payment');

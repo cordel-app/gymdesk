@@ -78,6 +78,8 @@ export interface MemberStandaloneCart {
   purchases: MemberStandalonePurchase[];
   total: number | null;
   currency: string | null;
+  /** #3305: the cart they belong to is one staff are still preparing (the server's `staffPreparesCart()`). */
+  awaiting_staff_setup?: boolean;
 }
 
 export const EMPTY_STANDALONE_CART: MemberStandaloneCart = { purchases: [], total: null, currency: null };
@@ -90,7 +92,7 @@ export type MemberCartView = MemberSetView & {
   cart?: { plans: number; products: number };
   /** #2746 stage 3: a version awaiting payment — its initial event's amount (the owner's read only). */
   pending_amount?: number | null;
-  /** #2895: a Draft staff created by assigning a plan, still being set up (the server's `awaitsStaffSetup()`). */
+  /** #2895 / #3305: a Draft in a cart staff are still preparing (the server's `awaitsStaffSetup()`). */
   awaiting_staff_setup?: boolean;
 };
 
@@ -167,6 +169,26 @@ function setPhase(view: MemberCartView | null, viewerMemberId: number | null): E
   return 'pending_payment';
 }
 
+/**
+ * #3305 — whether the standalone purchases belong to a cart staff are still preparing: the server's
+ * flag (the cart's creator), never derived here from what the cart holds.
+ */
+export function standaloneAwaitsStaff(standalone: MemberStandaloneCart | null | undefined): boolean {
+  return !!standalone && standalone.purchases.length > 0 && standalone.awaiting_staff_setup === true;
+}
+
+/**
+ * #3305 — whether the member's cart is locked because staff are still preparing it: Pay, Cancel,
+ * per-item removal, quantity and every add are unavailable. The one answer the card and the page ask.
+ */
+export function cartLockedForStaff(
+  view: MemberCartView | null,
+  viewerMemberId: number | null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): boolean {
+  return cartPhase(view, viewerMemberId, standalone) === 'awaiting_staff';
+}
+
 /** #2895: whether the Draft is the gym's, still being set up — the server's flag, never derived here. */
 export function awaitsStaffSetup(view: MemberCartView | null): boolean {
   return !!view && view.status === 'in_cart' && view.awaiting_staff_setup === true;
@@ -188,6 +210,8 @@ export function cartPhase(
   // #2949 stage 6: an owner's open Draft (even one adding nothing yet) is the cart the
   // standalone purchases join — its Save & Pay pays them (stage 5).
   if (standalone.purchases.length === 0) return null;
+  // #3305: a cart staff are still preparing is theirs whatever it holds, standalone purchases included.
+  if (standaloneAwaitsStaff(standalone)) return 'awaiting_staff';
   if (isDraft(view) && !awaitsStaffSetup(view) && (viewerMemberId == null || view.owner_member_id === viewerMemberId)) return 'draft';
   return 'standalone';
 }
@@ -218,6 +242,8 @@ export function separateStandaloneCart(
   standalone: MemberStandaloneCart,
 ): boolean {
   if (standalone.purchases.length === 0) return false;
+  // #3305: purchases of the cart staff are preparing are that cart's items, not a card of their own.
+  if (standaloneAwaitsStaff(standalone)) return false;
   const phase = setPhase(view, viewerMemberId);
   return phase === 'pending_payment' || phase === 'awaiting_staff';
 }
@@ -276,7 +302,10 @@ export function cartItems(
     // #2949 stage 6: a checkout in flight lists the standalone purchases it joined (stage 5).
     if (view.status === 'pending_payment') return [...setItems(view), ...standaloneItems(view.cart_purchases)];
     // A Draft staff are still setting up is theirs; the member's standalone purchases stay beside it.
-    if (awaitsStaffSetup(view)) return setItems(view);
+    if (awaitsStaffSetup(view)) {
+      // #3305: standalone purchases of the same staff-prepared cart are its items too.
+      return standaloneAwaitsStaff(standalone) ? [...setItems(view), ...standaloneItems(standalone.purchases)] : setItems(view);
+    }
     return [...setItems(view), ...standaloneItems(standalone.purchases)];
   }
   return standaloneItems(standalone.purchases);
@@ -329,6 +358,7 @@ export function cartCommitAction(
 ): CartCommitAction | null {
   const phase = cartPhase(view, viewerMemberId, standalone);
   // #2949 stage 6: standalone purchases alone are paid by their own checkout, for the server's total.
+  if (phase === 'awaiting_staff') return null;
   if (phase === 'standalone') return standalone.total != null && standalone.total > 0 ? 'cart_checkout' : null;
   if (phase !== 'draft' || awaitsStaffSetup(view)) return null;
   const summary = setCommitAction(review);
@@ -339,6 +369,7 @@ export function cartCommitAction(
 
 /** The standalone card's own commit (beside a set awaiting payment): its checkout while something is owed. */
 export function standaloneCommitAction(standalone: MemberStandaloneCart): 'cart_checkout' | null {
+  if (standaloneAwaitsStaff(standalone)) return null;
   return standalone.purchases.length > 0 && standalone.total != null && standalone.total > 0 ? 'cart_checkout' : null;
 }
 
