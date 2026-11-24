@@ -71,7 +71,8 @@ export function purchasePayment(attempts: readonly PurchaseAttempt[], refundStat
     };
   }
   const succeeded = a.status === 'completed';
-  let status: string | null = normalizePaymentStatus(a.provider_status) ?? a.status ?? null;
+  // #3289: the provider's own status alone; no fallback to the request's internal state.
+  let status: string | null = normalizePaymentStatus(a.provider_status);
   if (succeeded && refundState === 'full') status = 'refunded';
   else if (succeeded && refundState === 'partial') status = 'partially_refunded';
   const paidAt = succeeded && a.completed_at != null ? new Date(a.completed_at).toISOString() : null;

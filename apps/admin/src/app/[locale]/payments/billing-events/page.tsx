@@ -12,7 +12,6 @@ import {
   EMPTY_BILLING_EVENT_FILTERS, appendApiFilters, filtersFromUrl, filtersToUrl, hasActiveFilter,
   type BillingEventFilters,
 } from './billingEventFilters';
-import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { readOnlyStyle } from '@/components/ui';

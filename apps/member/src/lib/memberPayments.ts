@@ -1,34 +1,28 @@
-// #1123 — everything the Members App's **Payments** card decides or formats,
-// and nothing it draws.
-//
-// The card has three subcards (§1): *Next Payment*, *Past Billing Events* and
-// *Forecast Billing Events*. Two of them read the same projection and the third
-// reads the ledger, so the decisions that say which rows belong to which
-// subcard, and how a figure is written, live here — `components/MemberPaymentsCard.tsx`
-// is the look, exactly as `NutritionItemRow` (#932) and `GoalReadings` (#1037)
-// split. Nothing in this module calls `t()`: every label arrives already
-// resolved, so both halves stay assertable (`api/src/test/member-payments.unit.test.ts`,
-// in the API suite because CI runs `npm test` in `api/` only).
+// #1123 — everything the Members App's **Payments** tab decides or formats,
+// and nothing it draws. Since #3297 the tab is organised around each payment's
+// **scheduled execution date** (`paymentSections()`): *Next Payment*,
+// *Planned Payments* and *Past Payments*, all three read from the member's own
+// ledger (`GET /me/billing-events`) — the real Billing Events, persisted
+// obligations included — and never from the forecast, which is a projection
+// and not a payment. `components/MemberPaymentsCard.tsx` is the look. Nothing
+// in this module calls `t()`: every label arrives already resolved, so both
+// halves stay assertable (`api/src/test/member-payments.unit.test.ts`, in the
+// API suite because CI runs `npm test` in `api/` only).
 //
 // Four of its answers are the rule rather than the implementation.
 //
-//  - **Nothing here computes money.** Every amount, every date and every
-//    treatment is the server's (`GET /me/billing-event-forecast`, the Assigned
-//    Plan card's own projection scoped to the caller), because
-//    `resolveMembershipFee()` is the one implementation of what a cycle costs
-//    and a second arithmetic in a page is what #635 stage 12 existed to remove.
-//    This module reorders, groups and formats; it never adds.
-//  - **Next Payment is the forecast's first group**, and the Forecast subcard is
-//    the rest of it (`forecastDatesAfterNext`). One projection answers both, so
-//    the two cannot disagree, and the next payment is not shown twice.
-//  - **A past event's status is the line's, never the card's.** The ledger is
-//    one row per Billing Event, each with its own derived status (#640), and a
-//    single date can carry a settled charge and a rejected one — a card-level
-//    status would have to pick one and would call a failed payment paid.
-//  - **A forecast card carries no status at all.** Nothing has been charged yet,
-//    so §5's "visually distinguishable from completed/paid events" is the
-//    absence of the pill the past cards carry plus the page's own badge, rather
-//    than a colour invented for a projection.
+//  - **Nothing here computes money.** Every amount, every date, every status
+//    and the full/partial payment and refund types are the server's. This
+//    module reorders, groups and formats; it never adds.
+//  - **The section is the scheduled date's, never the status's.** A payment
+//    executed on a day after today is *Planned*, one on a day before it is
+//    *Past*; a payment scheduled for today is *Planned* while it still awaits
+//    execution (`scheduled`) and *Past* once it has run.
+//  - **Next Payment is a summary, not a bucket**: the nearest planned payment
+//    plus every payment still needing attention (failed, pending), each once.
+//    The nearest planned payment is listed under *Planned Payments* too.
+//  - **A payment's status is its own, never the section's.** One date can carry
+//    a settled charge and a rejected one.
 
 /** `payment_requests.status` folded onto the event, as `#640` derives it. */
 import { DEFAULT_GYM_FORMAT, formatGymAmount, formatGymDateOnly, type GymFormatSettings } from './gymFormat';
@@ -100,6 +94,12 @@ export interface MemberBillingEvent {
   payment_method_name?: string | null;
   /** #1123 §4 — derived by the API's one implementation, never here. */
   status: MemberBillingEventStatus;
+  /** #3297 — the day the payment is (or was) executed on (`YYYY-MM-DD`, UTC); the API's. */
+  scheduled_date?: string | null;
+  /** #3297 — whether the money collected covered the amount; null when nothing was collected. */
+  payment_type?: 'full' | 'partial' | null;
+  /** #3297 — whether a refund returned all or part of it; null when nothing was refunded. */
+  refund_type?: 'full' | 'partial' | null;
   /** #2936 — the latest stored document of each kind; absent kinds are not listed. */
   documents?: MemberPaymentDocument[];
   /** #2937 — the event's own priced lines (`billing_event_lines`), as stored. */
@@ -145,42 +145,9 @@ export function paymentDocumentLabelKey(kind: MemberPaymentDocumentKind): string
   return `membership.document_${kind}`;
 }
 
-/** #3242 — one row of the Payments tab's **Documents** section. */
-export interface PaymentDocumentRow {
-  /** Stable across renders: the kind and the document's own id. */
-  key: string;
-  document: MemberPaymentDocument;
-  /** The day the row is dated by: the document's own issue time, else its event's. */
-  date: string;
-}
-
 /** A document's identity, as the download state and the React list key read it. */
 export function paymentDocumentKey(doc: MemberPaymentDocument): string {
   return `${doc.kind}:${doc.id}`;
-}
-
-/**
- * #3242 — every downloadable document of the member's payments, one row each,
- * newest first. Only what the API listed is here: it offers a document only
- * when it is stored (#2936), so a missing one never becomes a placeholder row.
- * A document the API repeats on two events (it never does today) is listed once.
- */
-export function paymentDocumentRows(events: MemberBillingEvent[]): PaymentDocumentRow[] {
-  const seen = new Set<string>();
-  const rows: PaymentDocumentRow[] = [];
-  for (const event of events) {
-    for (const doc of event.documents ?? []) {
-      const key = paymentDocumentKey(doc);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      rows.push({ key, document: doc, date: doc.issued_at || event.created_at });
-    }
-  }
-  const time = (value: string) => {
-    const t = Date.parse(value);
-    return Number.isNaN(t) ? 0 : t;
-  };
-  return rows.sort((a, b) => time(b.date) - time(a.date) || b.document.id - a.document.id);
 }
 
 /** #3242 — the file name a downloaded document is saved under, from its kind and number. */
@@ -196,26 +163,65 @@ export const EMPTY_FORECAST: BillingEventForecast = {
   tax_included: true, truncated: false, dates: [], total: 0,
 };
 
-/**
- * The next billing event in time — the forecast's first group, which is what the
- * thread asked *Next Payment* to be. `null` when there is no projection at all
- * (no plan, or one that bills nothing further), which is what makes the subcard
- * render its empty state rather than an empty card.
- */
-export function nextPaymentDate(forecast: BillingEventForecast | null): ForecastDate | null {
-  if (!forecast?.available) return null;
-  return forecast.dates[0] ?? null;
+/** #3297 — the day a payment is (or was) executed on: the API's `scheduled_date`, else the day it was written. */
+export function paymentScheduledDate(event: MemberBillingEvent): string {
+  return (event.scheduled_date || event.created_at).slice(0, 10);
+}
+
+/** #3297 — a payment still needing the member's attention, whatever its date. */
+export function isUnresolvedPayment(event: MemberBillingEvent): boolean {
+  return event.status === 'failed' || event.status === 'pending';
+}
+
+/** #3297 — whether a payment belongs under *Planned Payments* on `today` (`YYYY-MM-DD`, UTC). */
+export function isPlannedPayment(event: MemberBillingEvent, today: string): boolean {
+  const date = paymentScheduledDate(event);
+  if (date > today) return true;
+  // Due today: planned until it has been executed.
+  return date === today && event.status === 'scheduled';
+}
+
+export interface PaymentSections {
+  /** The nearest planned payment first, then every unresolved payment, each once. */
+  next: MemberBillingEvent[];
+  /** Every planned payment, nearest first (the next one included). */
+  planned: MemberBillingEvent[];
+  /** Every payment whose execution date has passed, newest first. */
+  past: MemberBillingEvent[];
 }
 
 /**
- * The groups the *Forecast* subcard lists: everything after the next payment.
- *
- * The next one is deliberately excluded — it is the card above, in full, and a
- * member reading the same €150 twice would reasonably count it twice.
+ * #3297 — the three sections of the Payments tab, from the member's ledger.
+ * `today` is the UTC date the API's scheduled dates are written in.
  */
-export function forecastDatesAfterNext(forecast: BillingEventForecast | null): ForecastDate[] {
-  if (!forecast?.available) return [];
-  return forecast.dates.slice(1);
+export function paymentSections(events: MemberBillingEvent[], today: string): PaymentSections {
+  const byDate = (a: MemberBillingEvent, b: MemberBillingEvent) =>
+    paymentScheduledDate(a).localeCompare(paymentScheduledDate(b)) || a.id - b.id;
+  const planned = events.filter((e) => isPlannedPayment(e, today)).sort(byDate);
+  const past = events.filter((e) => !isPlannedPayment(e, today)).sort((a, b) => byDate(b, a));
+  const next: MemberBillingEvent[] = [];
+  const seen = new Set<number>();
+  const add = (e: MemberBillingEvent) => { if (!seen.has(e.id)) { seen.add(e.id); next.push(e); } };
+  // The nearest planned payment that is still owed (a cancelled one is no payment to come).
+  const nearest = planned.find((e) => e.status !== 'cancelled');
+  if (nearest) add(nearest);
+  [...planned, ...past].filter(isUnresolvedPayment).sort(byDate).forEach(add);
+  return { next, planned, past };
+}
+
+/** #3297 — the locale key of a payment's payment-type chip (*Full payment* / *Partial payment*), or `null`. */
+export function paymentTypeKey(event: MemberBillingEvent): string | null {
+  return event.payment_type ? `payment_type_${event.payment_type}` : null;
+}
+
+/** #3297 — the locale key of a payment's refund chip (*Full refund* / *Partial refund*), or `null`. */
+export function refundTypeKey(event: MemberBillingEvent): string | null {
+  return event.refund_type ? `refund_type_${event.refund_type}` : null;
+}
+
+/** #3297 — the UTC date a scheduled date is compared with. */
+export function utcToday(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
 }
 
 /**
@@ -242,9 +248,12 @@ export function productNextPayment(
   return forecast.dates.find((d) => d.lines.some((l) => l.kind === 'product' && l.product_id === productId)) ?? null;
 }
 
-/** The DOM id of a forecast payment's card on the Payments tab, so *View payment* can reach it. */
+/**
+ * The DOM id of the payment on the Payments tab that falls on `date`, so a plan
+ * or Product card's *View payment* (#3235) can reach it.
+ */
 export function forecastPaymentAnchorId(date: string): string {
-  return `payment-forecast-${date}`;
+  return `payment-${date}`;
 }
 
 /** The numeric amount of a ledger row, or `null` for a row that records no money. */
@@ -289,13 +298,13 @@ export function billingEventLineRegularAmount(line: MemberBillingEventLine): num
 }
 
 /**
- * Whether a past event's row has anything to show when expanded: its lines,
- * its payment method or its notes. A row with none of them carries no
- * chevron, since opening it would show nothing. Its documents are not among
- * them: since #3242 they are listed in the tab's own Documents section.
+ * Whether a payment's row has anything to show when expanded: its lines, its
+ * documents (#3297: inside the payment they belong to), its payment method or
+ * its notes. A row with none of them carries no chevron.
  */
 export function billingEventHasDetails(event: MemberBillingEvent): boolean {
   return (event.lines?.length ?? 0) > 0
+    || (event.documents?.length ?? 0) > 0
     || Boolean(event.payment_method_name)
     || Boolean(event.notes)
     || (event.event_type === 'status_changed' && Boolean(event.new_status));

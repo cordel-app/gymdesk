@@ -85,9 +85,8 @@ describe('Billing Events payment actions (#640)', () => {
     expect(pageSrc).toContain('<ContextMenu items={items}');
   });
 
-  it('offers no Details item (#2836) and each payment action only on the API flag', () => {
-    // Details only expanded the row, which its chevron already does.
-    expect(pageSrc).not.toContain('action_details');
+  it('offers each payment action only on the API flag', () => {
+    // #3300: Details is back as a modal of its own (billing-event-details-modal.test.ts).
     expect(pageSrc).toContain('const items: ContextMenuItem[] = [];');
     // A row with no applicable action renders no ⋮ rather than an empty menu.
     expect(pageSrc).toContain('return items.length > 0');

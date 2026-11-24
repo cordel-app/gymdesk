@@ -321,3 +321,44 @@ describe('POST /billing/cleanup — asks MONEI before writing a payment off', ()
     expect(await setStatus(c.setId)).toBe('pending_payment');
   });
 });
+
+describe('provider status comes only from the provider (#3289)', () => {
+  const log = { info: () => {}, warn: () => {}, error: () => {} } as any;
+  const payload = (c: Checkout, status: 'completed' | 'failed', providerStatus?: string | null) => ({
+    orderId: c.orderId, status, providerRef: c.paymentId, paymentToken: null, sequenceId: null,
+    cardLast4: null, cardBrand: null, providerStatus,
+  });
+
+  it('a new Payment Request and its hosted checkout carry no provider status', async () => {
+    const c = await checkout();
+    expect(await requestRow(c.requestId)).toMatchObject({ status: 'pending', provider_status: null });
+    // The normalized read model of a pending request with no provider answer is empty too.
+    const ev = (await requestRow(c.requestId)).billing_event_id;
+    const res = await auth(request.get(`/payments/billing-events/${ev}`));
+    expect(res.status).toBe(200);
+    expect(res.body.normalized_payment_status ?? null).toBeNull();
+  });
+
+  it('a provider answer with no raw status settles the request and stores no status', async () => {
+    const { settlePaymentRequest } = await import('../api/payment-settlement');
+    const c = await checkout();
+    const out = await settlePaymentRequest(payload(c, 'completed', null) as any, { via: 'webhook', log });
+    expect(out).toMatchObject({ kind: 'settled', status: 'completed' });
+    expect(await requestRow(c.requestId)).toMatchObject({ status: 'completed', provider_status: null });
+  });
+
+  it('stores the provider\'s raw status trimmed and uppercased', async () => {
+    const { settlePaymentRequest } = await import('../api/payment-settlement');
+    const c = await checkout();
+    await settlePaymentRequest(payload(c, 'failed', ' failed ') as any, { via: 'webhook', log });
+    expect(await requestRow(c.requestId)).toMatchObject({ status: 'failed', provider_status: 'FAILED' });
+  });
+
+  it('a later answer with no status never erases a status already received', async () => {
+    const { settlePaymentRequest } = await import('../api/payment-settlement');
+    const c = await checkout();
+    await db.query("UPDATE payment_requests SET provider_status = 'PENDING' WHERE id = ?", [c.requestId]);
+    await settlePaymentRequest(payload(c, 'completed', null) as any, { via: 'webhook', log });
+    expect(await requestRow(c.requestId)).toMatchObject({ status: 'completed', provider_status: 'PENDING' });
+  });
+});

@@ -493,7 +493,7 @@
     "download_receipt": "Descargar recibo",
     "document_receipt": "Recibo",
     "document_simplified_invoice": "Factura simplificada",
-    "document_full_invoice": "Factura",
+    "document_full_invoice": "Factura completa",
     "document_refund_receipt": "Recibo de reembolso",
     "status": {
       "active": "Activa",
@@ -668,15 +668,16 @@
     "summary_next": "Siguiente: {date} · {amount}",
     "next_heading": "Próximo pago",
     "next_empty": "Ahora mismo no hay ningún pago programado.",
-    "past_heading": "Eventos de facturación anteriores",
-    "past_empty": "Todavía no hay pagos registrados.",
-    "documents_heading": "Documentos",
+    "past_heading": "Pagos anteriores",
+    "past_empty": "Todavía no hay pagos anteriores.",
+    "planned_heading": "Pagos planificados",
+    "planned_empty": "Todavía no hay ningún pago planificado.",
+    "payment_type_full": "Pago completo",
+    "payment_type_partial": "Pago parcial",
+    "refund_type_full": "Reembolso completo",
+    "refund_type_partial": "Reembolso parcial",
     "documents_download": "Descargar {type} {number}",
     "documents_download_failed": "No se ha podido descargar el documento. Inténtalo de nuevo.",
-    "forecast_heading": "Previsión de eventos de facturación",
-    "forecast_empty": "Todavía no se esperan más eventos de facturación.",
-    "forecast_unavailable": "Ahora mismo no hay nada que prever para tu plan.",
-    "forecast_badge": "Previsión",
     "total": "Total",
     "tax_included": "Impuestos incluidos.",
     "line_kind_membership_fee": "Plan de membresía",
@@ -703,8 +704,7 @@
   },
   "payment_banner": {
     "pending_heading": "Tienes un pago pendiente",
-    "pay_now": "Pagar ahora",
-    "start_payment": "Iniciar pago"
+    "pay_now": "Pagar ahora"
   },
   "payment_consent": {
     "title_once": "Autorización de pago",

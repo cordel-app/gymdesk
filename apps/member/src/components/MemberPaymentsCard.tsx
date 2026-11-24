@@ -5,8 +5,9 @@ import { memberTheme, rowDividerStyle, sectionCardStyle, statusPillStyle } from 
 
 /**
  * #1123 — the look of the Members App's **Payments** section: the section
- * itself (the My Products tab since #2740), the three subcards inside it (§2/§4/§5) and the one Billing Event
- * card both the past and the forecast subcards list.
+ * itself (the My Products tab since #2740), the three subcards inside it
+ * (since #3297: Next Payment, Planned Payments, Past Payments), the prominent
+ * card Next Payment draws and the row every payment list draws.
  *
  * It is this ticket's `NutritionItemRow` (#932): one place owns the chrome, so
  * the three subcards cannot drift into three looks, and it **resolves nothing** —
@@ -153,17 +154,25 @@ export function BillingEventCard({
  * whose state is `aria-expanded`; a row with nothing to show has no button.
  */
 export function PastBillingEventRow({
-  title, date, status, amount, lines, details, expandable = true,
+  title, date, status, chips, amount, lines, documents, details, expandable = true, anchorId, highlighted = false,
 }: {
   title: string;
   date: string;
   /** The status pill, rendered by the page from the server's status. */
   status: ReactNode;
+  /** #3297 — the payment-type and refund-type chips, beside the status. */
+  chips?: ReactNode;
   amount: string | null;
   lines: BillingEventCardLine[];
-  /** Payment method and notes, under the lines (documents have their own section since #3242). */
+  /** #3297 — the payment's own documents, inside the payment they belong to. */
+  documents?: ReactNode;
+  /** Payment method and notes, under the lines. */
   details?: ReactNode;
   expandable?: boolean;
+  /** #3235/#3297 — the DOM id *View payment* scrolls to. */
+  anchorId?: string;
+  /** #3235/#3297 — the payment *View payment* opened, outlined so the member finds it. */
+  highlighted?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const header = (
@@ -175,12 +184,13 @@ export function PastBillingEventRow({
       <span style={styles.pastRow2}>
         <span style={styles.pastDate}>{date}</span>
         {status}
+        {chips}
         {expandable && <span style={styles.pastCaret} aria-hidden="true">{open ? '▾' : '▸'}</span>}
       </span>
     </>
   );
   return (
-    <div style={styles.pastEvent}>
+    <div id={anchorId} style={highlighted ? { ...styles.pastEvent, ...styles.eventCardHighlighted } : styles.pastEvent}>
       {expandable ? (
         <button type="button" onClick={() => setOpen((prev) => !prev)} aria-expanded={open} style={styles.pastHeader}>
           {header}
@@ -199,7 +209,8 @@ export function PastBillingEventRow({
               ))}
             </ul>
           )}
-          {details && <div style={lines.length > 0 ? { ...styles.pastDetails, ...rowDividerStyle } : styles.pastDetails}>{details}</div>}
+          {documents && <div style={lines.length > 0 ? { ...styles.pastDocuments, ...rowDividerStyle } : styles.pastDocuments}>{documents}</div>}
+          {details && <div style={lines.length > 0 || documents ? { ...styles.pastDetails, ...rowDividerStyle } : styles.pastDetails}>{details}</div>}
         </div>
       )}
     </div>
@@ -245,8 +256,9 @@ export interface PaymentDocumentListRow {
 }
 
 /**
- * #3242 — the Payments tab's **Documents** section: one row per stored
- * document, date, type chip, identifier and a download action on the right.
+ * #3242 — a list of stored documents: date, type chip, identifier and a
+ * download action on the right. Since #3297 it is drawn inside the payment the
+ * documents belong to, never as a section of its own.
  * Each row is one block: when it does not fit on one line (a *Simplified
  * invoice* on a phone) the date and chip take the first line and the
  * identifier and the download action the second, so the action never drifts
@@ -368,12 +380,13 @@ const styles: Record<string, CSSProperties> = {
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   pastAmount: { fontSize: 14, fontWeight: 700, color: memberTheme.text, whiteSpace: 'nowrap' },
-  pastRow2: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, fontSize: 12 },
+  pastRow2: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, fontSize: 12, flexWrap: 'wrap' },
   pastDate: { fontSize: 12, color: memberTheme.textMuted, whiteSpace: 'nowrap' },
   pastCaret: { marginLeft: 'auto', fontSize: 12, color: memberTheme.textMuted },
   pastBody: { ...rowDividerStyle, padding: '4px 12px 10px' },
   pastLineList: { listStyle: 'none', margin: 0, padding: 0 },
   pastLine: { display: 'flex', padding: '7px 0' },
+  pastDocuments: { paddingTop: 4 },
   pastDetails: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 8, fontSize: 12, color: memberTheme.textMuted },
   eventFooter: { ...rowDividerStyle, marginTop: 10, paddingTop: 8, fontSize: 12, color: memberTheme.textMuted },
 };

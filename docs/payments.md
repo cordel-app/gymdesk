@@ -724,7 +724,7 @@ Per due event, under the event's row lock, exactly one of these:
 | **Already attempted today**, or `MAX_FAILED_DAYS` (2) failed days reached | no | untouched | untouched |
 | **Waived** (`amount = 0`) | no | `is_scheduled = 0`, `event_type = 'waived_billing'` | one `completed` row, `method 'waive'` |
 | **No stored card** | no | untouched — stays scheduled, past due | nothing attempted |
-| **Success** | yes | `is_scheduled = 0`, `event_type = 'recurring_payment'` | the attempt row, written **before** the call, closed `completed` with the raw `provider_status` |
+| **Success** | yes | `is_scheduled = 0`, `event_type = 'recurring_payment'` | the attempt row, written **before** the call, closed `completed` with the raw `provider_status` (NULL when the answer named none, #3289) |
 | **Rejected** | yes, declined | `event_type = 'failed_billing'` | the attempt closed `failed`, with `failure_code`/`failure_message` and the raw status |
 | **In flight** (`PENDING_PROCESSING`, …) | yes | unchanged | the attempt stays `pending` with the raw status — the webhook settles it |
 | **Provider error** (threw / never answered) | attempted | unchanged | the attempt stays `pending` with **no** provider status: an unknown outcome, never a failure |
@@ -928,6 +928,27 @@ snapshot, #2451) and the Refund modal shows it read-only; the request body names
 > - **One original payment per event.** The collected attempt is still the latest completed
 >   one (the charge guard allows a single settled attempt per event), so every refund of an
 >   event names the same `refund_of_payment_request_id` and there is no mix of methods to resolve.
+
+#### Provider status comes only from the provider (#3289)
+
+`payment_requests.status` is the application's own lifecycle (`pending`, `completed`,
+`failed`, `expired`) and is **not** a provider status. `payment_requests.provider_status`
+(nullable, no default) holds only a status the provider itself returned — a provider API
+response that names one (`executeRecurring()`), a signature-checked webhook, or an
+identity-checked read-back (`getPaymentStatus()`) — stored through
+`normaliseProviderStatus()` (trimmed, uppercased). Nothing else writes it: creating a request
+or a hosted checkout, picking a payment method, cash / card terminal / waive, a Product Set
+moving to `pending_payment`, a member returning from or cancelling the hosted page, or a
+provider answer that carries no status. An answer with no status still decides its outcome
+from the provider's `success` flag, exactly as before; it simply stores nothing. A later
+answer with no status never erases one already received (`COALESCE(?, provider_status)`).
+
+The normalized payment status is `normalizePaymentStatus(provider_status)` and nothing else:
+`NULL` provider status → `NULL` normalized status (rendered `—`), with no fallback to the
+request's or the Billing Event's internal status. The one overlay kept is the refund ledger's
+`refunded` / `partially_refunded` on a collected payment. A Member's aggregated Payment
+Status (#2574, `memberPaymentStatusSql()`) is a different, documented read and keeps its
+fallback to the attempt's internal status.
 
 #### A cancelled Billing Event stays cancelled (#2533 stage 2)
 
@@ -1472,6 +1493,8 @@ pure rules live in `api/src/domain/storedCards.ts` (including `cardRemovalBlock(
 is refused while any assignment is `active`/`paused` with a `next_billing_date`, because the
 run skips a card-less assignment *silently*); the provider call, insert and reads live in
 `api/src/api/card-updates.ts`.
+
+**The payment's description is the purchase's name** (#3288). A checkout that charges a Purchase (a Product Set's Save & Pay, a standalone cart checkout, a direct one-time purchase, and any retry raised on such a checkout's Billing Event) sends the purchase's canonical name (`purchases.name`, e.g. `Gym Name - Compra - 23/11/2026 11:56`) as the provider's `description`, the very string its Billing Event carries (#3287). Where the purchase is created inside the checkout's transaction (a split-off cart, a direct purchase), the name is planned before the provider call (`planCheckoutPurchase()`) and the transaction refuses with `409 cart_changed` if the purchase it ends up charging is named otherwise. A payment no purchase owns keeps its generic description (`Membership fee`). The card-statement `descriptor` (25 characters at most, MONEI) is a different field and is not sent.
 
 ### Money rules
 

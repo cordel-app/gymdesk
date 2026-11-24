@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { DetailsModalField as ModalField, DetailsModalSection as ModalSection } from '@/components/DetailsModalFields';
 import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
 import { localeLabel } from '@/lib/localeLabels';
 import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
@@ -1238,22 +1239,6 @@ export default function ProductsPage() {
           load();
         }}
       />
-    </div>
-  );
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function ModalSection({ title }: { title: string }) {
-  return <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</div>;
-}
-
-function ModalField({ label, value, hint }: { label: string; value: string; hint?: string | null }) {
-  return (
-    <div>
-      {label && <span style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>}
-      <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>{value}</p>
-      {hint && <p style={valueHintStyle}>{hint}</p>}
     </div>
   );
 }
