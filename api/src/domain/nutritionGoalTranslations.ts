@@ -28,7 +28,7 @@ export const GOAL_DESCRIPTION_MAX_LENGTH = 1000;
  * `personal_goal_translations` (migration 292). One module serves both kinds, so
  * the rules (fallback, replace-all, omit-keeps) cannot drift between them.
  */
-export type TranslatedGoalKind = 'nutrition' | 'personal' | 'base_personal' | 'base_nutrition';
+export type TranslatedGoalKind = 'nutrition' | 'personal' | 'base_personal' | 'base_nutrition' | 'base_meal';
 
 // `read` is what a SELECT goes through: for Personal Goals the translation catalogue
 // view (#1849 stage 2e: System goals' from the Base table), otherwise the table itself.
@@ -39,6 +39,9 @@ const KIND_TABLES: Record<TranslatedGoalKind, { table: string; fk: string; read?
   base_personal: { table: 'base_personal_goal_translations', fk: 'base_personal_goal_id' },
   // #1849 N2: the Base Nutrition Goals' own junction (migration 321).
   base_nutrition: { table: 'base_nutrition_goal_translations', fk: 'base_nutrition_goal_id' },
+  // #3328: Cordel's Base Meals (migration 478) — a name and a description per locale,
+  // the same shape and rules, so they reuse this one implementation.
+  base_meal: { table: 'base_meal_translations', fk: 'base_meal_id' },
 };
 
 export interface GoalTranslation {

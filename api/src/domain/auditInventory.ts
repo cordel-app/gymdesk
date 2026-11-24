@@ -52,6 +52,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "base_payment_method_translations": ["parent", "base_payment_methods"],
   "base_personal_goal_translations": ["parent", "base_personal_goals"],
   "base_nutrition_goal_translations": ["parent", "base_nutrition_goals"],
+  "base_meal_translations": ["parent", "base_meals"],
   "base_nutrition_library_item_categories": ["parent", "base_nutrition_library_items"],
   "base_nutrition_library_item_qualities": ["parent", "base_nutrition_library_items"],
   "base_nutrition_library_item_translations": ["parent", "base_nutrition_library_items"],
