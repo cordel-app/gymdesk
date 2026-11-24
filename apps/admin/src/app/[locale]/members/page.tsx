@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { MEMBER_PLAN_STATUS_FILTER_VALUES, memberPlanStatusLabelKey } from '@/lib/memberPlanStatus';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { canAccessModule, canWriteFeature, canWriteModule } from '@/config/permissions';
@@ -74,7 +75,6 @@ const emptyForm = {
 // #2574: the Normalized Payment Status vocabulary of the latest unsettled Billing Event.
 const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired', 'canceled', 'refunded', 'partially_refunded'] as const;
 const ACCESS_RIGHTS = ['granted', 'to_be_reviewed', 'revoked'] as const;
-const ENROLLMENT_STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 
 // ─── List columns (#928, the #637/#724 column rule) ──────────────────────────
 // The column titles and every collapsed row are laid out from this one
@@ -758,7 +758,7 @@ export default function MembersPage() {
           </div>
           <div className={CELL_CLASS.enrollment_status} style={planStatusCellStyle}>
             {m.enrollment_status
-              ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
+              ? <StatusBadge status={m.enrollment_status} label={t(memberPlanStatusLabelKey(m.enrollment_status))} />
               : <span style={noStatusStyle}>{t('members.enrollment_status_none')}</span>}
           </div>
           <div className={CELL_CLASS.access_rights} style={badgeCellStyle}>
@@ -844,7 +844,7 @@ export default function MembersPage() {
               isAdmin={isAdmin}
               plans={plans}
               statuses={[
-                { key: 'header_plan_status', status: m.enrollment_status, label: m.enrollment_status ? t(`members.enrollment_status_${m.enrollment_status}`) : t('members.enrollment_status_none') },
+                { key: 'header_plan_status', status: m.enrollment_status, label: m.enrollment_status ? t(memberPlanStatusLabelKey(m.enrollment_status)) : t('members.enrollment_status_none') },
                 { key: 'header_payment_status', status: m.payment_status, label: m.payment_status ? t(`members.payment_status_${m.payment_status}`) : t('members.payment_status_none') },
                 { key: 'header_access_rights', status: m.access_rights ?? 'granted', label: t(`members.access_rights_${m.access_rights ?? 'granted'}`) },
               ]}
@@ -917,7 +917,7 @@ export default function MembersPage() {
             value={enrollmentStatusFilter}
             onChange={handleEnrollmentFilter}
             allLabel={t('members.all_enrollment_statuses')}
-            options={ENROLLMENT_STATUSES.map((s) => ({ value: s, label: t(`members.enrollment_status_${s}`) }))}
+            options={MEMBER_PLAN_STATUS_FILTER_VALUES.map((s) => ({ value: s, label: t(memberPlanStatusLabelKey(s)) }))}
             style={filterControlStyle}
           />
         </FilterField>
