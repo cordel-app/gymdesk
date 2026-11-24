@@ -97,6 +97,14 @@ export interface InitialPaymentLike {
     source?: 'plan' | 'product' | null;
     /** #3284 — every treatment that explains the amount, classified by the server, in order applied. */
     reasons?: LineReasonLike[];
+    /**
+     * #3284 stage 2 — the line's stable identity (the target of Waive / Revert waive), whether the
+     * staff Initial Payment waive applies to it, and whether it may be waived. The server decides all
+     * three; absent on a read that carries none.
+     */
+    line_key?: string | null;
+    waived?: boolean;
+    waivable?: boolean;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;
@@ -211,6 +219,8 @@ export function discountEntries(l: InitialPaymentLike['lines'][number]): Discoun
     return d ? [{ ...d, typeKey: null }] : [];
   }
   return reasons.map((r) => {
+    // #3284 stage 2 — the staff waive is worded whole ("Manual adjustment: Initial Payment waive").
+    if (r.code === INITIAL_PAYMENT_WAIVE_CODE) return { key: 'checkout_reason_initial_payment_waive', typeKey: null };
     const typeKey = LINE_REASON_TYPE_KEYS[r.type] ?? null;
     if (r.type === 'discount' && r.name) return { text: r.name, typeKey };
     if (r.action === 'waive') return { key: 'checkout_discount_waived', typeKey };
@@ -222,6 +232,21 @@ export function discountEntries(l: InitialPaymentLike['lines'][number]): Discoun
     }
     return { key: 'checkout_discount_direct', typeKey };
   });
+}
+
+/** #3284 stage 2 — the reason code of the staff Initial Payment waive (`initialPaymentWaiver.ts`). */
+export const INITIAL_PAYMENT_WAIVE_CODE = 'initial_payment_waive';
+
+/**
+ * #3284 stage 2 — the per-line action of the Initial Payment table: Revert waive on a waived line,
+ * Waive otherwise (disabled when the server says the line cannot be waived), none on a line the
+ * read gave no identity. The server re-judges every request; this only picks the button.
+ */
+export function initialPaymentLineAction(l: Pick<InitialPaymentLike['lines'][number], 'line_key' | 'waived' | 'waivable'>):
+  { kind: 'waive' | 'revert'; lineKey: string; enabled: boolean } | null {
+  if (!l.line_key) return null;
+  if (l.waived) return { kind: 'revert', lineKey: l.line_key, enabled: true };
+  return { kind: 'waive', lineKey: l.line_key, enabled: l.waivable === true };
 }
 
 /** #2890 — a line a benefit or discount takes all the way down to €0.00. */
