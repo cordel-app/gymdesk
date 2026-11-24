@@ -1,10 +1,10 @@
 // #3288 — a purchase's canonical name: the gym's name, the request language's label, and the
-// creation instant in the gym's Time & Localization; and migration 474's copy of the rule agrees.
+// creation instant in the gym's Time & Localization; and migration 475's copy of the rule agrees.
 import { describe, expect, it } from 'vitest';
 import { canonicalPurchaseName, purchaseNameLabel } from '../domain/purchaseName';
 import { formatGymDateTime } from '../domain/gymLocalization';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const migration = require('../infra/migrations/474_purchase_canonical_name.js');
+const migration = require('../infra/migrations/475_purchase_canonical_name.js');
 
 const at = new Date('2026-11-23T10:56:00Z');
 const madrid = { time_zone: 'Europe/Madrid', date_format: 'DD/MM/YYYY', time_format: '24h' };
@@ -35,7 +35,7 @@ describe('canonical purchase name (#3288)', () => {
     expect(canonicalPurchaseName({ gymName: long, locale: 'en', createdAt: at, settings: madrid }).startsWith(long)).toBe(true);
   });
 
-  it("migration 474's copy agrees with the domain rule for an English legacy name", () => {
+  it("migration 475's copy agrees with the domain rule for an English legacy name", () => {
     for (const s of [madrid, { time_zone: 'America/New_York', date_format: 'MM/DD/YYYY', time_format: '12h' },
       { time_zone: 'Asia/Tokyo', date_format: 'YYYY-MM-DD', time_format: '24h' }]) {
       expect(migration.legacyPurchaseName('Gym X', at.toISOString(), s))

@@ -184,13 +184,13 @@ describe('a purchase name, generated once in canonical form (#3288)', () => {
   });
 });
 
-describe('migration 474 converts legacy names and backfills their events (#3288, #3287)', () => {
+describe('migration 475 converts legacy names and backfills their events (#3288, #3287)', () => {
   const knexLike = {
     raw: async (sql: string, bindings: unknown[] = []) => [(await db.query<any>(sql, bindings as any[])).rows],
     schema: { hasColumn: async () => true },
   };
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const migration = require('../infra/migrations/474_purchase_canonical_name.js');
+  const migration = require('../infra/migrations/475_purchase_canonical_name.js');
 
   it('an ISO name becomes the English canonical name, its events copy it, and nothing else moves', async () => {
     const m = await member();

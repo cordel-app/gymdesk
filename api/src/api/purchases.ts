@@ -321,6 +321,9 @@ export async function syncPurchase(tx: Conn, gymId: string, purchaseId: number):
       for (const table of STAMPED_TABLES) {
         await tx.query(`UPDATE ${table} SET purchase_id = ? WHERE gym_id = ? AND purchase_id = ?`, [purchaseId, gymId, otherId]);
       }
+      // #3284 stage 2: and so do its staff Initial Payment waivers (a key both carts waived stays once).
+      await tx.query('UPDATE IGNORE initial_payment_waivers SET purchase_id = ? WHERE gym_id = ? AND purchase_id = ?',
+        [purchaseId, gymId, otherId]);
       await tx.query('DELETE FROM purchases WHERE id = ?', [otherId]);
     }
   }

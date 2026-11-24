@@ -25,6 +25,8 @@ import { writeEventLines } from './billing-event-lines-writer';
 import { initialEventNameFor } from './billing-event-name';
 import { loadInitialChargeTaxRates } from './initial-charge-taxes';
 import { initialLineTaxRate, withLineTax } from '../domain/initialChargeTaxes';
+import { applyInitialPaymentWaivers, initialPaymentLineKeys, lineWaivable } from '../domain/initialPaymentWaiver';
+import { loadInitialPaymentWaivers } from './initial-payment-waivers';
 
 /**
  * #1325 PR 2d — the editing lock's SQL half, and the checkout of a ProductSet.
@@ -163,6 +165,11 @@ export async function initialCharge(
     previousProductSetId?: number | null;
     /** #2949 stage 5: include the owner's standalone cart purchases (default); a plan preview does not. */
     includeCart?: boolean;
+    /**
+     * #3284 stage 2: apply the cart's stored Initial Payment waivers (default). Only the waive
+     * route asks for the charge as priced, to judge a new waiver against it.
+     */
+    applyWaivers?: boolean;
   } = {},
 ): Promise<InitialCharge | null> {
   // #2125 stage 14: a version that adds a plan beside the running ones carries them as inherited
@@ -231,7 +238,9 @@ export async function initialCharge(
     }
   }
   // #2746: the one-time Products in the cart are paid by the same initial payment, at their frozen amount.
-  const setPurchases = (await chargeableSetPurchases(exec, gymId, productSetId)).map(purchaseChargeLine);
+  const chargeable = await chargeableSetPurchases(exec, gymId, productSetId);
+  const setPurchaseIds = chargeable.map((p) => p.id);
+  const setPurchases = chargeable.map(purchaseChargeLine);
   // #2949 stage 5: and so are the owner's standalone cart purchases, so one Save & Pay pays the whole cart.
   const cart = opts.includeCart === false ? [] : await cartPurchasesForCharge(exec, gymId, productSetId);
   const purchases = [...setPurchases, ...cart.map(cartChargeLine)];
@@ -240,10 +249,22 @@ export async function initialCharge(
   const engineLines = first.flatMap((e) => e.lines);
   const taxRates = await loadInitialChargeTaxRates(exec, gymId, productSetId,
     engineLines.map((l) => l.product_id).filter((id): id is number => id != null));
-  const lines = [
+  const priced = [
     ...engineLines.map((l) => withLineTax(lineFromSimulation(l), initialLineTaxRate(l, taxRates))),
     ...purchases.map((p) => withLineTax(p.line, initialLineTaxRate({ ...p.line, frozen_rate: p.line.tax_rate_percent }, taxRates))),
   ];
+  // #3284 stage 2: every line's stable identity, then the staff waivers stored on the cart.
+  const keys = initialPaymentLineKeys([
+    ...engineLines.map((l) => ({
+      kind: l.kind, assignmentId: l.user_membership_id, productId: l.product_id,
+      assignedMemberId: l.assigned_member_id ?? null, lineRef: l.line_ref ?? null,
+    })),
+    ...[...setPurchaseIds, ...cart.map((p) => p.id)].map((id) => ({ kind: 'product' as const, purchaseId: id })),
+  ]);
+  const keyed = priced.map((l, i) => ({ ...l, line_key: keys[i] }));
+  const lines = opts.applyWaivers === false
+    ? keyed.map((l) => ({ ...l, waived: false, waivable: lineWaivable(l) }))
+    : applyInitialPaymentWaivers(keyed, await loadInitialPaymentWaivers(exec, gymId, productSetId));
   const planEvent = first.find((e) => e.scheduleKey === PLAN_SCHEDULE_KEY);
   return {
     amount: linesTotal(lines), lines,
@@ -430,13 +451,14 @@ export async function createProductSetCheckout(input: {
  * running one owes only what is new relative to it, dated today; a first
  * version owes its first cycle from its own start date.
  */
-export async function commitCharge(gymId: string, set: any) {
+export async function commitCharge(gymId: string, set: any, exec: Exec = db, opts: { applyWaivers?: boolean } = {}) {
   const nextVersion = set.previous_product_set_id != null;
   const startsAt = nextVersion
     ? todayUtc()
     : (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
-  const charge = await initialCharge(gymId, Number(set.id), startsAt, db, {
+  const charge = await initialCharge(gymId, Number(set.id), startsAt, exec, {
     previousProductSetId: nextVersion ? Number(set.previous_product_set_id) : null,
+    applyWaivers: opts.applyWaivers,
   });
   return { startsAt, charge };
 }

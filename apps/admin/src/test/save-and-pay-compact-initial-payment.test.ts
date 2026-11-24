@@ -29,7 +29,7 @@ describe('#3285 Save & Pay compact Initial Payment', () => {
   it('the modal asks for the compact view, the Summary keeps the full one', () => {
     expect(MODAL).toMatch(/<InitialPaymentSection payment=\{review\.initial_payment\} compact \/>/);
     const panel = SECTIONS.slice(SECTIONS.indexOf('export function CheckoutSummaryPanel'));
-    expect(panel).toMatch(/<InitialPaymentSection payment=\{payment\} \/>/);
+    expect(panel).toMatch(/<InitialPaymentSection payment=\{payment\}( waive=\{waive\})? \/>/);
   });
 
   it('shows exactly Item and Amount (incl. VAT), from each line’s server amount', () => {
