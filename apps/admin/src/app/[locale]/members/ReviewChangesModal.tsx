@@ -206,8 +206,9 @@ export function ReviewChangesModal({
             <p style={cardHintStyle}>{t('review_error_amount')}</p>
           ) : (
             <>
-              {/* #2860 — the same Initial Payment the Summary shows, from the same read. */}
-              <InitialPaymentSection payment={review.initial_payment} />
+              {/* #2860 — the same Initial Payment the Summary shows, from the same read; #3285 — as the
+                  compact Item / Amount list, the totals below it unchanged. */}
+              <InitialPaymentSection payment={review.initial_payment} compact />
               <div style={{ marginBottom: 12 }} />
               {owes && (
                 <div style={{ marginBottom: 12 }}>

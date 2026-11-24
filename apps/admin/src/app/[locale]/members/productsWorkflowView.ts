@@ -95,6 +95,8 @@ export interface InitialPaymentLike {
     proration?: { days: number; period_days: number } | null;
     /** #3270 — the line's persisted source (#3254): `plan`, `product`, or `null` where none applies. */
     source?: 'plan' | 'product' | null;
+    /** #3284 — every treatment that explains the amount, classified by the server, in order applied. */
+    reasons?: LineReasonLike[];
   }>;
   subtotal_excl_tax: number;
   discount_total: number;
@@ -171,9 +173,70 @@ export function discountText(l: InitialPaymentLike['lines'][number]):
   return { key: 'checkout_discount_direct' };
 }
 
+/** #3284 — one treatment of a line as the server classified it (`lineReasons()`). */
+export interface LineReasonLike {
+  type: 'benefit' | 'discount' | 'manual_adjustment';
+  source: string;
+  code: string | null;
+  action: string;
+  value: number | null;
+  name: string | null;
+}
+
+/** #3284 — the locale key of a reason's type label (Benefit / Discount / Manual adjustment). */
+export const LINE_REASON_TYPE_KEYS: Record<LineReasonLike['type'], string> = {
+  benefit: 'checkout_reason_type_benefit',
+  discount: 'checkout_reason_type_discount',
+  manual_adjustment: 'checkout_reason_type_manual_adjustment',
+};
+
+export interface DiscountEntry {
+  /** What the treatment is: a Promotion's name, else a locale key with its values. */
+  text?: string;
+  key?: string;
+  values?: Record<string, string | number>;
+  /** The locale key of its type, `null` for a line read without reasons (a legacy single treatment). */
+  typeKey: string | null;
+}
+
+/**
+ * #3284 — every treatment of a line, each with its type, in the order the engine applied them. The
+ * server classifies (`type`); this only words it. A line the server sent no reasons for falls back
+ * to the single primary treatment (`discountText()`), untyped. `[]` when nothing explains the line.
+ */
+export function discountEntries(l: InitialPaymentLike['lines'][number]): DiscountEntry[] {
+  const reasons = l.reasons ?? [];
+  if (reasons.length === 0) {
+    const d = discountText(l);
+    return d ? [{ ...d, typeKey: null }] : [];
+  }
+  return reasons.map((r) => {
+    const typeKey = LINE_REASON_TYPE_KEYS[r.type] ?? null;
+    if (r.type === 'discount' && r.name) return { text: r.name, typeKey };
+    if (r.action === 'waive') return { key: 'checkout_discount_waived', typeKey };
+    if (r.action === 'percentage_discount' && r.value != null) {
+      return {
+        key: r.code === 'direct_discount' ? 'checkout_discount_direct_percent' : 'checkout_discount_percent',
+        values: { percent: r.value }, typeKey,
+      };
+    }
+    return { key: 'checkout_discount_direct', typeKey };
+  });
+}
+
 /** #2890 — a line a benefit or discount takes all the way down to €0.00. */
 export function lineReducedToZero(l: Pick<InitialPaymentLike['lines'][number], 'amount' | 'discount'>): boolean {
   return l.discount > 0 && l.amount === 0;
+}
+
+/**
+ * #3285 — a line's label in the Save & Pay confirmation's compact list: the item's name, with
+ * its quantity appended (`Locker Rental × 5`) only when more than one unit is charged. The
+ * amount beside it is the server's VAT-inclusive `amount`; nothing here prices anything.
+ */
+export function compactInitialPaymentLabel(l: Pick<InitialPaymentLike['lines'][number], 'name' | 'quantity'>): string {
+  const name = l.name ?? '—';
+  return l.quantity > 1 ? `${name} × ${l.quantity}` : name;
 }
 
 export interface WorkflowInput {

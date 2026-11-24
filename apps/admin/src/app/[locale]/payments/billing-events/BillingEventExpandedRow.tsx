@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
+import { discountEntries, type LineReasonLike } from '../../members/productsWorkflowView';
 import { useApiClient } from '@/lib/apiClient';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -71,7 +72,7 @@ interface BillingEventDetails {
   modified_by: string | null;
   failure_reason: string | null;
   /** #1474: the event's priced components, read-only. */
-  lines?: { id: number; kind: string; source?: string | null; item_name: string; quantity: number; unit_amount: string | null; promotion_name: string | null; amount: string | null }[];
+  lines?: { id: number; kind: string; source?: string | null; item_name: string; quantity: number; unit_amount: string | null; promotion_name: string | null; amount: string | null; reasons?: LineReasonLike[] }[];
   can_retry: boolean;
   can_record_manual_payment: boolean;
   /** #787: the event represents money received, so a receipt may be issued for it. */
@@ -322,7 +323,16 @@ export function ExpandedRow({
                   <tr key={l.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                     <td style={{ padding: '6px 10px' }}>
                       {l.item_name}
-                      {l.promotion_name && <span style={{ color: '#6b7280' }}> ({l.promotion_name})</span>}
+                      {(l.reasons ?? []).length === 0
+                        ? l.promotion_name && <span style={{ color: '#6b7280' }}> ({l.promotion_name})</span>
+                        : discountEntries({ discount: 0, promotion_name: null, treatment_action: null, treatment_value: null, reasons: l.reasons } as any)
+                          // #3284 — the treatments Save & Pay persisted on the line, typed as the Initial Payment showed them.
+                          .map((e, k) => (
+                            <span key={k} data-line-reason={e.typeKey ?? ''} style={{ color: '#6b7280', display: 'block', fontSize: 12 }}>
+                              {e.key ? t(`members.${e.key}`, e.values as any) : e.text}
+                              {e.typeKey ? ` · ${t(`members.${e.typeKey}`)}` : ''}
+                            </span>
+                          ))}
                     </td>
                     <td style={{ padding: '6px 10px' }}>
                       {(() => { const key = lineSourceLabelKey(l.source); return key ? t(`billing_events_page.${key}`) : '—'; })()}

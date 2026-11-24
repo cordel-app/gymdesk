@@ -35,7 +35,9 @@ function locale(code: string): any {
 
 describe('My Membership — the benefits section reads the snapshot (#635 stage 10)', () => {
   it('renders each line\'s own name rather than a benefit-code label', () => {
-    expect(page).toContain('{b.name}');
+    // #3293 — the lines are drawn by the shared `renderPlanLineGroups()`, fed each line's own name.
+    expect(page).toContain('name: b.name,');
+    expect(page).toContain('{r.name}');
     expect(page).not.toContain('membership.benefit.');
     expect(page).not.toContain('benefit_code');
   });
@@ -55,7 +57,8 @@ describe('My Membership — the benefits section reads the snapshot (#635 stage 
   });
 
   it('keys a line per assignment benefit, not per index', () => {
-    expect(page).toContain('key={`${b.category}-${b.product_id}-${b.assigned_member_id ?? \'\'}`}');
+    expect(page).toContain('key: `${b.category}-${b.product_id}-${b.assigned_member_id ?? \'\'}`');
+    expect(page).toContain('key={r.key}');
   });
 
   it('has no recurrence label left over from the retired vocabulary', () => {
@@ -77,5 +80,17 @@ describe('locale parity for the new keys', () => {
     const { membership } = locale(code);
     expect(membership.benefit).toBeUndefined();
     expect(membership.recurrence).toBeUndefined();
+  });
+});
+
+describe('My Plans — items separated by spacing, names in bold (#3292)', () => {
+  it('draws no divider between the lines of a group', () => {
+    expect(page).not.toMatch(/styles\.planLine,\s*\.\.\.rowDividerStyle/);
+    expect(page).toMatch(/planLine: \{(?![^}]*rowDividerStyle)[^}]*marginBottom/);
+  });
+
+  it('renders the Product name bold and its supporting line in regular weight', () => {
+    expect(page).toMatch(/planLineName: \{[^}]*fontWeight: 700/);
+    expect(page).not.toMatch(/planLineMeta: \{[^}]*fontWeight/);
   });
 });

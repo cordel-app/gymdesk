@@ -11,6 +11,7 @@
 // with no money field cannot leak one.
 
 import type { FeeChargeSplit, LineSource } from './billingSimulation';
+import { LINE_REASON_SOURCES, LINE_REASON_TYPES, type LineReason } from './billingEventLines';
 
 /** One line of the commit charge, as `GET /product-sets/:id/review` reports it. */
 export interface ChargeLineLike {
@@ -39,6 +40,25 @@ export interface ChargeLineLike {
   period_days?: number | null;
   /** #3270 — the line's `source` (#3254: `plan` | `product`), `null` where none applies. */
   source?: LineSource | null;
+  /** #3284 — every treatment that explains the amount, classified (`lineReasons()`); `[]` for none. */
+  reasons?: LineReason[];
+}
+
+/** #3284 — a line's reasons as a reader received them (the row shape or the stored rows), validated. */
+export function lineReasonsView(raw: unknown): LineReason[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((r: any) => {
+    const type = r?.type ?? r?.reason_type;
+    if (!(LINE_REASON_TYPES as readonly string[]).includes(type)) return [];
+    if (!(LINE_REASON_SOURCES as readonly string[]).includes(r.source)) return [];
+    return [{
+      type, source: r.source,
+      code: r.code ?? r.reason_code ?? null,
+      action: String(r.action),
+      value: r.value != null ? Number(r.value) : null,
+      name: r.name ?? null,
+    }];
+  });
 }
 
 /**
@@ -61,6 +81,7 @@ export function chargeLineView(l: any): ChargeLineLike {
     prorated_days: l.prorated_days != null ? Number(l.prorated_days) : null,
     period_days: l.period_days != null ? Number(l.period_days) : null,
     source: l.source === 'plan' || l.source === 'product' ? l.source : null,
+    reasons: lineReasonsView(l.reasons),
   };
 }
 
@@ -116,6 +137,12 @@ export interface InitialPaymentLine {
    * `null` for a line no source applies to. Read from the line, never inferred from its name or price.
    */
   source: LineSource | null;
+  /**
+   * #3284 — every treatment that explains the amount, each with its type (Benefit / Discount /
+   * Manual adjustment), in the order applied: the same rows Save & Pay persists on the Billing Event
+   * Line (`billing_event_line_reasons`).
+   */
+  reasons: LineReason[];
 }
 
 export interface InitialPaymentTaxRow {
@@ -183,6 +210,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       fee_split: l.fee_split ?? null,
       proration: lineProration(l),
       source: l.source ?? null,
+      reasons: l.reasons ?? [],
     };
   });
   const taxRows = [...taxes.values()]
