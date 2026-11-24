@@ -56,6 +56,13 @@ export interface LineChartInput {
    * palette colour, `reference` the reference line's muted dashed style.
    */
   legend?: { name: string; kind: 'primary' | 'reference' }[];
+  /**
+   * A vertical marker at one x — #3311's *Today*, which separates what happened
+   * from what is scheduled or forecast. Its label is the page's, already translated.
+   */
+  xMarker?: { value: number; label?: string } | null;
+  /** The smallest gap between two x-axis ticks — a month-labelled time axis passes ~a month. */
+  xMinInterval?: number;
 }
 
 /** What the tooltip renders for one hovered point. Exported so it is assertable. */
@@ -129,7 +136,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       showSymbol: true,
       symbol: 'circle',
       symbolSize: SYMBOL_SIZE,
-      lineStyle: { width: LINE_WIDTH, color },
+      lineStyle: { width: LINE_WIDTH, color, type: entry.dashed ? 'dashed' : 'solid' },
       itemStyle: { color, borderColor: theme.surface, borderWidth: 1 },
       areaStyle: input.area ? { color, opacity: 0.12 } : undefined,
       emphasis: { scale: 1.4, focus: 'none' },
@@ -160,7 +167,24 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
             }
           : undefined,
       })),
-      markLine: index === 0 && input.reference
+      markLine: index === 0 && input.xMarker
+        ? {
+            silent: true,
+            symbol: 'none',
+            label: {
+              formatter: input.xMarker.label ?? '',
+              show: !!input.xMarker.label,
+              position: 'end',
+              color: theme.text,
+              fontSize: 11,
+            },
+            lineStyle: { color: theme.text, type: 'solid', width: 1 },
+            data: [
+              { xAxis: input.xMarker.value },
+              ...(input.reference ? [{ yAxis: input.reference.value }] : []),
+            ],
+          }
+        : index === 0 && input.reference
         ? {
             silent: true,
             symbol: 'none',
@@ -222,6 +246,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
     },
     xAxis: {
       type: axisType,
+      minInterval: input.xMinInterval,
       axisLine: { lineStyle: { color: theme.axisLine } },
       axisTick: { show: false },
       axisLabel: {

@@ -11,6 +11,7 @@ import {
 import {
   PAYMENTS_TAB_INITIAL_OPEN, initialExpandedEventIds, splitPastEvents, splitPaymentsTabEvents, type PaymentsTabEvent,
 } from './paymentsTabView';
+import { PaymentsTimelineChart } from './PaymentsTimelineChart';
 
 /** A ledger row as the shared Billing Events renderer reads it (#2571). */
 type MemberBillingEvent = PaymentsTabEvent & BillingEventsTableRow;
@@ -19,7 +20,9 @@ type MemberBillingEvent = PaymentsTabEvent & BillingEventsTableRow;
  * #2099 — the Member card's **Payments** tab. Read-only: the member's actual
  * billing events (unresolved ones first, the rest under a collapsed *Past
  * billing events*) and, on expanding one, its own payment transactions
- * (`payment_requests.billing_event_id`). No simulation is read or drawn.
+ * (`payment_requests.billing_event_id`). Since #3311 the tab opens with
+ * *Payments History and Forecast* (`PaymentsTimelineChart`), which reloads
+ * with the ledger after an action.
  * Both lists are Payments → Billing Events' own table (`BillingEventsTable`),
  * header included (#2449 follow-up). Since #2778 the newest past event sits
  * on its own under *Last billing event* (open by default) and is not repeated
@@ -32,12 +35,13 @@ export function MemberPayments({ memberId }: { memberId: number | string }) {
   const gym = useGymFormatSettings();
   const [events, setEvents] = useState<MemberBillingEvent[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [loads, setLoads] = useState(0);
   const [open, setOpen] = useState<{ unresolved: boolean; last: boolean; past: boolean }>({ ...PAYMENTS_TAB_INITIAL_OPEN });
   const flip = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   const load = useCallback(() => {
     apiFetch<{ items: MemberBillingEvent[] }>(`/payments/billing-events?member_id=${memberId}&limit=200`)
-      .then((r) => { setEvents(r.items ?? []); setFailed(false); })
+      .then((r) => { setEvents(r.items ?? []); setFailed(false); setLoads((n) => n + 1); })
       .catch(() => setFailed(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberId]);
@@ -71,6 +75,7 @@ export function MemberPayments({ memberId }: { memberId: number | string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {modal}
+      <PaymentsTimelineChart memberId={memberId} reloadKey={loads} />
       <CollapsibleSection open={open.unresolved} onToggle={() => flip('unresolved')} label={t('members.payments_unresolved')}>
         {unresolved.length === 0
           ? <p style={cardMutedTextStyle}>{t('members.payments_unresolved_empty')}</p>
