@@ -1248,7 +1248,7 @@
     "doc_type_full": "Factura completa",
     "doc_status_issued": "Emitido",
     "doc_status_draft": "Borrador",
-    "doc_status_replaced": "Sustituida por factura completa",
+    "doc_status_replaced": "Sustituida",
     "gen_blocked_exists": "Ya está generado. Ábrelo desde la lista de abajo.",
     "gen_blocked_not_paid": "El recibo solo se puede generar cuando se ha recibido el pago.",
     "gen_blocked_no_amount": "Este evento de facturación no tiene importe que facturar.",
@@ -1263,7 +1263,16 @@
     "full_inv_cancel": "Cancelar",
     "action_details": "Detalles",
     "details_modal_title": "Detalles del evento de facturación",
-    "details_load_error": "No se ha podido cargar el evento de facturación."
+    "details_load_error": "No se ha podido cargar el evento de facturación.",
+    "doc_type_refund_receipt": "Recibo de reembolso",
+    "doc_type_rectifying_simplified": "Factura simplificada rectificativa",
+    "doc_type_rectifying_full": "Factura completa rectificativa",
+    "doc_replaced_by": "Sustituida por {number}",
+    "inv_payment_refunded": "Reembolsado",
+    "op_full_payment": "Pago total",
+    "op_partial_payment": "Pago parcial",
+    "op_full_refund": "Reembolso total",
+    "op_partial_refund": "Reembolso parcial"
   },
   "payment_providers": {
     "title": "Proveedores de pago",

@@ -439,3 +439,32 @@ describe('Pending MONEI refund reconciliation', () => {
     expect((await refundRows(e.billingEventId))[0].status).toBe('pending');
   });
 });
+
+// #3298 stage 1 — the Admin's operation chips read the same rule as the
+// Members App's (#3297): Full / Partial Payment from the money collected,
+// Full / Partial Refund from the refund summary, independent of documents.
+describe('Operation type on the staff list', () => {
+  it('reports neither for an event with no collected payment', async () => {
+    const e = await createEvent(gymId, [{ status: 'failed', method: 'provider', amount: '40.00', name: 'Monei' }]);
+    expect(await listRow(e.memberId, e.billingEventId)).toMatchObject({ payment_type: null, refund_type: null });
+  });
+
+  it('reports a partial payment when the collected amount does not cover the event', async () => {
+    const e = await createEvent(gymId, [{ status: 'completed', method: 'cash', amount: '15.00', name: 'Cash' }]);
+    expect(await listRow(e.memberId, e.billingEventId)).toMatchObject({ payment_type: 'partial', refund_type: null });
+  });
+
+  it('moves from Full Payment to Partial Refund to Full Refund, listing each Refund Receipt with its date', async () => {
+    const e = await paidCash();
+    expect(await listRow(e.memberId, e.billingEventId)).toMatchObject({ payment_type: 'full', refund_type: null });
+    expect((await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'cash', amount: '10' })).status).toBe(201);
+    const partial = await listRow(e.memberId, e.billingEventId);
+    expect(partial).toMatchObject({ payment_type: 'full', refund_type: 'partial' });
+    expect(partial.refund_receipts).toHaveLength(1);
+    expect(typeof partial.refund_receipts[0].issued_at).toBe('string');
+    expect((await post(e.billingEventId, 'refund', { kind: 'full', method: 'cash' })).status).toBe(201);
+    const full = await listRow(e.memberId, e.billingEventId);
+    expect(full).toMatchObject({ payment_type: 'full', refund_type: 'full' });
+    expect(full.refund_receipts).toHaveLength(2);
+  });
+});

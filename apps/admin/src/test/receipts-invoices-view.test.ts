@@ -6,7 +6,7 @@ import en from '../../locales/base/en.json';
 import es from '../../locales/base/es.json';
 import ca from '../../locales/base/ca.json';
 import {
-  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, menuDocumentBlocks, refundReceiptMenuEntries,
+  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, menuDocumentBlocks, operationChipKeys, refundReceiptMenuEntries,
 } from '../app/[locale]/payments/billing-events/receiptsInvoicesView';
 import type { InvoiceRow } from '../app/[locale]/payments/billing-events/verifactuInvoiceView';
 
@@ -28,7 +28,7 @@ describe('Receipts & Invoices section', () => {
   it('labels the menu actions, every type, status and block reason in every locale', () => {
     const keys = [
       'generate_receipt', 'view_receipt', 'generate_full_invoice', 'invoices_empty',
-      ...DOCUMENT_KINDS.map(documentTypeKey), documentStatusKey('issued')!, documentStatusKey('draft')!, documentStatusKey('replaced')!,
+      ...DOCUMENT_KINDS.map((k) => documentTypeKey(k)), documentStatusKey('issued')!, documentStatusKey('draft')!, documentStatusKey('replaced')!,
       'gen_blocked_exists', 'gen_blocked_not_paid', 'gen_blocked_no_amount', 'gen_blocked_read_only',
       'full_inv_name_required', 'full_inv_tax_id_required', 'full_inv_address_required',
       'col_doc_type', 'col_doc_status', 'doc_view',
@@ -111,5 +111,48 @@ describe('refundReceiptMenuEntries (#2935)', () => {
     expect(refundReceiptMenuEntries([
       { id: 7, receipt_number: 'R-2026-0001' }, { id: 9, receipt_number: 'R-2026-0002' },
     ]).map((e) => [e.id, e.labelKey])).toEqual([[7, 'view_refund_receipt_numbered'], [9, 'view_refund_receipt_numbered']]);
+  });
+});
+
+// #3298 stage 1 — operation chips and concrete document-type chips.
+describe('Operation and document chips (#3298)', () => {
+  it('derives the operation chips from the API answer, payment before refund', () => {
+    expect(operationChipKeys({})).toEqual([]);
+    expect(operationChipKeys({ payment_type: 'full' })).toEqual(['op_full_payment']);
+    expect(operationChipKeys({ payment_type: 'partial', refund_type: 'partial' })).toEqual(['op_partial_payment', 'op_partial_refund']);
+    expect(operationChipKeys({ payment_type: 'full', refund_type: 'full' })).toEqual(['op_full_payment', 'op_full_refund']);
+  });
+
+  it('names a rectifying invoice by the kind it rectifies, and lists Refund Receipts as their own documents', () => {
+    expect(documentTypeKey('simplified', true)).toBe('doc_type_rectifying_simplified');
+    expect(documentTypeKey('full', true)).toBe('doc_type_rectifying_full');
+    expect(documentTypeKey('receipt', true)).toBe('doc_type_receipt');
+    const docs = billingDocuments({ number: 'R-0001', issuedAt: null }, [invoice({ id: 7 })],
+      [{ id: 3, receipt_number: 'RR-2026-0001', issued_at: '2026-11-20T10:00:00Z' }]);
+    expect(docs.map((d) => [d.kind, d.number, d.refundReceiptId])).toEqual([
+      ['receipt', 'R-0001', null], ['simplified', 'S-2026-0001', null], ['refund_receipt', 'RR-2026-0001', 3],
+    ]);
+  });
+
+  it('marks a replaced simplified invoice Superseded and names its replacement', () => {
+    const docs = billingDocuments({ number: null, issuedAt: null }, [
+      invoice({ id: 7, replaced_by_invoice_id: 8 }),
+      invoice({ id: 8, invoice_type: 'full', fiscal_number: 'F-2026-0001', replaces_invoice_id: 7 }),
+    ]);
+    expect(docs[0]).toMatchObject({ status: 'replaced', replacedByNumber: 'F-2026-0001' });
+    expect(docs[1].replacedByNumber).toBeNull();
+    expect((en as any).billing_events_page.doc_status_replaced).toBe('Superseded');
+  });
+
+  it('labels every chip and document type in every locale, with no generic "Invoice"', () => {
+    const keys = [
+      'op_full_payment', 'op_partial_payment', 'op_full_refund', 'op_partial_refund',
+      'doc_type_rectifying_simplified', 'doc_type_rectifying_full', 'doc_replaced_by', 'inv_payment_refunded',
+      ...DOCUMENT_KINDS.map((k) => documentTypeKey(k)),
+    ];
+    for (const locale of [en, es, ca] as any[]) {
+      for (const k of keys) expect(locale.billing_events_page[k], k).toBeTruthy();
+    }
+    for (const k of DOCUMENT_KINDS) expect((en as any).billing_events_page[documentTypeKey(k)]).not.toBe('Invoice');
   });
 });

@@ -37,7 +37,7 @@ import {
 } from '../domain/billingEventStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment, waiveBillingEvent } from '../domain/billingEventPayments';
-import { ledgerEventStatus } from '../domain/memberPaymentView';
+import { ledgerEventStatus, paymentCoverage, refundCoverage, type PaymentCoverage } from '../domain/memberPaymentView';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
@@ -377,6 +377,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       currency: string | null;
       membership_status: string | null;
       latest_tx_status: string | null;
+      collected_amount: string | null;
       event_billing_date: Date | string | null; is_scheduled: number | boolean;
       from_product_set: number | boolean;
       latest_provider_status: string | null;
@@ -404,6 +405,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
+              -- #3298: the money collected, for the Full / Partial Payment chip (#3297's rule).
+              (SELECT pr.amount FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id AND pr.transaction_type = 'payment' AND pr.status = 'completed'
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS collected_amount,
               (SELECT pr.provider_status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_provider_status
@@ -459,12 +464,15 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       refunded_amount: string | null;
       refundable_amount: string | null;
       refund_state: string | null;
+      /** #3298: the operation chips, the same rule as the member's (#3297). */
+      payment_type: PaymentCoverage | null;
+      refund_type: PaymentCoverage | null;
       /** #2648 stage 6: the ⋮ menu's Generate Receipt / Generate Complete Invoice. */
       receipt_number: string | null;
       can_issue_receipt: boolean;
       has_full_invoice: boolean;
       /** #2935: the event's Refund Receipts, one per completed refund, oldest first. */
-      refund_receipts: { id: number; receipt_number: string }[];
+      refund_receipts: { id: number; receipt_number: string; issued_at: string | null }[];
     };
 
     // #1325: the persisted, not-yet-executed events of a ProductSet are
@@ -509,12 +517,17 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         refunded_amount: refund?.refunded_amount ?? null,
         refundable_amount: refund?.refundable_amount ?? null,
         refund_state: refund?.refund_state ?? null,
+        payment_type: paymentCoverage(r.collected_amount, r.amount),
+        refund_type: refundCoverage(refund?.refund_state),
         // #2648 stage 6: the same eligibility the Details read reports (#787).
         receipt_number: r.receipt_number ?? null,
         can_issue_receipt: isReceiptableEvent(r.event_type, r.latest_tx_status) && parseFloat(r.amount ?? '0') > 0,
         has_full_invoice: Number(r.has_full_invoice) === 1,
         refund_receipts: (refundReceiptsByEvent.get(Number(r.id)) ?? [])
-          .map((rr) => ({ id: rr.id, receipt_number: rr.receipt_number })),
+          .map((rr) => ({
+            id: rr.id, receipt_number: rr.receipt_number,
+            issued_at: rr.issued_at ? new Date(rr.issued_at).toISOString() : null,
+          })),
         // A transaction needs a membership to hang off, and a charge needs an
         // amount — an event missing either offers no payment action.
         ...(() => {
