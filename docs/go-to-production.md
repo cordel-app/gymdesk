@@ -1382,6 +1382,8 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] **`GoogleService-Info.plist` and `google-services.json`** in
       `apps/mobile/profiles/cordel-fitness/` (both gitignored); `npm run profile:apply` copies
       them into the two projects.
+- [ ] **`GOOGLE_SERVICES_JSON_B64`** in the `pro` GitHub environment (the pro Firebase
+      project's `google-services.json`, base64) so CI's Android builds carry push; dev has its own.
 - [ ] **`aps-environment`** is `development` in `ios/App/App/App.entitlements`; confirm a
       distribution export carries `production`.
 - [ ] Run `npm run profile:apply` before any release build, and check
