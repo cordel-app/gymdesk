@@ -108,3 +108,15 @@ export function deviceToday(now: Date = new Date()): string {
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * #3331 — what My Nutrition's first summary card shows for the selected date.
+ * Today reads *Today*; another day of the current week reads its weekday name;
+ * a day of another week keeps its dd/mm date (#1874). The figures are the
+ * selected day's own, except for today, whose figures are the summary's.
+ */
+export type DayCardLabel = 'today' | 'weekday' | 'date';
+export function dayCardLabel(selectedDate: string, today: string): DayCardLabel {
+  if (selectedDate === today) return 'today';
+  return weekStart(selectedDate) === weekStart(today) ? 'weekday' : 'date';
+}
