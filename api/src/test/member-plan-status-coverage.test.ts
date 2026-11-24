@@ -145,3 +145,42 @@ describe('Member Membership Plan Status counts the plans that cover the Member (
     expect(rows.some((r) => Number(r.id) === covered)).toBe(false);
   });
 });
+
+// #3281 stage 2 (24 Nov clarification): the Member's Plan Status is the exact status of the plan it
+// is derived from — a running plan marked for cancellation in the open Draft reads `to_be_canceled`,
+// never `active`, and after the commit it reads the plan's committed status, never another one.
+describe('Member Membership Plan Status keeps the exact plan status (#3281 stage 2)', () => {
+  const snapshotStatus = async (um: number) => (await db.query<any>(
+    'SELECT status FROM plan_snapshots WHERE gym_id = ? AND anchor_plan_snapshot_id = ? ORDER BY id DESC LIMIT 1',
+    [gymId, um])).rows[0]?.status;
+
+  it('a single plan marked To Be Canceled reads to_be_canceled, then the committed status after Save', async () => {
+    const owner = await member(gymId, 'Pending Cancel Member');
+    const um = await running(owner);
+    expect(await status(owner)).toBe('active');
+
+    const mark = must(await auth(request.post(`/user-memberships/${um}/mark-cancel`)), 'mark-cancel');
+    expect(await snapshotStatus(um)).toBe('to_be_canceled');
+    expect(await status(owner)).toBe('to_be_canceled');
+    expect(await detailStatus(owner)).toBe('to_be_canceled');
+    // the filter offers the value it shows, and `active` no longer matches it
+    const marked = must(await auth(request.get('/members?enrollment_status=to_be_canceled')), 'filter').body as any[];
+    expect(marked.some((r) => Number(r.id) === owner)).toBe(true);
+    const active = must(await auth(request.get('/members?enrollment_status=active')), 'filter').body as any[];
+    expect(active.some((r) => Number(r.id) === owner)).toBe(false);
+
+    must(await auth(request.post(`/product-sets/${mark.body.product_set_id}/activate`)), 'commit');
+    const committed = await snapshotStatus(um);
+    expect(['active_cancel_at_period_end', 'cancelled']).toContain(committed);
+    expect(await status(owner)).toBe(committed);
+    expect(await detailStatus(owner)).toBe(committed);
+  });
+
+  it('reports active_cancel_at_period_end as itself', async () => {
+    const owner = await member();
+    const um = await running(owner);
+    await setStatus(um, 'active_cancel_at_period_end');
+    expect(await status(owner)).toBe('active_cancel_at_period_end');
+    expect(await detailStatus(owner)).toBe('active_cancel_at_period_end');
+  });
+});
