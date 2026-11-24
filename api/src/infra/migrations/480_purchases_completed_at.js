@@ -5,8 +5,8 @@
  * Admin → Member → Products keeps a paid cart visible for one hour after it is paid, or until a
  * newer cart is opened (`domain/paidCartVisibility.ts`). That window needs the moment the cart was
  * paid, persisted rather than remembered by the page. `syncPurchase()` (`api/src/api/purchases.ts`)
- * is the only writer: it stamps the column when the cart enters `completed` and clears it when the
- * cart leaves it.
+ * stamps the column when the cart enters `completed` and clears it when the cart leaves it, and
+ * `createPurchase()` stamps a cart created already `completed`; nothing else writes it.
  *
  * Backfill: a cart already `completed` takes its `modified_at` (the last status write, which is the
  * completion) else its `created_at`. Only the one-hour window reads it, so an approximate value on a
