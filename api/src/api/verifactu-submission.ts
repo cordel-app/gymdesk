@@ -29,7 +29,6 @@ import { logger } from '../lib/logger';
 import { getPrivateDocument, isPrivateStorageConfigured } from '../infra/private-storage';
 import { VERIFACTU_ENVIRONMENT, verifactuSoftwareFromEnv } from '../infra/verifactu-environment';
 import { credentialEncryptionKey, decryptCredentialMaterial } from '../domain/credentialEncryption';
-import { negateTotals } from '../domain/billingInvoice';
 import { dateInZone, verifactuDate, verifactuIssuerNif, type VerifactuInvoiceKind } from '../domain/verifactu';
 import { VERIFACTU_INTEGRATION_TYPE, VERIFACTU_PROVIDER } from '../domain/verifactuRecords';
 import {
@@ -39,7 +38,7 @@ import {
   type AltaSubmission, type AnulacionSubmission, type RecordOutcome, type RecordSubmission, type VerifactuSoftware,
 } from '../domain/verifactuXml';
 import { AeatTransportError, postToAeat } from './verifactu-aeat-client';
-import { loadInvoiceFigures } from './invoice-figures';
+import { loadDocumentFigures } from './invoice-figures';
 import { recordComplianceEvent } from './compliance-audit-events';
 
 const ACTOR = 'System';
@@ -279,7 +278,7 @@ async function loadAnulacionSubmission(tx: Tx, gymId: string, r: any): Promise<A
 /** Everything a record's XML carries beyond its own stored (hashed) fields. */
 async function loadAltaSubmission(tx: Tx, gymId: string, ctx: GymContext, r: any): Promise<AltaSubmission> {
   const { rows: inv } = await tx.query<any>(
-    `SELECT i.billing_event_id, i.customer_name, i.customer_tax_id, i.related_invoice_id, be.amount,
+    `SELECT i.billing_event_id, i.customer_name, i.customer_tax_id, i.related_invoice_id, i.refund_payment_request_id, be.amount,
             o.fiscal_number AS orig_number, o.issued_at AS orig_issued_at,
             ovr.invoice_issue_date AS orig_record_date,
             s.fiscal_number AS replaced_number, s.issued_at AS replaced_issued_at,
@@ -292,14 +291,14 @@ async function loadAltaSubmission(tx: Tx, gymId: string, ctx: GymContext, r: any
        LEFT JOIN verifactu_records svr ON svr.invoice_id = s.id AND svr.record_type = 'alta'
       WHERE i.id = ? AND i.gym_id = ?`, [r.invoice_id, gymId]);
   const i = inv[0];
-  const { lines, totals, fallbackRate } = await loadInvoiceFigures(tx, gymId, i.billing_event_id, parseFloat(i.amount));
+  // #3298 stage 4: signed as the invoice states them (a rectification's own, negated).
+  const { lines, totals, fallbackRate } = await loadDocumentFigures(tx, gymId, i, parseFloat(i.amount));
   const rectifying = r.invoice_kind === 'R1' || r.invoice_kind === 'R5';
-  const sign = rectifying ? -1 : 1;
   // The same lines and fallback rate the PDF's and the record's totals came from.
   const desglose = buildDesglose(
-    lines.map((l) => ({ amount: sign * l.amount, taxRate: l.rate })),
+    lines.map((l) => ({ amount: l.amount, taxRate: l.rate })),
     fallbackRate,
-    rectifying ? negateTotals(totals) : totals,
+    totals,
   );
 
   const previous = await loadPrevious(tx, gymId, r);

@@ -1,9 +1,9 @@
-// #3298 stage 3: a refund that leaves its payment fully refunded issues the
+// #3298 stages 3-4: every completed refund, full or partial, issues a
 // rectifying invoice (R5 for a simplified, R1 for a complete invoice) of the
-// event's standing invoice, linked to the refund; its Refund Receipt stays a
-// separate record. A partial refund, an event with no invoice and an invoice
-// already rectified issue none. Integration — the payment provider and the
-// private bucket are mocked.
+// event's standing invoice, by differences: it states that refund's own figures
+// and is linked to the refund; its Refund Receipt stays a separate record. An
+// event with no invoice and an invoice already cancelled in full issue none.
+// Integration — the payment provider and the private bucket are mocked.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const stored = new Map<string, Buffer>();
@@ -23,6 +23,7 @@ vi.mock('../payments', () => ({
 }));
 
 import { db } from '../infra/db';
+import { loadDocumentFigures } from '../api/invoice-figures';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, ensureTestProductSet,
 } from './helpers';
@@ -75,32 +76,61 @@ const refundIds = async (eventId: number) => (await db.query<any>(
   `SELECT r.id FROM payment_requests r JOIN payment_requests o ON o.id = r.refund_of_payment_request_id
     WHERE o.billing_event_id = ? AND r.transaction_type = 'refund' ORDER BY r.id`, [eventId])).rows.map((r: any) => r.id);
 
+/** The figures an invoice states (`loadDocumentFigures()`), as the PDF and VERI*FACTU read them. */
+async function figuresOf(inv: any) {
+  const { rows: [ev] } = await db.query<any>('SELECT amount FROM billing_events WHERE id = ?', [inv.billing_event_id]);
+  const f = await loadDocumentFigures(db as any, gymId, inv, parseFloat(ev.amount));
+  return { total: f.totals.total, lines: f.lines.map((l) => [l.name, l.amount]) };
+}
+
 describe('Rectifying invoice issued by a refund', () => {
-  it('issues none for a partial refund, then rectifies the simplified invoice once the payment is fully refunded', async () => {
+  it('rectifies each partial refund by differences, until the payment is fully refunded', async () => {
     const eventId = await paidEvent('cash');
     const original = await issue(eventId, { invoice_type: 'simplified' });
     expect(original.status).toBe(201);
 
     expect((await refund(eventId, { kind: 'adhoc', amount: '15.00' })).status).toBe(201);
-    expect(await invoicesOf(eventId)).toHaveLength(1);
+    let invoices = await invoicesOf(eventId);
+    expect(invoices).toHaveLength(2);
+    const [first] = await refundIds(eventId);
+    expect(invoices[1].related_invoice_id).toBe(original.body.id);
+    expect(invoices[1].refund_payment_request_id).toBe(first);
+    expect(await figuresOf(invoices[1])).toEqual({ total: -15, lines: [['Membership fee', -15]] });
 
     expect((await refund(eventId, { kind: 'full' })).status).toBe(201);
-    const invoices = await invoicesOf(eventId);
-    expect(invoices).toHaveLength(2);
-    const rect = invoices[1];
+    invoices = await invoicesOf(eventId);
+    expect(invoices).toHaveLength(3);
+    const rect = invoices[2];
     const [, second] = await refundIds(eventId);
     expect(rect.related_invoice_id).toBe(original.body.id);
     expect(rect.invoice_type).toBe('simplified'); // R5 at VERI*FACTU
     expect(rect.refund_payment_request_id).toBe(second);
     expect(rect.fiscal_number).toMatch(/^R-\d{4}-\d{4}$/);
+    expect(rect.fiscal_number).not.toBe(invoices[1].fiscal_number);
+    // The second states what that refund returned, never the whole invoice again.
+    expect(await figuresOf(rect)).toEqual({ total: -25, lines: [['Membership fee', -25]] });
     // The financial proof is its own record, and the rectification names it.
     const { rows: [rr] } = await db.query<any>('SELECT receipt_number FROM refund_receipts WHERE payment_request_id = ?', [second]);
     expect(rect.rectification_reason).toBe(`Refund ${rr.receipt_number}`);
-    // The original is never edited, and the read reports the link.
+    // The original is never edited, and the read reports both links.
     expect(invoices[0].fiscal_number).toBe(original.body.fiscal_number);
     const list = await auth(request.get(`/payments/billing-events/${eventId}/invoices`));
     expect(list.body.invoices.find((i: any) => i.id === rect.id).refund_payment_request_id).toBe(second);
     expect((await auth(request.get(`/payments/invoices/${rect.id}/pdf`))).status).toBe(200);
+    // Staff cannot cancel in full an invoice refunds have already rectified.
+    expect((await auth(request.post(`/payments/invoices/${original.body.id}/rectify`)).send({ reason: 'manual' })).status).toBe(409);
+  });
+
+  it('states only the lines a Selected Line Items refund returned', async () => {
+    const eventId = await paidEvent('cash');
+    await db.query('UPDATE billing_event_lines SET amount = 30.00 WHERE billing_event_id = ?', [eventId]);
+    const { insertId: lockerLine } = await db.query(
+      `INSERT INTO billing_event_lines (gym_id, billing_event_id, kind, item_name, quantity, amount, tax_rate_percent)
+       VALUES (?, ?, 'product', 'Locker', 1, '10.00', 10)`, [gymId, eventId]);
+    await issue(eventId, { invoice_type: 'simplified' });
+    expect((await refund(eventId, { kind: 'lines', line_ids: [lockerLine] })).status).toBe(201);
+    const rect = (await invoicesOf(eventId)).find((i: any) => i.related_invoice_id != null);
+    expect(await figuresOf(rect)).toEqual({ total: -10, lines: [['Locker', -10]] });
   });
 
   it('issues none when the event has no invoice', async () => {
@@ -126,7 +156,7 @@ describe('Rectifying invoice issued by a refund', () => {
     expect(rect.invoice_type).toBe('full'); // R1 at VERI*FACTU
   });
 
-  it('does not rectify an invoice staff already rectified', async () => {
+  it('does not rectify an invoice staff already cancelled in full', async () => {
     const eventId = await paidEvent('cash');
     const original = await issue(eventId, { invoice_type: 'simplified' });
     expect((await auth(request.post(`/payments/invoices/${original.body.id}/rectify`)).send({ reason: 'manual' })).status).toBe(201);
@@ -148,5 +178,24 @@ describe('Rectifying invoice issued by a refund', () => {
     await issue(pendingEvent, { invoice_type: 'simplified' });
     expect((await refund(pendingEvent, { kind: 'full' })).status).toBe(502);
     expect(await invoicesOf(pendingEvent)).toHaveLength(1);
+  });
+});
+
+describe('VERI*FACTU record of a partial refund rectification', () => {
+  it('reports the refund\'s own negated total as an R5 by differences', async () => {
+    gymId = await createTestGym('Refund Rectification VF Gym');
+    await createTestMembership(gymId, 'admin');
+    await db.query("UPDATE gyms SET cif = '12345678Z', country_code = 'ES' WHERE id = ?", [gymId]);
+    await db.query(
+      `INSERT INTO compliance_integrations (gym_id, country_code, provider, integration_type, enabled)
+       VALUES (?, 'ES', 'verifactu', 'invoice_reporting', 1)`, [gymId]);
+    const eventId = await paidEvent('cash');
+    await issue(eventId, { invoice_type: 'simplified' });
+    expect((await refund(eventId, { kind: 'adhoc', amount: '15.00' })).status).toBe(201);
+    const rect = (await invoicesOf(eventId)).find((i: any) => i.related_invoice_id != null);
+    const { rows: [alta] } = await db.query<any>(
+      "SELECT invoice_kind, invoice_total FROM verifactu_records WHERE invoice_id = ? AND record_type = 'alta'", [rect.id]);
+    expect(alta.invoice_kind).toBe('R5');
+    expect(parseFloat(alta.invoice_total)).toBe(-15);
   });
 });
