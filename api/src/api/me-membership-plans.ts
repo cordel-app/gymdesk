@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { setCartExpiredSql } from '../domain/cartExpiry';
 import { AWAITING_STAFF_SETUP, awaitsStaffSetup } from '../domain/shoppingCart';
+import { refuseIfStaffPreparesCart } from './staff-cart';
 import { refuseUnlessMayAdd } from './family-add-rights';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
@@ -313,6 +314,8 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     if (!memberRows[0]) return res.status(404).json({ error: 'Member profile not found' });
     // #2770: only the Family Owner adds a Membership Plan.
     if (await refuseUnlessMayAdd(res, gymId, memberId)) return;
+    // #3305: nothing is added to a cart staff are still preparing, whatever it holds.
+    if (await refuseIfStaffPreparesCart(res, gymId, memberId)) return;
 
     // #1288 §28: no plan is replaced from the Members App, and a Draft or a
     // payment already in flight blocks a second purchase (stage 4's shared Draft
