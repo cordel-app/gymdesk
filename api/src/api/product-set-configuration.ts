@@ -739,7 +739,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
         `SELECT be.id FROM billing_events be
            JOIN billing_event_lines bl ON bl.billing_event_id = be.id
           WHERE be.gym_id = ? AND be.product_set_id = ? AND be.event_type = 'payment_recorded'
-            AND be.is_scheduled = 0 AND be.billing_date = ?
+            AND be.is_scheduled = 0 AND be.billing_date = ? AND be.cancelled_at IS NULL
             AND bl.product_id IN (${productIds.map(() => '?').join(',')})
           LIMIT 1`,
         [gymId, productSetId, event.date, ...productIds]);

@@ -325,6 +325,8 @@ export async function ensureInitialEvent(tx: Tx, input: {
   const { rows: existing } = await tx.query<{ id: number }>(
     `SELECT be.id FROM billing_events be
       WHERE be.gym_id = ? AND be.product_set_id = ? AND be.event_type = 'payment_recorded'
+        -- #3309: a checkout the member cancelled keeps its event as history; the next Save & Pay writes a new one.
+        AND be.cancelled_at IS NULL
         AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.status = 'completed')
       ORDER BY be.id DESC LIMIT 1 FOR UPDATE`,
     [input.gymId, input.productSetId]);

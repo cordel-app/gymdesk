@@ -53,7 +53,9 @@ import { isDraftAddable, parsePurchaseQuantity, purchaseBlockResponse } from '..
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase, writeDraftPurchase } from './me-products';
 import { AssigneeRefused } from './product-assignee';
-import { cancelPendingProductSet, cancelPendingResponse, reconcileSetPayments } from './product-set-cancellation';
+import {
+  cancelPendingProductSet, cancelPendingResponse, reconcileSetPayments, returnCancelledCheckoutToCart,
+} from './product-set-cancellation';
 import { logger } from '../lib/logger';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 import { loadAppliedPromotionLists } from './member-product-promotions';
@@ -500,6 +502,7 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
     const { rows: ev } = await tx.query<{ id: number; amount: string }>(
       `SELECT be.id, be.amount FROM billing_events be
         WHERE be.gym_id = ? AND be.product_set_id = ? AND be.event_type = 'payment_recorded'
+          AND be.cancelled_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.status = 'completed')
         ORDER BY be.id DESC LIMIT 1 FOR UPDATE`,
       [gymId, Number(set.id)]);
@@ -810,12 +813,30 @@ meProductSetsRouter.get('/', async (req, res) => {
  * guard as the Admin's decides, so a payment whose outcome is unknown or that
  * settled is never discarded (`409 payment_unresolved`).
  */
-/** #2747 — the member cancels their own Pending Payment Product Set (never another member's: 404). */
+/**
+ * #3309 — the member cancels the payment of their own Pending Payment Product Set
+ * (never another member's: 404). The attempt is cancelled and the purchase goes
+ * back to In Cart (`returnCancelledCheckoutToCart()`), so the member can pay again;
+ * the same provider read-back and guard as #2747 come first. Idempotent: a set
+ * already back in the cart answers 200 with nothing changed.
+ */
 meProductSetsRouter.post('/:id/cancel', async (req, res, next) => {
   try {
     const owned = await ownedSet(req, res);
     if (!owned) return;
-    await cancelPendingSet(req, res, owned.set, 'member');
+    const { gymId } = getTenantContext(req);
+    const setId = Number(owned.set.id);
+    await reconcileSetPayments(gymId, setId, logger);
+    const out = await db.transaction((tx) => returnCancelledCheckoutToCart(tx, gymId, setId, { actor: actorOf(req).name }));
+    if (out.kind === 'returned' || out.kind === 'already_in_cart') {
+      if (out.kind === 'returned') {
+        recordAudit(req, { action: 'cancel_payment', entityType: 'product_set', entityId: setId,
+          previous: { status: 'pending_payment' }, next: { status: 'in_cart', source: 'members_app' } });
+      }
+      return res.json({ product_set_id: setId, status: 'in_cart' });
+    }
+    const failure = cancelPendingResponse(out.kind === 'not_found' ? { kind: 'not_found' } : out)!;
+    res.status(failure.status).json(failure.body);
   } catch (err) { next(err); }
 });
 

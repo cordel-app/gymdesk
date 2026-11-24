@@ -19,7 +19,7 @@ export const paymentRequestsRouter = Router();
 
 // Module-level read gate (requireModuleAccess('PAYMENTS')) applied in app.ts
 
-const PR_STATUSES = ['pending', 'completed', 'failed', 'expired'] as const;
+const PR_STATUSES = ['pending', 'completed', 'failed', 'expired', 'cancelled'] as const;
 
 paymentRequestsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   const { gymId } = getTenantContext(req);

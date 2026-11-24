@@ -224,7 +224,8 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
 
     const res = await asMember(clerk, `/${own.id}/cancel`);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('cancelled');
+    // #3309: the member's cancel ends the payment attempt and returns the purchase to the cart.
+    expect(res.body.status).toBe('in_cart');
   });
 
   it('#2746 stage 3: the owner\'s read of a pending set reports the initial event amount the cart pays', async () => {
@@ -269,7 +270,8 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     const memberId = await member(clerk);
     const unassigned = await pending(memberId, { assignment: false });
     lookups.set(unassigned.request.provider_ref, 'PENDING');
-    expect((await asMember(clerk, `/${unassigned.id}/cancel`)).status).toBe(200);
+    // Staff cancel keeps the set as `cancelled` (#2747); a member's own cancel returns it to the cart (#3309).
+    expect((await auth(request.post(`/product-sets/${unassigned.id}/cancel`)).send({})).status).toBe(200);
 
     // The Admin's Member card: listed beside the plans, dated by the cancel.
     const config = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
@@ -315,7 +317,8 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     // The plan the member chose and cancelled: a past plan.
     const chosen = await pending(memberId, { assignment: false });
     lookups.set(chosen.request.provider_ref, 'PENDING');
-    expect((await asMember(clerk, `/${chosen.id}/cancel`)).status).toBe(200);
+    // Staff cancellation keeps a set as `cancelled` (#2747); a member's own returns it to the cart (#3309).
+    expect((await auth(request.post(`/product-sets/${chosen.id}/cancel`)).send({})).status).toBe(200);
     // A later cart whose plan is the previous set's own snapshot, linked rather than
     // added (#2125 M4b-3): cancelling it cancels no plan.
     // A 4-weekly plan bills on a schedule of its own, so this Save & Pay does not
@@ -327,7 +330,7 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
       `INSERT INTO product_set_plan_snapshots (product_set_id, plan_snapshot_id)
        SELECT ?, plan_snapshot_id FROM product_set_plan_snapshots WHERE product_set_id = ?`, [cart.id, chosen.id]);
     lookups.set(cart.request.provider_ref, 'PENDING');
-    expect((await asMember(clerk, `/${cart.id}/cancel`)).status).toBe(200);
+    expect((await auth(request.post(`/product-sets/${cart.id}/cancel`)).send({})).status).toBe(200);
 
     const config = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
     expect(config.status).toBe(200);

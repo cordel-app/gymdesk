@@ -154,7 +154,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             mp.name AS plan_name,
             pu.id AS purchase_id, pu.name AS purchase_name, pu.status AS purchase_status,
             (SELECT be.amount FROM billing_events be
-              WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
+              WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded' AND be.cancelled_at IS NULL
               ORDER BY be.id DESC LIMIT 1) AS amount_due
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
