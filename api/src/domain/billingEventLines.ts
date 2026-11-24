@@ -49,6 +49,16 @@ export interface BillingEventLineRow {
    * `promotion_name` columns above stay the line's single primary treatment for older readers.
    */
   reasons: LineReason[];
+  /**
+   * #3284 stage 2 — the line's stable identity in an Initial Payment (`initialPaymentLineKeys()`),
+   * the target of the per-line waive; persisted as `billing_event_lines.line_key` on the initial
+   * event. Absent on a scheduled obligation's line.
+   */
+  line_key?: string | null;
+  /** #3284 stage 2 — the staff Initial Payment waive applies to this line (carried, not persisted). */
+  waived?: boolean;
+  /** #3284 stage 2 — the line may be waived (a positive amount, no Pre-paid Duration); carried. */
+  waivable?: boolean;
 }
 
 /**
