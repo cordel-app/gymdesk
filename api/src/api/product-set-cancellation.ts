@@ -7,7 +7,7 @@ import { getPaymentProvider } from '../payments';
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { settleFromProviderLookup } from './payment-settlement';
 import { recordStatusChange } from './billing-events';
-import { moveSetPurchases } from './set-purchases';
+import { moveSetPurchases, unlinkSetPurchasesFromEvents } from './set-purchases';
 import { releaseJoinedCartPurchases } from './cart-checkout';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
@@ -183,6 +183,102 @@ export async function cancelPendingProductSet(
   }
   await syncPlanSnapshot(tx, gymId, productSetId);
   return { kind: 'cancelled' };
+}
+
+export type ReturnToCartOutcome =
+  | { kind: 'returned' }
+  | { kind: 'already_in_cart' }
+  | { kind: 'not_found' }
+  | { kind: 'not_allowed'; status: string }
+  | { kind: 'payment_settled' }
+  | { kind: 'payment_unresolved' };
+
+/**
+ * #3309 — the member cancels the payment of their own Pending Payment Product
+ * Set from the Members App: the **payment attempt** ends, the **purchase** does
+ * not. In the caller's transaction, under the set's and its events' row locks:
+ *
+ *  - the same guard as #2747 (`pendingCancellation()`, after the caller's
+ *    `reconcileSetPayments()`): a settled attempt is `payment_settled`, one the
+ *    provider holds in flight or whose outcome is unknown `payment_unresolved`;
+ *  - every open attempt of the set's events (and a Pay-now request the set names)
+ *    is closed as `cancelled` — never `expired`, which stays a real timeout — and
+ *    keeps its reference, amount and method snapshot; `provider_status` is not
+ *    written (#3289);
+ *  - the set's initial events are stamped `cancelled_at` (#2480's mechanism), so
+ *    they stay in the payment history, take no new attempt, and a late payment on
+ *    one is recorded but activates nothing (#2533 stage 2);
+ *  - the set returns to `in_cart` with its configuration untouched (plans,
+ *    beneficiaries, lines, Promotions), its linked one-time purchases and the
+ *    standalone cart purchases its checkout joined go back to the cart (unlinked
+ *    from the cancelled event), and its linked assignment back to `in_cart`;
+ *  - the next Save & Pay writes a new initial event (`ensureInitialEvent()`
+ *    ignores a cancelled one) and a new attempt on it.
+ *
+ * Idempotent: a set already back in the cart answers `already_in_cart` and
+ * changes nothing, so a repeated cancel cannot touch an attempt started after it.
+ * Staff cancellation (`POST /product-sets/:id/cancel`) is unchanged (#2747).
+ */
+export async function returnCancelledCheckoutToCart(
+  tx: Tx, gymId: string, productSetId: number, who: { actor: string | null },
+): Promise<ReturnToCartOutcome> {
+  const { actor } = who;
+  const { rows: sets } = await tx.query<{ id: number; status: string; user_membership_id: number | null; purchase_id: number | null }>(
+    `SELECT ps.id, ps.status, ps.purchase_id, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
+       FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ? FOR UPDATE`,
+    [productSetId, gymId]);
+  const set = sets[0];
+  if (!set) return { kind: 'not_found' };
+  if (set.status === 'in_cart') return { kind: 'already_in_cart' };
+  if (set.status !== 'pending_payment') return { kind: 'not_allowed', status: set.status };
+
+  const { rows: events } = await tx.query<{ id: number }>(
+    `SELECT id FROM billing_events WHERE gym_id = ? AND product_set_id = ? AND cancelled_at IS NULL FOR UPDATE`,
+    [gymId, productSetId]);
+  const eventIds = events.map((e) => Number(e.id));
+  const marks = eventIds.map(() => '?').join(',');
+  const attempts: PendingAttempt[] = [];
+  if (eventIds.length > 0) {
+    const { rows } = await tx.query<{ provider_ref: string | null; provider_status: string | null; status: string }>(
+      `SELECT provider_ref, provider_status, status FROM payment_requests
+        WHERE gym_id = ? AND transaction_type = 'payment' AND billing_event_id IN (${marks})`,
+      [gymId, ...eventIds]);
+    for (const a of rows) attempts.push({ providerRef: a.provider_ref, providerStatus: a.provider_status, status: a.status });
+  }
+  const decision = pendingCancellation(attempts);
+  if (decision !== 'cancellable') return { kind: decision };
+
+  // The standalone cart purchases this checkout joined go back to the cart (unlinked from its events).
+  await releaseJoinedCartPurchases(tx, gymId, productSetId, 'in_cart', actor ?? undefined);
+  if (eventIds.length > 0) {
+    await tx.query(
+      `UPDATE payment_requests SET status = 'cancelled', page_token = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE gym_id = ? AND transaction_type = 'payment' AND status = 'pending' AND billing_event_id IN (${marks})`,
+      [actor, gymId, ...eventIds]);
+    await tx.query(
+      `UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP(), cancelled_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE gym_id = ? AND cancelled_at IS NULL AND id IN (${marks})`,
+      [actor, actor, gymId, ...eventIds]);
+    await unlinkSetPurchasesFromEvents(tx, gymId, productSetId, eventIds);
+  }
+  // A Pay-now request the set names directly (no event) is cancelled too.
+  await tx.query(
+    `UPDATE payment_requests SET status = 'cancelled', page_token = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE gym_id = ? AND status = 'pending' AND id = (SELECT payment_request_id FROM product_sets WHERE id = ?)`,
+    [actor, gymId, productSetId]);
+
+  await moveSetPurchases(tx, gymId, productSetId, 'pending_payment', 'in_cart');
+  await tx.query(
+    // #3274: back in the cart, the purchase takes a fresh two hours (`syncPurchase()`'s status move).
+    `UPDATE product_sets SET status = 'in_cart', payment_request_id = NULL, pending_at = NULL
+      WHERE id = ? AND status = 'pending_payment'`, [productSetId]);
+  if (set.user_membership_id != null) {
+    await writeAssignmentLifecycle(tx, gymId, Number(set.user_membership_id), { status: 'in_cart', from: 'pending_payment', actor });
+  }
+  await syncPlanSnapshot(tx, gymId, productSetId);
+  const { touchPurchases } = await import('./purchases');
+  await touchPurchases(tx, gymId, [set.purchase_id == null ? null : Number(set.purchase_id)]);
+  return { kind: 'returned' };
 }
 
 /** HTTP status and body for a cancel outcome; `null` means success. */
