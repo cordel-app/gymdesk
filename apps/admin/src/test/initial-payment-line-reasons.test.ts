@@ -1,6 +1,6 @@
 // #3284 — the Initial Payment's Benefit / discount cell words every treatment the server classified.
 import { describe, expect, it } from 'vitest';
-import { discountEntries } from '@/app/[locale]/members/productsWorkflowView';
+import { discountEntries, initialPaymentLineAction } from '@/app/[locale]/members/productsWorkflowView';
 
 const base = {
   name: 'Kit', quantity: 1, unit_price: 100, line_total: 100, discount: 28,
@@ -25,5 +25,22 @@ describe('discountEntries (#3284)', () => {
   it('a line with no reasons falls back to its single treatment, untyped; nothing taken off is empty', () => {
     expect(discountEntries(base)).toEqual([{ key: 'checkout_discount_percent', values: { percent: 20 }, typeKey: null }]);
     expect(discountEntries({ ...base, discount: 0, reasons: [] })).toEqual([]);
+  });
+});
+
+describe('Initial Payment waive (#3284 stage 2)', () => {
+  it('words the staff waive whole, after the line\'s own reasons', () => {
+    const entries = discountEntries({ ...base, amount: 0, discount: 100, reasons: [
+      { type: 'benefit', source: 'membership_plan', code: null, action: 'percentage_discount', value: 20, name: null },
+      { type: 'manual_adjustment', source: 'personal', code: 'initial_payment_waive', action: 'waive', value: null, name: null },
+    ] });
+    expect(entries.at(-1)).toEqual({ key: 'checkout_reason_initial_payment_waive', typeKey: null });
+  });
+
+  it('picks Revert waive on a waived line, Waive otherwise, nothing without a key', () => {
+    expect(initialPaymentLineAction({ line_key: 'a', waived: true, waivable: false })).toEqual({ kind: 'revert', lineKey: 'a', enabled: true });
+    expect(initialPaymentLineAction({ line_key: 'a', waived: false, waivable: true })).toEqual({ kind: 'waive', lineKey: 'a', enabled: true });
+    expect(initialPaymentLineAction({ line_key: 'a', waived: false, waivable: false })).toEqual({ kind: 'waive', lineKey: 'a', enabled: false });
+    expect(initialPaymentLineAction({ line_key: null })).toBeNull();
   });
 });

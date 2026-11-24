@@ -133,6 +133,23 @@ the proration a line applied beside its name (*Prorated: 9 of 30 days*, `linePro
 `domain/checkoutSummary.ts`, the engine's `prorated_days` / `period_days`), never on a full period
 nor on a Membership Fee whose split charge already states its prorated stretch.
 
+**Waiving one Initial Payment line (#3284 stage 2, migration 474).** While the cart is In Cart,
+staff may waive one line of its Initial Payment (`POST /product-sets/:id/initial-payment/waive`,
+PAYMENTS write, body `{ line_key }`) and revert it (`…/revert-waive`). Each line carries a stable
+`line_key` (`initialPaymentLineKeys()`, `domain/initialPaymentWaiver.ts`: the plan assignment and
+member of a fee or included Product, a recurring line's `line_ref`, a one-time purchase's id; a
+repeated identity takes `#2`, `#3`). The waiver is a row of `initial_payment_waivers` on the cart
+(`purchases`), and `initialCharge()` applies it after the engine priced the line: amount and net
+0, quantity and regular price kept, the original reasons kept plus a `manual_adjustment` reason
+coded `initial_payment_waive`. So the review's `amount_due`, the payment request, the cash/card/
+Monei pay flows and the persisted `billing_event_lines` (which store the same `line_key`) are one
+figure; the engine, the plan, its Promotions and every recurring obligation are untouched, and the
+zero line still marks its date as paid up for the scheduled pass. Two waivers are refused rather
+than guessed: a Membership Fee that collects a Pre-paid Duration (`prepaid_fee`: the pre-paid
+periods would stay prepaid yet unpaid), and one that would take the whole Initial Payment to zero
+(`would_leave_nothing_to_pay`: a zero charge writes no initial Billing Event, so the first period
+would be charged as an obligation). A stored waiver whose line no longer exists applies to nothing.
+
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
 current plan exactly as it was, and the pending row is discarded through `POST /:id/close`,
 which cancels the pending version with it (`cancelPendingSetForAssignment()`; refused with
@@ -1476,6 +1493,8 @@ pure rules live in `api/src/domain/storedCards.ts` (including `cardRemovalBlock(
 is refused while any assignment is `active`/`paused` with a `next_billing_date`, because the
 run skips a card-less assignment *silently*); the provider call, insert and reads live in
 `api/src/api/card-updates.ts`.
+
+**The payment's description is the purchase's name** (#3288). A checkout that charges a Purchase (a Product Set's Save & Pay, a standalone cart checkout, a direct one-time purchase, and any retry raised on such a checkout's Billing Event) sends the purchase's canonical name (`purchases.name`, e.g. `Gym Name - Compra - 23/11/2026 11:56`) as the provider's `description`, the very string its Billing Event carries (#3287). Where the purchase is created inside the checkout's transaction (a split-off cart, a direct purchase), the name is planned before the provider call (`planCheckoutPurchase()`) and the transaction refuses with `409 cart_changed` if the purchase it ends up charging is named otherwise. A payment no purchase owns keeps its generic description (`Membership fee`). The card-statement `descriptor` (25 characters at most, MONEI) is a different field and is not sent.
 
 ### Money rules
 

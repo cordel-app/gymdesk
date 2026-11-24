@@ -1,3 +1,4 @@
+import { paymentDescriptionForEvent } from './purchases';
 import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { splitPastBookingAttendees, type PastBookingAttendees } from '../domain/pastBookingAttendees';
 import { familyWalletOf } from './family-wallet';
@@ -2857,7 +2858,8 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       orderId,
       amount,
       currency: 'EUR',
-      description: 'Membership fee',
+      // #3288: a retry of a checkout sends the purchase name its first attempt sent.
+      description: await paymentDescriptionForEvent(db, gymId, openEvent?.eventId, 'Membership fee'),
       memberEmail: um.member_email,
       okUrl: process.env.PAYMENT_OK_URL ?? '',
       koUrl: process.env.PAYMENT_KO_URL ?? '',

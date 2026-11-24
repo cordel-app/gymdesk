@@ -3,7 +3,7 @@ import { expireCarts } from './cart-expiry';
 import { recordPaymentAttempt } from './payment-attempt';
 import { originOf } from '../domain/itemOrigin';
 import { insertPurchase, insertPurchasePromotion, deletePurchase, lockPurchase, updatePurchase } from './purchase-writer';
-import { splitOffCheckout } from './purchases';
+import { checkoutNameStillHolds, planCheckoutPurchase, splitOffCheckout } from './purchases';
 import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -627,7 +627,10 @@ export async function startProductPurchase(
       const purchaseId = await db.transaction(async (tx) => {
         // #3251: the checkout is the draft's purchase (a purchase of its own when its cart holds more).
         const cartId = input.fromDraftId == null ? null
-          : await splitOffCheckout(tx, input.gymId, input.memberId, [input.fromDraftId], actorName);
+          : await splitOffCheckout(tx, input.gymId, input.memberId, [input.fromDraftId], actorName, checkoutPlan.planned);
+      if (cartId != null && !(await checkoutNameStillHolds(tx, input.gymId, cartId, checkoutPlan.name))) {
+        throw Object.assign(new Error('The cart changed; read it again'), { status: 409, code: 'cart_changed' });
+      }
         if (input.fromDraftId != null) {
           await deletePurchase(tx, input.gymId, input.fromDraftId, { memberId: input.memberId, status: IN_CART_PURCHASE_STATUS });
         }
@@ -681,12 +684,14 @@ export async function startProductPurchase(
   const pageToken = crypto.randomUUID();
   const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
 
+  // #3288: the payment's description is the canonical name of the purchase it charges.
+  const checkoutPlan = await planCheckoutPurchase(db, input.gymId, input.fromDraftId == null ? [] : [input.fromDraftId]);
   const provider = getPaymentProvider();
   const result = await provider.createPaymentRequest({
     orderId,
     amount: toMinorUnits(snapshot.amount),
     currency: snapshot.currency,
-    description: snapshot.product_name,
+    description: checkoutPlan.name,
     memberEmail: input.memberEmail,
     // The return pages are told what came back, the way #788 established —
     // here so the hosted page's own consent sentence, and anything the member
@@ -760,7 +765,7 @@ export async function startProductPurchase(
         // #1693: the validity agreed at purchase time.
         validityDays: row.validity_days == null ? null : Number(row.validity_days),
         origin: originOf(!!input.staff), assignedMemberId, createdBy: actorName,
-        paymentRequestId, billingEventId, cartId,
+        paymentRequestId, billingEventId, cartId, plannedName: checkoutPlan.planned,
       });
 
       // #1118 §7 — the application, frozen beside the purchase it priced. In

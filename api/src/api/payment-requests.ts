@@ -1,3 +1,4 @@
+import { paymentDescriptionForEvent } from './purchases';
 import { resolvePayerFor } from './payer-resolution';
 import { recordPaymentAttempt } from './payment-attempt';
 import crypto from 'crypto';
@@ -140,7 +141,8 @@ paymentRequestsRouter.post(
         orderId,
         amount,
         currency: 'EUR',
-        description: 'Membership fee',
+        // #3288: a retry of a checkout sends the purchase name its first attempt sent.
+        description: await paymentDescriptionForEvent(db, gymId, open?.eventId, 'Membership fee'),
         memberEmail: um.member_email,
         okUrl: process.env.PAYMENT_OK_URL ?? '',
         koUrl: process.env.PAYMENT_KO_URL ?? '',

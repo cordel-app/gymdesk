@@ -42,6 +42,10 @@ export interface ChargeLineLike {
   source?: LineSource | null;
   /** #3284 — every treatment that explains the amount, classified (`lineReasons()`); `[]` for none. */
   reasons?: LineReason[];
+  /** #3284 stage 2 — the line's stable identity and its staff waive state; absent on a read that has none. */
+  line_key?: string | null;
+  waived?: boolean;
+  waivable?: boolean;
 }
 
 /** #3284 — a line's reasons as a reader received them (the row shape or the stored rows), validated. */
@@ -82,6 +86,9 @@ export function chargeLineView(l: any): ChargeLineLike {
     period_days: l.period_days != null ? Number(l.period_days) : null,
     source: l.source === 'plan' || l.source === 'product' ? l.source : null,
     reasons: lineReasonsView(l.reasons),
+    line_key: l.line_key ?? null,
+    waived: l.waived === true,
+    waivable: l.waivable === true,
   };
 }
 
@@ -143,6 +150,14 @@ export interface InitialPaymentLine {
    * Line (`billing_event_line_reasons`).
    */
   reasons: LineReason[];
+  /**
+   * #3284 stage 2 — the line's stable identity (the target of Waive / Revert waive and the
+   * `line_key` its Billing Event Line is written with), whether the staff waive applies to it, and
+   * whether it could be waived. `null` / `false` on a line read without them.
+   */
+  line_key: string | null;
+  waived: boolean;
+  waivable: boolean;
 }
 
 export interface InitialPaymentTaxRow {
@@ -211,6 +226,9 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       proration: lineProration(l),
       source: l.source ?? null,
       reasons: l.reasons ?? [],
+      line_key: l.line_key ?? null,
+      waived: l.waived === true,
+      waivable: l.waivable === true,
     };
   });
   const taxRows = [...taxes.values()]
