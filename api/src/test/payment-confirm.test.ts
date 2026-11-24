@@ -305,10 +305,10 @@ describe('POST /billing/cleanup — asks MONEI before writing a payment off', ()
     monei.payments.set(c.paymentId, { orderId: c.orderId, status: 'PENDING' });
 
     expect((await cleanup()).status).toBe(200);
-    // Expired, then returned to Draft by the same run, which deletes the attempt.
-    const row = await requestRow(c.requestId);
-    expect(row === undefined || row.status === 'expired').toBe(true);
-    expect(await setStatus(c.setId)).toBe('in_cart');
+    // The request is expired; the checkout itself stays pending until its 24 hours are up
+    // (#3307 stage 3 replaced #1991's return to Draft on an expired link).
+    expect(await requestRow(c.requestId)).toMatchObject({ status: 'expired' });
+    expect(await setStatus(c.setId)).toBe('pending_payment');
   });
 
   it('leaves the request pending when MONEI cannot be asked', async () => {

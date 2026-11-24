@@ -695,7 +695,8 @@
       "pending": "Pendent",
       "scheduled": "Programat",
       "recorded": "Registrat",
-      "cancelled": "Cancel·lat"
+      "cancelled": "Cancel·lat",
+      "expired_24h": "Caducat (24 h)"
     },
     "prepaid_payment_month": "Prepagament de {count, plural, one {# mes} other {# mesos}}",
     "prepaid_payment_week": "Prepagament de {count, plural, one {# setmana} other {# setmanes}}",
