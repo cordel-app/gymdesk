@@ -28,7 +28,7 @@ type T = ReturnType<typeof useTranslations>;
 
 // #2480 follow-up: `refunded` / `partially_refunded` are the API's display statuses of a paid event.
 export const BILLING_EVENT_STATUS_VALUES = [
-  'paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled', 'refunded', 'partially_refunded', 'expired_24h',
+  'paid', 'failed', 'pending', 'scheduled', 'waived', 'cancelled', 'refunded', 'partially_refunded', 'expired_24h',
 ] as const;
 
 /** The fields of a list row the header and the actions read. */
@@ -39,7 +39,8 @@ export interface BillingEventHeaderRow {
   amount: string | null;
   currency?: string | null;
   event_type: string;
-  status: string;
+  /** #3332: null when the event type records no payment (no badge). */
+  status: string | null;
   normalized_payment_status?: string | null;
   can_retry?: boolean;
   can_pay_cash?: boolean;
@@ -212,12 +213,15 @@ interface RetryResult {
 /** The label of an event's status badge (a waived event reads *Waived*). */
 export function billingEventStatusLabel(row: Pick<BillingEventHeaderRow, 'status' | 'event_type'>, t: T): string {
   if (row.event_type === 'waived_billing') return t('billing_events_page.status_waived');
+  if (!row.status) return '';
   return (BILLING_EVENT_STATUS_VALUES as readonly string[]).includes(row.status)
     ? t(`billing_events_page.status_${row.status}` as any)
     : row.status;
 }
 
 export function BillingEventStatusBadge({ row, t }: { row: Pick<BillingEventHeaderRow, 'status' | 'event_type'>; t: T }) {
+  // #3332: an event that records no payment (an adjustment) shows its type only.
+  if (!row.status) return <>—</>;
   return <StatusBadge status={row.status} label={billingEventStatusLabel(row, t)} />;
 }
 

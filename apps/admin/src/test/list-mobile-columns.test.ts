@@ -325,7 +325,13 @@ describe('the flex-row lists stage 4 converted are on it', () => {
   }
 
   const PAGES: Stage4Page[] = [
-    { name: 'Training Plan Templates', src: readPage('training-plan-templates'), headerBand: true },
+    // #3334 stage 2: its declaration moved beside the page, shared with Cordel's Base list.
+    {
+      name: 'Training Plan Templates',
+      src: readPage('training-plan-templates')
+        + stripComments(readFileSync(join(APP_DIR, 'training-plan-templates', 'TemplateRowCells.tsx'), 'utf-8')),
+      headerBand: true,
+    },
     { name: 'Workout Templates', src: readPage('workout-templates'), headerBand: true },
     { name: 'Gyms', src: readPage('system', 'gyms'), headerBand: true },
     { name: 'Taxes', src: readPage('financials', 'taxes'), headerBand: true },

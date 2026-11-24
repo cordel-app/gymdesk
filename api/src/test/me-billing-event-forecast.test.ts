@@ -276,8 +276,8 @@ describe('GET /me/billing-events', () => {
     expect(res.status).toBe(200);
     const byId = Object.fromEntries(res.body.items.map((e: any) => [e.id, e]));
     expect(byId[paidId].status).toBe('paid');
-    // A row that records no payment is informational, not paid.
-    expect(byId[changedId].status).toBe('recorded');
+    // A row that records no payment has no payment status (#3332), never paid.
+    expect(byId[changedId].status).toBeNull();
 
     await db.query('DELETE FROM billing_events WHERE id IN (?, ?)', [paidId, changedId]);
     await db.query("UPDATE plan_snapshots SET status = 'cancelled', assignment_status = IF(anchor_plan_snapshot_id = id, 'cancelled', assignment_status) WHERE anchor_plan_snapshot_id = ?", [umId]);

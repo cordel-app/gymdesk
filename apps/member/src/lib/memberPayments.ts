@@ -27,7 +27,8 @@
 /** `payment_requests.status` folded onto the event, as `#640` derives it. */
 import { DEFAULT_GYM_FORMAT, formatGymAmount, formatGymDateOnly, type GymFormatSettings } from './gymFormat';
 
-export type MemberBillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled';
+/** #3332: no `recorded` fallback; `null` = the event records no payment. */
+export type MemberBillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'waived' | 'cancelled';
 
 /** Why a forecast line's charge differs from its regular price. */
 export interface ForecastBenefit {
@@ -93,7 +94,7 @@ export interface MemberBillingEvent {
   /** #2451 — the method's name as snapshotted when the transaction was created; null when none applies. */
   payment_method_name?: string | null;
   /** #1123 §4 — derived by the API's one implementation, never here. */
-  status: MemberBillingEventStatus;
+  status: MemberBillingEventStatus | null;
   /** #3297 — the day the payment is (or was) executed on (`YYYY-MM-DD`, UTC); the API's. */
   scheduled_date?: string | null;
   /** #3297 — whether the money collected covered the amount; null when nothing was collected. */

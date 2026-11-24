@@ -39,7 +39,7 @@ interface BillingEvent extends BillingEventHeaderRow {
   normalized_payment_status?: string | null;
   amount: string | null;
   event_type: string;
-  status: 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled';
+  status: 'paid' | 'failed' | 'pending' | 'scheduled' | 'waived' | 'cancelled' | null;
   currency: string | null;
   /** #640: Retry Payment / Manual payment apply to this row. */
   payment_actions_available: boolean;
@@ -272,7 +272,7 @@ export default function BillingEventsPage() {
     failed: t('billing_events_page.status_failed'),
     pending: t('billing_events_page.status_pending'),
     scheduled: t('billing_events_page.status_scheduled'),
-    recorded: t('billing_events_page.status_recorded'),
+    waived: t('billing_events_page.status_waived'),
     cancelled: t('billing_events_page.status_cancelled'),
   };
 

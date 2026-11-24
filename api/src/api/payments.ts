@@ -348,7 +348,14 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
 
   try {
     // ── Real (past) billing events ──
-    const where: string[] = ['be.gym_id = ?'];
+    // #3332: a retired `status_changed` row is history and never listed, and a
+    // card verification with no attempt says nothing a Billing Event list needs.
+    const where: string[] = [
+      'be.gym_id = ?',
+      "be.event_type <> 'status_changed'",
+      `NOT (be.event_type = 'card_verification'
+            AND NOT EXISTS (SELECT 1 FROM payment_requests prv WHERE prv.billing_event_id = be.id))`,
+    ];
     const params: any[] = [gymId];
     if (q.member_id !== undefined) { where.push('be.member_id = ?'); params.push(q.member_id); }
     if (q.id !== undefined) { where.push('be.id = ?'); params.push(q.id); }
@@ -437,7 +444,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       /** #3251 stage 3: the cart (`purchases`) whose checkout wrote the event; null otherwise. */
       purchase_id: number | null;
       billing_date: string; amount: string | null;
-      event_type: string; status: string; currency: string | null;
+      event_type: string; status: string | null; currency: string | null;
       created_at: string | null; next_payment_date: string | null;
       /** #2565: same value the detail read reports. */
       normalized_payment_status: string | null;

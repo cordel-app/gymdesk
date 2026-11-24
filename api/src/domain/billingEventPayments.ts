@@ -52,7 +52,7 @@ export interface PaymentAttempt {
 
 export interface RetryResult {
   billing_event_id: number;
-  previous_status: BillingEventStatus;
+  previous_status: BillingEventStatus | null;
   new_status: BillingEventStatus;
   attempts: PaymentAttempt[];
   /** True when both attempts failed and the assigned plan was paused. */
@@ -62,7 +62,7 @@ export interface RetryResult {
 export interface ManualPaymentResult {
   method: ManualPaymentMethod;
   billing_event_id: number;
-  previous_status: BillingEventStatus;
+  previous_status: BillingEventStatus | null;
   new_status: BillingEventStatus;
   payment_request_id: number;
   amount: string;
@@ -482,7 +482,7 @@ export async function recordManualPayment(
 
 export interface WaiveResult {
   billing_event_id: number;
-  previous_status: BillingEventStatus;
+  previous_status: BillingEventStatus | null;
   /** The amount the gym gave up; the attempt itself carries 0.00 so no total counts it as money. */
   waived_amount: string;
   reason: string;
