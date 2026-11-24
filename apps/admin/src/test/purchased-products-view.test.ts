@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cartCountdown,
+  purchasePriceCell,
   isPurchaseExpiredError,
   billingEventPath,
   filterPurchasesByStatus,
@@ -168,5 +169,17 @@ describe('purchaseEndDisplay', () => {
     expect(purchaseEndDisplay({ product_type: 'fee', valid_until: null, cancelled_on: null })).toEqual({ kind: 'open_ended' });
     expect(purchaseEndDisplay({ product_type: 'sessions', valid_until: '2026-12-01', cancelled_on: null })).toEqual({ kind: 'date', value: '2026-12-01' });
     expect(purchaseEndDisplay({ product_type: 'other', valid_until: null, cancelled_on: '2026-11-02' })).toEqual({ kind: 'date', value: '2026-11-02' });
+  });
+});
+
+describe('purchasePriceCell (#3359)', () => {
+  const line = { amount: 27, regular_amount: 30, quantity: 2, unit_amount: 13.5, regular_unit_amount: 15 };
+  it('shows the line totals with a quantity × unit breakdown', () => {
+    expect(purchasePriceCell(line, 'base')).toEqual({ total: 30, breakdown: { quantity: 2, unit: 15 } });
+    expect(purchasePriceCell(line, 'final')).toEqual({ total: 27, breakdown: { quantity: 2, unit: 13.5 } });
+  });
+  it('shows no breakdown for a quantity of 1, or when the API gave no unit figure', () => {
+    expect(purchasePriceCell({ ...line, quantity: 1 }, 'final').breakdown).toBeNull();
+    expect(purchasePriceCell({ amount: 27, regular_amount: 30, quantity: 2 }, 'base')).toEqual({ total: 30, breakdown: null });
   });
 });
