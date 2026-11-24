@@ -184,9 +184,25 @@ describe('document links', () => {
 
   it('labels every link and the record type and CSV in every locale', () => {
     for (const locale of [en, es, ca] as any[]) {
-      for (const k of ['doc_link_rectifies', 'doc_link_rectified_by', 'doc_link_replaces', 'vf_invoice_kind', 'vf_csv']) {
+      for (const k of ['doc_link_rectifies', 'doc_link_rectified_by', 'doc_link_replaces', 'doc_link_for_refund', 'doc_link_rectified_in', 'vf_invoice_kind', 'vf_csv']) {
         expect(locale.billing_events_page[k], k).toMatch(/\{(number|kind|csv)\}/);
       }
     }
+  });
+});
+
+// #3298 stage 3 — a refund's receipt and the rectifying invoice its completion issued name each other.
+describe('refund ↔ rectification links', () => {
+  it('links the rectifying invoice to its refund receipt and back', () => {
+    const original = invoice({ id: 1, fiscal_number: 'S-2026-0001' });
+    const rect = invoice({ id: 2, fiscal_number: 'R-2026-0007', related_invoice_id: 1, refund_payment_request_id: 50 });
+    const rr = { id: 9, receipt_number: 'R-2026-0003', payment_request_id: 50 };
+    const other = { id: 10, receipt_number: 'R-2026-0002', payment_request_id: 49 };
+    const docs = billingDocuments({ number: null, issuedAt: null }, [original, rect], [other, rr]);
+    expect(docs.find((d) => d.key === 'invoice-2')?.links).toEqual([
+      { key: 'doc_link_rectifies', number: 'S-2026-0001' }, { key: 'doc_link_for_refund', number: 'R-2026-0003' },
+    ]);
+    expect(docs.find((d) => d.key === 'refund-receipt-9')?.links).toEqual([{ key: 'doc_link_rectified_in', number: 'R-2026-0007' }]);
+    expect(docs.find((d) => d.key === 'refund-receipt-10')?.links).toEqual([]);
   });
 });

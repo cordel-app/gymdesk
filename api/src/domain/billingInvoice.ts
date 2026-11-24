@@ -231,3 +231,28 @@ export function replacementTarget(invoices: EventInvoiceState[]): number | null 
   if (candidates.length === 0) return null;
   return candidates.reduce((m, i) => (i.id < m ? i.id : m), candidates[0].id);
 }
+
+/** #3298 stage 3: why a completed refund issued no rectifying invoice. */
+export type RefundRectificationSkip = 'partial_refund' | 'no_standing_invoice';
+
+/**
+ * #3298 stage 3 — the invoice a completed refund rectifies, or why none is.
+ * Only a refund that leaves the payment fully refunded rectifies anything: the
+ * rectifying invoice cancels its original in full (`negateLines()`, R1/R5 by
+ * differences), so a partial refund — which would need a rectification of part
+ * of the lines — issues none yet. The invoice is the event's standing one:
+ * issued, not itself rectifying, not already rectified, not replaced by a
+ * complete invoice (that one is rectified instead) and not cancelled through a
+ * Registro de Anulación. The latest when, exceptionally, there are several.
+ */
+export function refundRectificationTarget(
+  invoices: EventInvoiceState[], fullyRefunded: boolean,
+): { invoiceId: number } | { skip: RefundRectificationSkip } {
+  if (!fullyRefunded) return { skip: 'partial_refund' };
+  const rectified = new Set(invoices.map((i) => i.relatedInvoiceId).filter((id): id is number => id != null));
+  const replaced = new Set(invoices.map((i) => i.replacesInvoiceId).filter((id): id is number => id != null));
+  const candidates = invoices.filter((i) => i.status === 'issued' && i.relatedInvoiceId == null
+    && !rectified.has(i.id) && !replaced.has(i.id) && !i.hasAnulacion);
+  if (candidates.length === 0) return { skip: 'no_standing_invoice' };
+  return { invoiceId: candidates.reduce((m, i) => (i.id > m ? i.id : m), candidates[0].id) };
+}

@@ -1276,6 +1276,8 @@
     "vf_invoice_kind": "Tipo {kind}",
     "vf_csv": "CSV AEAT: {csv}",
     "doc_link_rectifies": "Rectifica {number}",
+    "doc_link_for_refund": "Por la devolución {number}",
+    "doc_link_rectified_in": "Rectificada en {number}",
     "doc_link_rectified_by": "Rectificada por {number}",
     "doc_link_replaces": "Sustituye {number}"
   },

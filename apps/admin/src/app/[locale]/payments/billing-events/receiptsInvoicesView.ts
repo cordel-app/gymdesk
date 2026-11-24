@@ -21,6 +21,8 @@ export interface RefundReceiptInfo {
   id: number;
   receipt_number: string;
   issued_at?: string | null;
+  /** #3298 stage 3: the refund transaction it documents. */
+  payment_request_id?: number | null;
 }
 
 export interface BillingDocumentRow {
@@ -45,7 +47,7 @@ export interface BillingDocumentRow {
 /** #3298 stage 2: one link from an invoice to another invoice of the same event. */
 export interface DocumentLink {
   /** The `billing_events_page` key the link reads under. */
-  key: 'doc_link_rectifies' | 'doc_link_rectified_by' | 'doc_link_replaces';
+  key: 'doc_link_rectifies' | 'doc_link_rectified_by' | 'doc_link_replaces' | 'doc_link_for_refund' | 'doc_link_rectified_in';
   number: string;
 }
 
@@ -58,7 +60,9 @@ export interface DocumentLink {
  * the simplified invoice it replaces. The replaced simplified invoice's own link
  * is `replacedByNumber`. A reference to an invoice without a number links nothing.
  */
-export function invoiceLinks(inv: InvoiceRow, invoices: InvoiceRow[]): DocumentLink[] {
+export function invoiceLinks(
+  inv: InvoiceRow, invoices: InvoiceRow[], refundReceipts: RefundReceiptInfo[] = [],
+): DocumentLink[] {
   const numberOf = (id: number | null | undefined) =>
     id == null ? null : (invoices.find((i) => i.id === id)?.fiscal_number ?? null);
   const links: DocumentLink[] = [];
@@ -71,7 +75,18 @@ export function invoiceLinks(inv: InvoiceRow, invoices: InvoiceRow[]): DocumentL
   }
   const replaces = numberOf(inv.replaces_invoice_id);
   if (replaces) links.push({ key: 'doc_link_replaces', number: replaces });
+  // #3298 stage 3: a rectifying invoice a refund issued names that refund's receipt.
+  const refundReceipt = inv.refund_payment_request_id == null ? null
+    : refundReceipts.find((rr) => rr.payment_request_id === inv.refund_payment_request_id);
+  if (refundReceipt) links.push({ key: 'doc_link_for_refund', number: refundReceipt.receipt_number });
   return links;
+}
+
+/** #3298 stage 3 — a Refund Receipt's link to the rectifying invoice its refund issued. */
+export function refundReceiptLinks(rr: RefundReceiptInfo, invoices: InvoiceRow[]): DocumentLink[] {
+  if (rr.payment_request_id == null) return [];
+  const inv = invoices.find((i) => i.refund_payment_request_id === rr.payment_request_id && i.fiscal_number);
+  return inv ? [{ key: 'doc_link_rectified_in', number: inv.fiscal_number as string }] : [];
 }
 
 /**
@@ -99,14 +114,14 @@ export function billingDocuments(
       status: replaced ? 'replaced' : inv.status, invoice: inv,
       refundReceiptId: null,
       replacedByNumber: replaced ? (numberById.get(inv.replaced_by_invoice_id as number) ?? null) : null,
-      links: invoiceLinks(inv, invoices),
+      links: invoiceLinks(inv, invoices, refundReceipts),
     });
   }
   for (const rr of refundReceipts) {
     rows.push({
       key: `refund-receipt-${rr.id}`, kind: 'refund_receipt', rectifying: false,
       number: rr.receipt_number, issuedAt: rr.issued_at ?? null, status: 'issued', invoice: null,
-      refundReceiptId: rr.id, replacedByNumber: null, links: [],
+      refundReceiptId: rr.id, replacedByNumber: null, links: refundReceiptLinks(rr, invoices),
     });
   }
   return rows;
