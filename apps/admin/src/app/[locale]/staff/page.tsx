@@ -1016,14 +1016,14 @@ export default function StaffPage() {
     // #798: Edit lives here and nowhere else — the expanded row adds no Edit
     // affordance of any kind.
     const menuItems: ContextMenuItem[] = [
-      { label: t('action_edit'), onClick: () => startEdit(member), disabled: !canWrite, title: readOnlyTitle },
-      { label: t('action_details'), onClick: () => setDetailsMember(member) },
+      { kind: 'edit' as const, label: t('action_edit'), onClick: () => startEdit(member), disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'details' as const, label: t('action_details'), onClick: () => setDetailsMember(member) },
       { label: t('action_duplicate'), onClick: () => handleDuplicate(member), disabled: !canWrite, title: readOnlyTitle },
     ];
     if (member.employment_status === 'active') {
       menuItems.push({ label: t('action_deactivate'), onClick: () => setDeactivating(member), disabled: !canWrite, title: readOnlyTitle });
     }
-    menuItems.push({ label: t('action_delete'), onClick: () => setDeleting(member), danger: true, disabled: !canWrite, title: readOnlyTitle });
+    menuItems.push({ kind: 'delete' as const, label: t('action_delete'), onClick: () => setDeleting(member), danger: true, disabled: !canWrite, title: readOnlyTitle });
 
     return (
       <div key={member.id} style={{ ...cardSurfaceStyle, marginBottom: view === 'cards' ? 0 : 10, overflow: 'hidden' }}>

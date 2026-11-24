@@ -3,14 +3,40 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { alertTextColor } from './formChrome';
 
+/**
+ * #3347: the three actions every menu places by convention — Edit first,
+ * Delete penultimate, Details last. Every other item leaves `kind` unset and
+ * keeps its relative order between them.
+ */
+export type ContextMenuItemKind = 'edit' | 'delete' | 'details';
+
 export interface ContextMenuItem {
   label: string;
+  /** #3347: which standard action this is; the menu orders by it. */
+  kind?: ContextMenuItemKind;
   onClick: () => void;
   danger?: boolean;
   /** #613: shown but not actionable (e.g. a write action for a read-only role). */
   disabled?: boolean;
   /** Tooltip, typically the read-only hint when `disabled`. */
   title?: string;
+}
+
+const KIND_RANK: Record<ContextMenuItemKind | 'other', number> = {
+  edit: 0, other: 1, delete: 2, details: 3,
+};
+
+/**
+ * #3347: the one ordering rule for every ⋮ menu — Edit, the other actions in
+ * the order the page declared them, Delete, Details. Stable, so items of one
+ * rank keep their declared order. Visibility and `disabled` stay the caller's.
+ */
+export function orderContextMenuItems<T extends Pick<ContextMenuItem, 'kind'>>(items: readonly T[]): T[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) =>
+      KIND_RANK[a.item.kind ?? 'other'] - KIND_RANK[b.item.kind ?? 'other'] || a.index - b.index)
+    .map(({ item }) => item);
 }
 
 /**
@@ -79,7 +105,7 @@ export function ContextMenu({ items, ariaLabel, onOpen }: {
           role="menu"
           style={{ ...menuStyle, position: 'fixed', top: pos.top, right: pos.right }}
         >
-          {items.map((item, i) => (
+          {orderContextMenuItems(items).map((item, i) => (
             <button
               key={i}
               role="menuitem"

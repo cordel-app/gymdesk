@@ -489,10 +489,10 @@ export default function SystemGymsPage() {
       : '—';
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetails(gym) },
-      { label: t('edit'), onClick: () => openEdit(gym) },
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(gym) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(gym) },
       { label: t('duplicate'), onClick: () => handleDuplicate(gym) },
-      { label: t('delete'), onClick: () => setDeleting(gym), danger: true },
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(gym), danger: true },
     ];
 
     return (

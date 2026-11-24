@@ -346,7 +346,7 @@ export function AssignedPersonalGoalsSection({
   function renderActions(row: AssignedPersonalGoalRow) {
     return (
       <ContextMenu items={[
-        { label: label('edit'), onClick: () => openInlineEdit(row), disabled: !canWrite, title: readOnlyTitle },
+        { kind: 'edit' as const, label: label('edit'), onClick: () => openInlineEdit(row), disabled: !canWrite, title: readOnlyTitle },
         // #1037 §3/§21 — two writers, two items: a measurement, and a new
         // baseline every later percentage is computed from. Neither is a flag
         // on the other, and both are gated like any write action.
@@ -354,7 +354,7 @@ export function AssignedPersonalGoalsSection({
         { label: label('set_initial_reading'), onClick: () => openReading(row, 'initial'), disabled: !canWrite, title: readOnlyTitle },
         { label: label('unassign'), onClick: () => setDeleting(row), disabled: !canWrite, title: readOnlyTitle, danger: true },
         // Details is always last (#802's rule for a page that fixes its order).
-        { label: label('details'), onClick: () => setDetailRow(row) },
+        { kind: 'details' as const, label: label('details'), onClick: () => setDetailRow(row) },
       ]} />
     );
   }

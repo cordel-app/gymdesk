@@ -9,8 +9,8 @@ const row = readFileSync(join(SRC, 'members', 'MemberExpandedRow.tsx'), 'utf8');
 
 describe('completed nutrition plans are read-only (#2201)', () => {
   it('Assigned Nutrition Plans menu offers Edit only for active plans and Delete not for completed', () => {
-    expect(page).toContain("...(isActive ? [{ label: t('nutrition_plans.edit')");
-    expect(page).toContain("...(plan.status !== 'completed' ? [{ label: t('nutrition_plans.delete')");
+    expect(page).toContain("...(isActive ? [{ kind: 'edit' as const, label: t('nutrition_plans.edit')");
+    expect(page).toContain("...(plan.status !== 'completed' ? [{ kind: 'delete' as const, label: t('nutrition_plans.delete')");
   });
   it('Member Nutrition Plan list hides Edit for completed plans', () => {
     expect(row).toContain("canManageNutrition && p.status !== 'completed' && (");

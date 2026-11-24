@@ -318,14 +318,14 @@ export default function NutritionPlanTemplatesPage() {
   function templateMenuItems(row: NutritionPlanTemplate): ContextMenuItem[] {
     const roTitle = canWrite ? undefined : readOnlyTitle;
     return [
-      { label: t('nutrition_plan_templates.edit'), onClick: () => guardUnsaved(() => startEdit(row)), disabled: !canWrite, title: roTitle },
-      { label: t('nutrition_plan_templates.details'), onClick: () => guardUnsaved(() => setDetailsTemplate(row)) },
+      { kind: 'edit' as const, label: t('nutrition_plan_templates.edit'), onClick: () => guardUnsaved(() => startEdit(row)), disabled: !canWrite, title: roTitle },
+      { kind: 'details' as const, label: t('nutrition_plan_templates.details'), onClick: () => guardUnsaved(() => setDetailsTemplate(row)) },
       { label: t('nutrition_plan_templates.duplicate'), onClick: () => guardUnsaved(() => handleDuplicate(row)), disabled: !canWrite, title: roTitle },
       ...(canResyncWithSystem(row)
         ? [{ label: t('nutrition_plan_templates.resync_with_system'), onClick: () => guardUnsaved(() => handleResync(row)), disabled: !canWrite, title: roTitle }]
         : []),
       ...(row.status === 'active' ? [{ label: t('nutrition_plan_templates.assign_to_member'), onClick: () => guardUnsaved(() => setAssigning(row)), disabled: !canWrite, title: roTitle }] : []),
-      { label: t('nutrition_plan_templates.delete'), onClick: () => guardUnsaved(() => setDeleting(row)), danger: true, disabled: !canWrite, title: roTitle },
+      { kind: 'delete' as const, label: t('nutrition_plan_templates.delete'), onClick: () => guardUnsaved(() => setDeleting(row)), danger: true, disabled: !canWrite, title: roTitle },
     ];
   }
 

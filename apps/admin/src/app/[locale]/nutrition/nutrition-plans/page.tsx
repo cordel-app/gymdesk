@@ -513,12 +513,12 @@ function PlanCard({
   const canEditPlan = canWrite && (isActive || plan.status === 'draft');
   const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
-    ...(isActive ? [{ label: t('nutrition_plans.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
-    { label: t('nutrition_plans.details'), onClick: onDetails },
+    ...(isActive ? [{ kind: 'edit' as const, label: t('nutrition_plans.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
+    { kind: 'details' as const, label: t('nutrition_plans.details'), onClick: onDetails },
     { label: t('nutrition_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
     ...(isActive ? [{ label: t('nutrition_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
     // #2201: a completed plan is read-only — no Edit, no Delete.
-    ...(plan.status !== 'completed' ? [{ label: t('nutrition_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle }] : []),
+    ...(plan.status !== 'completed' ? [{ kind: 'delete' as const, label: t('nutrition_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle }] : []),
   ];
 
   return (

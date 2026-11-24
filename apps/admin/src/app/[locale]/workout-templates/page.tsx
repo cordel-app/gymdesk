@@ -521,14 +521,14 @@ export default function WorkoutTemplatesPage() {
 
     const menuItems: ContextMenuItem[] = isBase
       ? [
-          { label: t('details'), onClick: () => setDetails(wt) },
+          { kind: 'details' as const, label: t('details'), onClick: () => setDetails(wt) },
           { label: t('clone'), onClick: () => handleClone(wt), disabled: !canWrite, title: readOnlyTitle },
         ]
       : [
-          { label: t('details'), onClick: () => setDetails(wt) },
-          { label: t('edit'), onClick: () => openEdit(wt), disabled: !canWrite, title: readOnlyTitle },
+          { kind: 'details' as const, label: t('details'), onClick: () => setDetails(wt) },
+          { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(wt), disabled: !canWrite, title: readOnlyTitle },
           { label: t('duplicate'), onClick: () => handleDuplicate(wt), disabled: !canWrite, title: readOnlyTitle },
-          { label: t('delete'), onClick: () => setDeleting(wt), danger: true, disabled: !canWrite, title: readOnlyTitle },
+          { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(wt), danger: true, disabled: !canWrite, title: readOnlyTitle },
         ];
 
     const h = hierarchies[wt.id];

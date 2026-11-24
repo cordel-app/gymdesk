@@ -432,10 +432,10 @@ export default function NutritionLibraryPage() {
             // (#1301): Edit, Delete (destructive), Details. A deleted item keeps
             // Details alone.
             ...(isGymItem && item.status !== 'deleted' ? [
-              { label: t('nutrition_library.edit'), onClick: () => openInlineEdit(item), disabled: !canWrite, title: readOnlyTitle },
-              { label: t('nutrition_library.delete'), danger: true, onClick: () => setDeleting(item), disabled: !canWrite, title: readOnlyTitle },
+              { kind: 'edit' as const, label: t('nutrition_library.edit'), onClick: () => openInlineEdit(item), disabled: !canWrite, title: readOnlyTitle },
+              { kind: 'delete' as const, label: t('nutrition_library.delete'), danger: true, onClick: () => setDeleting(item), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
-            { label: t('nutrition_library.details'), onClick: () => setDetailItem(item) },
+            { kind: 'details' as const, label: t('nutrition_library.details'), onClick: () => setDetailItem(item) },
           ]} />
         );
       },

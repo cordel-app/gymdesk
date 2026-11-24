@@ -350,9 +350,9 @@ export default function BasePaymentMethodsPage() {
                 <div onClick={(e) => e.stopPropagation()}>
                   <ContextMenu
                     items={[
-                      { label: t('edit'), onClick: () => { setExpanded((p) => new Set(p).add(m.id)); openForm(m); } },
-                      { label: t('details'), onClick: () => setDetails(m) },
-                      { label: t('delete'), onClick: () => setDeleting(m), danger: true },
+                      { kind: 'edit' as const, label: t('edit'), onClick: () => { setExpanded((p) => new Set(p).add(m.id)); openForm(m); } },
+                      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(m) },
+                      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(m), danger: true },
                     ]}
                   />
                 </div>

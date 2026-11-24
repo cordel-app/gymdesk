@@ -141,10 +141,10 @@ export default function CordelWorkoutTemplatesPage() {
                 <td style={{ padding: '10px 8px', textAlign: 'right' }}>
                   <ContextMenu items={[
                     {
-                      label: 'Edit',
+                      kind: 'edit' as const, label: 'Edit',
                       onClick: () => { setEditing(row); setEditName(row.name); setEditDescription(row.description ?? ''); },
                     },
-                    { label: 'Delete', danger: true, onClick: () => setDeleting(row) },
+                    { kind: 'delete' as const, label: 'Delete', danger: true, onClick: () => setDeleting(row) },
                   ]} />
                 </td>
               </tr>

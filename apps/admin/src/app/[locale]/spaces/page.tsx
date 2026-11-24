@@ -434,10 +434,10 @@ export default function SpacesPage() {
       : '—';
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetails(space) },
-      { label: t('edit'), onClick: () => openEdit(space), disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(space) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(space), disabled: !canWrite, title: readOnlyTitle },
       { label: t('duplicate'), onClick: () => handleDuplicate(space), disabled: !canWrite, title: readOnlyTitle },
-      { label: t('delete'), onClick: () => setDeleting(space), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(space), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
 
     return (

@@ -265,10 +265,10 @@ export default function CordelMusclesPage() {
               <ContextMenu
                 ariaLabel={row.name}
                 items={[
-                  { label: t('edit'), onClick: () => { setEditingId(row.id); setExpandedId(row.id); setEditName(row.name); setEditTranslations(row.translations ?? {}); setError(null); } },
-                  { label: t('details'), onClick: () => setDetails(row) },
+                  { kind: 'edit' as const, label: t('edit'), onClick: () => { setEditingId(row.id); setExpandedId(row.id); setEditName(row.name); setEditTranslations(row.translations ?? {}); setError(null); } },
+                  { kind: 'details' as const, label: t('details'), onClick: () => setDetails(row) },
                   {
-                    label: t('delete'), danger: true,
+                    kind: 'delete' as const, label: t('delete'), danger: true,
                     disabled: row.exercise_count > 0,
                     title: row.exercise_count > 0 ? t('in_use', { count: row.exercise_count }) : undefined,
                     onClick: () => setDeleting(row),

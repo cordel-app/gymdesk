@@ -1986,14 +1986,14 @@ export default function PromotionsPage() {
     const editDisabled = !canWrite || sectionEditBusy;
     const menuItems: ContextMenuItem[] = [
       {
-        label: t('edit'),
+        kind: 'edit' as const, label: t('edit'),
         onClick: () => enterEdit(promo),
         disabled: editDisabled,
         title: !canWrite ? readOnlyTitle : sectionEditBusy ? t('edit_busy_hint') : readOnlyTitle,
       },
       { label: t('duplicate'), onClick: () => handleDuplicate(promo), disabled: !canWrite, title: readOnlyTitle },
-      { label: t('delete'), onClick: () => setDeleting(promo), danger: true, disabled: !canWrite, title: readOnlyTitle },
-      { label: t('details'), onClick: () => setDetailFor(promo) },
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(promo), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetailFor(promo) },
     ];
 
     return (

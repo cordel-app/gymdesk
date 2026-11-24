@@ -105,7 +105,7 @@ describe('Centers: inline editing (#800)', () => {
 
     it('offers Edit as a context-menu item wired to startEdit, gated like every write action (AC10, AC13)', () => {
       expect(pageSrc).toMatch(
-        /\{ label: t\('edit'\), onClick: \(\) => startEdit\(center\), disabled: !canWrite, title: readOnlyTitle \}/,
+        /\{ kind: 'edit' as const, label: t\('edit'\), onClick: \(\) => startEdit\(center\), disabled: !canWrite, title: readOnlyTitle \}/,
       );
     });
 

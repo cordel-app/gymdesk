@@ -363,12 +363,12 @@ export default function TaxesPage() {
     const isEditing = editingId === item.id;
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetails(item) },
-      { label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(item) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle },
       item.status === 'active'
         ? { label: t('deactivate'), onClick: () => handleDeactivate(item), disabled: !canWrite, title: readOnlyTitle }
         : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle },
-      ...(!isSystem ? [{ label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
+      ...(!isSystem ? [{ kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
     ];
 
     return (

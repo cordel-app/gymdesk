@@ -126,7 +126,7 @@ describe('Staff: read-only expanded card (#798)', () => {
 
   describe('the context menu is the only way in', () => {
     it('offers Edit as a context-menu item wired to startEdit', () => {
-      expect(pageSrc).toMatch(/menuItems: ContextMenuItem\[\] = \[\s*\{ label: t\('action_edit'\), onClick: \(\) => startEdit\(member\)/);
+      expect(pageSrc).toMatch(/menuItems: ContextMenuItem\[\] = \[\s*\{ kind: 'edit' as const, label: t\('action_edit'\), onClick: \(\) => startEdit\(member\)/);
     });
 
     it('keeps the existing menu items', () => {

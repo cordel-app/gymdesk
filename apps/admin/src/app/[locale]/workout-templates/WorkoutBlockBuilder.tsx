@@ -221,7 +221,7 @@ function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplica
             ariaLabel={t('workout_templates.col_actions')}
             items={[
               { label: t('workout_template_blocks.duplicate'), onClick: onDuplicate },
-              { label: t('workout_template_blocks.delete'), onClick: onDelete, danger: true },
+              { kind: 'delete' as const, label: t('workout_template_blocks.delete'), onClick: onDelete, danger: true },
             ]}
           />
         )}
@@ -587,7 +587,7 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
             ariaLabel={t('workout_templates.col_actions')}
             items={[
               { label: t('block_exercises.duplicate'), onClick: onDuplicate },
-              { label: t('block_exercises.delete'), onClick: onDelete, danger: true },
+              { kind: 'delete' as const, label: t('block_exercises.delete'), onClick: onDelete, danger: true },
             ]}
           />
         </td>

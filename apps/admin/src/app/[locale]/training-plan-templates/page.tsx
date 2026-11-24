@@ -576,16 +576,16 @@ function TemplateCard({
   const roTitle = useReadOnlyTitle(canWrite);
   const menuItems: ContextMenuItem[] = isBase
     ? [
-        { label: t('details'), onClick: onDetails },
+        { kind: 'details' as const, label: t('details'), onClick: onDetails },
         { label: t('clone'), onClick: onClone, disabled: !canWrite, title: roTitle },
         ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
       ]
     : [
-        { label: t('details'), onClick: onDetails },
-        { label: t('edit'), onClick: onEdit, disabled: !canWrite, title: roTitle },
+        { kind: 'details' as const, label: t('details'), onClick: onDetails },
+        { kind: 'edit' as const, label: t('edit'), onClick: onEdit, disabled: !canWrite, title: roTitle },
         { label: t('duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
         ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
-        { label: t('delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
+        { kind: 'delete' as const, label: t('delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
       ];
 
   const descText = template.description

@@ -91,7 +91,7 @@ describe('Billing Event Details modal (#3300)', () => {
   });
 
   it('offers Details last in every real row\'s ⋮ and no View Audit Log there or inline', () => {
-    expect(sharedSrc).toContain("items.push({ label: t('billing_events_page.action_details'), onClick: () => setDetailsId(id) });");
+    expect(sharedSrc).toContain("items.push({ kind: 'details' as const, label: t('billing_events_page.action_details'), onClick: () => setDetailsId(id) });");
     const menu = sharedSrc.slice(sharedSrc.indexOf('function menuItems('), sharedSrc.indexOf('const extraModals'));
     expect(menu.lastIndexOf('action_details')).toBeGreaterThan(menu.lastIndexOf('action_cancel_event'));
     expect(menu).not.toMatch(/audit/i);

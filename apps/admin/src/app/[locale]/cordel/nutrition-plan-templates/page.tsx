@@ -178,14 +178,14 @@ export default function CordelNutritionPlanTemplatesPage() {
   function menuItems(tpl: BaseTemplate): ContextMenuItem[] {
     return [
       {
-        label: t('edit'),
+        kind: 'edit' as const, label: t('edit'),
         onClick: () => {
           setEditing(tpl);
           setEditForm(templateFormFromRow(tpl));
           setFormError(null);
         },
       },
-      { label: t('delete'), danger: true, onClick: () => setDeleting(tpl) },
+      { kind: 'delete' as const, label: t('delete'), danger: true, onClick: () => setDeleting(tpl) },
     ];
   }
 

@@ -128,8 +128,8 @@ export function GoalReadingHistory({
                     <ContextMenu
                       ariaLabel={label('reading_actions_aria')}
                       items={[
-                        { label: label('edit_reading'), onClick: () => setEditing(reading), disabled: !canWrite, title: readOnlyTitle },
-                        { label: label('delete_reading'), onClick: () => { setDeleteError(null); setDeleting(reading); }, disabled: !canWrite, title: readOnlyTitle, danger: true },
+                        { kind: 'edit' as const, label: label('edit_reading'), onClick: () => setEditing(reading), disabled: !canWrite, title: readOnlyTitle },
+                        { kind: 'delete' as const, label: label('delete_reading'), onClick: () => { setDeleteError(null); setDeleting(reading); }, disabled: !canWrite, title: readOnlyTitle, danger: true },
                       ]}
                     />
                   )}

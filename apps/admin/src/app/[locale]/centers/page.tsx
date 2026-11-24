@@ -492,13 +492,13 @@ export default function CentersPage() {
     // #800: Edit lives here and nowhere else — the expanded card adds no Edit
     // affordance of any kind, and the item stays gated like every write action.
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetailsCenter(center) },
-      { label: t('edit'), onClick: () => startEdit(center), disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetailsCenter(center) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => startEdit(center), disabled: !canWrite, title: readOnlyTitle },
       {
         label: t('view_members'),
         onClick: () => router.push(`/${locale}/members?centerId=${center.id}`),
       },
-      { label: t('delete'), onClick: () => setDeleting(center), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(center), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
 
     const contact = [center.email, center.phone, center.address].filter(Boolean) as string[];

@@ -225,9 +225,9 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
               <ContextMenu
                 ariaLabel={t('prof_services_actions_for', { service: row.name })}
                 items={[
-                  { label: t('action_details'), onClick: () => setDetailRow(row) },
+                  { kind: 'details' as const, label: t('action_details'), onClick: () => setDetailRow(row) },
                   {
-                    label: t('prof_services_edit'),
+                    kind: 'edit' as const, label: t('prof_services_edit'),
                     onClick: () => startEdit(row),
                     disabled: !canWrite || editingId === id,
                     title: canWrite ? undefined : readOnlyTitle,

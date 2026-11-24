@@ -929,14 +929,14 @@ export default function ProductsPage() {
     // #1188: Details is always the last option (#802's order), after
     // Activate / Deactivate and after Delete where a row has one.
     const menuItems: ContextMenuItem[] = [
-      { label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle },
       { label: t('duplicate'), onClick: () => handleDuplicate(item), disabled: !canWrite, title: readOnlyTitle },
       ...(item.base_product_id != null ? [{ label: t('resync_system'), onClick: () => handleResync(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       item.status === 'active'
         ? { label: t('deactivate'), onClick: () => handleDeactivate(item), disabled: !canWrite, title: readOnlyTitle }
         : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle },
-      ...(!isSystem ? [{ label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
-      { label: t('details'), onClick: () => setDetails(item) },
+      ...(!isSystem ? [{ kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(item) },
     ];
 
     return (

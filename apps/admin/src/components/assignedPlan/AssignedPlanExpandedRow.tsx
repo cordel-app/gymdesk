@@ -354,12 +354,12 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const menuItems = [
     ...(canEnterEdit
       ? [{
-        label: isEditing ? t('action_done_editing') : t('action_edit'),
+        kind: 'edit' as const, label: isEditing ? t('action_done_editing') : t('action_edit'),
         onClick: () => setIsEditing(!isEditing),
         ...write,
       }].filter(() => !(isEditing && detail.status === 'in_cart'))
       : []),
-    { label: t('action_details'), onClick: () => setShowDetails(true) },
+    { kind: 'details' as const, label: t('action_details'), onClick: () => setShowDetails(true) },
     // #2553: the plan's own Billing Events, across every ProductSet of its chain.
     {
       label: t('action_view_billing_events'),

@@ -105,7 +105,7 @@ export function MemberProgress({ memberId, canWrite }: { memberId: number | stri
               ariaLabel={t('members.progress_exercise_actions')}
               items={[
                 { label: t('members.progress_view_exercise'), onClick: () => setImageFor(item) },
-                { label: t('members.progress_details'), onClick: () => setDetailsFor(item) },
+                { kind: 'details' as const, label: t('members.progress_details'), onClick: () => setDetailsFor(item) },
                 { label: t('members.progress_delete_exercise'), danger: true, disabled: !canWrite,
                   title: canWrite ? undefined : t('common.read_only_hint'), onClick: () => { setDeleteError(false); setDeletingExercise(item); } },
               ]}
@@ -248,9 +248,9 @@ function ExerciseDetail({ base, item, canWrite, onChanged }: {
       <ContextMenu
         ariaLabel={t('members.progress_reading_actions')}
         items={[
-          { label: t('members.progress_edit'), disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
+          { kind: 'edit' as const, label: t('members.progress_edit'), disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
             onClick: () => { setEditingId(r.id); setDraft(draftFromReading(r)); setError(null); } },
-          { label: t('members.progress_delete'), danger: true, disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
+          { kind: 'delete' as const, label: t('members.progress_delete'), danger: true, disabled: !canWrite, title: canWrite ? undefined : t('common.read_only_hint'),
             onClick: () => setDeleting(r) },
         ]}
       />

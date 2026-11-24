@@ -505,7 +505,7 @@ export function GoalLibrarySection({
               { label: label('resync_with_system'), onClick: () => resyncWithSystem(goal), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
             ...(writable ? [
-              { label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },
+              { kind: 'edit' as const, label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
             // #1034 §4 — offered for a System goal as well as the gym's own: a
             // gym may not *edit* a platform row but may certainly assign it,
@@ -521,10 +521,10 @@ export function GoalLibrarySection({
               title: !available ? label('inactive_assign_hint') : readOnlyTitle,
             }] : []),
             ...(writable ? [
-              { label: label('delete'), onClick: () => setDeleting(goal), disabled: !canWrite, title: readOnlyTitle, danger: true },
+              { kind: 'delete' as const, label: label('delete'), onClick: () => setDeleting(goal), disabled: !canWrite, title: readOnlyTitle, danger: true },
             ] : []),
             // Details is always last (#802's rule for a page that fixes its order).
-            { label: label('details'), onClick: () => setDetailGoal(goal) },
+            { kind: 'details' as const, label: label('details'), onClick: () => setDetailGoal(goal) },
     ] as ContextMenuItem[];
   }
 
