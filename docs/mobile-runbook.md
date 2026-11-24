@@ -68,6 +68,13 @@ exception and **crashed the app** — the member came back signed out. Registrat
 now reports `registrationError` instead, and the log line `No google-services.json:
 push is unconfigured` is how to recognise such a build.
 
+**In CI** the Android jobs of `mobile-build.yml` write
+`profiles/<profile>/google-services.json` from the GitHub environment secret
+`GOOGLE_SERVICES_JSON_B64` (the file base64-encoded) before `profile:apply`; an
+environment without it builds with a warning and no push. Dev uses the Firebase
+project `cordel-fitness-dev`; the API's `FCM_SERVICE_ACCOUNTS` in the same
+environment holds that project's service account under `com.cordel.fitness.dev`.
+
 **Check after an apply:** `git diff apps/mobile/ios apps/mobile/android` names
 the Bundle ID / `applicationId`, the display name, the URL schemes and the
 app-link host (`App.entitlements`' `applinks:…` and `@string/app_link_host`,
