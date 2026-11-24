@@ -7,21 +7,31 @@ import { useApiClient } from '@/lib/apiClient';
 import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
-import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { ContextMenu } from '@/components/ContextMenu';
-import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu';
+import { SourceChip } from '@/components/SourceChip';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
+import { CardGrid } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
+import { btnStyle, cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { NutritionPlanTree, Hierarchy } from './NutritionPlanTree';
 import { AssignNutritionPlanDialog, AssignedNutritionPlan } from '../AssignNutritionPlanDialog';
+import { ImportNutritionPlanTemplatesModal, type ImportTemplatesResult } from './ImportNutritionPlanTemplatesModal';
+import { NutritionPlanTemplateCard } from './NutritionPlanTemplateCard';
+import {
+  EMPTY_TEMPLATE_FORM, NUM_DAYS_OPTIONS, canResyncWithSystem, templateFormFromRow,
+  templatePayload, templateSource, toNumDays, type TemplateForm,
+} from './nutritionPlanTemplateList';
 
 export interface NutritionPlanTemplate {
   id: number;
@@ -29,6 +39,12 @@ export interface NutritionPlanTemplate {
   description: string | null;
   status: 'active' | 'inactive' | 'draft';
   day_count: number;
+  /** #3333: the number of days the plan covers, 0..7. */
+  num_days: number;
+  /** #3333: derived by the API — 'system' for a copy of a System template, else 'custom'. */
+  source?: 'system' | 'custom';
+  cloned_from_id?: number | null;
+  gym_id?: string | null;
   created_by: string | null;
   created_at: string;
   modified_at: string | null;
@@ -50,7 +66,7 @@ type SortKey = 'name' | 'created_at' | 'status';
 
 const STATUSES = ['active', 'inactive', 'draft'] as const;
 const LIMIT = 20;
-const emptyForm = { name: '', description: '', status: 'active' };
+const emptyForm: TemplateForm = EMPTY_TEMPLATE_FORM;
 
 // ─── List columns ─────────────────────────────────────────────────────────────
 
@@ -70,21 +86,26 @@ const emptyForm = { name: '', description: '', status: 'active' };
  * expanded tree.
  */
 interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `nutrition_plan_templates` namespace. Absent = no title. */
+  labelKey?: string;
   /** Fixed track width in px — also the minimum for a flexible column. */
   width: number;
   /** Set on a flexible column: it becomes minmax(width, growfr). */
   grow?: number;
 }
 
+// #3333 stage 2: the Exercises list's columns, with Days in place of Primary Muscles.
 const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
+  { key: 'days', labelKey: 'col_days', width: 60, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 90, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 120, mobile: 'secondary' },
+  { key: 'source', labelKey: 'col_source', width: 110, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 80, mobile: 'keep' },
   // The chevron is the row's own affordance rather than a value, so it stays.
-  { key: 'expand', width: 14, mobile: 'keep' },
-  { key: 'name', width: 160, grow: 2, mobile: 'name' },
-  { key: 'description', width: 160, grow: 3, mobile: 'secondary' },
-  { key: 'status', width: 90, mobile: 'keep' },
-  { key: 'created_by', width: 120, mobile: 'secondary' },
-  { key: 'created_at', width: 100, mobile: 'secondary' },
-  { key: 'actions', width: 44, mobile: 'actions' },
+  { key: 'expand', width: 13, mobile: 'keep' },
+  { key: 'actions', width: 32, mobile: 'actions' },
 ];
 
 /** The mobile class a column's header cell and its row cells share (#1011). */
@@ -92,7 +113,7 @@ const CELL_CLASS = listCellClasses(LIST_COLUMNS);
 
 const LIST_COLUMN_GAP = 12;
 /** This list's own horizontal inset — a card row. */
-const ROW_PADDING_X = 14;
+const ROW_PADDING_X = 20;
 
 const LIST_GRID_COLUMNS = LIST_COLUMNS
   .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
@@ -148,6 +169,10 @@ export default function NutritionPlanTemplatesPage() {
 
   // Assign to member
   const [assigning, setAssigning] = useState<NutritionPlanTemplate | null>(null);
+
+  // #3333 stage 2: Cards by default, the saved choice afterwards (the Exercises toggle).
+  const [viewMode, setViewMode] = useExerciseViewMode();
+  const [importOpen, setImportOpen] = useState(false);
 
   // Row expansion + lazy hierarchy cache
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -214,8 +239,10 @@ export default function NutritionPlanTemplatesPage() {
   }
 
   function startEdit(tpl: NutritionPlanTemplate) {
+    // The editor and the plan tree live in the List view.
+    if (viewMode !== 'list') setViewMode('list');
     setEditingId(tpl.id);
-    setEditForm({ name: tpl.name, description: tpl.description ?? '', status: tpl.status });
+    setEditForm(templateFormFromRow(tpl));
     setEditError(null);
     if (!expanded.has(tpl.id)) {
       setExpanded((prev) => { const next = new Set(prev); next.add(tpl.id); return next; });
@@ -230,9 +257,10 @@ export default function NutritionPlanTemplatesPage() {
   }
 
   async function saveEdit() {
-    if (!editForm.name.trim()) { setEditError(t('nutrition_plan_templates.error_required')); return; }
+    const payload = templatePayload(editForm);
+    if (!payload.ok) { setEditError(t(`nutrition_plan_templates.${payload.errorKey}`)); return; }
     setEditSaving(true); setEditError(null);
-    const body = { name: editForm.name.trim(), description: editForm.description.trim() || null, status: editForm.status };
+    const body = payload.body;
     try {
       await apiFetch(`/nutrition-plan-templates/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
       setEditingId(null); setEditForm(emptyForm); load();
@@ -242,9 +270,10 @@ export default function NutritionPlanTemplatesPage() {
   }
 
   async function savePendingNew() {
-    if (!pendingNewForm.name.trim()) { setPendingNewError(t('nutrition_plan_templates.error_required')); return; }
+    const payload = templatePayload(pendingNewForm);
+    if (!payload.ok) { setPendingNewError(t(`nutrition_plan_templates.${payload.errorKey}`)); return; }
     setPendingNewSaving(true); setPendingNewError(null);
-    const body = { name: pendingNewForm.name.trim(), description: pendingNewForm.description.trim() || null, status: pendingNewForm.status };
+    const body = payload.body;
     try {
       await apiFetch('/nutrition-plan-templates', { method: 'POST', body: JSON.stringify(body) });
       setPendingNew(false); setPendingNewForm(emptyForm); load();
@@ -260,6 +289,44 @@ export default function NutritionPlanTemplatesPage() {
     } catch (err: any) {
       toast(err.message ?? t('nutrition_plan_templates.error_generic'));
     }
+  }
+
+  // ─── Resync with System (#3333, the Exercises' #2302) ─────────────────────
+  async function handleResync(tpl: NutritionPlanTemplate) {
+    try {
+      const res = await apiFetch<{ updated: string[] }>(`/nutrition-plan-templates/${tpl.id}/resync-with-system`, { method: 'POST' });
+      toast(res.updated.length > 0 ? t('nutrition_plan_templates.resync_done') : t('nutrition_plan_templates.resync_up_to_date'),
+        res.updated.length > 0 ? 'success' : 'info');
+      load();
+    } catch (err: any) {
+      const code = err?.body?.code;
+      toast(code === 'base_unavailable' ? t('nutrition_plan_templates.resync_base_gone')
+        : code === 'name_taken' ? t('nutrition_plan_templates.resync_name_taken')
+        : (err.message ?? t('nutrition_plan_templates.error_generic')));
+    }
+  }
+
+  function handleImported(result: ImportTemplatesResult) {
+    setImportOpen(false);
+    const parts = [t('nutrition_plan_templates.imported', { n: result.imported.length })];
+    if (result.skipped.length > 0) parts.push(t('nutrition_plan_templates.imported_skipped', { n: result.skipped.length }));
+    toast(parts.join(' '), 'success');
+    load();
+  }
+
+  /** The `⋮` actions of one template — shared by the list row and the card. */
+  function templateMenuItems(row: NutritionPlanTemplate): ContextMenuItem[] {
+    const roTitle = canWrite ? undefined : readOnlyTitle;
+    return [
+      { label: t('nutrition_plan_templates.edit'), onClick: () => guardUnsaved(() => startEdit(row)), disabled: !canWrite, title: roTitle },
+      { label: t('nutrition_plan_templates.details'), onClick: () => guardUnsaved(() => setDetailsTemplate(row)) },
+      { label: t('nutrition_plan_templates.duplicate'), onClick: () => guardUnsaved(() => handleDuplicate(row)), disabled: !canWrite, title: roTitle },
+      ...(canResyncWithSystem(row)
+        ? [{ label: t('nutrition_plan_templates.resync_with_system'), onClick: () => guardUnsaved(() => handleResync(row)), disabled: !canWrite, title: roTitle }]
+        : []),
+      ...(row.status === 'active' ? [{ label: t('nutrition_plan_templates.assign_to_member'), onClick: () => guardUnsaved(() => setAssigning(row)), disabled: !canWrite, title: roTitle }] : []),
+      { label: t('nutrition_plan_templates.delete'), onClick: () => guardUnsaved(() => setDeleting(row)), danger: true, disabled: !canWrite, title: roTitle },
+    ];
   }
 
   async function del() {
@@ -330,36 +397,63 @@ export default function NutritionPlanTemplatesPage() {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
+      {/* Header (#3333 stage 2: the Exercises page's title + actions) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('nutrition_plan_templates.title')}</h1>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            placeholder={t('nutrition_plan_templates.filter_name')}
-            style={filterInputStyle}
-          />
-          <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterInputStyle}>
-            <option value="">{t('nutrition_plan_templates.filter_created_by_all')}</option>
-            {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
-          </select>
-          <StatusFilter
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
-            allLabel={t('status.all')}
-          />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button
-            onClick={() => guardUnsaved(() => { setPendingNewForm(emptyForm); setPendingNewError(null); setPendingNew(true); })}
+            onClick={() => guardUnsaved(() => setImportOpen(true))}
             disabled={!canWrite}
             title={readOnlyTitle}
-            style={readOnlyStyle(btnStyle(), !canWrite)}
+            style={readOnlyStyle(primaryBtnStyle(), !canWrite)}
+          >
+            {t('nutrition_plan_templates.import_system_templates')}
+          </button>
+          <button
+            onClick={() => guardUnsaved(() => {
+              if (viewMode !== 'list') setViewMode('list');
+              setPendingNewForm(emptyForm); setPendingNewError(null); setPendingNew(true);
+            })}
+            disabled={!canWrite}
+            title={readOnlyTitle}
+            style={readOnlyStyle(primaryBtnStyle(), !canWrite)}
           >
             {t('nutrition_plan_templates.add_new')}
           </button>
         </div>
       </div>
+
+      <FilterBar>
+        <FilterField label={t('nutrition_plan_templates.filter_search')} htmlFor="npt-search">
+          <input
+            id="npt-search"
+            type="search"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            placeholder={t('nutrition_plan_templates.filter_name')}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <FilterField label={t('nutrition_plan_templates.label_created_by')} htmlFor="npt-created-by">
+          <select id="npt-created-by" value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
+            <option value="">{t('nutrition_plan_templates.filter_created_by_all')}</option>
+            {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label={t('nutrition_plan_templates.label_status')} htmlFor="npt-status">
+          <StatusFilter
+            id="npt-status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
+            allLabel={t('status.all')}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <div style={{ marginLeft: 'auto' }}>
+          <ExerciseViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      </FilterBar>
 
       {/* Sort controls */}
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 12, fontSize: 13, color: '#666' }}>
@@ -376,11 +470,24 @@ export default function NutritionPlanTemplatesPage() {
         <p style={{ color: '#888' }}>{t('nutrition_plan_templates.loading')}</p>
       ) : rows.length === 0 && !pendingNew ? (
         <p style={{ color: '#888' }}>{t('nutrition_plan_templates.empty')}</p>
+      ) : viewMode === 'cards' ? (
+        <CardGrid>
+          {rows.map((row) => (
+            <NutritionPlanTemplateCard key={row.id} template={row} menuItems={templateMenuItems(row)} />
+          ))}
+        </CardGrid>
       ) : (
-        /* The cards share LIST_GRID_COLUMNS and scroll together, so a narrow
-           viewport scrolls the list instead of the page (#1011). */
+        /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+           together, so a narrow viewport scrolls the list instead of the page (#1011). */
         <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
         <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+        <div className={LIST_GRID_ROW_CLASS} style={headerBandStyle}>
+          {LIST_COLUMNS.map((col) => (
+            <span key={col.key} className={CELL_CLASS[col.key]}>
+              {col.labelKey ? t(`nutrition_plan_templates.${col.labelKey}`) : null}
+            </span>
+          ))}
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {pendingNew && (
             <PendingNewCard
@@ -405,14 +512,9 @@ export default function NutritionPlanTemplatesPage() {
               hierarchy={hierarchies[row.id] ?? null}
               hierLoading={hierLoading.has(row.id)}
               canWrite={!!canWrite}
-              locale={locale}
               t={t}
+              menuItems={templateMenuItems(row)}
               onToggleExpand={() => toggleExpand(row)}
-              onEdit={() => guardUnsaved(() => startEdit(row))}
-              onDetails={() => guardUnsaved(() => setDetailsTemplate(row))}
-              onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
-              onAssign={() => guardUnsaved(() => setAssigning(row))}
-              onDelete={() => guardUnsaved(() => setDeleting(row))}
               onEditFormChange={(f) => setEditForm(f)}
               onSave={saveEdit}
               onCancel={cancelEdit}
@@ -432,6 +534,12 @@ export default function NutritionPlanTemplatesPage() {
           <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={pagerStyle(pageEnd >= total)}>›</button>
         </div>
       )}
+
+      <ImportNutritionPlanTemplatesModal
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onImported={handleImported}
+      />
 
       {/* Assign to member dialog */}
       <AssignNutritionPlanDialog
@@ -475,12 +583,12 @@ export default function NutritionPlanTemplatesPage() {
 
 /* ---- TemplateCard ---- */
 
-interface EditForm { name: string; description: string; status: string }
+type EditForm = TemplateForm;
 
 function TemplateCard({
   template, expanded, editing, editForm, editError, editSaving,
-  hierarchy, hierLoading, canWrite, locale, t,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onAssign, onDelete,
+  hierarchy, hierLoading, canWrite, t, menuItems,
+  onToggleExpand,
   onEditFormChange, onSave, onCancel, onChanged,
 }: {
   template: NutritionPlanTemplate;
@@ -492,28 +600,16 @@ function TemplateCard({
   hierarchy: Hierarchy | null;
   hierLoading: boolean;
   canWrite: boolean;
-  locale: string;
   t: ReturnType<typeof useTranslations>;
+  menuItems: ContextMenuItem[];
   onToggleExpand: () => void;
-  onEdit: () => void;
-  onDetails: () => void;
-  onDuplicate: () => void;
-  onAssign: () => void;
-  onDelete: () => void;
   onEditFormChange: (f: EditForm) => void;
   onSave: () => void;
   onCancel: () => void;
   onChanged: () => void;
 }) {
   const gymFmt = useGymFormatSettings();
-  const roTitle = useReadOnlyTitle(canWrite);
-  const menuItems = [
-    { label: t('nutrition_plan_templates.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle },
-    { label: t('nutrition_plan_templates.details'), onClick: onDetails },
-    { label: t('nutrition_plan_templates.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
-    ...(template.status === 'active' ? [{ label: t('nutrition_plan_templates.assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
-    { label: t('nutrition_plan_templates.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
-  ];
+  const system = templateSource(template) === 'system';
 
   return (
     <div style={cardStyle(editing)}>
@@ -552,6 +648,7 @@ function TemplateCard({
                 ))}
               </select>
             </div>
+            <NumDaysField value={editForm.num_days} t={t} onChange={(n) => onEditFormChange({ ...editForm, num_days: n })} />
           </div>
         </div>
       ) : (
@@ -563,18 +660,22 @@ function TemplateCard({
           tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}
         >
-          <span className={CELL_CLASS.expand} style={{ fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
           <span className={CELL_CLASS.name} title={template.name} style={nameCellStyle}>{template.name}</span>
           <span className={CELL_CLASS.description} style={descCellStyle}>{template.description ?? '—'}</span>
-          <span className={CELL_CLASS.status}>
-            <StatusBadge status={template.status} label={t(`status.${template.status}`)} />
+          <span className={CELL_CLASS.days} style={{ fontSize: 13, color: '#555' }}>{toNumDays(template.num_days)}</span>
+          <span className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
+            {formatDate(template.created_at, gymFmt)}
           </span>
           <span className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {template.created_by ?? '—'}
           </span>
-          <span className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
-            {formatDate(template.created_at, gymFmt)}
+          <span className={CELL_CLASS.source}>
+            <SourceChip system={system} label={system ? t('nutrition_plan_templates.source_system') : t('nutrition_plan_templates.source_custom')} />
           </span>
+          <span className={CELL_CLASS.status}>
+            <StatusBadge status={template.status} label={t(`status.${template.status}`)} />
+          </span>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', display: 'inline-block', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', userSelect: 'none' }}>▾</span>
           <span className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('nutrition_plan_templates.col_actions')} items={menuItems} />
           </span>
@@ -618,11 +719,11 @@ function TemplateCard({
 function PendingNewCard({
   form, error, saving, t, onFormChange, onSave, onCancel,
 }: {
-  form: { name: string; description: string; status: string };
+  form: TemplateForm;
   error: string | null;
   saving: boolean;
   t: ReturnType<typeof useTranslations>;
-  onFormChange: (f: { name: string; description: string; status: string }) => void;
+  onFormChange: (f: TemplateForm) => void;
   onSave: () => void;
   onCancel: () => void;
 }) {
@@ -662,6 +763,7 @@ function PendingNewCard({
               ))}
             </select>
           </div>
+          <NumDaysField value={form.num_days} t={t} onChange={(n) => onFormChange({ ...form, num_days: n })} />
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 14px', borderTop: '1px solid #ececf0', marginTop: 12 }}>
@@ -703,6 +805,8 @@ function DetailsDialog({
         <DetailRow label={t('nutrition_plan_templates.label_name')} value={template.name} />
         <DetailRow label={t('nutrition_plan_templates.label_description')} value={template.description ?? '—'} />
         <DetailRow label={t('nutrition_plan_templates.label_status')} value={<StatusBadge status={template.status} label={t(`status.${template.status}`)} />} />
+        <DetailRow label={t('nutrition_plan_templates.label_num_days')} value={toNumDays(template.num_days)} />
+        <DetailRow label={t('nutrition_plan_templates.col_source')} value={templateSource(template) === 'system' ? t('nutrition_plan_templates.source_system') : t('nutrition_plan_templates.source_custom')} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('nutrition_plan_templates.label_created_at')} value={formatDate(template.created_at, gymFmt)} />
         <DetailRow label={t('nutrition_plan_templates.label_created_by')} value={template.created_by ?? '—'} />
@@ -714,6 +818,22 @@ function DetailsDialog({
         )}
       </div>
     </CrudModal>
+  );
+}
+
+/** #3333: the template's number of days — a choice of 0..7, so an out-of-range value cannot be entered. */
+function NumDaysField({ value, t, onChange }: {
+  value: number;
+  t: ReturnType<typeof useTranslations>;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div>
+      <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_num_days')}</label>
+      <select value={value} onChange={(e) => onChange(Number(e.target.value))} style={{ ...inlineInputStyle, width: 'auto' }}>
+        {NUM_DAYS_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+    </div>
   );
 }
 
@@ -730,7 +850,11 @@ function formatDate(value: string, settings: GymFormatSettings): string {
   return formatGymDate(value, settings);
 }
 
-const filterInputStyle: React.CSSProperties = { padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff' };
+const headerBandStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', padding: `6px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP, marginBottom: 4,
+  color: '#999', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+};
 const pagerStyle = (disabled: boolean): React.CSSProperties => ({
   background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '4px 12px',
   cursor: disabled ? 'default' : 'pointer', color: disabled ? '#bbb' : '#333', fontSize: 16,

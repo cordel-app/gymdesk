@@ -160,3 +160,38 @@ describe('PUT /platform/nutrition-plan-templates/:id/goals/:gid', () => {
     if (systemFoodId) await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [systemFoodId]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The Base list (#3333 stage 2): Days column and name search
+// ---------------------------------------------------------------------------
+
+describe('GET /platform/nutrition-plan-templates — list', () => {
+  const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const ids: number[] = [];
+
+  afterAll(async () => {
+    if (ids.length > 0) await db.query(`DELETE FROM nutrition_plan_templates WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+  });
+
+  it('reports num_days and filters by name', async () => {
+    for (const [name, days] of [[`Keto ${suffix}`, 5], [`Vegan ${suffix}`, 7]] as const) {
+      const res = await request
+        .post('/platform/nutrition-plan-templates')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .send({ name, status: 'active', num_days: days });
+      expect(res.status).toBe(201);
+      ids.push(res.body.id);
+    }
+    const all = await request.get('/platform/nutrition-plan-templates').set('Authorization', TEST_AUTH_HEADER);
+    expect(all.status).toBe(200);
+    const keto = all.body.find((r: any) => r.id === ids[0]);
+    expect(Number(keto.num_days)).toBe(5);
+    expect(keto.gym_id).toBeNull();
+
+    const filtered = await request
+      .get(`/platform/nutrition-plan-templates?name=${encodeURIComponent(`Vegan ${suffix}`)}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.map((r: any) => r.id)).toEqual([ids[1]]);
+  });
+});

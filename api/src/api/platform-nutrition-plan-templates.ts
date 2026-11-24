@@ -112,9 +112,12 @@ platformNutritionPlanTemplatesRouter.get('/', requireSuperadmin, async (req, res
     const params: any[] = [];
     if (status) { where.push('npt.status = ?'); params.push(status); }
     else        { where.push("npt.status != 'deleted'"); }
+    // #3333 stage 2: the Base list's search box, matched on the name as the gym list's is.
+    const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+    if (name) { where.push('npt.name LIKE ?'); params.push(`%${name}%`); }
 
     const { rows } = await db.query(
-      `SELECT npt.id, npt.name, npt.description, npt.status, npt.created_at, npt.created_by, npt.modified_at, npt.modified_by,
+      `SELECT npt.id, npt.gym_id, npt.name, npt.description, npt.num_days, npt.status, npt.created_at, npt.created_by, npt.modified_at, npt.modified_by,
               (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count
        FROM nutrition_plan_templates npt
        WHERE ${where.join(' AND ')}
