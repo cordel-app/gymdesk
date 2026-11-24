@@ -23,10 +23,10 @@ export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'expired' |
 /** The status vocabulary the Billing Events view filters and badges on. */
 export type BillingEventStatus =
   | 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled'
-  | 'refunded' | 'partially_refunded';
+  | 'refunded' | 'partially_refunded' | 'expired_24h';
 
 export const BILLING_EVENT_STATUSES = [
-  'paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled', 'refunded', 'partially_refunded',
+  'paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled', 'refunded', 'partially_refunded', 'expired_24h',
 ] as const;
 
 /**
@@ -43,7 +43,12 @@ export const BILLING_EVENT_STATUSES = [
 export function displayBillingEventStatus(
   status: BillingEventStatus,
   refundState: string | null | undefined,
+  expired: boolean = false,
 ): BillingEventStatus {
+  // #3307 stage 3: a checkout's initial event the 24-hour expiry closed (`billing_events.expired_at`,
+  // stamped with `cancelled_at`) reads **24h expired** rather than Cancelled. Display only, like the
+  // refund states: every other reader sees the event cancelled.
+  if (expired && status === 'cancelled') return 'expired_24h';
   if (status !== 'paid') return status;
   if (refundState === 'full') return 'refunded';
   if (refundState === 'partial') return 'partially_refunded';

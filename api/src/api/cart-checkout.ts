@@ -427,7 +427,7 @@ export async function joinCartPurchasesToEvent(tx: Conn, input: {
  * set's own purchases keep theirs).
  */
 export async function releaseJoinedCartPurchases(
-  tx: Conn, gymId: string, productSetId: number, to: 'in_cart' | 'cancelled', actor: string = SYSTEM_ACTOR,
+  tx: Conn, gymId: string, productSetId: number, to: 'in_cart' | 'cancelled' | 'expired_24h', actor: string = SYSTEM_ACTOR,
 ): Promise<number> {
   let released = 0;
   for (const p of await loadJoinedCartPurchases(tx, gymId, productSetId)) {
@@ -440,7 +440,7 @@ export async function releaseJoinedCartPurchases(
         [p.snapshot_id, gymId, productSetId]);
     }
     released += await updatePurchase(tx, gymId, p.id,
-      { status: to === 'in_cart' ? IN_CART_PURCHASE_STATUS : 'cancelled' }, actor, { fromStatus: PENDING_PURCHASE_STATUS });
+      { status: to === 'in_cart' ? IN_CART_PURCHASE_STATUS : to }, actor, { fromStatus: PENDING_PURCHASE_STATUS });
   }
   return released;
 }

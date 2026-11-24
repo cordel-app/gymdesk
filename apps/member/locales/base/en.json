@@ -695,7 +695,8 @@
       "pending": "Pending",
       "scheduled": "Scheduled",
       "recorded": "Recorded",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "expired_24h": "24h expired"
     },
     "prepaid_payment_month": "{count, plural, one {# month} other {# months}} pre-payment",
     "prepaid_payment_week": "{count, plural, one {# week} other {# weeks}} pre-payment",
