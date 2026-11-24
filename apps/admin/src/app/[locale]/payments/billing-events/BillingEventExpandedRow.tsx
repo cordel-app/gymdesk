@@ -195,7 +195,7 @@ export function ExpandedRow({
   t,
   asCell = true,
 }: {
-  billingEvent: { id: number | null };
+  billingEvent: { id: number | null; refund_receipts?: { id: number; receipt_number: string; issued_at?: string | null }[] };
   onChanged: () => void;
   canWrite: boolean;
   readOnlyTitle?: string;
@@ -352,6 +352,7 @@ export function ExpandedRow({
           billingEventId={billingEventId}
           gymFmt={gymFmt}
           receipt={{ number: details?.receipt_number ?? null, issuedAt: details?.receipt_issued_at ?? null }}
+          refundReceipts={billingEvent.refund_receipts}
         />
 
         {/* ── Payment transactions ── */}

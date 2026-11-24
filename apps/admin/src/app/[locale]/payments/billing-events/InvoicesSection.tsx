@@ -27,7 +27,9 @@ import {
 } from './verifactuInvoiceView';
 import {
   billingDocuments, documentStatusKey, documentTypeKey, type BillingDocumentRow, type ReceiptInfo,
+  type RefundReceiptInfo,
 } from './receiptsInvoicesView';
+import { listNameBadgeStyle } from '@/components/listChrome';
 import { useBillingEventDocumentsChanged } from './documentsChanged';
 
 const cell: React.CSSProperties = { padding: '6px 10px', verticalAlign: 'top' };
@@ -59,11 +61,13 @@ const COLUMNS = [
 ] as const;
 
 export function ReceiptsInvoicesSection({
-  billingEventId, gymFmt, receipt,
+  billingEventId, gymFmt, receipt, refundReceipts,
 }: {
   billingEventId: number;
   gymFmt: GymFormatSettings;
   receipt: ReceiptInfo;
+  /** #3298: the event's Refund Receipts (#2935), listed beside its other documents. */
+  refundReceipts?: RefundReceiptInfo[];
 }) {
   const t = useTranslations();
   const { apiFetch, pdfFetch } = useApiClient();
@@ -92,7 +96,7 @@ export function ReceiptsInvoicesSection({
   // issue sends no signal.
   useBillingEventDocumentsChanged(billingEventId, () => { setOpen(true); load(); });
 
-  const documents = billingDocuments(receipt, invoices ?? []);
+  const documents = billingDocuments(receipt, invoices ?? [], refundReceipts ?? []);
 
   function openPdf(blob: Blob) {
     window.open(URL.createObjectURL(blob), '_blank');
@@ -101,7 +105,10 @@ export function ReceiptsInvoicesSection({
   async function view(doc: BillingDocumentRow) {
     setViewing(doc.key);
     try {
-      openPdf(await pdfFetch(doc.invoice ? `/payments/invoices/${doc.invoice.id}/pdf` : `/payments/${billingEventId}/receipt`));
+      const path = doc.invoice ? `/payments/invoices/${doc.invoice.id}/pdf`
+        : doc.refundReceiptId != null ? `/payments/refund-receipts/${doc.refundReceiptId}`
+        : `/payments/${billingEventId}/receipt`;
+      openPdf(await pdfFetch(path, 'GET'));
     } catch (err: any) {
       toast(err?.message ?? t('billing_events_page.action_error'));
     } finally {
@@ -155,18 +162,26 @@ export function ReceiptsInvoicesSection({
                   <React.Fragment key={doc.key}>
                     <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
                       <td style={cell}>
-                        {t(`billing_events_page.${documentTypeKey(doc.kind)}` as any)}
-                        {doc.rectifying && <span style={{ color: '#6b7280' }}> ({t('billing_events_page.inv_rectifying')})</span>}
+                        {/* #3298: the concrete document type as a chip, never a generic "Invoice". */}
+                        <span style={listNameBadgeStyle}>
+                          {t(`billing_events_page.${documentTypeKey(doc.kind, doc.rectifying)}` as any)}
+                        </span>
                       </td>
                       <td style={cell}>{doc.number ?? '—'}</td>
                       <td style={cell}>{fmtDateTime(doc.issuedAt, gymFmt)}</td>
                       <td style={cell}>
                         <StatusBadge status={doc.status === 'issued' ? 'recorded' : 'pending'}
                           label={statusKey ? t(`billing_events_page.${statusKey}` as any) : doc.status} />
+                        {doc.replacedByNumber && (
+                          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                            {t('billing_events_page.doc_replaced_by', { number: doc.replacedByNumber })}
+                          </div>
+                        )}
                       </td>
                       <td style={cell}>
                         {inv
                           ? (inv.payment_status ? t(`billing_events_page.inv_payment_${inv.payment_status}` as any) : '—')
+                          : doc.kind === 'refund_receipt' ? t('billing_events_page.inv_payment_refunded')
                           : t('billing_events_page.inv_payment_paid')}
                       </td>
                       <td style={cell}>

@@ -19,7 +19,8 @@ import { PaymentActionKind, actionRequest } from './paymentActions';
 import { RefundModal } from './RefundModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CompleteInvoiceModal } from './CompleteInvoiceModal';
-import { menuDocumentBlocks, refundReceiptMenuEntries, type FullInvoiceForm } from './receiptsInvoicesView';
+import { menuDocumentBlocks, operationChipKeys, refundReceiptMenuEntries, type FullInvoiceForm } from './receiptsInvoicesView';
+import { listNameBadgeStyle } from '@/components/listChrome';
 import { notifyBillingEventDocumentsChanged } from './documentsChanged';
 import { BillingEventDetailsModal } from './BillingEventDetailsModal';
 
@@ -55,7 +56,10 @@ export interface BillingEventHeaderRow {
   can_issue_receipt?: boolean;
   has_full_invoice?: boolean;
   /** #2935: one per completed refund, issued by the system. */
-  refund_receipts?: { id: number; receipt_number: string }[];
+  refund_receipts?: { id: number; receipt_number: string; issued_at?: string | null }[];
+  /** #3298: Full or Partial Payment / Refund, the API's own answer (#3297's rule). */
+  payment_type?: 'full' | 'partial' | null;
+  refund_type?: 'full' | 'partial' | null;
 }
 
 /**
@@ -159,6 +163,7 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <BillingEventStatusBadge row={row} t={t} />
+                    <BillingEventOperationChips row={row} t={t} />
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <NormalizedPaymentStatusBadge status={row.normalized_payment_status} t={t} />
@@ -211,6 +216,24 @@ export function billingEventStatusLabel(row: Pick<BillingEventHeaderRow, 'status
 
 export function BillingEventStatusBadge({ row, t }: { row: Pick<BillingEventHeaderRow, 'status' | 'event_type'>; t: T }) {
   return <StatusBadge status={row.status} label={billingEventStatusLabel(row, t)} />;
+}
+
+/**
+ * #3298 — the operation chips (Full / Partial Payment, Full / Partial Refund),
+ * independent of the status and of any document. Nothing when no money moved.
+ */
+export function BillingEventOperationChips({ row, t }: {
+  row: Pick<BillingEventHeaderRow, 'payment_type' | 'refund_type'>; t: T;
+}) {
+  const keys = operationChipKeys(row);
+  if (keys.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+      {keys.map((k) => (
+        <span key={k} style={listNameBadgeStyle}>{t(`billing_events_page.${k}` as any)}</span>
+      ))}
+    </div>
+  );
 }
 
 /** The latest attempt's normalized payment status; `—` when the event has none. */

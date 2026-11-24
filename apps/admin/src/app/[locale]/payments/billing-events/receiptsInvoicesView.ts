@@ -7,13 +7,20 @@
 
 import type { InvoiceRow } from './verifactuInvoiceView';
 
-export type DocumentKind = 'receipt' | 'simplified' | 'full';
+export type DocumentKind = 'receipt' | 'simplified' | 'full' | 'refund_receipt';
 
-export const DOCUMENT_KINDS: readonly DocumentKind[] = ['receipt', 'simplified', 'full'];
+export const DOCUMENT_KINDS: readonly DocumentKind[] = ['receipt', 'simplified', 'full', 'refund_receipt'];
 
 export interface ReceiptInfo {
   number: string | null;
   issuedAt: string | null;
+}
+
+/** #3298: a Refund Receipt as the list row reports it (#2935). */
+export interface RefundReceiptInfo {
+  id: number;
+  receipt_number: string;
+  issued_at?: string | null;
 }
 
 export interface BillingDocumentRow {
@@ -27,30 +34,79 @@ export interface BillingDocumentRow {
   status: string;
   /** Only an invoice row carries its invoice (payment status, VERI*FACTU, PDF id). */
   invoice: InvoiceRow | null;
+  /** #3298: a Refund Receipt row's id (its PDF); null on every other row. */
+  refundReceiptId: number | null;
+  /** #3298: a superseded simplified invoice's replacement number, when the API listed it. */
+  replacedByNumber: string | null;
 }
 
-/** The documents of one Billing Event: the receipt, when issued, then every invoice. */
-export function billingDocuments(receipt: ReceiptInfo, invoices: InvoiceRow[]): BillingDocumentRow[] {
+/**
+ * The documents of one Billing Event: the receipt, when issued, then every
+ * invoice, then (#3298) every Refund Receipt — the proof that money went back,
+ * a document of its own and never a fiscal invoice.
+ */
+export function billingDocuments(
+  receipt: ReceiptInfo, invoices: InvoiceRow[], refundReceipts: RefundReceiptInfo[] = [],
+): BillingDocumentRow[] {
   const rows: BillingDocumentRow[] = [];
   if (receipt.number) {
     rows.push({
       key: 'receipt', kind: 'receipt', rectifying: false,
       number: receipt.number, issuedAt: receipt.issuedAt, status: 'issued', invoice: null,
+      refundReceiptId: null, replacedByNumber: null,
     });
   }
+  const numberById = new Map(invoices.map((inv) => [inv.id, inv.fiscal_number]));
   for (const inv of invoices) {
+    const replaced = inv.replaced_by_invoice_id != null;
     rows.push({
       key: `invoice-${inv.id}`, kind: inv.invoice_type, rectifying: inv.related_invoice_id != null,
       number: inv.fiscal_number, issuedAt: inv.issued_at,
-      status: inv.replaced_by_invoice_id != null ? 'replaced' : inv.status, invoice: inv,
+      status: replaced ? 'replaced' : inv.status, invoice: inv,
+      refundReceiptId: null,
+      replacedByNumber: replaced ? (numberById.get(inv.replaced_by_invoice_id as number) ?? null) : null,
+    });
+  }
+  for (const rr of refundReceipts) {
+    rows.push({
+      key: `refund-receipt-${rr.id}`, kind: 'refund_receipt', rectifying: false,
+      number: rr.receipt_number, issuedAt: rr.issued_at ?? null, status: 'issued', invoice: null,
+      refundReceiptId: rr.id, replacedByNumber: null,
     });
   }
   return rows;
 }
 
-/** The `billing_events_page` key a document type reads under. */
-export function documentTypeKey(kind: DocumentKind): string {
+/**
+ * The `billing_events_page` key a document type reads under (#3298: the
+ * concrete type, never a generic "Invoice"; a rectifying invoice names the
+ * kind of invoice it rectifies).
+ */
+export function documentTypeKey(kind: DocumentKind, rectifying = false): string {
+  if (rectifying && (kind === 'simplified' || kind === 'full')) return `doc_type_rectifying_${kind}`;
   return `doc_type_${kind}`;
+}
+
+/** #3298: the operation chips of a Billing Event, as `billing_events_page` keys. */
+export type OperationChipKey =
+  | 'op_full_payment' | 'op_partial_payment' | 'op_full_refund' | 'op_partial_refund';
+
+/**
+ * #3298 — the operation chips a Billing Event carries: Full or Partial Payment
+ * from the API's `payment_type`, Full or Partial Refund from its `refund_type`
+ * (the same rule the Members App reads, #3297). Independent of the documents:
+ * an event can be paid with no document, refunded with several.
+ */
+export function operationChipKeys(row: {
+  payment_type?: 'full' | 'partial' | null;
+  refund_type?: 'full' | 'partial' | null;
+}): OperationChipKey[] {
+  const keys: OperationChipKey[] = [];
+  if (row.payment_type === 'full') keys.push('op_full_payment');
+  else if (row.payment_type === 'partial') keys.push('op_partial_payment');
+  if (row.refund_type === 'full') keys.push('op_full_refund');
+  else if (row.refund_type === 'partial') keys.push('op_partial_refund');
+  return keys;
 }
 
 /** The `billing_events_page` key a stored document status reads under, or null for an unknown one. */
