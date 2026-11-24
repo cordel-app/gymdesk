@@ -38,6 +38,7 @@ import {
 import { loadAppliedPromotionLists } from './member-product-promotions';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { lockPurchase, deletePurchase } from './purchase-writer';
+import { parseExpectedAmountInput } from '../domain/expectedCheckoutAmount';
 import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
 import { chargeLineView, contractedItems } from '../domain/checkoutSummary';
 import { refuseIfStaffPreparesCart, staffPreparesOpenCart } from './staff-cart';
@@ -264,6 +265,8 @@ meCartRouter.post('/checkout', cartCheckoutRateLimit as any, async (req: Request
   const raw = (req.body ?? {}).purchase_ids;
   const purchaseIds = raw == null ? null : parseIds(raw);
   if (raw != null && purchaseIds === null) return res.status(400).json({ error: 'purchase_ids must be an array of positive integers' });
+  const expected = parseExpectedAmountInput((req.body ?? {}).expected_amount);
+  if (!expected.ok) return res.status(400).json({ error: expected.error });
   try {
     const { gymId, memberId } = await memberOf(req);
     // #2123: a family member's purchase is paid by the Family Owner, never raised by the beneficiary.
@@ -277,12 +280,14 @@ meCartRouter.post('/checkout', cartCheckoutRateLimit as any, async (req: Request
     if (!m[0]) return res.status(404).json({ error: 'Member profile not found' });
     const result = await startCartCheckout({
       gymId, memberId, memberEmail: m[0].email ?? '', actorName: null,
-      purchaseIds, requestLocale: getRequestLocale(req),
+      purchaseIds, requestLocale: getRequestLocale(req), expectedAmount: expected.value,
     });
     req.log?.info({ memberId, billingEventId: result.billingEventId }, 'Member cart checkout started');
     res.status(201).json(result);
   } catch (err: any) {
-    if (err instanceof CartCheckoutRefused) return res.status(err.status).json({ error: err.code, message: err.message });
+    if (err instanceof CartCheckoutRefused) {
+      return res.status(err.status).json({ error: err.code, message: err.message, ...(err.amount != null ? { amount: err.amount } : {}) });
+    }
     next(err);
   }
 });

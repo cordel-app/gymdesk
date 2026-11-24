@@ -141,7 +141,7 @@ export type MoveOutcome =
   | { kind: 'expired' }
   | { kind: 'not_allowed'; status: string };
 
-async function lockSet(tx: Tx, gymId: string, id: number) {
+export async function lockSet(tx: Tx, gymId: string, id: number) {
   const { rows } = await tx.query<ProductSetRow & { expired: number }>(
     `SELECT ${COLUMNS}, ${setCartExpiredSql('product_sets')} AS expired
        FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE`,

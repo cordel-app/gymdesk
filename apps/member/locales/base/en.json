@@ -595,6 +595,7 @@
     "cart_heading": "Your cart",
     "cart_standalone_heading": "Also in your cart",
     "cart_standalone_hint": "Not part of the payment above: these are paid on their own.",
+    "cart_error_amount_changed": "The total changed since your cart was shown. Check the new total and tap Pay again.",
     "cart_error_changed": "Your cart changed. Please check it and try again.",
     "cart_error_family_owner_pays": "Your family owner pays for purchases.",
     "cart_plans": "{count, plural, one {# Plan} other {# Plans}}",

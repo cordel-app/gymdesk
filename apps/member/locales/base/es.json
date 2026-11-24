@@ -595,6 +595,7 @@
     "cart_heading": "Tu carrito",
     "cart_standalone_heading": "También en tu carrito",
     "cart_standalone_hint": "No forman parte del pago anterior: se pagan por separado.",
+    "cart_error_amount_changed": "El total ha cambiado desde que se mostró tu carrito. Revisa el nuevo total y pulsa Pagar de nuevo.",
     "cart_error_changed": "Tu carrito ha cambiado. Revísalo y vuelve a intentarlo.",
     "cart_error_family_owner_pays": "El titular de tu familia paga las compras.",
     "cart_plans": "{count, plural, one {# plan} other {# planes}}",
