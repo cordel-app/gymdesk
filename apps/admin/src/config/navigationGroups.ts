@@ -433,6 +433,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.base_nutrition_plan_templates',
       },
       {
+        // #3328: the platform's catalogue of meals, the source of a nutrition plan's meals.
+        href: '/{{locale}}/cordel/base-meals',
+        labelKey: 'nav.base_meals',
+      },
+      {
         // #948 §5: Base Personal Goals, the System-level catalogue the gym-level
         // Personal Goals library reads — its own Cordel section, separated from
         // the Base Nutrition pair above because the two are independent system
