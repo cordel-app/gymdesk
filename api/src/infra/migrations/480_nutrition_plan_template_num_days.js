@@ -19,12 +19,17 @@ exports.up = async (knex) => {
     await knex.raw(
       'ALTER TABLE nutrition_plan_templates ADD COLUMN num_days TINYINT UNSIGNED NOT NULL DEFAULT 0',
     );
-    await knex.raw(
-      `UPDATE nutrition_plan_templates npt
-          SET npt.num_days = LEAST(7, (SELECT COUNT(*) FROM nutrition_plan_template_days d
-                                        WHERE d.nutrition_plan_template_id = npt.id))`,
-    );
   }
+  // Its own step so a re-run still fills it; only rows still at the default are
+  // touched. An "All Days" row (weekday 7) means the plan covers seven days.
+  await knex.raw(
+    `UPDATE nutrition_plan_templates npt
+        SET npt.num_days = (SELECT IF(SUM(d.weekday = 7) > 0, 7, LEAST(7, COUNT(*)))
+                              FROM nutrition_plan_template_days d
+                             WHERE d.nutrition_plan_template_id = npt.id)
+      WHERE npt.num_days = 0
+        AND EXISTS (SELECT 1 FROM nutrition_plan_template_days d2 WHERE d2.nutrition_plan_template_id = npt.id)`,
+  );
   if (!(await hasCheck(knex))) {
     await knex.raw(
       'ALTER TABLE nutrition_plan_templates ADD CONSTRAINT chk_npt_num_days CHECK (num_days BETWEEN 0 AND 7)',
