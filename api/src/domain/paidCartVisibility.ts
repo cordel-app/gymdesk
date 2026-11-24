@@ -3,7 +3,7 @@
  *
  * After Save & Pay a cart that becomes `completed` (paid in cash or by card, settled by the provider,
  * or activated because nothing was owed) stays in the Products view's Summary for
- * `PAID_CART_VISIBLE_MINUTES` after it was completed (`purchases.completed_at`, migration 480), or
+ * `PAID_CART_VISIBLE_MINUTES` after it was completed (`purchases.completed_at`, migration 481), or
  * until the owner opens a newer cart, whichever comes first. Both are read from persisted rows, never
  * a client timer: a reload inside the hour still shows it, a reload after it does not.
  */
