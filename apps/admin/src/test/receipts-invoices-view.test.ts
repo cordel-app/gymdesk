@@ -6,7 +6,7 @@ import en from '../../locales/base/en.json';
 import es from '../../locales/base/es.json';
 import ca from '../../locales/base/ca.json';
 import {
-  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, menuDocumentBlocks, operationChipKeys, refundReceiptMenuEntries,
+  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, invoiceLinks, menuDocumentBlocks, operationChipKeys, refundReceiptMenuEntries,
 } from '../app/[locale]/payments/billing-events/receiptsInvoicesView';
 import type { InvoiceRow } from '../app/[locale]/payments/billing-events/verifactuInvoiceView';
 
@@ -154,5 +154,39 @@ describe('Operation and document chips (#3298)', () => {
       for (const k of keys) expect(locale.billing_events_page[k], k).toBeTruthy();
     }
     for (const k of DOCUMENT_KINDS) expect((en as any).billing_events_page[documentTypeKey(k)]).not.toBe('Invoice');
+  });
+});
+
+// #3298 stage 2 — the links between an event's invoices, derived from the two
+// stored references, and the VERI*FACTU traceability labels.
+describe('document links', () => {
+  it('a rectifying invoice names its original and the original names it', () => {
+    const original = invoice({ id: 1, fiscal_number: 'S-2026-0001' });
+    const rect = invoice({ id: 2, fiscal_number: 'R-2026-0001', related_invoice_id: 1 });
+    expect(invoiceLinks(rect, [original, rect])).toEqual([{ key: 'doc_link_rectifies', number: 'S-2026-0001' }]);
+    expect(invoiceLinks(original, [original, rect])).toEqual([{ key: 'doc_link_rectified_by', number: 'R-2026-0001' }]);
+  });
+
+  it('a complete invoice issued in place of a simplified one names it; the rows carry the links', () => {
+    const simplified = invoice({ id: 1, fiscal_number: 'S-2026-0001', replaced_by_invoice_id: 2 });
+    const full = invoice({ id: 2, invoice_type: 'full', fiscal_number: 'F-2026-0001', replaces_invoice_id: 1 });
+    const docs = billingDocuments({ number: null, issuedAt: null }, [simplified, full]);
+    expect(docs.map((d) => d.links)).toEqual([[], [{ key: 'doc_link_replaces', number: 'S-2026-0001' }]]);
+    expect(docs[0].replacedByNumber).toBe('F-2026-0001');
+  });
+
+  it('links nothing to an invoice without a number, and nothing on an unrelated invoice', () => {
+    const draft = invoice({ id: 1, fiscal_number: null, status: 'draft' });
+    const rect = invoice({ id: 2, fiscal_number: 'R-2026-0001', related_invoice_id: 1 });
+    expect(invoiceLinks(rect, [draft, rect])).toEqual([]);
+    expect(invoiceLinks(invoice({ id: 3 }), [draft, rect])).toEqual([]);
+  });
+
+  it('labels every link and the record type and CSV in every locale', () => {
+    for (const locale of [en, es, ca] as any[]) {
+      for (const k of ['doc_link_rectifies', 'doc_link_rectified_by', 'doc_link_replaces', 'vf_invoice_kind', 'vf_csv']) {
+        expect(locale.billing_events_page[k], k).toMatch(/\{(number|kind|csv)\}/);
+      }
+    }
   });
 });

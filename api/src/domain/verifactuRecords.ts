@@ -187,6 +187,8 @@ export interface VerifactuRecordView {
   id: number;
   record_type: 'alta' | 'anulacion';
   chain_seq: number;
+  /** #3298: the record's AEAT TipoFactura (F1/F2/F3/R1/R5) as stored on the Alta; null on an Anulación. */
+  invoice_kind: VerifactuInvoiceKind | null;
   submission_status: VerifactuSubmissionStatus;
   submission_attempts: number;
   last_submission_at: string | null;
