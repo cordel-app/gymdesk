@@ -41,7 +41,7 @@ interface Profile {
 }
 
 interface PaymentRequest {
-  status: 'pending' | 'completed' | 'failed' | 'expired';
+  status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
 }
 
 export default function ProfilePage() {

@@ -2411,7 +2411,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       const { rows: setRows } = await db.query<any>(
         `SELECT ps.id, ps.starts_at, mp.name AS plan_name,
                 (SELECT be.amount FROM billing_events be
-                  WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
+                  WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded' AND be.cancelled_at IS NULL
                   ORDER BY be.id DESC LIMIT 1) AS fee,
                 COALESCE(pss.recurring_billing_interval, bp.recurring_billing_interval) AS billing_interval,
                 COALESCE(pss.recurring_billing_unit, bp.recurring_billing_unit) AS billing_unit

@@ -275,7 +275,7 @@ interface PaymentRequest {
    * unpaid fee (migration 228's reason, and #788's one flow over).
    */
   source: string;
-  status: 'pending' | 'completed' | 'failed' | 'expired';
+  status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
   billing_interval: number | null;
   billing_unit: 'day' | 'week' | 'month' | 'year' | null;
   created_at: string;
@@ -699,7 +699,7 @@ export default function MembershipPage() {
    * #2746 stage 3 — the cart awaiting payment is cancelled as one purchase,
    * and (#2747 stage 2) so is a plan awaiting payment from its own card: every
    * Cancel of a version awaiting payment asks first and reaches this one route,
-   * through #2747's route: the version is kept as `cancelled` with its items,
+   * through the member route (#3309): the payment attempt is cancelled and the version goes back to the cart with its items,
    * and the server refuses while a payment settled or is still in flight.
    */
   async function cancelPendingCart() {

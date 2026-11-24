@@ -1,4 +1,4 @@
-export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'expired';
+export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
 
 export interface CreatePaymentRequestParams {
   orderId: string;
