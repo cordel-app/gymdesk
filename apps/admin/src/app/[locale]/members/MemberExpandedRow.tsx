@@ -235,7 +235,7 @@ export function MemberExpandedRow({
   }
   const billingSectionMode = billingMode(workflow);
   const inFlightSetsShown = (configuration.product_sets ?? []).some((p: any) => p.status === 'in_cart' || p.status === 'pending_payment');
-  const submittedView = submittedCartView(submittedCart, configuration.product_sets ?? []);
+  const submittedView = submittedCartView(submittedCart, configuration.product_sets ?? [], configuration.paid_cart);
   const submittedNoteKey = submittedCart ? submittedCartNoteKey(submittedCart.outcome) : null;
 
   useEffect(() => {
@@ -635,8 +635,8 @@ export function MemberExpandedRow({
                   )}
                 </div>
               )}
-              {submittedView === 'committed' && submittedCart && (
-                <SubmittedCartSummary submitted={submittedCart} reloadKey={configuration} />
+              {submittedView === 'committed' && configuration.paid_cart && (
+                <SubmittedCartSummary paidCart={configuration.paid_cart} submitted={submittedCart} />
               )}
               {(inFlightSetsShown || saveAndPayTarget(workflow) != null || cartPaymentLink != null) && (
               <ProductsWorkflowActions
