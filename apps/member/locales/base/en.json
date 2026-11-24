@@ -702,8 +702,7 @@
   },
   "payment_banner": {
     "pending_heading": "You have a pending payment",
-    "pay_now": "Pay now",
-    "start_payment": "Make a payment"
+    "pay_now": "Pay now"
   },
   "payment_consent": {
     "title_once": "Payment authorisation",
