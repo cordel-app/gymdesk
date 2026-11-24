@@ -184,7 +184,7 @@ describe('Refund — Cash', () => {
     const { rows: orig } = await db.query<any>('SELECT status, amount FROM payment_requests WHERE billing_event_id = ?', [e.billingEventId]);
     expect(orig).toEqual([{ status: 'completed', amount: '40.00' }]);
     const row = await listRow(e.memberId, e.billingEventId);
-    expect(row).toMatchObject({ attempt_count: 1, payment_method_name: 'Cash', status: 'paid', refund_state: 'full', can_refund: false, normalized_payment_status: 'refunded' });
+    expect(row).toMatchObject({ attempt_count: 1, payment_method_name: 'Cash', status: 'refunded', refund_state: 'full', can_refund: false, normalized_payment_status: 'refunded' });
     // Shown in the event's transaction history.
     const txs = await get(`/payments/billing-events/${e.billingEventId}/transactions`);
     expect(txs.body.items.map((t: any) => t.transaction_type).sort()).toEqual(['payment', 'refund']);
@@ -466,5 +466,48 @@ describe('Operation type on the staff list', () => {
     const full = await listRow(e.memberId, e.billingEventId);
     expect(full).toMatchObject({ payment_type: 'full', refund_type: 'full' });
     expect(full.refund_receipts).toHaveLength(2);
+  });
+});
+
+// #2480 follow-up (Oscar, 2026-11-24): a refund is a status of the Billing Event
+// itself, derived from its completed refunds; nothing else about the event moves.
+describe('Refunded statuses of a Billing Event', () => {
+  const detail = async (id: number) => (await get(`/payments/billing-events/${id}`)).body;
+  const filtered = async (memberId: number, status: string) =>
+    (await get(`/payments/billing-events?member_id=${memberId}&status=${status}`)).body.items.map((r: any) => r.id);
+
+  it('reads partially_refunded, then refunded, keeping the money counted as collected', async () => {
+    const e = await paidCash();
+    expect((await listRow(e.memberId, e.billingEventId)).status).toBe('paid');
+
+    await post(e.billingEventId, 'refund', { kind: 'adhoc', method: 'cash', amount: '10' });
+    let row = await listRow(e.memberId, e.billingEventId);
+    expect(row.status).toBe('partially_refunded');
+    expect(row.normalized_payment_status).toBe('partially_refunded');
+    expect(row.can_refund).toBe(true);
+    expect((await detail(e.billingEventId)).status).toBe('partially_refunded');
+    expect(await filtered(e.memberId, 'partially_refunded')).toEqual([e.billingEventId]);
+    expect(await filtered(e.memberId, 'paid')).toEqual([]);
+
+    await post(e.billingEventId, 'refund', { kind: 'full', method: 'cash' });
+    row = await listRow(e.memberId, e.billingEventId);
+    expect(row.status).toBe('refunded');
+    expect(row.can_refund).toBe(false);
+    expect((await detail(e.billingEventId)).status).toBe('refunded');
+    expect(await filtered(e.memberId, 'refunded')).toEqual([e.billingEventId]);
+    // Receipts still see the money as collected.
+    expect(row.can_issue_receipt).toBe(true);
+  });
+
+  it('a pending or failed refund leaves the event paid', async () => {
+    const pending = await paidMonei();
+    refundPayment.mockRejectedValueOnce(new Error('fetch failed: timeout'));
+    await post(pending.billingEventId, 'refund', { kind: 'full', method: 'provider' });
+    expect((await listRow(pending.memberId, pending.billingEventId)).status).toBe('paid');
+
+    const failed = await paidMonei();
+    refundPayment.mockResolvedValueOnce({ providerStatus: 'SUCCEEDED', providerRefundRef: 'pay_123', errorCode: 'E1', errorMessage: 'no' });
+    await post(failed.billingEventId, 'refund', { kind: 'full', method: 'provider' });
+    expect((await listRow(failed.memberId, failed.billingEventId)).status).toBe('paid');
   });
 });

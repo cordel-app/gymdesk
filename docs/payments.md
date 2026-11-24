@@ -855,6 +855,13 @@ refunds. Nothing else moves: the original attempt, the ledger row, its lines, a 
 or invoice, the attempt counter and every contracted item stay as they were (since #3298 stage 3 a
 refund that leaves the payment fully refunded issues a *new* rectifying invoice, below).
 
+**A refunded event shows it in its status** (#2480 follow-up, 2026-11-24). The Billing Events list and
+detail report a paid event as `partially_refunded` or `refunded` from its completed refunds
+(`displayBillingEventStatus()`); the status filter takes both values. It is display only:
+`deriveBillingEventStatus()` still answers `paid`, so receipts, invoices, dashboards, the member's
+Payment Status and the refund rules see the money as collected, a cancelled event stays `cancelled`,
+and a pending or failed refund changes nothing.
+
 **A pending Monei refund is settled later from Monei's own record** (#2480 follow-up).
 `POST /billing/cleanup` runs `reconcilePendingProviderRefunds()`
 (`api/src/api/billing-event-refunds.ts`): for each payment with a provider refund pending for

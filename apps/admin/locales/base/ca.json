@@ -1166,6 +1166,8 @@
     "normalized_refunded": "Reemborsat",
     "normalized_partially_refunded": "Reemborsat parcialment",
     "status_cancelled": "Cancel·lat",
+    "status_refunded": "Reemborsat",
+    "status_partially_refunded": "Reemborsat parcialment",
     "header_member": "Membre",
     "header_method": "Mètode de pagament",
     "header_attempts": "Intents",

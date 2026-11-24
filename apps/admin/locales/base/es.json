@@ -1165,6 +1165,8 @@
     "normalized_refunded": "Reembolsado",
     "normalized_partially_refunded": "Reembolsado parcialmente",
     "status_cancelled": "Cancelado",
+    "status_refunded": "Reembolsado",
+    "status_partially_refunded": "Reembolsado parcialmente",
     "header_member": "Miembro",
     "header_method": "Método de pago",
     "header_attempts": "Intentos",

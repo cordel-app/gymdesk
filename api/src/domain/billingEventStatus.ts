@@ -20,9 +20,34 @@
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'expired';
 
 /** The status vocabulary the Billing Events view filters and badges on. */
-export type BillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled';
+export type BillingEventStatus =
+  | 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled'
+  | 'refunded' | 'partially_refunded';
 
-export const BILLING_EVENT_STATUSES = ['paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled'] as const;
+export const BILLING_EVENT_STATUSES = [
+  'paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled', 'refunded', 'partially_refunded',
+] as const;
+
+/**
+ * #2480 follow-up (Oscar, 2026-11-24): the status a Billing Event is *shown*
+ * with. A paid event whose completed refunds cover part of what was collected
+ * reads `partially_refunded`, all of it `refunded` (`refundState()` of
+ * `domain/billingEventRefund.ts`; a pending or failed refund counts for
+ * nothing). Every other status, `cancelled` included, is shown as derived.
+ *
+ * Display only: `deriveBillingEventStatus()` never answers these two, so every
+ * reader that asks about money, actions or receipts keeps seeing `paid` and the
+ * money stays counted as collected.
+ */
+export function displayBillingEventStatus(
+  status: BillingEventStatus,
+  refundState: string | null | undefined,
+): BillingEventStatus {
+  if (status !== 'paid') return status;
+  if (refundState === 'full') return 'refunded';
+  if (refundState === 'partial') return 'partially_refunded';
+  return status;
+}
 
 /**
  * Maps a transaction status onto the event status it implies. `expired` is a

@@ -98,3 +98,19 @@ describe('isAwaitingAction', () => {
     expect(isAwaitingAction('adjustment', null)).toBe(false);
   });
 });
+
+// #2480 follow-up: a paid event's displayed status follows its completed refunds.
+import { displayBillingEventStatus as display } from '../domain/billingEventStatus';
+describe('displayBillingEventStatus', () => {
+  it('turns a paid event into partially_refunded / refunded', () => {
+    expect(display('paid', 'none')).toBe('paid');
+    expect(display('paid', null)).toBe('paid');
+    expect(display('paid', 'partial')).toBe('partially_refunded');
+    expect(display('paid', 'full')).toBe('refunded');
+  });
+  it('leaves every other status, cancelled included, as derived', () => {
+    for (const s of ['cancelled', 'failed', 'pending', 'scheduled', 'recorded'] as const) {
+      expect(display(s, 'full')).toBe(s);
+    }
+  });
+});

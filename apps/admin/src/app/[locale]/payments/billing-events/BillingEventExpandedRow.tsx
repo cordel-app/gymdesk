@@ -118,6 +118,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   scheduled: { bg: '#fef9c3', text: '#92400e' },
   recorded:  { bg: '#e0f2fe', text: '#075985' },
   cancelled: { bg: '#f3f4f6', text: '#374151' },
+  // #2480 follow-up: money returned, not a failure (the neutral blue of `recorded`).
+  refunded:           { bg: '#e0f2fe', text: '#075985' },
+  partially_refunded: { bg: '#e0f2fe', text: '#075985' },
 };
 
 export function StatusBadge({ status, label }: { status: string; label: string }) {

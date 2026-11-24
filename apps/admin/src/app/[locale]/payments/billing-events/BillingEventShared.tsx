@@ -26,7 +26,10 @@ import { BillingEventDetailsModal } from './BillingEventDetailsModal';
 
 type T = ReturnType<typeof useTranslations>;
 
-export const BILLING_EVENT_STATUS_VALUES = ['paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled'] as const;
+// #2480 follow-up: `refunded` / `partially_refunded` are the API's display statuses of a paid event.
+export const BILLING_EVENT_STATUS_VALUES = [
+  'paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled', 'refunded', 'partially_refunded',
+] as const;
 
 /** The fields of a list row the header and the actions read. */
 export interface BillingEventHeaderRow {
