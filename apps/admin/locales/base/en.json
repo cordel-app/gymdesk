@@ -1272,7 +1272,12 @@
     "op_full_payment": "Full Payment",
     "op_partial_payment": "Partial Payment",
     "op_full_refund": "Full Refund",
-    "op_partial_refund": "Partial Refund"
+    "op_partial_refund": "Partial Refund",
+    "vf_invoice_kind": "Type {kind}",
+    "vf_csv": "AEAT CSV: {csv}",
+    "doc_link_rectifies": "Rectifies {number}",
+    "doc_link_rectified_by": "Rectified by {number}",
+    "doc_link_replaces": "Replaces {number}"
   },
   "payment_providers": {
     "title": "Payment Providers",
