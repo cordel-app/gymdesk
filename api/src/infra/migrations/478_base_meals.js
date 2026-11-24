@@ -42,7 +42,7 @@ exports.up = async (knex) => {
     await knex.raw(`
       CREATE TABLE ${TABLE} (
         id                  INT UNSIGNED  NOT NULL AUTO_INCREMENT,
-        slug                VARCHAR(100)  NOT NULL,
+        slug                VARCHAR(120)  NOT NULL,
         name                VARCHAR(255)  NOT NULL,
         description         VARCHAR(1000) NULL,
         image_url           VARCHAR(1024) NULL,
@@ -80,6 +80,8 @@ exports.up = async (knex) => {
     `);
   }
 
+  // Not wrapped in a transaction (knex refuses to mix one with this migration's
+  // DDL on MySQL); a partial seed is completed by a re-run, every INSERT IGNORE.
   for (const [index, seed] of SEEDS.entries()) {
     await knex.raw(
       `INSERT IGNORE INTO ${TABLE} (slug, name, position, created_by) VALUES (?, ?, ?, 'System')`,
