@@ -539,7 +539,7 @@
     "product_adding": "Afegint…",
     "product_state_held": "Als teus productes",
     "draft_selection_count": "{count, plural, one {# element afegit a la teva selecció.} other {# elements afegits a la teva selecció.}}",
-    "draft_expires_in": "L'esborrany caduca en",
+    "cart_expires_in": "La cistella caduca en",
     "draft_discard": "Descarta la selecció",
     "draft_error_in_flight": "Ja tens un canvi pendent de pagament. Completa'l o cancel·la'l primer.",
     "draft_error_locked": "Encara s'està processant un pagament. Torna-ho a provar més tard.",

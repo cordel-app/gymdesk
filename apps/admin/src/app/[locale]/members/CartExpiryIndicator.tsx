@@ -5,11 +5,15 @@ import { useTranslations } from 'next-intl';
 import { formatDraftRemaining, isDraftWarning, remainingNow, showsDraftExactTime } from './draftCountdown';
 
 /**
- * #2477 — compact, secondary "Draft expires in 1h 45m". Counts down locally from
- * the server's seconds and calls `onExpire` once at zero so the section re-reads
- * the (now discarded) Draft instead of leaving it editable.
+ * #2477 — compact, secondary countdown. Counts down locally from the server's
+ * seconds and calls `onExpire` once at zero so the tab re-reads the (now
+ * discarded) cart instead of leaving it editable.
+ *
+ * #3274 follow-up — it is the **cart's** countdown ("Cart expires in 1h 45m"),
+ * shown once beside the cart's In Cart status in the Summary, never on the
+ * Product Set header: the clock is the purchase's `expires_at`.
  */
-export function DraftExpiryIndicator({ seconds, onExpire }: {
+export function CartExpiryIndicator({ seconds, onExpire }: {
   seconds: number | null | undefined; onExpire?: () => void;
 }) {
   const t = useTranslations('members');
@@ -33,8 +37,8 @@ export function DraftExpiryIndicator({ seconds, onExpire }: {
   const warn = left != null && isDraftWarning(left);
   const exact = left != null && showsDraftExactTime(left) ? new Date(Date.now() + (left as number) * 1000).toLocaleTimeString() : null;
   return (
-    <span data-draft-expiry style={{ fontSize: 12, opacity: 0.85, fontWeight: warn ? 600 : 400, color: warn ? 'var(--gd-warning, #b45309)' : undefined }}>
-      {t('draft_expires_in')} {text}{exact ? ` (${exact})` : ''}
+    <span data-cart-expiry style={{ fontSize: 12, opacity: 0.85, fontWeight: warn ? 600 : 400, color: warn ? 'var(--gd-warning, #b45309)' : undefined }}>
+      {t('cart_expires_in')} {text}{exact ? ` (${exact})` : ''}
     </span>
   );
 }

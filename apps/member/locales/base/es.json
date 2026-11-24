@@ -539,7 +539,7 @@
     "product_adding": "Añadiendo…",
     "product_state_held": "En tus productos",
     "draft_selection_count": "{count, plural, one {# elemento añadido a tu selección.} other {# elementos añadidos a tu selección.}}",
-    "draft_expires_in": "El borrador caduca en",
+    "cart_expires_in": "El carrito caduca en",
     "draft_discard": "Descartar selección",
     "draft_error_in_flight": "Ya tienes un cambio pendiente de pago. Complétalo o cancélalo primero.",
     "draft_error_locked": "Todavía se está procesando un pago. Inténtalo más tarde.",

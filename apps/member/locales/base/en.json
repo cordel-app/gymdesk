@@ -539,7 +539,7 @@
     "product_adding": "Adding…",
     "product_state_held": "In your products",
     "draft_selection_count": "{count, plural, one {# item added to your selection.} other {# items added to your selection.}}",
-    "draft_expires_in": "Draft expires in",
+    "cart_expires_in": "Cart expires in",
     "draft_discard": "Discard selection",
     "draft_error_in_flight": "You already have a change awaiting payment. Complete or cancel it first.",
     "draft_error_locked": "A payment is still being processed. Please try again later.",
