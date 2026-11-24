@@ -115,9 +115,10 @@ export async function createPurchase(
   const { createdAt, name } = planned ?? await planPurchaseName(tx, gymId);
   const { insertId } = await tx.query(
     // #3274: a cart opened now has two hours; a checkout started outside the cart has no cart clock.
-    `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, name, created_at, created_by, channel)
-     VALUES (?, ?, ?, IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL), ?, ?, ?, ?)`,
-    [gymId, ownerMemberId, status, status, name, createdAt, actorName ?? SYSTEM_ACTOR, currentRequestChannel()]);
+    // #3307 stage 2: a purchase born completed (a free one-time line) is stamped as paid now.
+    `INSERT INTO purchases (gym_id, owner_member_id, status, expires_at, completed_at, name, created_at, created_by, channel)
+     VALUES (?, ?, ?, IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL), IF(? = 'completed', UTC_TIMESTAMP(), NULL), ?, ?, ?, ?)`,
+    [gymId, ownerMemberId, status, status, status, name, createdAt, actorName ?? SYSTEM_ACTOR, currentRequestChannel()]);
   return Number(insertId);
 }
 
@@ -275,9 +276,12 @@ async function writeStatus(tx: Conn, purchaseId: number, status: string): Promis
   // #3274: entering the cart (opened, or back from a Pending Payment, #1991) starts a fresh clock;
   // leaving it stops the clock.
   await tx.query(
+    // #3307 stage 2: entering `completed` stamps when the cart was paid (the Products view keeps it
+    // visible for an hour after it); leaving it clears the stamp.
     `UPDATE purchases SET status = ?, expires_at = IF(? = 'in_cart', ${CART_EXPIRES_AT_SQL}, NULL),
+            completed_at = IF(? = 'completed', UTC_TIMESTAMP(), NULL),
             modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND status <> ?`,
-    [status, status, SYSTEM_ACTOR, purchaseId, status]);
+    [status, status, status, SYSTEM_ACTOR, purchaseId, status]);
   // Staying in the cart: the change the caller made is the cart's activity.
   if (status === 'in_cart') {
     await tx.query(
