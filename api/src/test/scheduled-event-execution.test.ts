@@ -124,6 +124,20 @@ describe('executing persisted Billing Events (#1325 PR 2c)', () => {
     expect(rows[0]).toMatchObject({ status: 'pending', provider_status: null });
   });
 
+  it('#3289: an answer with no raw status stores none, and its outcome is unchanged', async () => {
+    provider.next = { success: true, providerRef: 'ref' };
+    const ok = await setup();
+    await executeDueScheduledEvents({ today: TODAY });
+    expect((await event(ok.eventId)).event_type).toBe('recurring_payment');
+    expect((await attempts(ok.eventId))[0]).toMatchObject({ status: 'completed', provider_status: null });
+
+    provider.next = { success: false, providerRef: 'ref', errorCode: 'E' };
+    const ko = await setup();
+    await executeDueScheduledEvents({ today: TODAY });
+    expect((await event(ko.eventId)).event_type).toBe('failed_billing');
+    expect((await attempts(ko.eventId))[0]).toMatchObject({ status: 'failed', provider_status: null });
+  });
+
   it('a rejection becomes failed_billing, retried on a later day, then stops after two failed days', async () => {
     provider.next = { success: false, providerRef: 'r1', providerStatus: 'FAILED', errorCode: 'E', errorMessage: 'declined' };
     const { eventId } = await setup();

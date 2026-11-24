@@ -1,3 +1,4 @@
+import { paymentDescriptionForEvent } from './purchases';
 import { RUNNING_ASSIGNMENT_STATUSES_SQL } from '../domain/assignmentStatus';
 import { splitPastBookingAttendees, type PastBookingAttendees } from '../domain/pastBookingAttendees';
 import { familyWalletOf } from './family-wallet';
@@ -101,7 +102,8 @@ import {
   toMemberPastPlan,
 } from '../domain/memberPlanHistory';
 import { attachPastPlanDetails } from './me-past-plan-details';
-import { deriveBillingEventStatus } from '../domain/billingEventStatus';
+import { ledgerEventStatus, paymentCoverage, refundCoverage, scheduledExecutionDate } from '../domain/memberPaymentView';
+import { loadRefundSummaries } from './billing-event-refunds';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
@@ -2857,7 +2859,8 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       orderId,
       amount,
       currency: 'EUR',
-      description: 'Membership fee',
+      // #3288: a retry of a checkout sends the purchase name its first attempt sent.
+      description: await paymentDescriptionForEvent(db, gymId, openEvent?.eventId, 'Membership fee'),
       memberEmail: um.member_email,
       okUrl: process.env.PAYMENT_OK_URL ?? '',
       koUrl: process.env.PAYMENT_KO_URL ?? '',
@@ -3167,7 +3170,11 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     const { rows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.name, be.previous_status, be.new_status,
               be.amount, be.notes, be.created_at, be.receipt_number, be.receipt_issued_at, be.cancelled_at,
+              be.billing_date, be.is_scheduled,
               ct.code AS charge_type_code,
+              (SELECT pr.amount FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id AND pr.transaction_type = 'payment' AND pr.status = 'completed'
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS collected_amount,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
@@ -3175,7 +3182,8 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
        FROM billing_events be
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
        WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'
-       ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
+       ORDER BY COALESCE(be.billing_date, DATE(be.created_at)) DESC, be.created_at DESC, be.id DESC
+       LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
     // #2936 — the latest stored document of each kind, for the download actions.
@@ -3183,9 +3191,19 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
     // #2937 — each event's own priced lines (#1474), for the expanded row.
     // Read-only, tenant-scoped, one query for the page; nothing re-prices them.
     const linesByEvent = await loadMemberBillingEventLines(gymId, rows.map((r: any) => Number(r.id)));
-    const items = rows.map(({ latest_tx_status, receipt_issued_at: _receiptIssuedAt, ...row }) => ({
+    // #3297 — full or partial refund, from the one refund summary (#2480).
+    const refundsByEvent = await loadRefundSummaries(gymId, rows.map((r: any) => Number(r.id)));
+    const items = rows.map(({
+      latest_tx_status, receipt_issued_at: _receiptIssuedAt, billing_date, is_scheduled, collected_amount, ...row
+    }) => ({
       ...row,
-      status: deriveBillingEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null),
+      // #3297 — a persisted, not-yet-executed obligation reads `scheduled`, as on
+      // the staff list (`ledgerEventStatus()`), and every event carries the day it
+      // is (or was) executed on, which is what the Payments view groups by.
+      status: ledgerEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null, Number(is_scheduled) === 1),
+      scheduled_date: scheduledExecutionDate(billing_date, row.created_at),
+      payment_type: paymentCoverage(collected_amount, row.amount),
+      refund_type: refundCoverage(refundsByEvent.get(Number(row.id))?.refund_state),
       documents: documents.get(Number(row.id)) ?? [],
       lines: linesByEvent.get(Number(row.id)) ?? [],
     }));

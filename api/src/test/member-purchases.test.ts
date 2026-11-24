@@ -209,7 +209,8 @@ describe('GET /payments/purchases (#3273)', () => {
     const p = (await list(owner)).items.find((x) => x.id === pPlan);
     expect(p.billing_events).toHaveLength(1);
     expect(p.billing_events[0]).toMatchObject({
-      status: 'paid', payment_method_name: 'Cash', payment_status: 'completed',
+      // #3289: a cash payment has no provider response, so its provider status is empty.
+      status: 'paid', payment_method_name: 'Cash', payment_status: null,
       paid_at: '2026-11-01T10:02:00.000Z', attempt_count: 1,
     });
   });

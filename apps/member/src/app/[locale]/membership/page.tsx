@@ -157,32 +157,27 @@ import {
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
-  type ForecastDate,
-  type ForecastLine,
   type MemberBillingEvent,
   EMPTY_FORECAST,
   billingEventAmount,
-  forecastDatesAfterNext,
   forecastPaymentAnchorId,
   planNextPayment,
   productNextPayment,
   formatPaymentAmount,
   formatPaymentDate,
   lineKindKey,
-  lineTreatmentKey,
-  lineTreatmentName,
-  nextPaymentDate,
   billingEventHasDetails,
-  billingEventIssuedDate,
   billingEventLineAmount,
   billingEventLineRegularAmount,
-  showsRegularPrice,
-  prepaidPaymentKey,
   paymentDocumentLabelKey,
   paymentDocumentPath,
   paymentDocumentFileName,
   paymentDocumentKey,
-  paymentDocumentRows,
+  paymentScheduledDate,
+  paymentSections,
+  paymentTypeKey,
+  refundTypeKey,
+  utcToday,
   type MemberPaymentDocument,
 } from '@/lib/memberPayments';
 
@@ -810,60 +805,17 @@ export default function MembershipPage() {
     if (pendingMembership || pendingRequest || showStartPayment) openConsent();
   }, [loading]);
 
-  /* ── #1123 Payments ─────────────────────────────────────────────────────── */
+  /* ── #1123 / #3297 Payments ─────────────────────────────────────────────── */
   //
-  // Which rows belong to which subcard is `lib/memberPayments.ts`' decision; the
-  // page's only job is to resolve the labels and hand the component strings it
-  // can render. No amount is computed here — every figure below is the server's,
-  // formatted.
-
-  const nextGroup = nextPaymentDate(forecast);
-  const laterGroups = forecastDatesAfterNext(forecast);
+  // Which payments belong to which section is `lib/memberPayments.ts`' decision
+  // (`paymentSections()`); the page's only job is to resolve the labels and hand
+  // the component strings it can render. No amount is computed here — every
+  // figure below is the server's, formatted.
 
   const money = (amount: number | null) => formatPaymentAmount(amount, forecast.currency, gymFmt);
 
-  /** Why a forecast line is not at its regular price, named with its Promotion. */
-  function treatmentLabel(line: ForecastLine): string | null {
-    const key = lineTreatmentKey(line);
-    if (!key) return null;
-    const benefit = line.benefits.find((b) => b.action !== 'no_benefit');
-    // A percentage is a number; a fixed discount or price is money, so it is
-    // written the way every other amount on this card is.
-    const value = benefit?.action === 'percentage_discount'
-      ? String(benefit.value ?? '')
-      : benefit?.value != null ? (money(benefit.value) ?? String(benefit.value)) : '';
-    const label = t(`payments.${key}` as any, { value });
-    const name = lineTreatmentName(line);
-    return name ? `${label} · ${name}` : label;
-  }
-
-  function forecastCardLines(group: ForecastDate): BillingEventCardLine[] {
-    return group.lines.map((line, index) => {
-      const meta = [
-        line.quantity > 1 ? t('payments.quantity', { count: line.quantity }) : null,
-        treatmentLabel(line),
-        // #946 — the one line that collects a Pre-paid Duration up front says how
-        // many periods its amount covers, because the periods after it charge
-        // nothing and an unexplained multiple of the fee reads as an error.
-        // #2883 — in the plan's own cadence ("2 months pre-payment"); the quantity above is the
-        // number of fees, never these periods.
-        (() => {
-          const key = prepaidPaymentKey(line.prepaid_periods, line.prepaid_cadence);
-          return key ? t(`payments.${key}` as any, { count: line.prepaid_periods as number }) : null;
-        })(),
-      ].filter(Boolean).join(' · ');
-      return {
-        key: `${line.kind}-${line.product_id ?? 'fee'}-${index}`,
-        heading: t(`payments.${lineKindKey(line)}` as any),
-        name: line.label,
-        meta: meta || null,
-        amount: money(line.actual_charge),
-        // Only where the two differ: `€50.00 → €50.00` on every ordinary cycle
-        // is a line of the breakdown spent saying nothing.
-        regularAmount: showsRegularPrice(line) ? money(line.regular_price) : null,
-      };
-    });
-  }
+  // #3297 — the three sections, by each payment's scheduled execution date.
+  const sections = paymentSections(events, utcToday());
 
   /* ── #1862 My purchased Products ────────────────────────────────────────── */
 
@@ -1346,86 +1298,81 @@ export default function MembershipPage() {
     );
   }
 
-  // #3242 — every stored document of the member's payments, one row each. A
-  // member with none sees no section at all: a missing document is omitted,
-  // never a placeholder or a broken link.
-  function renderDocumentsSubcard() {
-    const rows = paymentDocumentRows(events);
-    if (rows.length === 0) return null;
-    const byKey = new Map(rows.map((row) => [row.key, row.document]));
+  // #3297 — the documents of one payment, inside that payment. Only what the API
+  // listed is drawn (#2936): a missing document is omitted, never a placeholder.
+  function renderPaymentDocuments(event: BillingEvent) {
+    const docs = event.documents ?? [];
+    if (docs.length === 0) return null;
+    const byKey = new Map(docs.map((doc) => [paymentDocumentKey(doc), doc]));
     return (
-      <PaymentsSubcard title={t('payments.documents_heading')}>
+      <>
         <PaymentDocumentList
-          rows={rows.map((row) => {
-            const type = t(paymentDocumentLabelKey(row.document.kind) as any);
+          rows={docs.map((doc) => {
+            const key = paymentDocumentKey(doc);
+            const type = t(paymentDocumentLabelKey(doc.kind) as any);
             return {
-              key: row.key,
-              date: formatPaymentDate(row.date, gymFmt),
+              key,
+              date: formatPaymentDate(doc.issued_at || event.created_at, gymFmt),
               type,
-              identifier: row.document.number,
-              downloadLabel: t('payments.documents_download', { type, number: row.document.number }),
-              downloading: downloadingDocument === row.key,
+              identifier: doc.number,
+              downloadLabel: t('payments.documents_download', { type, number: doc.number }),
+              downloading: downloadingDocument === key,
             };
           })}
           onDownload={(key) => { const doc = byKey.get(key); if (doc) downloadDocument(doc); }}
         />
         {documentError && <p role="alert" style={styles.hint}>{documentError}</p>}
-      </PaymentsSubcard>
+      </>
     );
   }
 
-  // #2740 — Payments is its own tab: the three subcards #1123 put in one
-  // collapsed card, from the ledger and the forecast the page already loads.
+  // #2740 — Payments is its own tab. #3297: Next Payment, Planned Payments and
+  // Past Payments, all three from the member's own ledger.
   function renderPaymentsTab() {
+    const [nearest, ...unresolved] = sections.next;
+    const focusedPlanned = focusedPayment != null
+      && sections.planned.some((e) => paymentScheduledDate(e) === focusedPayment);
     return (
       <PaymentsSection>
         <PaymentsSubcard title={t('payments.next_heading')} defaultOpen>
-          {nextGroup ? (
-            <BillingEventCard
-              anchorId={forecastPaymentAnchorId(nextGroup.date)}
-              highlighted={focusedPayment === nextGroup.date}
-              date={formatPaymentDate(nextGroup.date, gymFmt)}
-              total={money(nextGroup.total)}
-              totalLabel={t('payments.total')}
-              lines={forecastCardLines(nextGroup)}
-              prominent
-              footer={forecast.tax_included ? t('payments.tax_included') : null}
-            />
+          {nearest ? (
+            <>
+              <BillingEventCard
+                date={formatPaymentDate(paymentScheduledDate(nearest), gymFmt)}
+                total={money(billingEventAmount(nearest))}
+                totalLabel={t('payments.total')}
+                lines={paymentCardLines(nearest)}
+                badge={paymentStatusPill(nearest)}
+                prominent
+              />
+              {unresolved.map((event) => renderPaymentRow(event))}
+            </>
           ) : (
             <p style={styles.hint}>{t('payments.next_empty')}</p>
           )}
         </PaymentsSubcard>
 
-        <PaymentsSubcard title={t('payments.past_heading')}>
-          {events.length === 0 ? (
-            <p style={styles.hint}>{t('payments.past_empty')}</p>
+        <PaymentsSubcard title={t('payments.planned_heading')} forceOpen={focusedPlanned}>
+          {sections.planned.length === 0 ? (
+            <p style={styles.hint}>{t('payments.planned_empty')}</p>
           ) : (
-            // #2937 — one compact, independently collapsible row per event.
-            events.map((event) => renderPastBillingEvent(event))
+            sections.planned.map((event, index) => {
+              const date = paymentScheduledDate(event);
+              const firstOfDate = sections.planned.findIndex((e) => paymentScheduledDate(e) === date) === index;
+              return renderPaymentRow(event, {
+                anchorId: firstOfDate ? forecastPaymentAnchorId(date) : undefined,
+                highlighted: focusedPayment === date,
+              });
+            })
           )}
         </PaymentsSubcard>
 
-        {renderDocumentsSubcard()}
-
-        <PaymentsSubcard title={t('payments.forecast_heading')}
-          forceOpen={focusedPayment != null && laterGroups.some((g) => g.date === focusedPayment)}>
-          {laterGroups.length === 0 ? (
-            <p style={styles.hint}>
-              {forecast.available ? t('payments.forecast_empty') : t('payments.forecast_unavailable')}
-            </p>
+        <PaymentsSubcard title={t('payments.past_heading')}>
+          {sections.past.length === 0 ? (
+            <p style={styles.hint}>{t('payments.past_empty')}</p>
           ) : (
-            laterGroups.map((group) => (
-              <BillingEventCard
-                key={group.date}
-                anchorId={forecastPaymentAnchorId(group.date)}
-                highlighted={focusedPayment === group.date}
-                date={formatPaymentDate(group.date, gymFmt)}
-                total={money(group.total)}
-                totalLabel={t('payments.total')}
-                lines={forecastCardLines(group)}
-                badge={<span style={statusPillStyle('info')}>{t('payments.forecast_badge')}</span>}
-              />
-            ))
+            // #2937 — one compact, independently collapsible row per payment.
+            sections.past.map((event) => renderPaymentRow(event))
           )}
         </PaymentsSubcard>
       </PaymentsSection>
@@ -2097,23 +2044,18 @@ export default function MembershipPage() {
     );
   }
 
-  /**
-   * #2937 — one past Billing Event: title, issued date, status and amount in the
-   * header; its own stored lines and the payment details (method, notes) once
-   * expanded — its documents are in the Documents section (#3242). Every
-   * figure is the ledger's.
-   */
-  function renderPastBillingEvent(event: BillingEvent) {
-    const transition = event.event_type === 'status_changed' && event.new_status
-      ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
-        + ` → ${t(`membership.status.${event.new_status}` as any)}`
-      : null;
-    // #2940: the event's own name when it has one; an event written before names
-    // existed keeps the label it had.
-    const title = event.name
-      ?? (t(`membership.event.${event.event_type}` as any)
-        + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''));
-    const lines: BillingEventCardLine[] = (event.lines ?? []).map((line) => ({
+  /** #3297 — a payment's status pill: the event's own status, derived once by the API (#640). */
+  function paymentStatusPill(event: BillingEvent) {
+    return (
+      <span style={statusPillStyle(statusTone(event.status))}>
+        {t(`payments.status.${event.status}` as any)}
+      </span>
+    );
+  }
+
+  /** #2937 — a payment's own stored lines, as the ledger priced them. */
+  function paymentCardLines(event: BillingEvent): BillingEventCardLine[] {
+    return (event.lines ?? []).map((line) => ({
       key: String(line.id),
       heading: t(`payments.${lineKindKey(line)}` as any),
       name: line.item_name,
@@ -2124,27 +2066,51 @@ export default function MembershipPage() {
       amount: money(billingEventLineAmount(line)),
       regularAmount: money(billingEventLineRegularAmount(line)),
     }));
+  }
+
+  /**
+   * #2937 / #3297 — one payment: title, scheduled date, status, its payment-type
+   * and refund chips and amount in the header; its own stored lines, its
+   * documents and the payment details (method, notes) once expanded. Every
+   * figure is the ledger's.
+   */
+  function renderPaymentRow(event: BillingEvent, opts: { anchorId?: string; highlighted?: boolean } = {}) {
+    const transition = event.event_type === 'status_changed' && event.new_status
+      ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
+        + ` → ${t(`membership.status.${event.new_status}` as any)}`
+      : null;
+    // #2940: the event's own name when it has one; an event written before names
+    // existed keeps the label it had.
+    const title = event.name
+      ?? (t(`membership.event.${event.event_type}` as any)
+        + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''));
     const notes = [transition, event.notes].filter(Boolean).join(' · ') || null;
+    const paymentKey = paymentTypeKey(event);
+    const refundKey = refundTypeKey(event);
     return (
       <PastBillingEventRow
         key={event.id}
+        anchorId={opts.anchorId}
+        highlighted={opts.highlighted}
         title={title}
-        date={formatPaymentDate(billingEventIssuedDate(event), gymFmt)}
-        // The status is the event's own, derived once by the API (#640).
-        status={(
-          <span style={statusPillStyle(statusTone(event.status))}>
-            {t(`payments.status.${event.status}` as any)}
-          </span>
-        )}
+        date={formatPaymentDate(paymentScheduledDate(event), gymFmt)}
+        status={paymentStatusPill(event)}
+        chips={(paymentKey || refundKey) ? (
+          <>
+            {paymentKey && <span style={statusPillStyle('neutral')}>{t(`payments.${paymentKey}` as any)}</span>}
+            {refundKey && <span style={statusPillStyle('info')}>{t(`payments.${refundKey}` as any)}</span>}
+          </>
+        ) : null}
         amount={money(billingEventAmount(event))}
-        lines={lines}
+        lines={paymentCardLines(event)}
+        documents={renderPaymentDocuments(event)}
         expandable={billingEventHasDetails(event)}
-        details={(
+        details={(event.payment_method_name || notes) ? (
           <>
             {event.payment_method_name && <span>{event.payment_method_name}</span>}
             {notes && <span>{notes}</span>}
           </>
-        )}
+        ) : null}
       />
     );
   }
@@ -2390,19 +2356,9 @@ export default function MembershipPage() {
       {renderMyPlans()}
       {renderMyProducts()}
 
-      {showStartPayment && (
-        <div style={styles.startPaymentRow}>
-          <button style={styles.startPaymentBtn} onClick={openConsent}>
-            {t('payment_banner.start_payment')}
-          </button>
-        </div>
-      )}
-
       {/* #1121 §3 — Additional Products and Services, directly below the
-          membership card. The payment banner and Start payment above it belong
-          to that card (they are about the fee it charges), so the subsection
-          follows them rather than splitting the membership from its own
-          pending payment. */}
+          membership card. (#3294 removed the "Make a payment" button that sat
+          between them; payments go through the cart and the Payments tab.) */}
       {renderOwnPurchases()}
 
       {packages.length > 0 && (
@@ -2504,8 +2460,6 @@ const styles: Record<string, React.CSSProperties> = {
   emptyTitle: { margin: '8px 0 12px', fontSize: 20, fontWeight: 700 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: 0 },
   // Payment banner
-  startPaymentRow: { marginTop: 12, display: 'flex', justifyContent: 'flex-end' },
-  startPaymentBtn: { ...secondaryButtonStyle, padding: '8px 16px', fontSize: 13 },
   // Consent modal
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 },
   modal: { ...sectionCardStyle, borderRadius: 16, padding: 24, maxWidth: 480, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' },

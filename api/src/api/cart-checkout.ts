@@ -33,7 +33,7 @@
  * The amounts are the purchases' frozen ones (`resolvePurchase()` priced each when it entered the
  * cart): a cart is paid at the price it shows, exactly as a cart Product Set's linked purchases are.
  */
-import { splitOffCheckout, stampEventPurchase } from './purchases';
+import { checkoutNameStillHolds, planCheckoutPurchase, splitOffCheckout, stampEventPurchase } from './purchases';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -227,11 +227,13 @@ export async function startCartCheckout(input: {
   const orderId = crypto.randomUUID();
   const pageToken = crypto.randomUUID();
   const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
+  // #3288: the payment's description is the canonical name of the purchase it charges.
+  const checkoutPlan = await planCheckoutPurchase(db, gymId, purchases.map((p) => p.id));
   const result = await getPaymentProvider().createPaymentRequest({
     orderId,
     amount: toMinorUnits(amount),
     currency,
-    description: names.join(', ').slice(0, 250),
+    description: checkoutPlan.name,
     memberEmail: input.memberEmail,
     okUrl: withPurposeParam(process.env.PAYMENT_OK_URL ?? '', 'product_purchase'),
     koUrl: withPurposeParam(process.env.PAYMENT_KO_URL ?? '', 'product_purchase'),
@@ -253,7 +255,10 @@ export async function startCartCheckout(input: {
       }
 
       // #3251: the lines paid are one checkout; what stays in the cart keeps the cart.
-      const checkoutId = await splitOffCheckout(tx, gymId, memberId, purchases.map((p) => p.id), input.actorName);
+      const checkoutId = await splitOffCheckout(tx, gymId, memberId, purchases.map((p) => p.id), input.actorName, checkoutPlan.planned);
+      if (!(await checkoutNameStillHolds(tx, gymId, checkoutId, checkoutPlan.name))) {
+        throw new CartCheckoutRefused(409, 'cart_changed', 'The cart changed; read it again');
+      }
       const { insertId: paymentRequestId } = await tx.query(
         `INSERT INTO payment_requests
            (gym_id, anchor_plan_snapshot_id, member_id, payer_member_id, amount, currency, charge_type_id,
