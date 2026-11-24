@@ -6528,6 +6528,9 @@
     "translations_close": "Cerrar",
     "translations_cancel": "Cancelar",
     "translations_save": "Guardar",
-    "translations_empty": "Sin traducción (se usa el inglés)"
+    "translations_empty": "Sin traducción (se usa el inglés)",
+    "label_status": "Estado",
+    "col_status": "Estado",
+    "col_actions": "Acciones"
   }
 }

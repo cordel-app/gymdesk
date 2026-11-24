@@ -694,7 +694,7 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId', requireModuleWr
   const params: any[] = [];
 
   const { display_name, notes } = req.body;
-  const baseMeal = await resolveBaseMealInput(req.body);
+  const baseMeal = await resolveBaseMealInput(req.body, db, { table: 'member_nutrition_plan_meals', mealId });
   if (baseMeal.kind === 'error') return res.status(400).json({ error: baseMeal.message });
   if (baseMeal.kind === 'ok') {
     updates.push('meal_type = ?', 'base_meal_id = ?'); params.push(baseMeal.slug, baseMeal.id);
