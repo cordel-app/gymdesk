@@ -15,6 +15,7 @@ import { SectionEditButton } from '@/components/SectionEditButton';
 import {
   cardMutedTextStyle,
   cardSectionDividedStyle,
+  cardHintStyle,
   cardSectionLabelStyle,
   cardSectionStyle,
   cardSubLabelStyle,
@@ -34,7 +35,8 @@ import { useProductSetDetail } from './MemberProductSet';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { ProposedSetForecast } from './ProposedSetForecast';
 import { CartStatusBar, ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
-import { billingMode, cartExpirySeconds, hasCartInCart, pendingOneOffCount, saveAndPayTarget, standaloneCartCount } from './productsWorkflowView';
+import { billingMode, cartExpirySeconds, hasCartInCart, pendingOneOffCount, saveAndPayTarget, standaloneCartCount, submittedCartNoteKey, submittedCartView, type SubmittedCart } from './productsWorkflowView';
+import { SubmittedCartSummary } from './SubmittedCartSummary';
 import { StandaloneCartSummary } from './StandaloneCartSummary';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { StandaloneCartPayModal } from './StandaloneCartPayModal';
@@ -204,6 +206,9 @@ export function MemberExpandedRow({
     ? configuration.current_product_set!.id : null;
   const [reviewOpen, setReviewOpen] = useState(false);
   const [committedKey, setCommittedKey] = useState(0);
+  // #3307 — the cart the last Save & Pay submitted, so the Summary keeps showing it in the state the
+  // server reports instead of disappearing once it leaves In Cart.
+  const [submittedCart, setSubmittedCart] = useState<SubmittedCart | null>(null);
   const draftReview = useDraftReview(configuration.current_product_set, configuration);
   const workflow = {
     current: configuration.current_product_set,
@@ -230,6 +235,8 @@ export function MemberExpandedRow({
   }
   const billingSectionMode = billingMode(workflow);
   const inFlightSetsShown = (configuration.product_sets ?? []).some((p: any) => p.status === 'in_cart' || p.status === 'pending_payment');
+  const submittedView = submittedCartView(submittedCart, configuration.product_sets ?? []);
+  const submittedNoteKey = submittedCart ? submittedCartNoteKey(submittedCart.outcome) : null;
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -563,7 +570,10 @@ export function MemberExpandedRow({
               productSetId={inFlightSetId}
               open={reviewOpen}
               onClose={() => setReviewOpen(false)}
-              onCommitted={() => { setReviewOpen(false); setCommittedKey((k) => k + 1); reloadProducts(); }}
+              onCommitted={({ outcome, checkoutUrl }) => {
+                setSubmittedCart({ productSetId: inFlightSetId, outcome, checkoutUrl });
+                setReviewOpen(false); setCommittedKey((k) => k + 1); reloadProducts();
+              }}
             />
           )}
           <Section label={t('members.section_additional_services')}>
@@ -600,7 +610,7 @@ export function MemberExpandedRow({
 
           {/* #1660 — Summary: the pending draft's additions and removals, last on
               the tab, with Save & Pay / Cancel directly beneath. */}
-          {(inFlightSetsShown || saveAndPayTarget(workflow) === 'cart' || cartPaymentLink != null) && (
+          {(inFlightSetsShown || saveAndPayTarget(workflow) === 'cart' || cartPaymentLink != null || submittedView === 'committed') && (
             <Section label={t('members.section_summary')}>
               {/* #3274 follow-up — the cart's one In Cart status and countdown. */}
               {hasCartInCart(configuration.current_product_set, purchasedProducts) && (
@@ -615,6 +625,20 @@ export function MemberExpandedRow({
                 review={draftReview}
                 onChanged={reloadProducts}
               />
+              {/* #3307 — the cart Save & Pay submitted: still awaiting payment, it is the in-flight
+                  row above (plus what the submission answered); paid or activated, it stays here. */}
+              {submittedView === 'in_flight' && (submittedNoteKey || submittedCart?.checkoutUrl) && (
+                <div style={{ ...cardHintStyle, marginBottom: 12 }} data-submitted-cart-note>
+                  {submittedNoteKey && <div>{t(`members.${submittedNoteKey}` as any)}</div>}
+                  {submittedCart?.checkoutUrl && (
+                    <div>{t('members.product_set_payment_link')}: <code>{submittedCart.checkoutUrl}</code></div>
+                  )}
+                </div>
+              )}
+              {submittedView === 'committed' && submittedCart && (
+                <SubmittedCartSummary submitted={submittedCart} reloadKey={configuration} />
+              )}
+              {(inFlightSetsShown || saveAndPayTarget(workflow) != null || cartPaymentLink != null) && (
               <ProductsWorkflowActions
                 current={configuration.current_product_set}
                 workflow={workflow}
@@ -630,6 +654,7 @@ export function MemberExpandedRow({
                   else if (target === 'purchases') document.getElementById('member-products-section')?.scrollIntoView({ behavior: 'smooth' });
                 }}
               />
+              )}
             </Section>
           )}
 

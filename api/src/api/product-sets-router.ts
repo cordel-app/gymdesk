@@ -60,6 +60,7 @@ import { logger } from '../lib/logger';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 import { loadAppliedPromotionLists } from './member-product-promotions';
 import { withPromotionDescriptions } from './cart-promotion-terms';
+import { purchaseView } from '../domain/purchaseView';
 
 /**
  * #1325 PR 2d — the ProductSet-keyed commercial API.
@@ -100,6 +101,8 @@ async function loadSet(gymId: string, id: unknown) {
   const { rows } = await db.query<any>(
     `SELECT ps.*, ${productSetLegacyAssignmentIdSql()} AS linked_user_membership_id,
             (SELECT pu.channel FROM purchases pu WHERE pu.id = ps.purchase_id) AS cart_channel,
+            (SELECT pu.name FROM purchases pu WHERE pu.id = ps.purchase_id) AS purchase_name,
+            (SELECT pu.status FROM purchases pu WHERE pu.id = ps.purchase_id) AS purchase_status,
             ${setCartExpiredSql('ps')} AS stale, ${setCartExpiresAtSql('ps')} AS cart_expires_at
        FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [numeric, gymId]);
   return rows[0] ?? null;
@@ -159,7 +162,9 @@ productSetsRouter.get('/:id', async (req, res) => {
     `SELECT id, event_type, amount, billing_date, period_start, period_end, is_scheduled, schedule_id, purchase_id
        FROM billing_events WHERE gym_id = ? AND product_set_id = ? ORDER BY billing_date, id`,
     [gymId, Number(set.id)]);
-  res.json({ ...shape(set), configuration: assignment, billing_events: events });
+  // #3307 — the purchase (#3251's cart) the version belongs to, with its own status, so the Admin
+  // Summary can keep showing a cart after Save & Pay in the state the server gives it.
+  res.json({ ...shape(set), purchase: purchaseView(set), configuration: assignment, billing_events: events });
 });
 
 productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => {

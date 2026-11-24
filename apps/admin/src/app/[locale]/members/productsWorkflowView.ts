@@ -390,3 +390,41 @@ export function pendingCancelErrorKey(code: string | null | undefined): string {
     default: return 'ps_cancel_pending_error';
   }
 }
+
+/**
+ * #3307 — the cart Save & Pay just submitted, kept on screen after the commit. Every figure and
+ * status it shows is re-read from the server (`GET /product-sets/:id`); the page only remembers
+ * which version it submitted, what the submission answered and the payment link it returned.
+ */
+export interface SubmittedCart {
+  productSetId: number;
+  /** The submission's answer: `paid` (cash/card/settled), `activated` (nothing owed), `awaiting` (a payment link), `pending` / `unknown` (provider in flight), `failed`. */
+  outcome: 'paid' | 'activated' | 'awaiting' | 'pending' | 'unknown' | 'failed';
+  checkoutUrl: string | null;
+}
+
+/** The `members.*` key of the note shown beside a submitted cart, `null` when the status says it all. */
+export function submittedCartNoteKey(outcome: SubmittedCart['outcome']): string | null {
+  switch (outcome) {
+    case 'pending': return 'pay_outcome_pending';
+    case 'unknown': return 'pay_outcome_unknown';
+    case 'failed': return 'pay_outcome_failed';
+    default: return null;
+  }
+}
+
+/**
+ * #3307 — how the Summary shows the cart Save & Pay submitted. `in_flight`: the version still awaits
+ * payment and is already one of the in-flight rows, drawn there with its own actions. `committed`:
+ * it left the in-flight list (paid or activated) and is drawn as a retained row. `null`: nothing was
+ * submitted, or a new cart was opened since, which replaces it on screen.
+ */
+export function submittedCartView(
+  submitted: Pick<SubmittedCart, 'productSetId'> | null,
+  inFlight: Array<{ id: number; status: string }>,
+): 'in_flight' | 'committed' | null {
+  if (!submitted) return null;
+  const live = inFlight.filter((p) => p.status === 'in_cart' || p.status === 'pending_payment');
+  if (live.some((p) => p.id === submitted.productSetId)) return 'in_flight';
+  return live.length > 0 ? null : 'committed';
+}
