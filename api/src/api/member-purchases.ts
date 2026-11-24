@@ -17,7 +17,7 @@
 import { toPurchaseChannel, type PurchaseChannel } from '../domain/purchaseChannel';
 import { db } from '../infra/db';
 import { loadRefundSummaries } from './billing-event-refunds';
-import { deriveBillingEventStatus } from '../domain/billingEventStatus';
+import { deriveBillingEventStatus, displayBillingEventStatus } from '../domain/billingEventStatus';
 import { purchasePayment, type PurchaseAttempt, type PurchasePayment } from '../domain/purchasePayment';
 
 export const MEMBER_PURCHASES_MAX_LIMIT = 200;
@@ -305,7 +305,11 @@ async function loadEvents(gymId: string, ids: number[], inIds: string): Promise<
     const id = Number(r.id);
     const status = Number(r.is_scheduled) === 1
       ? 'scheduled'
-      : deriveBillingEventStatus(r.event_type, r.latest_tx_status, r.cancelled_at != null);
+      // #3352: a refund reads on the event's own status (the Billing Events list's display rule),
+      // never on the payment status, which is the provider's alone.
+      : displayBillingEventStatus(
+        deriveBillingEventStatus(r.event_type, r.latest_tx_status, r.cancelled_at != null),
+        refunds.get(id)?.refund_state);
     const list = out.get(Number(r.purchase_id)) ?? [];
     list.push({
       id,
@@ -314,7 +318,7 @@ async function loadEvents(gymId: string, ids: number[], inIds: string): Promise<
       amount: r.amount != null ? String(r.amount) : null,
       status,
       created_at: iso(r.created_at) as string,
-      ...purchasePayment(attempts.get(id) ?? [], refunds.get(id)?.refund_state),
+      ...purchasePayment(attempts.get(id) ?? []),
     });
     out.set(Number(r.purchase_id), list);
   }

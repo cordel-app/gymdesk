@@ -2,21 +2,16 @@
  * #3273 — which payment attempt of a purchase's Billing Event a person reads as "how and when this
  * checkout was paid", and the status that attempt reports. Pure: the loader
  * (`api/src/api/member-purchases.ts`) hands it the event's own attempts (`payment_requests` with
- * `billing_event_id` = the event and `transaction_type = 'payment'`) and the event's refund state
- * (`loadRefundSummaries()`, #2480), and nothing here reads the Member's current payment method.
+ * `billing_event_id` = the event and `transaction_type = 'payment'`), and nothing here reads the Member's current payment method.
  *
  * The rules are the issue's §5:
  *   - a successful attempt wins, even after failed ones — its method and its `completed_at` are the
  *     purchase's payment details (the latest one, should there be more than one);
  *   - with no successful attempt, the latest attempt's method and status are shown and there is no
  *     payment date (never a fabricated one);
- *   - a refund is money returned, not a payment that never happened: the status reads `refunded` /
- *     `partially_refunded` exactly as the Billing Events list's normalized status does (#2480).
- *
- * The status vocabulary is the Billing Events list's normalized one (`normalizePaymentStatus()`),
- * falling back to the attempt's own `payment_requests.status` for an attempt with no provider status
- * (cash, card terminal, waiver) — the two vocabularies share `completed`, `pending`, `failed` and
- * `expired`, which is what the list's status badge already reads.
+ *   - the status is the provider's own, normalized (`normalizePaymentStatus()`, #3289/#3352): a
+ *     refund changes the Billing Event's `status`, never this one, and an attempt with no provider
+ *     status (cash, card terminal, waiver) reads `null`, never the request's internal status.
  */
 import { normalizePaymentStatus } from './providerPaymentStatus';
 
@@ -61,8 +56,8 @@ export function relevantAttempt(attempts: readonly PurchaseAttempt[]): PurchaseA
   return latest(attempts.filter((a) => a.status === 'completed')) ?? latest(attempts);
 }
 
-/** `full` / `partial` / anything else (no refund), as `loadRefundSummaries()` reports it. */
-export function purchasePayment(attempts: readonly PurchaseAttempt[], refundState?: string | null): PurchasePayment {
+/** #3352: the payment's own reading; a refund never moves it (it is the Billing Event's status). */
+export function purchasePayment(attempts: readonly PurchaseAttempt[]): PurchasePayment {
   const a = relevantAttempt(attempts);
   if (!a) {
     return {
@@ -72,9 +67,7 @@ export function purchasePayment(attempts: readonly PurchaseAttempt[], refundStat
   }
   const succeeded = a.status === 'completed';
   // #3289: the provider's own status alone; no fallback to the request's internal state.
-  let status: string | null = normalizePaymentStatus(a.provider_status);
-  if (succeeded && refundState === 'full') status = 'refunded';
-  else if (succeeded && refundState === 'partial') status = 'partially_refunded';
+  const status: string | null = normalizePaymentStatus(a.provider_status);
   const paidAt = succeeded && a.completed_at != null ? new Date(a.completed_at).toISOString() : null;
   return {
     attempt_id: a.id,

@@ -23,13 +23,9 @@ describe('purchasePayment (#3273)', () => {
     expect(p.payment_status).toBe('pending');
   });
 
-  it('reads a partial refund of the successful attempt as partially refunded', () => {
-    const p = purchasePayment([a(1, 'completed', '2026-11-01T10:00:00Z')], 'partial');
-    expect(p).toMatchObject({ payment_status: 'partially_refunded', paid_at: '2026-11-01T10:00:00.000Z' });
-  });
-
-  it('does not apply a refund state to an attempt that never succeeded', () => {
-    expect(purchasePayment([a(1, 'failed', '2026-11-01T10:00:00Z', { provider_status: 'FAILED' })], 'full').payment_status).toBe('failed');
+  it('#3352: a refund never moves the payment status, which is the provider\'s alone', () => {
+    const p = purchasePayment([a(1, 'completed', '2026-11-01T10:00:00Z', { provider_status: 'SUCCEEDED' })]);
+    expect(p).toMatchObject({ payment_status: 'completed', paid_at: '2026-11-01T10:00:00.000Z' });
   });
 
   it('#3289: never falls back to the internal request status when the provider sent none', () => {

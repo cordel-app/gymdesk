@@ -1026,8 +1026,11 @@ answer with no status never erases one already received (`COALESCE(?, provider_s
 
 The normalized payment status is `normalizePaymentStatus(provider_status)` and nothing else:
 `NULL` provider status → `NULL` normalized status (rendered `—`), with no fallback to the
-request's or the Billing Event's internal status. The one overlay kept is the refund ledger's
-`refunded` / `partially_refunded` on a collected payment. A Member's aggregated Payment
+request's or the Billing Event's internal status. Since #3352 there is no overlay at all: a
+refund is the Billing Event's own `status` (`displayBillingEventStatus()`, `refunded` /
+`partially_refunded`, on the staff list and Details and on a purchase's event), and the
+normalized payment status of a refunded payment stays what the provider reported for the
+payment (`completed` for `SUCCEEDED`). A Member's aggregated Payment
 Status (#2574, `memberPaymentStatusSql()`) is a different, documented read and keeps its
 fallback to the attempt's internal status.
 

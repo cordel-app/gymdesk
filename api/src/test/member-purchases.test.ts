@@ -228,9 +228,11 @@ describe('GET /payments/purchases (#3273)', () => {
     expect(p.billing_events).toEqual([]);
   });
 
-  it('reports a refunded payment as refunded, keeping its payment date', async () => {
+  it('reports a refund on the event status, keeping the provider\'s payment status and date (#3352)', async () => {
     const e = (await list(owner)).items.find((x) => x.id === pRefund).billing_events[0];
-    expect(e).toMatchObject({ payment_status: 'refunded', payment_method_name: 'Visa', paid_at: '2026-11-12T08:02:00.000Z' });
+    expect(e).toMatchObject({
+      status: 'refunded', payment_status: 'completed', payment_method_name: 'Visa', paid_at: '2026-11-12T08:02:00.000Z',
+    });
   });
 
   it('isolates gyms: another gym\'s member is a 404 and sees none of these purchases', async () => {
