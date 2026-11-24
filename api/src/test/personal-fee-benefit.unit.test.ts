@@ -112,7 +112,7 @@ describe('resolveMembershipFee — the Personal Membership Fee Benefit', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-06-01', context({ personalFeeBenefit: tenPercent }));
     expect(charge.amount).toBe(36);
     expect(charge.benefits).toEqual([
-      { source: 'personal', name: null, action: 'percentage_discount', value: 10, period_status: null },
+      { source: 'personal', name: null, action: 'percentage_discount', value: 10, period_status: null, code: 'personal_fee_benefit' },
     ]);
   });
 

@@ -1,4 +1,5 @@
 import { normalizePaymentStatus } from '../domain/providerPaymentStatus';
+import { lineReasonsView } from '../domain/checkoutSummary';
 import { assignmentOfLegacyIdSql } from '../domain/planAssignments';
 import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { Router } from 'express';
@@ -779,6 +780,21 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
         ORDER BY id`,
       [billingEventId, gymId],
     );
+    // #3284: every treatment that explains each line, as Save & Pay persisted them.
+    const reasonsByLine = new Map<number, any[]>();
+    if (lineRows.length > 0) {
+      const { rows: reasonRows } = await db.query<any>(
+        `SELECT billing_event_line_id, reason_type, source, reason_code, action, value, name
+           FROM billing_event_line_reasons
+          WHERE gym_id = ? AND billing_event_line_id IN (${lineRows.map(() => '?').join(',')})
+          ORDER BY billing_event_line_id, position`,
+        [gymId, ...lineRows.map((l: any) => Number(l.id))],
+      );
+      for (const r of reasonRows) {
+        const key = Number(r.billing_event_line_id);
+        reasonsByLine.set(key, [...(reasonsByLine.get(key) ?? []), r]);
+      }
+    }
 
     const failureReason = ev.transaction_failure_reason
       ?? (status === 'failed' ? ev.notes ?? null : null);
@@ -830,6 +846,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
         unit_amount: l.regular_unit_price,
         promotion_name: l.promotion_name,
         amount: l.amount,
+        reasons: lineReasonsView(reasonsByLine.get(Number(l.id)) ?? []),
       })),
       can_retry: actions.retry,
       can_record_manual_payment: actions.payCash,

@@ -24,7 +24,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
-import { contractedMembersText, discountText, lineReducedToZero, splitContracted } from './productsWorkflowView';
+import { contractedMembersText, discountEntries, lineReducedToZero, splitContracted } from './productsWorkflowView';
 
 const money = (n: number) => `${n.toFixed(2)} €`;
 
@@ -56,7 +56,7 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
         </thead>
         <tbody>
           {payment.lines.map((l, i) => {
-            const d = discountText(l);
+            const entries = discountEntries(l);
             // #2883 — a Membership Fee charge that collects a Pre-paid Duration says how many billing
             // periods its amount covers, in the plan's cadence; the quantity stays the number of fees.
             const prepaid = prepaidPaymentLabel(l.prepaid_periods, l.prepaid_cadence, tFreq as any);
@@ -100,8 +100,14 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
                 <td style={tdNum}>{money(l.unit_price)}</td>
                 <td style={tdNum} data-line-total>{money(l.line_total)}</td>
                 <td style={td}>
-                  {l.discount > 0 ? `−${money(l.discount)}` : '—'}
-                  {d && <span style={{ ...cardHintStyle, margin: 0 }}>{` (${d.key ? t(d.key as any, d.values as any) : d.text})`}</span>}
+                  {l.discount > 0 ? `−${money(l.discount)}` : (entries.length === 0 ? '—' : null)}
+                  {/* #3284 — every treatment, each with its type (Benefit / Discount / Manual adjustment). */}
+                  {entries.map((e, k) => (
+                    <span key={k} data-line-reason={e.typeKey ?? ''} style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
+                      {e.key ? t(e.key as any, e.values as any) : e.text}
+                      {e.typeKey ? ` · ${t(e.typeKey as any)}` : ''}
+                    </span>
+                  ))}
                 </td>
                 <td style={tdNum}>{l.tax_rate_percent != null ? `${l.tax_rate_percent}%` : '—'}</td>
                 <td style={tdNum}>{money(l.tax_amount)}</td>
