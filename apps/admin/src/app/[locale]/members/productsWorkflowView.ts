@@ -229,6 +229,16 @@ export function lineReducedToZero(l: Pick<InitialPaymentLike['lines'][number], '
   return l.discount > 0 && l.amount === 0;
 }
 
+/**
+ * #3285 — a line's label in the Save & Pay confirmation's compact list: the item's name, with
+ * its quantity appended (`Locker Rental × 5`) only when more than one unit is charged. The
+ * amount beside it is the server's VAT-inclusive `amount`; nothing here prices anything.
+ */
+export function compactInitialPaymentLabel(l: Pick<InitialPaymentLike['lines'][number], 'name' | 'quantity'>): string {
+  const name = l.name ?? '—';
+  return l.quantity > 1 ? `${name} × ${l.quantity}` : name;
+}
+
 export interface WorkflowInput {
   current: ProductSetSummary | null;
   /** `GET /product-sets/:id/review` of the Draft; `null` until read or when there is no Draft. */

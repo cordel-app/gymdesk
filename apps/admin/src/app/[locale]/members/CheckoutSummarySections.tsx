@@ -24,11 +24,17 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
-import { contractedMembersText, discountEntries, lineReducedToZero, splitContracted } from './productsWorkflowView';
+import { compactInitialPaymentLabel, contractedMembersText, discountEntries, lineReducedToZero, splitContracted } from './productsWorkflowView';
 
 const money = (n: number) => `${n.toFixed(2)} €`;
 
-export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike | null | undefined }) {
+/**
+ * `compact` (#3285) is the Save & Pay confirmation's view of the same read: one row per line with
+ * the item (its quantity appended when above one) and the line's final VAT-inclusive `amount`,
+ * zero lines included, in the server's order; the totals below are the full view's, unchanged.
+ * The Products tab's Summary keeps the full breakdown.
+ */
+export function InitialPaymentSection({ payment, compact = false }: { payment: InitialPaymentLike | null | undefined; compact?: boolean }) {
   const t = useTranslations('members');
   const tFreq = useTranslations('billing_frequency');
   // #3270 — the Source column reads the Billing Event Line's own `source` (#3254), worded as the
@@ -38,6 +44,40 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
   if (!payment) return null;
   if (payment.total == null) return <p style={cardHintStyle}>{t('review_error_amount')}</p>;
   if (payment.lines.length === 0) return <p style={cardHintStyle}>{t('review_nothing_due')}</p>;
+  const totalsBlock = (
+    <div style={totals}>
+      {payment.discount_total > 0 && <>
+        <TotalRow label={t('checkout_total_before_discounts')} value={money(payment.total_before_discounts)} />
+        <TotalRow label={t('checkout_total_discounts')} value={`−${money(payment.discount_total)}`} />
+      </>}
+      <TotalRow label={t('checkout_subtotal_excl_vat')} value={money(payment.subtotal_excl_tax)} />
+      <TotalRow label={t('checkout_total_vat')} value={money(payment.tax_total)} />
+      <TotalRow strong label={t('checkout_total_initial_payment')} value={money(payment.total)} />
+    </div>
+  );
+  if (compact) {
+    return (
+      <div data-initial-payment data-initial-payment-compact>
+        <table style={compactTable}>
+          <thead>
+            <tr>
+              <th style={th}>{t('checkout_col_item')}</th>
+              <th style={thNum}>{t('checkout_col_amount')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payment.lines.map((l, i) => (
+              <tr key={i} data-initial-payment-line>
+                <td style={compactItem}>{compactInitialPaymentLabel(l)}</td>
+                <td style={tdNum}>{money(l.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {totalsBlock}
+      </div>
+    );
+  }
   return (
     <div data-initial-payment style={{ overflowX: 'auto' }}>
       <table style={table}>
@@ -120,15 +160,7 @@ export function InitialPaymentSection({ payment }: { payment: InitialPaymentLike
           })}
         </tbody>
       </table>
-      <div style={totals}>
-        {payment.discount_total > 0 && <>
-          <TotalRow label={t('checkout_total_before_discounts')} value={money(payment.total_before_discounts)} />
-          <TotalRow label={t('checkout_total_discounts')} value={`−${money(payment.discount_total)}`} />
-        </>}
-        <TotalRow label={t('checkout_subtotal_excl_vat')} value={money(payment.subtotal_excl_tax)} />
-        <TotalRow label={t('checkout_total_vat')} value={money(payment.tax_total)} />
-        <TotalRow strong label={t('checkout_total_initial_payment')} value={money(payment.total)} />
-      </div>
+      {totalsBlock}
     </div>
   );
 }
@@ -234,8 +266,12 @@ export function ContractedItemsSection({ items }: { items: ContractedItemLike[] 
 const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const th: CSSProperties = { ...listHeaderCellStyle, textAlign: 'left', padding: '6px 8px', fontSize: 13 };
 const thNum: CSSProperties = { ...th, textAlign: 'right' };
+// #3285 — two columns that fit the modal: the item takes the width and wraps by words only, the
+// amount never wraps; `fixed` would squeeze the amount, so the table sizes from its content.
+const compactTable: CSSProperties = { ...table, tableLayout: 'auto' };
 const td: CSSProperties = { ...listCellStyle, padding: '6px 8px', fontSize: 13, borderTop: `1px solid ${LIST_DIVIDER_COLOR}` };
 const tdNum: CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap' };
+const compactItem: CSSProperties = { ...td, width: '100%', overflowWrap: 'anywhere' };
 const totals: CSSProperties = { marginTop: 8, marginLeft: 'auto', maxWidth: 360, fontSize: 13, display: 'grid', gap: 2 };
 // #3188 (reopened) — the Member's expanded row is itself drawn on the Theme's app background
 // (`listExpandedStyle`), so a panel painted with that same token was invisible. The panel takes
