@@ -23,6 +23,7 @@ import {
   cartItemRemovePath,
   hasCart,
   pendingCartCancelErrorKey,
+  pendingCheckoutSetId,
   separateStandaloneCart,
   standaloneCommitAction,
   standaloneSecondsLeft,
@@ -310,5 +311,18 @@ describe('standalone purchases in the cart (#2949 stage 6)', () => {
     const page = readFileSync(PAGE, 'utf-8');
     expect(page).toContain("apiFetch<MemberStandaloneCart>('/me/cart/purchases')");
     expect(page).toContain("'/me/cart/checkout', { method: 'POST' }");
+  });
+});
+
+// #3286 — the Home leaves the cart card's own checkout to the card.
+describe('pendingCheckoutSetId', () => {
+  it('names the owner\'s Pending Payment Product Set the card shows', () => {
+    expect(pendingCheckoutSetId(draft({ status: 'pending_payment', owner_member_id: 5 }), 5)).toBe(7);
+  });
+
+  it('names none for a Draft, a family version the member is only covered by, or no cart', () => {
+    expect(pendingCheckoutSetId(draft({ owner_member_id: 5 }), 5)).toBeNull();
+    expect(pendingCheckoutSetId(draft({ status: 'pending_payment', owner_member_id: 5 }), 6)).toBeNull();
+    expect(pendingCheckoutSetId(null, 5)).toBeNull();
   });
 });

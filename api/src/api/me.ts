@@ -2385,8 +2385,23 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
           membership_fee: await currentMembershipFee(gymId, Number(pendingRows[0].id)),
           billing_interval: pendingRows[0].billing_interval != null ? Number(pendingRows[0].billing_interval) : null,
           billing_unit: pendingRows[0].billing_unit ?? null,
+          product_set_id: null as number | null,
         }
       : null;
+    if (pending_membership) {
+      // #3286: the Pending Payment Product Set this assignment's checkout belongs to,
+      // so the Home's banner can stand aside for the cart card that already pays it.
+      const { rows: ownSet } = await db.query<any>(
+        `SELECT ps.id FROM product_sets ps
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'pending_payment'
+            AND EXISTS (SELECT 1 FROM product_set_plan_snapshots pmj
+                          JOIN plan_snapshots pms ON pms.id = pmj.plan_snapshot_id
+                         WHERE pmj.product_set_id = ps.id AND pms.anchor_plan_snapshot_id = ?)
+          ORDER BY ps.id DESC LIMIT 1`,
+        [gymId, memberId, Number(pending_membership.id)],
+      );
+      pending_membership.product_set_id = ownSet[0] ? Number(ownSet[0].id) : null;
+    }
     if (!pending_membership) {
       // #1325 PR 3a: a Pending Payment ProductSet is the same thing to the
       // member — a plan saved and awaiting its first payment — and its figure is
@@ -2414,6 +2429,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
           membership_fee: setRows[0].fee != null ? Number(setRows[0].fee) : null,
           billing_interval: setRows[0].billing_interval != null ? Number(setRows[0].billing_interval) : null,
           billing_unit: setRows[0].billing_unit ?? null,
+          product_set_id: Number(setRows[0].id),
         } as any;
       }
     }
@@ -2720,8 +2736,11 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
       `SELECT pr.id, pr.anchor_plan_snapshot_id AS user_membership_id, pr.amount, pr.currency, pr.status,
               pr.provider, pr.source, pr.created_at, pr.completed_at,
               bp.recurring_billing_interval AS billing_interval,
-              bp.recurring_billing_unit AS billing_unit
+              bp.recurring_billing_unit AS billing_unit,
+              -- #3286: the Product Set whose checkout this request is an attempt on.
+              be.product_set_id
        FROM payment_requests pr
+       LEFT JOIN billing_events be ON be.id = pr.billing_event_id AND be.gym_id = pr.gym_id
        -- #2125 M6b-16: the assignment's plan is its current plan snapshot's.
        LEFT JOIN plan_snapshots pa ON pa.gym_id = pr.gym_id AND ${assignmentOfLegacyIdSql('pr.anchor_plan_snapshot_id')}
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = pa.membership_plan_id AND bp.gym_id = pr.gym_id

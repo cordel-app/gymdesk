@@ -193,6 +193,20 @@ export function cartPhase(
 }
 
 /**
+ * #3286 — the Pending Payment Product Set this cart card shows the member as
+ * their own checkout, with its Pay / Cancel, or `null`. The same phase rule the
+ * card renders by (`cartPhase()`), so the Home never hides a payment the card
+ * does not carry: a family version the member is only covered by is not theirs.
+ */
+export function pendingCheckoutSetId(
+  view: MemberCartView | null,
+  viewerMemberId: number | null,
+  standalone: MemberStandaloneCart = EMPTY_STANDALONE_CART,
+): number | null {
+  return view && cartPhase(view, viewerMemberId, standalone) === 'pending_payment' ? Number(view.id) : null;
+}
+
+/**
  * #2949 stage 6 — whether the standalone purchases are a cart card of their own
  * beside the set's: while the set's payment is in flight, or staff are still
  * setting it up, a purchase added since is not part of that checkout (§6) and
