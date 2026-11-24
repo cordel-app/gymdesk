@@ -9,7 +9,7 @@ describe('Member Payments tab (#2099)', () => {
   it('puts failed, pending and scheduled events on top and the rest under past', () => {
     const { unresolved, past } = splitPaymentsTabEvents([
       ev(1, 'paid', '2026-01-01'), ev(2, 'scheduled', '2026-12-01'), ev(3, 'failed', '2026-10-01'),
-      ev(4, 'scheduled', '2026-11-01'), ev(5, 'recorded', '2026-02-01'), ev(6, 'pending', '2026-10-02'),
+      ev(4, 'scheduled', '2026-11-01'), ev(5, 'waived', '2026-02-01'), ev(6, 'pending', '2026-10-02'),
     ]);
     expect(unresolved.map((e) => e.id)).toEqual([3, 6, 4, 2]);
     expect(past.map((e) => e.id)).toEqual([5, 1]);
@@ -31,7 +31,7 @@ describe('Member Payments tab (#2099)', () => {
   describe('Last billing event (#2778)', () => {
     it('shows the newest past event once and keeps the rest in their order', () => {
       const { past } = splitPaymentsTabEvents([
-        ev(1, 'paid', '2026-01-01'), ev(2, 'failed', '2026-10-01'), ev(5, 'recorded', '2026-02-01'), ev(7, 'paid', '2026-03-01'),
+        ev(1, 'paid', '2026-01-01'), ev(2, 'failed', '2026-10-01'), ev(5, 'waived', '2026-02-01'), ev(7, 'paid', '2026-03-01'),
       ]);
       const { last, rest } = splitPastEvents(past);
       expect(last?.id).toBe(7);

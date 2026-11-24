@@ -2077,6 +2077,8 @@ export default function MembershipPage() {
 
   /** #3297 — a payment's status pill: the event's own status, derived once by the API (#640). */
   function paymentStatusPill(event: BillingEvent) {
+    // #3332: an event that records no payment has no status, so no pill.
+    if (!event.status) return null;
     return (
       <span style={statusPillStyle(statusTone(event.status))}>
         {t(`payments.status.${event.status}` as any)}

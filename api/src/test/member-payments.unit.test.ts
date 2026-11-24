@@ -88,8 +88,8 @@ describe('#3297 — the Payments tab is grouped by scheduled execution date', ()
       at(3, '2026-09-15', 'paid'),
       // A failed charge of a past date stays Past; its status never moves it.
       at(4, '2026-08-15', 'failed'),
-      // A record created today for a later date is Planned, not "recorded".
-      at(5, '2026-12-15', 'recorded'),
+      // A record created today for a later date is Planned, whatever its status.
+      at(5, '2026-12-15', 'waived'),
     ], TODAY);
     expect(s.planned.map((e) => e.id)).toEqual([2, 1, 5]);
     expect(s.past.map((e) => e.id)).toEqual([3, 4]);
@@ -142,7 +142,7 @@ describe('#3297 — the Payments tab is grouped by scheduled execution date', ()
 describe('#3297 — the API’s answers', () => {
   it('reads a persisted, not-yet-executed obligation as scheduled', () => {
     expect(ledgerEventStatus('charge_created', null, false, true)).toBe('scheduled');
-    expect(ledgerEventStatus('charge_created', null, false, false)).toBe('recorded');
+    expect(ledgerEventStatus('charge_created', null, false, false)).toBeNull();
     expect(ledgerEventStatus('payment_recorded', 'completed', false, false)).toBe('paid');
   });
 

@@ -15,15 +15,16 @@ export interface PaymentsTabEvent {
   created_at: string | null;
   amount: string | null;
   event_type: string;
-  status: string;
+  /** #3332: null when the event type records no payment. */
+  status: string | null;
   plan_name: string | null;
 }
 
 /** Statuses of an actual event that still awaits a settlement. */
 export const UNRESOLVED_STATUSES = ['scheduled', 'failed', 'pending'] as const;
 
-export function isUnresolvedEvent(status: string): boolean {
-  return (UNRESOLVED_STATUSES as readonly string[]).includes(status);
+export function isUnresolvedEvent(status: string | null): boolean {
+  return status != null && (UNRESOLVED_STATUSES as readonly string[]).includes(status);
 }
 
 /** Only persisted ledger rows are shown; a projected one (no id) never is. */
@@ -40,7 +41,7 @@ export function splitPaymentsTabEvents(events: readonly PaymentsTabEvent[]): {
   past: PaymentsTabEvent[];
 } {
   const actual = events.filter(isActualEvent);
-  const rank = (s: string) => (s === 'failed' ? 0 : s === 'pending' ? 1 : 2);
+  const rank = (s: string | null) => (s === 'failed' ? 0 : s === 'pending' ? 1 : 2);
   const unresolved = actual
     .filter((e) => isUnresolvedEvent(e.status))
     .sort((a, b) => rank(a.status) - rank(b.status) || (a.billing_date < b.billing_date ? -1 : a.billing_date > b.billing_date ? 1 : 0));
@@ -73,12 +74,12 @@ export function initialExpandedEventIds(last: Pick<PaymentsTabEvent, 'id'> | nul
 }
 
 /** The locale key (in `members`) a status reads under, `null` for an unknown one. */
-export function paymentStatusKey(status: string): string | null {
-  return ['paid', 'failed', 'pending', 'scheduled', 'recorded'].includes(status) ? `payments_status_${status}` : null;
+export function paymentStatusKey(status: string | null): string | null {
+  return status != null && ['paid', 'failed', 'pending', 'scheduled', 'waived'].includes(status) ? `payments_status_${status}` : null;
 }
 
 /** `StatusBadge`-style tone of a status; failed and scheduled stand out. */
-export function paymentStatusTone(status: string): 'danger' | 'info' | 'warning' | 'success' | 'neutral' {
+export function paymentStatusTone(status: string | null): 'danger' | 'info' | 'warning' | 'success' | 'neutral' {
   switch (status) {
     case 'failed': return 'danger';
     case 'scheduled': return 'info';

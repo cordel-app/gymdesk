@@ -694,7 +694,7 @@
       "failed": "Failed",
       "pending": "Pending",
       "scheduled": "Scheduled",
-      "recorded": "Recorded",
+      "waived": "Waived",
       "cancelled": "Cancelled",
       "expired_24h": "24h expired"
     },

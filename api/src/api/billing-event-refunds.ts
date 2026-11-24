@@ -209,7 +209,7 @@ export async function cancelBillingEvent(gymId: string, billingEventId: number, 
         ORDER BY created_at DESC, id DESC`,
       [billingEventId],
     );
-    const status: BillingEventStatus = Number(ev.is_scheduled) === 1
+    const status: BillingEventStatus | null = Number(ev.is_scheduled) === 1
       ? 'scheduled' : deriveBillingEventStatus(ev.event_type, attempts[0]?.status ?? null);
     if (!canCancelBillingEvent(status)) {
       return { failure: { status: 409, error: `Only a pending billing event can be cancelled (this one is '${status}').` } };

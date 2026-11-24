@@ -24,7 +24,7 @@ describe('paymentActionsFor', () => {
   });
 
   it('offers nothing on a paid, pending-online or waived event', () => {
-    for (const status of ['paid', 'pending', 'recorded'] as const) {
+    for (const status of ['paid', 'pending', 'waived', null] as const) {
       const a = paymentActionsFor({ ...base, status, eventType: 'recurring_payment' });
       expect(a).toEqual({ retry: false, waive: false, payCash: false, payCard: false, firstPayment: false });
     }

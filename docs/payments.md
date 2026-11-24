@@ -1055,6 +1055,13 @@ filter. No new attempt is raised on a cancelled initial event: a staff payment l
 member's Pay now and `POST /user-memberships/:id/record-payment` answer
 `409 billing_event_cancelled` (`openInitialEventForAssignment()` reports `cancelled`).
 
+> **#3332**: the `recorded` fallback is gone. A Billing Event with no attempt whose type records
+> no payment (`adjustment`, the retired `status_changed`, a `card_verification`) has **no** status
+> (`deriveBillingEventStatus()` answers `null`, the Admin shows `—`, the member no pill), and a
+> `waived_billing` with no attempt reads **`waived`** — never `paid`, so `isPaymentCollected()`,
+> receipts and refunds still see no money. `GET /payments/billing-events` never lists a
+> `status_changed` row or an attempt-less `card_verification`; `?status=recorded` is a 400.
+
 > **Decisions (#2533 stage 2)** — change them here if they turn out wrong:
 > - **The vocabulary is unchanged** (`paid | failed | pending | scheduled | recorded | cancelled`);
 >   the ticket's `pending_payment`/`canceled` are the existing `pending`/`cancelled`, and
