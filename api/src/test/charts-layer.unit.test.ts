@@ -329,3 +329,37 @@ describe('the Today marker and a dashed series (#3311)', () => {
     expect(o.xAxis.minInterval).toBe(1000);
   });
 });
+
+describe('the Today label spacing and the legend (#3311 stage 2)', () => {
+  const three = [
+    { id: 'p', name: 'Historical payments', points: [{ x: 1, y: 1 }] },
+    { id: 's', name: 'Scheduled Billing Events', points: [] },
+    { id: 'f', name: 'Forecast', dashed: true, points: [{ x: 3, y: 3 }] },
+  ];
+
+  it('leaves room above the plot for a labelled marker and lifts the label into it', () => {
+    const without = lineChartOption({ series: three, legendPosition: 'bottom' }, THEME) as any;
+    const withMarker = lineChartOption({ series: three, legendPosition: 'bottom', xMarker: { value: 2, label: 'Today' } }, THEME) as any;
+    expect(withMarker.grid.top).toBeGreaterThan(without.grid.top);
+    expect(withMarker.series[0].markLine.label.distance).toBeGreaterThan(0);
+    // The marker itself stays at the given x.
+    expect(withMarker.series[0].markLine.data).toEqual([{ xAxis: 2 }]);
+  });
+
+  it('names every series in a legend under the plot, empty ones included, styled as the series', () => {
+    const o = lineChartOption({ series: three, legendPosition: 'bottom', xMarker: { value: 2, label: 'Today' } }, THEME) as any;
+    expect(o.legend.data).toEqual(['Historical payments', 'Scheduled Billing Events', 'Forecast']);
+    expect(o.legend.bottom).toBe(0);
+    expect(o.legend.top).toBeUndefined();
+    expect(o.grid.bottom).toBeGreaterThan(6);
+    // ECharts draws a line series' legend icon from its own colour and line style.
+    expect(o.series.map((s: any) => s.name)).toEqual(['Historical payments', 'Scheduled Billing Events', 'Forecast']);
+    expect(o.series[2].lineStyle.type).toBe('dashed');
+  });
+
+  it('keeps the legend on top by default', () => {
+    const o = lineChartOption({ series: three }, THEME) as any;
+    expect(o.legend.top).toBe(0);
+    expect(o.grid.top).toBe(34);
+  });
+});

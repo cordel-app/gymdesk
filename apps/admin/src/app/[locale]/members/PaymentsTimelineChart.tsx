@@ -35,12 +35,14 @@ export function PaymentsTimelineChart({ memberId, reloadKey }: { memberId: numbe
   }, [memberId, reloadKey]);
 
   const kindLabel = (kind: TimelinePointKind) => t(`timeline_kind_${kind}`);
+  // #3311 stage 2 — the legend names each series as a whole, so it says what the line is.
+  const legendLabel = (kind: TimelinePointKind) => t(`timeline_legend_${kind}`);
   const statusLabel = (p: TimelinePoint) => t(knownStatusKey(p));
   const money = (n: number) => formatGymAmount(n, gym);
   const date = (d: string) => formatGymDateOnly(d, gym);
 
   const series = useMemo(
-    () => (timeline ? timelineSeries(timeline, { kind: kindLabel, date, money, status: statusLabel }) : []),
+    () => (timeline ? timelineSeries(timeline, { kind: legendLabel, date, money, status: statusLabel }) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [timeline, gym],
   );
@@ -56,11 +58,12 @@ export function PaymentsTimelineChart({ memberId, reloadKey }: { memberId: numbe
           <>
             <LineChart
               series={series}
-              height={260}
+              height={300}
               ariaLabel={t('timeline_title')}
               xAxisType="time"
               zoom={false}
               xMinInterval={MONTH_TICK_MS}
+              legendPosition="bottom"
               axisLabelFormatter={(x) => monthTickLabel(x, gym)}
               xMarker={{ value: dateToX(timeline.today), label: t('timeline_today') }}
               selectedX={selected}
