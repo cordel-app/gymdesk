@@ -68,7 +68,7 @@ describe('to_be_canceled in the database and the readers (#3007 stage 2a)', () =
     expect(snap[0].status).toBe(PENDING_CANCELLATION_STATUS);
   });
 
-  it("reads like an active plan on the Member card (live, current, derived status Active)", async () => {
+  it("reads like a running plan on the Member card (live, current), its derived status To Be Canceled (#3302)", async () => {
     const memberId = await createMember();
     const running = await createAssignment(memberId, PENDING_CANCELLATION_STATUS);
     const twin = await createAssignment(memberId, 'active');
@@ -78,8 +78,10 @@ describe('to_be_canceled in the database and the readers (#3007 stage 2a)', () =
     for (const id of [running, twin]) {
       expect(Number(byId.get(id).is_live)).toBe(1);
       expect(byId.get(id).is_current).toBe(true);
-      expect(byId.get(id).lifecycle_status).toBe('active');
     }
+    // #3302: the derived status names the pending cancellation; the twin stays Active.
+    expect(byId.get(running).lifecycle_status).toBe(PENDING_CANCELLATION_STATUS);
+    expect(byId.get(twin).lifecycle_status).toBe('active');
     expect(byId.get(running).status).toBe(PENDING_CANCELLATION_STATUS);
   });
 

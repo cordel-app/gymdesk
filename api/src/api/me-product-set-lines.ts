@@ -8,8 +8,7 @@ import { GYM_ASSIGNMENT_ROWS_SQL, productSetLegacyAssignmentIdSql } from '../dom
 import { currentMembershipFees } from './membership-fee-pricing';
 import { productLineStatus, type ProductLineStatus } from '../domain/productLineStatus';
 import { membershipFeeUnits, toMembershipFeeScope, type MembershipFeeScope } from '../domain/membershipFeeScope';
-import { cancellationEndDate } from '../domain/cancellationEntitlement';
-import { loadPaidThrough } from './cancellation-entitlement';
+import { pendingCancellationEndDates } from './plan-pending-cancellation';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { loadPlanAccessEntries } from './plan-center-access';
 import type { PlanAccessEntry } from '../domain/planAccessBenefit';
@@ -309,9 +308,11 @@ export async function loadMemberProductSetView(
   const fees = pricedIds.length > 0 ? await currentMembershipFees(gymId, pricedIds) : new Map<number, number>();
   // #3007 stage 4: a plan marked `to_be_canceled` in this Draft shows the end date Save & Pay would
   // give it — the one cancellation rule over the paid periods, nothing stored.
-  const marked = set.status === 'in_cart' ? planRows.filter((r) => r.lifecycle_status === 'to_be_canceled') : [];
-  const paidThrough = marked.length > 0 ? await loadPaidThrough(db as any, gymId, Number(set.id)) : null;
+  // #3302: the same end dates `commitPendingCancellations()` saves, from the one helper.
   const todayIso = new Date().toISOString().slice(0, 10);
+  const pendingEnds = set.status === 'in_cart' && planRows.some((r) => r.lifecycle_status === 'to_be_canceled')
+    ? await pendingCancellationEndDates(db as any, { gymId, productSetId: Number(set.id), today: todayIso })
+    : new Map<number, string>();
   const accessBySnapshot = new Map<number, PlanAccessEntry[]>();
   for (const r of planRows) {
     accessBySnapshot.set(Number(r.plan_snapshot_id), await loadPlanAccessEntries(
@@ -340,7 +341,7 @@ export async function loadMemberProductSetView(
         starts_at: dateOnly(r.um_starts_at ?? r.snapshot_starts_at),
         ends_at: r.lifecycle_status === 'to_be_reactivated' && set.status === 'in_cart' ? null
           : r.lifecycle_status === 'to_be_canceled' && set.status === 'in_cart'
-          ? cancellationEndDate({ paidThrough, today: todayIso, assignmentStart: dateOnly(r.um_starts_at ?? r.snapshot_starts_at) ?? todayIso })
+          ? pendingEnds.get(Number(r.user_membership_id)) ?? null
           : dateOnly(r.um_ends_at ?? r.snapshot_ends_at),
         pending_deletion: r.lifecycle_status === 'to_be_canceled' && set.status === 'in_cart',
         pending_reactivation: r.lifecycle_status === 'to_be_reactivated' && set.status === 'in_cart',

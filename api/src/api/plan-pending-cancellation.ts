@@ -103,6 +103,42 @@ export async function restorePendingCancellations(
 }
 
 /**
+ * #3302 — the end date each of the owner's marked plans gets when the Draft `productSetId` is
+ * committed, keyed by the plan's anchor id: `cancellationEndDate()` over the owner's paid plan
+ * periods, today and the plan's start. The one computation the commit uses and the Draft's
+ * previews (the Member's plan list, My Plans, the Summary) read, so what is shown is what is saved.
+ */
+export async function pendingCancellationEndDates(
+  tx: Tx, input: { gymId: string; productSetId: number; today: string },
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const { rows: sets } = await tx.query<{ owner_member_id: number }>(
+    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.productSetId, input.gymId]);
+  if (!sets[0]) return out;
+  const { rows: marked } = await tx.query<{ id: number; starts_at: Date | string }>(
+    `SELECT anchor_plan_snapshot_id AS id, MIN(starts_at) AS starts_at FROM plan_snapshots
+      WHERE gym_id = ? AND member_id = ? AND status = ? AND anchor_plan_snapshot_id IS NOT NULL
+      GROUP BY anchor_plan_snapshot_id`,
+    [input.gymId, Number(sets[0].owner_member_id), PENDING_CANCELLATION_STATUS]);
+  if (marked.length === 0) return out;
+  const paidThrough = await loadPaidThrough(tx, input.gymId, input.productSetId);
+  for (const um of marked) {
+    out.set(Number(um.id), cancellationEndDate({
+      paidThrough, today: input.today, assignmentStart: dateOnly(um.starts_at) as string,
+    }));
+  }
+  return out;
+}
+
+/** The owner's open Draft (`in_cart`), where a pending cancellation lives; `null` when there is none. */
+export async function ownerInCartSetId(tx: Tx, gymId: string, ownerMemberId: number): Promise<number | null> {
+  const { rows } = await tx.query<{ id: number }>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'
+      ORDER BY id DESC LIMIT 1`, [gymId, ownerMemberId]);
+  return rows[0] ? Number(rows[0].id) : null;
+}
+
+/**
  * The Draft `productSetId` is being activated: each plan its owner marked is cancelled now — on its
  * last paid day (`active_cancel_at_period_end`) or at once — and leaves the set's billable plans, so
  * the activation generates no obligation for it. Called before the obligations are materialised.
@@ -110,21 +146,11 @@ export async function restorePendingCancellations(
 export async function commitPendingCancellations(
   tx: Tx, input: { gymId: string; productSetId: number; today: string; actor: string | null },
 ): Promise<number> {
-  const { rows: sets } = await tx.query<{ owner_member_id: number }>(
-    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?', [input.productSetId, input.gymId]);
-  if (!sets[0]) return 0;
-  const { rows: marked } = await tx.query<{ id: number; starts_at: Date | string }>(
-    `SELECT anchor_plan_snapshot_id AS id, MIN(starts_at) AS starts_at FROM plan_snapshots
-      WHERE gym_id = ? AND member_id = ? AND status = ? AND anchor_plan_snapshot_id IS NOT NULL
-      GROUP BY anchor_plan_snapshot_id`,
-    [input.gymId, Number(sets[0].owner_member_id), PENDING_CANCELLATION_STATUS]);
-  if (marked.length === 0) return 0;
+  const endDates = await pendingCancellationEndDates(tx, input);
+  if (endDates.size === 0) return 0;
 
-  const paidThrough = await loadPaidThrough(tx, input.gymId, input.productSetId);
-  for (const um of marked) {
-    const endsOn = cancellationEndDate({
-      paidThrough, today: input.today, assignmentStart: dateOnly(um.starts_at) as string,
-    });
+  for (const [anchorId, endsOn] of endDates) {
+    const um = { id: anchorId };
     // The plan leaves the set's billable plans (the snapshot is the one the Draft cloned by link).
     await tx.query(
       `DELETE j FROM product_set_plan_snapshots j
@@ -145,5 +171,5 @@ export async function commitPendingCancellations(
       WHERE j.product_set_id = ? AND j.entitlement_only = 0 ORDER BY j.id LIMIT 1`, [input.productSetId]);
   await tx.query('UPDATE product_sets SET membership_plan_id = ? WHERE id = ? AND gym_id = ?',
     [first[0]?.membership_plan_id ?? null, input.productSetId, input.gymId]);
-  return marked.length;
+  return endDates.size;
 }

@@ -93,3 +93,44 @@ describe('commit (#3007 stage 2b)', () => {
     expect(Number(ev[0].n)).toBe(0);
   });
 });
+
+// #3302 — while the Draft is open, the marked plan reads `to_be_canceled` with the end date the commit
+// will give it (the one `cancellationEndDate()` rule), on the Member's plan list and in the Summary.
+describe('pending cancellation preview (#3302)', () => {
+  const configPlan = async (memberId: number, umId: number) => {
+    const res = await authed(request.get(`/user-memberships/member/${memberId}/configuration`));
+    expect(res.status).toBe(200);
+    return res.body.plans.find((p: any) => p.id === umId);
+  };
+
+  it('shows To Be Canceled with the committed end date, and restores the plan on discard', async () => {
+    const { memberId, umId } = await runningPlan();
+    expect((await configPlan(memberId, umId)).lifecycle_status).toBe('active');
+    const mark = await authed(request.post(`/user-memberships/${umId}/mark-cancel`));
+    const setId = mark.body.product_set_id;
+
+    const plan = await configPlan(memberId, umId);
+    expect(plan.lifecycle_status).toBe('to_be_canceled');
+    expect(plan.ends_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    const review = await authed(request.get(`/product-sets/${setId}/review`));
+    const item = review.body.contracted_items.find((i: any) => i.kind === 'plan');
+    expect(item.pending_deletion).toEqual({ ends_on: plan.ends_at });
+
+    await authed(request.delete(`/product-sets/${setId}`));
+    const restored = await configPlan(memberId, umId);
+    expect(restored.lifecycle_status).toBe('active');
+    expect(restored.ends_at).toBeNull();
+  });
+
+  it('Save commits the end date the Draft previewed', async () => {
+    const { memberId, umId } = await runningPlan();
+    const mark = await authed(request.post(`/user-memberships/${umId}/mark-cancel`));
+    const previewed = (await configPlan(memberId, umId)).ends_at;
+    expect((await authed(request.post(`/product-sets/${mark.body.product_set_id}/activate`))).status).toBeLessThan(300);
+    const { rows } = await db.query<any>(
+      `SELECT DATE_FORMAT(ends_at, '%Y-%m-%d') AS ends_at FROM ${TEST_ASSIGNMENTS} um WHERE id = ?`, [umId]);
+    expect(rows[0].ends_at).toBe(previewed);
+    expect((await configPlan(memberId, umId)).ends_at).toBe(previewed);
+  });
+});
