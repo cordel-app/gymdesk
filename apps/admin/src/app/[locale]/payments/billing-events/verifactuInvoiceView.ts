@@ -37,6 +37,8 @@ export interface InvoiceRow {
   replaces_invoice_id?: number | null;
   /** #2648 stage 7: the complete invoice that replaced this simplified one (derived by the API). */
   replaced_by_invoice_id?: number | null;
+  /** #3298 stage 3: the refund whose completion issued this rectifying invoice. */
+  refund_payment_request_id?: number | null;
   verifactu: { alta: VerifactuRecordView | null; anulacion: VerifactuRecordView | null } | null;
   can_cancel_verifactu: boolean;
 }

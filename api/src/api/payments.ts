@@ -473,7 +473,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       can_issue_receipt: boolean;
       has_full_invoice: boolean;
       /** #2935: the event's Refund Receipts, one per completed refund, oldest first. */
-      refund_receipts: { id: number; receipt_number: string; issued_at: string | null }[];
+      refund_receipts: { id: number; receipt_number: string; payment_request_id: number; issued_at: string | null }[];
     };
 
     // #1325: the persisted, not-yet-executed events of a ProductSet are
@@ -526,7 +526,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         has_full_invoice: Number(r.has_full_invoice) === 1,
         refund_receipts: (refundReceiptsByEvent.get(Number(r.id)) ?? [])
           .map((rr) => ({
-            id: rr.id, receipt_number: rr.receipt_number,
+            id: rr.id, receipt_number: rr.receipt_number, payment_request_id: rr.payment_request_id,
             issued_at: rr.issued_at ? new Date(rr.issued_at).toISOString() : null,
           })),
         // A transaction needs a membership to hang off, and a charge needs an

@@ -1,6 +1,7 @@
 import { db, type Tx } from '../infra/db';
 import { recordPaymentAttempt } from './payment-attempt';
 import { issueRefundReceipt } from './refund-receipts';
+import { issueRefundRectificationSafely } from './billing-invoices';
 import { getPaymentProvider } from '../payments';
 import { canCancelPending } from '../domain/productSet';
 import {
@@ -337,6 +338,9 @@ export async function refundBillingEvent(
   });
   if ('failure' in prepared) return { failure: prepared.failure! };
   const { refundId, refund, original } = prepared.prepared!;
+  // #3298 stage 3: a manual refund completed in that transaction; its fiscal
+  // correction (when it fully refunds an invoiced payment) follows the commit.
+  if (refund.method !== 'provider') await issueRefundRectificationSafely(gymId, refundId, actor);
 
   let status: 'completed' | 'pending' = 'completed';
   let providerStatus: string | null = null;
@@ -389,6 +393,7 @@ export async function refundBillingEvent(
       } catch (err) {
         console.error(`Refund receipt for refund #${refundId} could not be issued:`, err);
       }
+      await issueRefundRectificationSafely(gymId, refundId, actor);
     }
   }
 
@@ -508,6 +513,8 @@ export async function reconcilePendingProviderRefunds(log: Log): Promise<RefundR
       } catch (err) {
         log.error({ refundId: id, err: (err as Error).message }, 'Refund reconcile: refund receipt could not be issued');
       }
+      await issueRefundRectificationSafely(o.gym_id, id, SYSTEM_ACTOR,
+        (msg, err) => log.error({ refundId: id, err: (err as Error)?.message }, msg));
     }
   }
   return result;

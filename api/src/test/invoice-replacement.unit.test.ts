@@ -74,3 +74,28 @@ describe('FacturasSustituidas', () => {
     expect(validateAltaSubmission({ ...f3, invoiceKind: 'F1' })).toContain('only an F3 invoice carries FacturasSustituidas');
   });
 });
+
+// #3298 stage 3 — the invoice a completed refund rectifies.
+import { refundRectificationTarget } from '../domain/billingInvoice';
+describe('refundRectificationTarget', () => {
+  const inv = (o: Partial<EventInvoiceState> & { id: number }): EventInvoiceState => ({
+    invoiceType: 'simplified', status: 'issued', relatedInvoiceId: null, replacesInvoiceId: null, hasAnulacion: false, ...o,
+  });
+  it('rectifies nothing for a partial refund', () => {
+    expect(refundRectificationTarget([inv({ id: 1 })], false)).toEqual({ skip: 'partial_refund' });
+  });
+  it('rectifies the standing simplified invoice of a fully refunded payment', () => {
+    expect(refundRectificationTarget([inv({ id: 1 })], true)).toEqual({ invoiceId: 1 });
+  });
+  it('rectifies the complete invoice that replaced a simplified one', () => {
+    expect(refundRectificationTarget([inv({ id: 1 }), inv({ id: 2, invoiceType: 'full', replacesInvoiceId: 1 })], true))
+      .toEqual({ invoiceId: 2 });
+  });
+  it('has no target when the invoice is already rectified, cancelled or absent', () => {
+    expect(refundRectificationTarget([inv({ id: 1 }), inv({ id: 2, relatedInvoiceId: 1 })], true))
+      .toEqual({ skip: 'no_standing_invoice' });
+    expect(refundRectificationTarget([inv({ id: 1, hasAnulacion: true })], true)).toEqual({ skip: 'no_standing_invoice' });
+    expect(refundRectificationTarget([inv({ id: 1, status: 'draft' })], true)).toEqual({ skip: 'no_standing_invoice' });
+    expect(refundRectificationTarget([], true)).toEqual({ skip: 'no_standing_invoice' });
+  });
+});
