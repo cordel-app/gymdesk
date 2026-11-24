@@ -97,7 +97,9 @@ describe('loadProductSetSimulationAssignments', () => {
     const legacy = await loadProductSetSimulationAssignment(gymId, set.id);
     const list = await loadProductSetSimulationAssignments(gymId, set.id);
     expect(list).toHaveLength(1);
-    expect(list[0]).toEqual(legacy);
+    // #3303: the per-plan loader also names the plan instance; everything else is the version loader's.
+    expect(typeof list[0].planInstanceKey).toBe('string');
+    expect({ ...list[0], planInstanceKey: undefined }).toEqual({ ...legacy, planInstanceKey: undefined });
   });
 
   it('a plan-less version answers the version-keyed assignment', async () => {
@@ -162,7 +164,9 @@ describe('a plan Promotion belongs to its plan snapshot', () => {
     const list = await loadProductSetSimulationAssignments(gymId, set.id);
     expect(list[0].promotions).toHaveLength(1);
     expect(list[0].promotions[0].membershipFeeBenefits[0]).toMatchObject({ action: 'percentage_discount', value: 10 });
-    expect(list[0]).toEqual(legacy);
+    // #3303: the per-plan loader also names the plan instance; everything else is the version loader's.
+    expect(typeof list[0].planInstanceKey).toBe('string');
+    expect({ ...list[0], planInstanceKey: undefined }).toEqual({ ...legacy, planInstanceKey: undefined });
   });
 });
 

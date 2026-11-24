@@ -70,15 +70,22 @@ const assignmentsOf = (side: VersionSide): SimulationAssignment[] =>
 interface KeyedPlan { key: string; plan: SimulationAssignment; source: number }
 
 /**
- * The plans of a side, each identified across versions by its Membership Plan's
- * name and its occurrence among plans of that name (the same plan may be held
- * twice, #2125). The order is the version's link order, so the primary plan is first.
+ * The plans of a side, each identified across versions by its instance (#3303): the engine
+ * assignment's `planInstanceKey` (its plan snapshot's assignment lineage), so the same Membership
+ * Plan held twice is two plans, and adding it again is a change even when name, fee and dates match.
+ * An assignment carrying no instance key (a plan-less version's fallback, a hand-built one) keeps the
+ * pre-#3303 identity, its Membership Plan's name and occurrence among plans of that name. The order
+ * is the version's link order, so the primary plan is first.
  */
 function keyedPlans(side: VersionSide): KeyedPlan[] {
   const seen = new Map<string, number>();
   const out: KeyedPlan[] = [];
   assignmentsOf(side).forEach((plan, source) => {
     if (!plan.planName) return;
+    if (plan.planInstanceKey != null) {
+      out.push({ key: `instance-${plan.planInstanceKey}`, plan, source });
+      return;
+    }
     const n = (seen.get(plan.planName) ?? 0) + 1;
     seen.set(plan.planName, n);
     out.push({ key: `${plan.planName}#${n}`, plan, source });
@@ -133,7 +140,11 @@ export function diffConfigurations(before: VersionSide, after: VersionSide): Con
     // plan lists nothing, and the Products tab's Save & Pay never opens (#2097).
     if (!b0 && a0?.planName) out.push({ kind: 'plan_changed', from: null, to: a0.planName });
     if (b0 && a0) {
-      if ((b0.planName ?? null) !== (a0.planName ?? null)) out.push({ kind: 'plan_changed', from: b0.planName ?? null, to: a0.planName ?? null });
+      // #3303: another instance of the same Membership Plan is a plan change too, not only another name.
+      const otherInstance = bPlans[0] != null && aPlans[0] != null && bPlans[0].key !== aPlans[0].key;
+      if ((b0.planName ?? null) !== (a0.planName ?? null) || otherInstance) {
+        out.push({ kind: 'plan_changed', from: b0.planName ?? null, to: a0.planName ?? null });
+      }
       if (cents(b0.membershipFeePrice) !== cents(a0.membershipFeePrice)) out.push({ kind: 'fee_changed', from: b0.membershipFeePrice, to: a0.membershipFeePrice });
     }
   } else {
