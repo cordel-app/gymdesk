@@ -201,6 +201,25 @@ A payment that arrives after the cancellation is recorded on its attempt but act
 then a collected payment on a cancelled event, refunded by staff through the existing Billing
 Event refund; nothing refunds automatically.
 
+### A2c. The Members App's Pay is refused when the shown total is stale (#3312 stage 2)
+
+A member's cart can change while the page that shows its total is open (another tab, another
+family device). The Members App therefore sends the total it showed with Pay —
+`expected_amount` on `POST /me/product-sets/:id/save-and-pay` and `POST /me/cart/checkout`
+(`checkoutRequestBody()`, `apps/member/src/lib/memberProducts.ts`) — and the server compares it,
+never charges it (`api/src/domain/expectedCheckoutAmount.ts`, in cents):
+
+| Where | Check | On mismatch |
+|---|---|---|
+| Save & Pay, before any write | `commitCharge()` vs `expected_amount` | `409 { error: 'amount_changed', amount }`, nothing written |
+| Save & Pay, in the commit transaction | the set row locked (`lockSet()`, the lock every Draft writer takes through `lockDraft()`), `commitCharge()` re-priced inside it and compared with the figure the checkout will charge | the transaction is not started onward: same `409`, the set stays `in_cart`, no Billing Event, no payment request |
+| Standalone cart checkout, before the provider call | `cartTotal()` vs `expected_amount` | `409 amount_changed` with the current total; no provider request, no row |
+
+The client reloads the cart and its Summary on that refusal and shows
+`membership.cart_error_amount_changed`; tapping Pay again sends the refreshed total. An absent
+`expected_amount` is no expectation (the Admin's Save & Pay sends none), and a malformed one is a
+`400`. The amount charged is always the server's own figure.
+
 ### A3. A payment request is raised
 
 Two routes, same shape:

@@ -49,6 +49,7 @@ import {
   currentSetId,
   draftErrorKey,
   setCommitErrorKey,
+  checkoutRequestBody,
   type MemberSetReview,
   type MemberSetRow,
 } from '@/lib/memberProducts';
@@ -203,7 +204,9 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
     setCommitError(null);
     try {
       if (action === 'save_and_pay') {
-        const out = await apiFetch<{ checkout_url: string }>(`/me/product-sets/${review.product_set_id}/save-and-pay`, { method: 'POST' });
+        const out = await apiFetch<{ checkout_url: string }>(`/me/product-sets/${review.product_set_id}/save-and-pay`, {
+          method: 'POST', body: checkoutRequestBody(review.amount_due),
+        });
         window.location.href = out.checkout_url;
         return;
       }
@@ -220,7 +223,7 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
     setCommitBusy(true);
     setCommitError(null);
     try {
-      const out = await apiFetch<{ checkoutUrl: string }>('/me/cart/checkout', { method: 'POST' });
+      const out = await apiFetch<{ checkoutUrl: string }>('/me/cart/checkout', { method: 'POST', body: checkoutRequestBody(standalone.total) });
       window.location.href = out.checkoutUrl;
       return;
     } catch (err: any) {

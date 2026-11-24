@@ -312,7 +312,7 @@ describe('standalone purchases in the cart (#2949 stage 6)', () => {
   it('the page reads them and pays them through their own checkout', () => {
     const page = readFileSync(PAGE, 'utf-8');
     expect(page).toContain("apiFetch<MemberStandaloneCart>('/me/cart/purchases')");
-    expect(page).toContain("'/me/cart/checkout', { method: 'POST' }");
+    expect(page).toContain("'/me/cart/checkout', { method: 'POST', body: checkoutRequestBody(standaloneCart.total) }");
   });
 });
 

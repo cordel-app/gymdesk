@@ -201,6 +201,25 @@ describe('POST /me/cart/checkout (#2949 stage 4)', () => {
     expect(await purchaseStatus(two.body.purchase_id)).toBe('cancelled');
   });
 
+  // #3312 stage 2 — the total the member was shown is compared, never charged.
+  it('refuses a stale expected_amount with the current total and starts no payment', async () => {
+    const m = await member();
+    const one = await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('7.00') });
+    // Another tab adds a Product after the cart showed 7.00.
+    await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('3.00') });
+    const stale = await asMember(m.clerk, 'post', '/checkout').send({ expected_amount: 7 });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toMatchObject({ error: 'amount_changed', amount: 10 });
+    expect(await purchaseStatus(one.body.purchase_id)).toBe('in_cart');
+    const { rows } = await db.query<any>('SELECT COUNT(*) AS n FROM payment_requests WHERE gym_id = ? AND member_id = ?', [gymId, m.id]);
+    expect(Number(rows[0].n)).toBe(0);
+
+    const ok = await asMember(m.clerk, 'post', '/checkout').send({ expected_amount: 10 });
+    expect(ok.status).toBe(201);
+    expect(ok.body.amount).toBe(10);
+    expect((await asMember(m.clerk, 'post', '/checkout').send({ expected_amount: -1 })).status).toBe(400);
+  });
+
   it('pays only the purchases named, leaving the rest in the cart', async () => {
     const m = await member();
     const one = await asMember(m.clerk, 'post', '/purchases').send({ product_id: await product('9.00') });

@@ -906,6 +906,16 @@ export function reviewFrequencyKey(frequency: string | null): string | null {
  * answers a code in `error`; a stale screen (`not_committable`,
  * `nothing_to_pay`, `payment_required`) is told to look again.
  */
+/**
+ * #3312 stage 2 — the body of a Pay (`POST /me/product-sets/:id/save-and-pay`,
+ * `POST /me/cart/checkout`): the total the member was shown, which the server
+ * compares with its own figure under the cart lock and never charges. An
+ * amount the screen did not show sends nothing, so the server decides alone.
+ */
+export function checkoutRequestBody(shownAmount: number | null | undefined): string {
+  return JSON.stringify(shownAmount == null || !Number.isFinite(Number(shownAmount)) ? {} : { expected_amount: Number(shownAmount) });
+}
+
 export function setCommitErrorKey(code: string | null | undefined): string {
   switch (code) {
     case 'draft_expired': return 'membership.draft_error_expired';
@@ -916,6 +926,7 @@ export function setCommitErrorKey(code: string | null | undefined): string {
     case 'nothing_to_pay':
     case 'payment_required': return 'membership.summary_error_changed';
     case 'amount_unavailable': return 'membership.summary_error_amount';
+    case 'amount_changed': return 'membership.cart_error_amount_changed';
     default: return 'membership.summary_error_generic';
   }
 }

@@ -73,6 +73,41 @@ afterAll(async () => {
 });
 
 describe('POST /me/product-sets/:id/save-and-pay', () => {
+  // #3312 stage 2 — the total the member was shown is compared under the cart lock, never charged.
+  it('refuses a stale expected_amount with the current total and starts no payment', async () => {
+    const m = await member();
+    const id = await draftWith(m, '10.00');
+    const shown = (await as(m.clerk, 'get', `/${id}/review`)).body.amount_due;
+
+    // The cart changes after the member saw it (another tab adds a Product).
+    const add = await as(m.clerk, 'post', `/${id}/services`).send({ product_id: await product('5.00') });
+    expect(add.status).toBe(200);
+    const current = (await as(m.clerk, 'get', `/${id}/review`)).body.amount_due;
+    expect(current).not.toBe(shown);
+
+    const stale = await as(m.clerk, 'post', `/${id}/save-and-pay`).send({ expected_amount: shown });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toMatchObject({ error: 'amount_changed', amount: current });
+    const { rows } = await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [id]);
+    expect(rows[0].status).toBe('in_cart');
+    expect(await count('SELECT COUNT(*) AS n FROM billing_events WHERE product_set_id = ?', [id])).toBe(0);
+
+    // Paying again with the refreshed total proceeds at exactly that amount.
+    const pay = await as(m.clerk, 'post', `/${id}/save-and-pay`).send({ expected_amount: current });
+    expect(pay.status).toBe(201);
+    expect(pay.body.amount).toBe(current);
+    expect(await count(
+      `SELECT COUNT(*) AS n FROM payment_requests pr JOIN billing_events be ON be.id = pr.billing_event_id
+        WHERE be.product_set_id = ?`, [id])).toBe(1);
+  });
+
+  it('refuses a malformed expected_amount', async () => {
+    const m = await member();
+    const id = await draftWith(m, '10.00');
+    const res = await as(m.clerk, 'post', `/${id}/save-and-pay`).send({ expected_amount: 'ten' });
+    expect(res.status).toBe(400);
+  });
+
   it('charges the reviewed amount once, through one checkout, and refuses a second submission', async () => {
     const m = await member();
     const id = await draftWith(m, '10.00');
