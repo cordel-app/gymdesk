@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { parseNumDaysInput } from '../domain/nutritionPlanTemplateDays';
 import { db, Tx } from '../infra/db';
 import { BASE_MEAL_JOIN_SQL, baseMealColumnsSql, listBaseMealsHandler, resolveBaseMealInput } from './base-meal-reference';
 import { goalRowsSql, parseGoalIllustrationInput, validateGoalIllustration } from './nutrition-goal-illustration';
@@ -192,6 +193,8 @@ platformNutritionPlanTemplatesRouter.post('/', requireSuperadmin, async (req, re
   if (status && !STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const { rows: existing } = await db.query(
       "SELECT id FROM nutrition_plan_templates WHERE gym_id IS NULL AND name = ? AND status != 'deleted'",
@@ -201,8 +204,8 @@ platformNutritionPlanTemplatesRouter.post('/', requireSuperadmin, async (req, re
 
     const actor = resolvePlatformActor((req as any).superadminName);
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-      [name.trim(), description ?? null, status ?? 'draft', actor, actor],
+      'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [name.trim(), description ?? null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'draft', actor, actor],
     );
     const { rows } = await db.query('SELECT * FROM nutrition_plan_templates WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'nutrition_plan_template', entityId: insertId, next: rows[0] });
@@ -216,6 +219,8 @@ platformNutritionPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, 
   if (status && !STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
+  const numDays = parseNumDaysInput(req.body);
+  if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
   try {
     const { rows: existing } = await db.query(
       "SELECT id, name FROM nutrition_plan_templates WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
@@ -236,10 +241,12 @@ platformNutritionPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, 
          name = COALESCE(?, name),
          description = IF(? IS NOT NULL, ?, description),
          status = COALESCE(?, status),
+         num_days = IF(?, ?, num_days),
          modified_at = UTC_TIMESTAMP(),
          modified_by = ?
        WHERE id = ?`,
       [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null,
+       numDays.kind === 'value' ? 1 : 0, numDays.kind === 'value' ? numDays.value : 0,
        resolvePlatformActor((req as any).superadminName), id],
     );
     const { rows } = await db.query('SELECT * FROM nutrition_plan_templates WHERE id = ?', [id]);
