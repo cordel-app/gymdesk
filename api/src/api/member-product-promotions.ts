@@ -1,5 +1,5 @@
 import { assignedMemberSql } from '../domain/productAssignee';
-import { IN_CART_PURCHASE_STATUS } from '../domain/memberProductPurchase';
+import { IN_CART_PURCHASE_STATUS, purchaseTotal } from '../domain/memberProductPurchase';
 import { cartExpiresAtIso, setCartLiveSql } from '../domain/cartExpiry';
 import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './purchase-snapshots';
 import { toItemOrigin, type ItemOrigin } from '../domain/itemOrigin';
@@ -358,8 +358,15 @@ export interface MemberPurchasedProduct {
    * Draft carries it (an Active line with no Draft, a pending one, one the Draft removed).
    */
   draft_line_id?: number | null;
-  /** #2856 — a recurring line's own quantity (the line's, the Draft's when the Draft changed it). */
+  /**
+   * #2856 — a recurring line's own quantity (the line's, the Draft's when the Draft changed it);
+   * since #3359 a one-time purchase's too. `amount` and `regular_amount` are line totals.
+   */
   quantity?: number;
+  /** #3359 — the final price of one unit, VAT-inclusive, after Promotions and direct discount. */
+  unit_amount?: number;
+  /** #3359 — the base price of one unit, VAT-inclusive, before Promotions and discounts. */
+  regular_unit_amount?: number;
   /**
    * #2609 — the family member the Product is for: the stored assignee, else the
    * purchaser / Product Set owner (a row written before the column existed, or a
@@ -403,7 +410,7 @@ export async function loadMemberPurchases(
 ): Promise<MemberPurchasedProduct[]> {
   const { rows } = await db.query<any>(
     `SELECT mp.id, mp.product_id, mp.status, mp.product_name, mp.product_type,
-            mp.billing_frequency, mp.units, mp.amount, mp.currency,
+            mp.billing_frequency, mp.units, mp.amount, mp.unit_amount, mp.quantity, mp.currency,
             mp.purchased_at, mp.created_at, mp.created_by, mp.origin,
             DATE_FORMAT(mp.valid_until, '%Y-%m-%d') AS valid_until,
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
@@ -427,6 +434,11 @@ export async function loadMemberPurchases(
     const promotion = applied[0] ?? null;
     const amount = Number(row.amount);
     const listPrice = row.list_price == null ? null : Number(row.list_price);
+    // #3359 — a one-time purchase's quantity (#3020 stage 5): `amount` is the line total and
+    // `list_price` the price of one unit, so the regular price is that unit times the quantity.
+    const quantity = Number(row.quantity) || 1;
+    const unitAmount = row.unit_amount == null ? amount : Number(row.unit_amount);
+    const regularUnit = listPrice ?? (promotion ? promotion.regular_amount : unitAmount);
     return {
       id: Number(row.id),
       product_id: Number(row.product_id),
@@ -454,7 +466,10 @@ export async function loadMemberPurchases(
       // The price before any Promotion or discount: the stored list price,
       // else (purchases written before #1521) the first Promotion's own
       // starting figure, else what was charged.
-      regular_amount: listPrice ?? (promotion ? promotion.regular_amount : amount),
+      regular_amount: purchaseTotal(regularUnit, quantity),
+      unit_amount: unitAmount,
+      regular_unit_amount: regularUnit,
+      quantity,
       promotion,
       promotions: applied,
       list_price: listPrice,
@@ -519,8 +534,8 @@ export async function withProductConfiguration(
 export async function loadRecurringLinePromotions(
   gymId: string,
   lines: readonly { id: number; productSetId: number; productId: number; listUnit: number; quantity: number; pct: number | null }[],
-): Promise<Map<number, { promotions: AppliedPromotion[]; final: number | null }>> {
-  const out = new Map<number, { promotions: AppliedPromotion[]; final: number | null }>();
+): Promise<Map<number, { promotions: AppliedPromotion[]; final: number | null; finalUnit: number | null }>> {
+  const out = new Map<number, { promotions: AppliedPromotion[]; final: number | null; finalUnit: number | null }>();
   if (lines.length === 0) return out;
   const ids = lines.map((l) => l.id);
   // #3026 stage 3d-3b: the applications are their Product snapshot rows (`product_promotion_snapshots`),
@@ -569,7 +584,7 @@ export async function loadRecurringLinePromotions(
     const after = promotionalPrice(before, benefit);
     if (after == null) continue;
     running.set(lineId, after);
-    const entry = out.get(lineId) ?? { promotions: [], final: null };
+    const entry = out.get(lineId) ?? { promotions: [], final: null, finalUnit: null };
     entry.promotions.push(shapeAppliedPromotion({
       id: row.id, promotion_id: row.promotion_id,
       promotion_name: snap?.name ?? row.promotion_name ?? `Promotion #${row.promotion_id}`,
@@ -590,6 +605,7 @@ export async function loadRecurringLinePromotions(
     const afterPromos = running.get(lineId) ?? line.listUnit;
     const net = line.pct != null ? afterPromos * (1 - line.pct / 100) : afterPromos;
     entry.final = Math.round(net * line.quantity * 100) / 100;
+    entry.finalUnit = Math.round(net * 100) / 100;
   }
   return out;
 }
@@ -697,14 +713,15 @@ async function loadRecurringPurchases(
     const listUnit = row.list_unit_price == null ? unit : Number(row.list_unit_price);
     const listPrice = Math.round(listUnit * quantity * 100) / 100;
     const pct = row.direct_discount_percent == null ? null : Number(row.direct_discount_percent);
-    return { amount, listPrice, pct };
+    return { amount, listPrice, pct, unit, listUnit, quantity };
   };
   const draftOnly: MemberPurchasedProduct[] = draftRows
     .filter((r: any) => !activeRefs.has(Number(r.line_ref)))
     .map((row: any) => {
-      const { amount: baseAmount, listPrice, pct } = figures(row);
+      const { amount: baseAmount, listPrice, pct, unit, listUnit } = figures(row);
       const lp = promosFor(row);
       const amount = lp?.final ?? baseAmount;
+      const unitAmount = lp?.finalUnit ?? unit;
       return {
         id: -Number(row.id),
         product_id: Number(row.product_id),
@@ -720,6 +737,8 @@ async function loadRecurringPurchases(
         created_by: row.set_created_by ?? null,
         origin: toItemOrigin(row.origin),
         regular_amount: listPrice ?? amount,
+        unit_amount: unitAmount,
+        regular_unit_amount: listUnit,
         promotion: lp?.promotions[0] ?? null,
         promotions: lp?.promotions ?? [],
         list_price: listPrice,
@@ -739,9 +758,10 @@ async function loadRecurringPurchases(
     });
   const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
     const row = hasDraft ? (draftByRef.get(Number(active.line_ref)) ?? active) : active;
-    const { amount: baseAmount, listPrice, pct } = figures(row);
+    const { amount: baseAmount, listPrice, pct, unit, listUnit } = figures(row);
     const lp = promosFor(row);
     const amount = lp?.final ?? baseAmount;
+    const unitAmount = lp?.finalUnit ?? unit;
     return {
       id: -Number(active.id),
       product_id: Number(row.product_id),
@@ -757,6 +777,8 @@ async function loadRecurringPurchases(
       created_by: active.set_created_by ?? null,
       origin: toItemOrigin(row.origin),
       regular_amount: listPrice ?? amount,
+        unit_amount: unitAmount,
+        regular_unit_amount: listUnit,
       promotion: lp?.promotions[0] ?? null,
       promotions: lp?.promotions ?? [],
       list_price: listPrice,

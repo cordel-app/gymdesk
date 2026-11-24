@@ -97,3 +97,29 @@ describe('quantity of a one-time purchase', () => {
     }
   });
 });
+
+// #3359 — the Members → Products table shows line totals: the base price and the final price of a
+// one-time purchase are both the unit times its quantity, with the unit figures beside them.
+describe('GET /members/:id/products reports line totals and unit prices (#3359)', () => {
+  it('a quantity-2 purchase with a direct discount reads 30.00 / 27.00 with units 15.00 / 13.50', async () => {
+    const m = await member();
+    const saved = await auth(request.post(base(m))).send({
+      product_id: await product('15.00'), draft: true, quantity: 2, direct_discount_percent: 10,
+    });
+    expect(saved.status).toBe(201);
+    const list = await auth(request.get(`/members/${m}/products`));
+    expect(list.status).toBe(200);
+    const item = list.body.items.find((i: any) => i.id === saved.body.purchaseId);
+    expect(item).toMatchObject({
+      quantity: 2, regular_amount: 30, regular_unit_amount: 15, amount: 27, unit_amount: 13.5,
+    });
+  });
+
+  it('a quantity-1 purchase reports the same figure as total and unit', async () => {
+    const m = await member();
+    const saved = await auth(request.post(base(m))).send({ product_id: await product('40.00'), draft: true });
+    const list = await auth(request.get(`/members/${m}/products`));
+    const item = list.body.items.find((i: any) => i.id === saved.body.purchaseId);
+    expect(item).toMatchObject({ quantity: 1, regular_amount: 40, regular_unit_amount: 40, amount: 40, unit_amount: 40 });
+  });
+});
