@@ -116,6 +116,7 @@ import { platformMobileBuildsRouter } from './api/platform-mobile-builds';
 import { platformJobRunsRouter } from './api/platform-job-runs';
 import { paymentProvidersRouter } from './api/payment-providers';
 import { platformBasePaymentMethodsRouter } from './api/platform-base-payment-methods';
+import { platformBaseMealsRouter } from './api/platform-base-meals';
 import { platformBaseProductsRouter } from './api/platform-base-products';
 import { platformProfessionalServicesRouter } from './api/platform-professional-services';
 import { requireFeatureEnabled } from './infra/featureFlags';
@@ -324,6 +325,8 @@ app.use('/platform/payment-providers', requireAuth(), paymentProvidersRouter);
 // #1663: the Base Payment Methods catalogue, superadmin-only per route.
 app.use('/platform/base-payment-methods', requireAuth(), platformBasePaymentMethodsRouter);
 app.use('/platform/base-products', requireAuth(), platformBaseProductsRouter);
+// #3328: the Base Meals catalogue, superadmin-only per route.
+app.use('/platform/base-meals', requireAuth(), platformBaseMealsRouter);
 
 // Feature flags public read — any authenticated user (used by frontend sidebar)
 app.use('/feature-flags', requireAuth(), featureFlagsPublicRouter);

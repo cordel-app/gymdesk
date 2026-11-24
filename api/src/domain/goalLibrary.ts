@@ -1,3 +1,4 @@
+import type { TranslatedGoalKind } from './nutritionGoalTranslations';
 /**
  * #947 — the Nutrition Library's two goal catalogues: **Personal Goals** (what
  * the member wants to achieve) and **Nutrition Goals** (what the plan should
@@ -285,7 +286,7 @@ export function buildGoalListWhere(
   search: unknown,
   base: string[],
   baseParams: unknown[] = [],
-  { searchTranslations = false, translationKind = 'nutrition' }: { searchTranslations?: boolean; translationKind?: 'nutrition' | 'personal' | 'base_personal' | 'base_nutrition' } = {},
+  { searchTranslations = false, translationKind = 'nutrition' }: { searchTranslations?: boolean; translationKind?: TranslatedGoalKind } = {},
 ): { where: string; params: unknown[] } {
   const term = typeof search === 'string' ? search.trim() : '';
   const where = [...base];

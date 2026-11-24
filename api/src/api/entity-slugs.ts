@@ -9,12 +9,13 @@ import { generateSlug, nextAvailableSlug } from '../domain/entitySlug';
  * deleted row keeps its own. The UNIQUE key on the column is the backstop for a
  * concurrent create.
  */
-export type GlobalSlugTable = 'gyms' | 'payment_providers' | 'base_payment_methods';
+export type GlobalSlugTable = 'gyms' | 'payment_providers' | 'base_payment_methods' | 'base_meals';
 
 const FALLBACK: Record<GlobalSlugTable, string> = {
   gyms: 'gym',
   payment_providers: 'payment-provider',
   base_payment_methods: 'payment-method',
+  base_meals: 'meal',
 };
 
 export async function allocateGlobalSlug(

@@ -165,6 +165,13 @@ export const NUTRITION_GOALS_FOLDER = 'nutrition_goals';
  */
 export const PAYMENT_METHOD_FOLDER = 'payment_method';
 
+/**
+ * `meals` — a Base Meal's image (#3328), platform-owned only:
+ * `cordel/meals/<id>-<slug>.webp` plus its `-thumbnail.webp`. Not a gym-root
+ * folder, so it is absent from `GYM_FOLDERS`. `domain/baseMeals.ts` re-exports it.
+ */
+export const MEALS_FOLDER = 'meals';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
