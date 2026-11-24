@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { draftAddedCount, draftErrorKey, draftPlanState, type MemberSetView } from '../lib/memberProducts';
 
-const view = (over: Partial<MemberSetView>): MemberSetView => ({ id: 1, status: 'draft', lines: [], plans: [], ...over });
+const view = (over: Partial<MemberSetView>): MemberSetView => ({ id: 1, status: 'in_cart', lines: [], plans: [], ...over });
 
 describe('draftPlanState', () => {
   it('keeps the card\'s own purchase when there is no Draft', () => {
@@ -14,15 +14,15 @@ describe('draftPlanState', () => {
     expect(draftPlanState(5, view({}))).toEqual({ state: 'none' });
   });
 
-  it('offers Remove for the plan this Draft added, and nothing for another plan', () => {
+  it('offers Remove for the plan this Draft added, and Add for another plan beside it (#3312)', () => {
     const v = view({ plans: [{ plan_snapshot_id: 9, membership_plan_id: 5, plan_name: 'Gold', change: 'added' }] });
     expect(draftPlanState(5, v)).toEqual({ state: 'added', planSnapshotId: 9 });
-    expect(draftPlanState(6, v)).toEqual({ state: 'taken' });
+    expect(draftPlanState(6, v)).toEqual({ state: 'none' });
   });
 
-  it('offers nothing while the Draft carries the plan the member holds', () => {
+  it('offers Add beside the plan the member holds (#3312)', () => {
     const v = view({ plans: [{ plan_snapshot_id: 9, membership_plan_id: 5, plan_name: 'Gold', change: 'inherited' }] });
-    expect(draftPlanState(5, v)).toEqual({ state: 'taken' });
+    expect(draftPlanState(5, v)).toEqual({ state: 'none' });
   });
 });
 

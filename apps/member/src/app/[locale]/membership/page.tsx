@@ -2000,10 +2000,13 @@ export default function MembershipPage() {
           <button type="button" style={styles.draftSecondaryBtn} disabled={busy} onClick={() => removePlanFromDraft(plan.id, placed.planSnapshotId)}>
             {t('membership.plan_remove_from_draft')}
           </button>
+          {/* #3312: the same plan may be added again, as another instance. */}
+          <button type="button" style={styles.draftSecondaryBtn} disabled={busy || beneficiaryErrorKey(plan) !== null} onClick={() => addPlanToDraft(plan)}>
+            {draftBusy === PLAN_BUSY ? t('membership.product_adding') : t('membership.plan_add_to_draft')}
+          </button>
         </span>
       );
     }
-    if (placed.state === 'taken') return null;
     return (
       <button type="button" style={primaryButtonStyle} disabled={busy || beneficiaryErrorKey(plan) !== null} onClick={() => addPlanToDraft(plan)}>
         {draftBusy === PLAN_BUSY ? t('membership.product_adding') : t('membership.plan_add_to_draft')}

@@ -264,35 +264,38 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect((await assign(member.userId, planId, { promotion_ids: 'x' })).status).toBe(400);
   });
 
-  it('refuses a member who already holds a plan — the change is the gym\'s — and creates nothing', async () => {
+  it('adds a plan beside the one a member holds, in their own cart, and replaces nothing (#3312)', async () => {
     const member = await createMember();
     const livePlan = await createPlan({ price: null });
     // #2125 M6b-9: the check reads the assignment's plan snapshot, so the plan is assigned for real.
     const liveId = await createTestDraftAssignment(gymId, member.id, livePlan, { startsAt: '2026-01-01' });
     await activateTestAssignment(gymId, liveId);
     const planId = await createPlan({ price: 40 });
-    const refused = await assign(member.userId, planId);
-    expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe('plan_change_via_gym');
-    // `confirm` no longer opens a replacement.
-    expect((await assign(member.userId, planId, { confirm: true })).status).toBe(409);
-    const { rows: created } = await db.query<any>(
-      `SELECT id FROM ${TEST_ASSIGNMENTS} um WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?`, [gymId, member.id, planId],
-    );
-    expect(created).toHaveLength(0);
+    const added = await assign(member.userId, planId);
+    expect(added.status).toBe(201);
+    expect(added.body.status).toBe('in_cart');
+    // The same plan again is another instance in the same cart, never a second cart.
+    const again = await assign(member.userId, planId);
+    expect(again.status).toBe(201);
+    expect(again.body.id).toBe(added.body.id);
+    const { rows: carts } = await db.query<any>(
+      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart'`, [gymId, member.id]);
+    expect(carts).toHaveLength(1);
+    const { rows: plans } = await db.query<any>(
+      `SELECT s.membership_plan_id FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? ORDER BY j.id`, [added.body.id]);
+    // The running plan is carried, and the new one is in the cart twice.
+    expect(plans.map((p: any) => Number(p.membership_plan_id))).toEqual([livePlan, planId, planId]);
     expect(await status(liveId)).toBe('active');
   });
 
-  it('Pay writes the initial pending Billing Event and its payment request once, and a second plan or click is refused', async () => {
+  it('Pay writes the initial pending Billing Event and its payment request once, and a plan or click during the payment is refused', async () => {
     const member = await createMember();
     const planId = await createPlan({ price: 40 });
     const res = await assign(member.userId, planId);
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('in_cart');
-    // A repeated Choose this plan creates no second Draft.
-    const again = await assign(member.userId, await createPlan({ price: 40 }));
-    expect(again.status).toBe(409);
-    expect(again.body.error).toBe('plan_pending_payment');
+    // #3312: a repeated Choose this plan joins the same cart; it never opens a second one.
     const { rows: drafts } = await db.query<any>('SELECT id FROM product_sets WHERE owner_member_id = ?', [member.id]);
     expect(drafts).toHaveLength(1);
 

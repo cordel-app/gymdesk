@@ -177,7 +177,7 @@ describe('POST /me/product-sets/:id/plans', () => {
     expect(benefits.find((b) => b.product_id === insurance).final_price).toBe(0);
   });
 
-  it('refuses a second plan on the Draft, a plan not offered to members, and a member who holds a plan', async () => {
+  it('adds further plans beside the first and beside the one the member holds, and refuses a plan not offered to members (#3312)', async () => {
     const m = await member();
     const draft = (await as(m.clerk, 'post', '/draft')).body;
     const hidden = await plan(25, { enrollment: 'staff_only' });
@@ -185,23 +185,62 @@ describe('POST /me/product-sets/:id/plans', () => {
 
     const first = await plan(25);
     expect((await as(m.clerk, 'post', `/${draft.id}/plans`).send({ membership_plan_id: first })).status).toBe(200);
-    const second = await as(m.clerk, 'post', `/${draft.id}/plans`).send({ membership_plan_id: await plan(26) });
-    expect(second.status).toBe(409);
-    expect(second.body.error).toBe('draft_has_plan');
+    // #3312: a second plan joins the same Draft as its own plan snapshot.
+    const secondPlan = await plan(26);
+    const second = await as(m.clerk, 'post', `/${draft.id}/plans`).send({ membership_plan_id: secondPlan });
+    expect(second.status).toBe(200);
+    const both = (await as(m.clerk, 'get', `/${draft.id}`)).body;
+    expect(both.plans.map((p: any) => Number(p.membership_plan_id)).sort()).toEqual([first, secondPlan].sort());
 
-    // Once committed the member holds a plan: a new Draft never takes another one (#1288 §28).
+    // Once committed the member holds those plans: a new Draft carries them and takes another beside them.
     await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: draft.id, today: TODAY }));
     const next = (await as(m.clerk, 'post', '/draft')).body;
-    const held = await as(m.clerk, 'post', `/${next.id}/plans`).send({ membership_plan_id: await plan(27) });
-    expect(held.status).toBe(409);
-    expect(held.body.error).toBe('plan_change_via_gym');
-    // The plan the member holds reads as inherited and cannot be removed from the Draft.
+    const third = await plan(27);
+    const held = await as(m.clerk, 'post', `/${next.id}/plans`).send({ membership_plan_id: third });
+    expect(held.status).toBe(200);
     const view = (await as(m.clerk, 'get', `/${next.id}`)).body;
-    expect(view.plans).toHaveLength(1);
-    expect(view.plans[0].change).toBe('inherited');
-    const remove = await as(m.clerk, 'delete', `/${next.id}/plans/${view.plans[0].plan_snapshot_id}`);
+    expect(view.plans).toHaveLength(3);
+    const inherited = view.plans.filter((p: any) => p.change === 'inherited');
+    expect(inherited).toHaveLength(2);
+    expect(view.plans.find((p: any) => p.change === 'added').membership_plan_id).toBe(third);
+    // A plan the member holds still cannot be removed from the Draft.
+    const remove = await as(m.clerk, 'delete', `/${next.id}/plans/${inherited[0].plan_snapshot_id}`);
     expect(remove.status).toBe(409);
     expect(remove.body.error).toBe('plan_not_removable');
+  });
+
+  it('a plan chosen from the catalogue joins the cart holding the Products, and the commit keeps the running plan (#3312)', async () => {
+    const m = await member();
+    const firstDraft = (await as(m.clerk, 'post', '/draft')).body;
+    const running = await plan(30);
+    expect((await as(m.clerk, 'post', `/${firstDraft.id}/plans`).send({ membership_plan_id: running })).status).toBe(200);
+    await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: firstDraft.id, today: TODAY }));
+
+    const cart = (await as(m.clerk, 'post', '/draft')).body;
+    const locker = await product(`Locker-${uniq()}`);
+    expect((await as(m.clerk, 'post', `/${cart.id}/services`).send({ product_id: locker })).status).toBe(200);
+    const chosenPlan = await plan(35);
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: m.clerk } as any).mockResolvedValueOnce({ sub: m.clerk } as any);
+    const chosen = await request.post(`/me/membership-plans/${chosenPlan}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({});
+    expect(chosen.status).toBe(201);
+    expect(chosen.body.id).toBe(cart.id);
+
+    const view = (await as(m.clerk, 'get', `/${cart.id}`)).body;
+    expect(view.lines.map((l: any) => l.product_id)).toContain(locker);
+    expect(view.plans.map((p: any) => [Number(p.membership_plan_id), p.change]))
+      .toEqual(expect.arrayContaining([[running, 'inherited'], [chosenPlan, 'added']]));
+
+    await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: cart.id, today: TODAY }));
+    // The running plan's assignment stays active; the added plan is an active plan snapshot of the
+    // committed version (#2966's shape for a further plan), so nothing was replaced.
+    const { rows } = await db.query<any>(
+      `SELECT um.membership_plan_id, um.status FROM ${TEST_ASSIGNMENTS} um WHERE um.gym_id = ? AND um.member_id = ?`, [gymId, m.id]);
+    expect(rows.filter((r: any) => r.status === 'active').map((r: any) => Number(r.membership_plan_id))).toEqual([running]);
+    const { rows: snaps } = await db.query<any>(
+      `SELECT s.membership_plan_id, s.status FROM product_set_plan_snapshots j JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+        WHERE j.product_set_id = ? AND j.entitlement_only = 0 ORDER BY j.id`, [cart.id]);
+    expect(snaps.map((r: any) => [Number(r.membership_plan_id), r.status])).toEqual([[running, 'active'], [chosenPlan, 'active']]);
   });
 
   it('removes the plan the Draft added and keeps its Products', async () => {
