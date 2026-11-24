@@ -694,7 +694,7 @@
       "failed": "Fallido",
       "pending": "Pendiente",
       "scheduled": "Programado",
-      "recorded": "Registrado",
+      "waived": "Condonado",
       "cancelled": "Cancelado"
     },
     "prepaid_payment_month": "Prepago de {count, plural, one {# mes} other {# meses}}",

@@ -100,6 +100,6 @@ describe('cancelled status', () => {
     expect(paymentActionsFor({ status: 'cancelled', eventType: 'payment_recorded', scheduledAndDue: true, linked: true, membershipStatus: null, hasMembership: false, amount: 10 }).retry).toBe(false);
     expect(isAwaitingAction('failed_billing', 'expired', true)).toBe(false);
     expect(canCancelBillingEvent('pending')).toBe(true);
-    for (const s of ['paid', 'failed', 'scheduled', 'recorded', 'cancelled'] as const) expect(canCancelBillingEvent(s)).toBe(false);
+    for (const s of ['paid', 'failed', 'scheduled', 'waived', 'cancelled', null] as const) expect(canCancelBillingEvent(s)).toBe(false);
   });
 });

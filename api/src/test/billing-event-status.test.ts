@@ -6,6 +6,7 @@ import {
   deriveBillingEventStatus,
   isAwaitingAction,
   isPaymentActionable,
+  isPaymentCollected,
   statusFromEventType,
   statusFromTransaction,
 } from '../domain/billingEventStatus';
@@ -43,12 +44,19 @@ describe('statusFromEventType', () => {
     expect(statusFromEventType('failed_billing')).toBe('failed');
   });
 
-  it('falls back to recorded for informational events', () => {
-    expect(statusFromEventType('adjustment')).toBe('recorded');
+  it('gives an event type that records no payment no status (#3332)', () => {
+    expect(statusFromEventType('adjustment')).toBeNull();
     // #3082: a waived one-time purchase has no transaction and is paid.
     expect(statusFromEventType('product_purchase')).toBe('paid');
-    expect(statusFromEventType('status_changed')).toBe('recorded');
-    expect(statusFromEventType('charge_created')).toBe('recorded');
+    expect(statusFromEventType('status_changed')).toBeNull();
+    expect(statusFromEventType('card_verification')).toBeNull();
+    expect(statusFromEventType('charge_created')).toBeNull();
+  });
+
+  it('reads a waiver with no attempt as waived, never paid (#3332)', () => {
+    expect(statusFromEventType('waived_billing')).toBe('waived');
+    expect(deriveBillingEventStatus('waived_billing', null)).toBe('waived');
+    expect(isPaymentCollected('waived_billing', null)).toBe(false);
   });
 });
 
@@ -63,7 +71,7 @@ describe('deriveBillingEventStatus', () => {
   it('falls back to the event type when the event has no transactions', () => {
     expect(deriveBillingEventStatus('failed_billing', null)).toBe('failed');
     expect(deriveBillingEventStatus('payment_recorded', null)).toBe('paid');
-    expect(deriveBillingEventStatus('adjustment', null)).toBe('recorded');
+    expect(deriveBillingEventStatus('adjustment', null)).toBeNull();
   });
 });
 
@@ -73,7 +81,8 @@ describe('isPaymentActionable', () => {
     expect(isPaymentActionable('paid')).toBe(false);
     expect(isPaymentActionable('pending')).toBe(false);
     expect(isPaymentActionable('scheduled')).toBe(false);
-    expect(isPaymentActionable('recorded')).toBe(false);
+    expect(isPaymentActionable('waived')).toBe(false);
+    expect(isPaymentActionable(null)).toBe(false);
   });
 });
 
@@ -109,7 +118,7 @@ describe('displayBillingEventStatus', () => {
     expect(display('paid', 'full')).toBe('refunded');
   });
   it('leaves every other status, cancelled included, as derived', () => {
-    for (const s of ['cancelled', 'failed', 'pending', 'scheduled', 'recorded'] as const) {
+    for (const s of ['cancelled', 'failed', 'pending', 'scheduled', 'waived'] as const) {
       expect(display(s, 'full')).toBe(s);
     }
   });

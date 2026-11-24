@@ -87,7 +87,8 @@ export interface PurchaseBillingEvent extends PurchasePayment {
   name: string | null;
   event_type: string;
   amount: string | null;
-  status: string;
+  /** #3332: null when the event type records no payment. */
+  status: string | null;
   created_at: string;
 }
 

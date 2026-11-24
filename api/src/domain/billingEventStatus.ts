@@ -9,7 +9,8 @@
  *
  * When an event has no transaction at all (a `status_changed` row, an
  * `adjustment`, or a `failed_billing` emitted because the member had no stored
- * payment method) the status falls back to what the event type itself says.
+ * payment method) the status falls back to what the event type itself says,
+ * which is `null` (no payment status) for a type that records no payment (#3332).
  *
  * Pure on purpose: the list endpoint, the details endpoint and the admin UI
  * must not each re-derive this. Unit-tested in
@@ -21,12 +22,19 @@
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
 
 /** The status vocabulary the Billing Events view filters and badges on. */
+/**
+ * #3332: there is no `recorded` fallback any more. An event whose type records
+ * no payment (an `adjustment`, a retired `status_changed` row, a
+ * `card_verification` with no attempt) has **no** payment status, which
+ * `deriveBillingEventStatus()` answers as `null`; a `waived_billing` with no
+ * attempt reads `waived`.
+ */
 export type BillingEventStatus =
-  | 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded' | 'cancelled'
+  | 'paid' | 'failed' | 'pending' | 'scheduled' | 'waived' | 'cancelled'
   | 'refunded' | 'partially_refunded';
 
 export const BILLING_EVENT_STATUSES = [
-  'paid', 'failed', 'pending', 'scheduled', 'recorded', 'cancelled', 'refunded', 'partially_refunded',
+  'paid', 'failed', 'pending', 'scheduled', 'waived', 'cancelled', 'refunded', 'partially_refunded',
 ] as const;
 
 /**
@@ -41,9 +49,9 @@ export const BILLING_EVENT_STATUSES = [
  * money stays counted as collected.
  */
 export function displayBillingEventStatus(
-  status: BillingEventStatus,
+  status: BillingEventStatus | null,
   refundState: string | null | undefined,
-): BillingEventStatus {
+): BillingEventStatus | null {
   if (status !== 'paid') return status;
   if (refundState === 'full') return 'refunded';
   if (refundState === 'partial') return 'partially_refunded';
@@ -67,15 +75,22 @@ export function statusFromTransaction(txStatus: string | null | undefined): Bill
   }
 }
 
-/** Fallback for an event with no transactions: read the event type itself. */
-export function statusFromEventType(eventType: string): BillingEventStatus {
+/**
+ * Fallback for an event with no transactions: read the event type itself.
+ * #3332: a type that records no payment (`adjustment`, `status_changed`,
+ * `card_verification`, anything unknown) has no payment status (`null`), and a
+ * waiver written with no attempt reads `waived` — never `paid`, since no money
+ * moved and the money readers (`isPaymentCollected()`) must not count it.
+ */
+export function statusFromEventType(eventType: string): BillingEventStatus | null {
   switch (eventType) {
     case 'recurring_payment':
     // #3082: a purchase whose Promotion waived it owes nothing and has no transaction.
     case 'product_purchase':
     case 'payment_recorded': return 'paid';
     case 'failed_billing':   return 'failed';
-    default:                 return 'recorded';
+    case 'waived_billing':   return 'waived';
+    default:                 return null;
   }
 }
 
@@ -95,7 +110,7 @@ export function deriveBillingEventStatus(
   eventType: string,
   latestTransactionStatus: string | null | undefined,
   cancelled: boolean = false,
-): BillingEventStatus {
+): BillingEventStatus | null {
   if (cancelled) return 'cancelled';
   return statusFromTransaction(latestTransactionStatus) ?? statusFromEventType(eventType);
 }
@@ -118,7 +133,7 @@ export function isPaymentCollected(
  * raised and not settled). A scheduled obligation, a failed charge, a paid or
  * an already cancelled event offers none.
  */
-export function canCancelBillingEvent(status: BillingEventStatus): boolean {
+export function canCancelBillingEvent(status: BillingEventStatus | null): status is 'pending' {
   return status === 'pending';
 }
 
@@ -127,7 +142,7 @@ export function canCancelBillingEvent(status: BillingEventStatus): boolean {
  * event (issue §1: "Do not show payment actions for events where they are not
  * applicable"). A paid, pending or purely informational event offers neither.
  */
-export function isPaymentActionable(status: BillingEventStatus): boolean {
+export function isPaymentActionable(status: BillingEventStatus | null): boolean {
   return status === 'failed';
 }
 
@@ -150,7 +165,7 @@ export function isPaymentActionable(status: BillingEventStatus): boolean {
  * "cancel" — an unresolved obligation simply stays unresolved.
  */
 export interface PaymentActionInput {
-  status: BillingEventStatus;
+  status: BillingEventStatus | null;
   eventType: string;
   /** A persisted obligation that is due today or earlier and nothing has collected. */
   scheduledAndDue: boolean;

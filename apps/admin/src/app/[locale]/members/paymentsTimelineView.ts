@@ -84,7 +84,7 @@ export function pointsAtX(timeline: PaymentsTimeline, x: number | null): Timelin
 
 /** The ledger statuses the chart has a label for; anything else reads as unknown. */
 export const TIMELINE_STATUSES = [
-  'paid', 'pending', 'failed', 'scheduled', 'recorded', 'cancelled', 'refunded', 'partially_refunded', 'unknown',
+  'paid', 'pending', 'failed', 'scheduled', 'waived', 'cancelled', 'refunded', 'partially_refunded', 'unknown',
 ] as const;
 
 export function knownStatusKey(point: TimelinePoint): string {

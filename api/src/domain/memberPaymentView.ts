@@ -29,7 +29,7 @@ export function ledgerEventStatus(
   latestTransactionStatus: string | null | undefined,
   cancelled: boolean,
   isScheduled: boolean,
-): BillingEventStatus {
+): BillingEventStatus | null {
   if (isScheduled) return 'scheduled';
   return deriveBillingEventStatus(eventType, latestTransactionStatus, cancelled);
 }

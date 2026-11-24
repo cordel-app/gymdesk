@@ -694,7 +694,7 @@
       "failed": "Failed",
       "pending": "Pending",
       "scheduled": "Scheduled",
-      "recorded": "Recorded",
+      "waived": "Waived",
       "cancelled": "Cancelled"
     },
     "prepaid_payment_month": "{count, plural, one {# month} other {# months}} pre-payment",

@@ -694,7 +694,7 @@
       "failed": "Fallit",
       "pending": "Pendent",
       "scheduled": "Programat",
-      "recorded": "Registrat",
+      "waived": "Condonat",
       "cancelled": "Cancel·lat"
     },
     "prepaid_payment_month": "Prepagament de {count, plural, one {# mes} other {# mesos}}",
