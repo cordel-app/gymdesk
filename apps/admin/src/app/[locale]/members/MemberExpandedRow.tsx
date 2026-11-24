@@ -37,6 +37,7 @@ import { ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './
 import { billingMode, pendingOneOffCount, saveAndPayTarget, standaloneCartCount } from './productsWorkflowView';
 import { StandaloneCartSummary } from './StandaloneCartSummary';
 import { ReviewChangesModal } from './ReviewChangesModal';
+import { StandaloneCartPayModal } from './StandaloneCartPayModal';
 import { MemberProgress } from './MemberProgress';
 import { MemberPayments } from './MemberPayments';
 import { MemberPurchases } from './MemberPurchases';
@@ -213,21 +214,14 @@ export function MemberExpandedRow({
     cartPurchases: standaloneCartCount(purchasedProducts),
   };
   const [cartPaymentLink, setCartPaymentLink] = useState<string | null>(null);
-  const [cartPaying, setCartPaying] = useState(false);
-  async function payStandaloneCart() {
-    setCartPaying(true);
-    try {
-      const out = await apiFetch<{ checkoutUrl: string }>(`/members/${memberId}/product-purchases/checkout`, {
-        method: 'POST', body: JSON.stringify({}),
-      });
-      setCartPaymentLink(out.checkoutUrl);
-      try { await navigator.clipboard?.writeText(out.checkoutUrl); } catch { /* shown on screen */ }
-      await reloadProducts();
-    } catch (err: any) {
-      toast(apiErrorMessage(err) ?? t('members.error_generic'));
-    } finally {
-      setCartPaying(false);
-    }
+  // #3313 — the standalone cart's Save & Pay opens the payment step; only its Pay creates the
+  // Billing Event and the Members App checkout (`StandaloneCartPayModal`).
+  const [cartPayOpen, setCartPayOpen] = useState(false);
+  async function cartPaid(checkoutUrl: string) {
+    setCartPayOpen(false);
+    setCartPaymentLink(checkoutUrl);
+    try { await navigator.clipboard?.writeText(checkoutUrl); } catch { /* shown on screen */ }
+    await reloadProducts();
   }
   const billingSectionMode = billingMode(workflow);
   const inFlightSetsShown = (configuration.product_sets ?? []).some((p: any) => p.status === 'in_cart' || p.status === 'pending_payment');
@@ -554,6 +548,12 @@ export function MemberExpandedRow({
           {/* 2. The Recurring Products card is gone from this tab (#1613
               follow-up). The global Save & Pay still reviews a Draft through
               the Review modal; the recurring routes are untouched. */}
+          <StandaloneCartPayModal
+            memberId={memberId}
+            open={cartPayOpen}
+            onClose={() => setCartPayOpen(false)}
+            onPaid={(url) => { void cartPaid(url); }}
+          />
           {inFlightSetId != null && (
             <ReviewChangesModal
               productSetId={inFlightSetId}
@@ -614,11 +614,11 @@ export function MemberExpandedRow({
                 // #3164 — cancelling the cart also re-reads the Products table, so the cancelled cart's
                 // rows do not stay on screen as In Cart beside the restored Active ProductSet.
                 onDiscarded={reloadProducts}
-                busy={cartPaying}
+                busy={cartPayOpen}
                 onSaveAndPay={() => {
                   const target = saveAndPayTarget(workflow);
                   if (target === 'review') setReviewOpen(true);
-                  else if (target === 'cart') void payStandaloneCart();
+                  else if (target === 'cart') setCartPayOpen(true);
                   else if (target === 'purchases') document.getElementById('member-products-section')?.scrollIntoView({ behavior: 'smooth' });
                 }}
               />

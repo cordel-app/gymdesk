@@ -886,6 +886,8 @@
     "progress_delete_confirm": "Permanently delete this reading? This cannot be undone.",
     "pay_method": "Payment method",
     "pay_method_choose": "Select a payment method",
+    "cart_pay_title": "Pay the cart",
+    "cart_pay_method_members_app": "Members App",
     "pay_method_unavailable": "not available",
     "pay_monei_no_token": "This member does not have a Monei payment token.",
     "pay_error_method_required": "Select a payment method before continuing.",

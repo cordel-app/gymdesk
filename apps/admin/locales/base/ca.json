@@ -887,6 +887,8 @@
     "progress_delete_confirm": "Vols eliminar aquest registre definitivament? No es pot desfer.",
     "pay_method": "Mètode de pagament",
     "pay_method_choose": "Selecciona un mètode de pagament",
+    "cart_pay_title": "Pagar el carro",
+    "cart_pay_method_members_app": "App de membres",
     "pay_method_unavailable": "no disponible",
     "pay_monei_no_token": "Aquest membre no té un token de pagament de Monei.",
     "pay_error_method_required": "Selecciona un mètode de pagament abans de continuar.",
