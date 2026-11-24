@@ -275,7 +275,7 @@ interface PaymentRequest {
    * unpaid fee (migration 228's reason, and #788's one flow over).
    */
   source: string;
-  status: 'pending' | 'completed' | 'failed' | 'expired';
+  status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
   billing_interval: number | null;
   billing_unit: 'day' | 'week' | 'month' | 'year' | null;
   created_at: string;

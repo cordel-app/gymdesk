@@ -161,7 +161,10 @@ async function settleInTransaction(
     // changes nothing, and an already-`completed` row is always skipped — which
     // is what keeps every caller idempotent.
     const settleable =
-      pr.status === 'pending' || (pr.status === 'expired' && payload.status === 'completed');
+      pr.status === 'pending'
+      // #3309: a member-cancelled attempt is recorded too if the money was captured after all; its
+      // event is `cancelled_at`, so the payment activates nothing (#2533 stage 2) and is refundable.
+      || ((pr.status === 'expired' || pr.status === 'cancelled') && payload.status === 'completed');
 
     if (!settleable) {
       log.info({ ...ctx, status: pr.status }, 'Payment settlement: already processed, skipping');
@@ -248,7 +251,7 @@ async function settleInTransaction(
     }
 
     if (payload.status === 'completed') {
-      if (pr.status === 'expired') {
+      if (pr.status === 'expired' || pr.status === 'cancelled') {
         log.warn({ ...ctx, paymentRequestId: pr.id }, 'Payment settlement: completing a request cleanup had already expired');
       }
 

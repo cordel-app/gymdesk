@@ -152,6 +152,24 @@ export async function moveSetPurchases(
   }
 }
 
+/**
+ * #3309: a checkout the member cancelled keeps its initial event as history but
+ * the purchases go back to the cart, so their link to that event is removed:
+ * the next Save & Pay links them to the new initial event (`linkSetPurchasesToEvent()`),
+ * and a purchase reaches its payment through exactly one event.
+ */
+export async function unlinkSetPurchasesFromEvents(
+  tx: Conn, gymId: string, productSetId: number, billingEventIds: readonly number[],
+): Promise<void> {
+  if (billingEventIds.length === 0) return;
+  const marks = billingEventIds.map(() => '?').join(',');
+  for (const p of await loadSetPurchases(tx, gymId, productSetId)) {
+    const j = PURCHASE_EVENT_JUNCTIONS.find((x) => x.table === p.snapshot_table)!;
+    await tx.query(`DELETE FROM ${j.junction} WHERE ${j.snapshotCol} = ? AND billing_event_id IN (${marks})`,
+      [p.snapshot_id, ...billingEventIds]);
+  }
+}
+
 /** The purchases become the member's when their set does (the webhook's activation, or a free commit). */
 export async function activateSetPurchases(tx: Conn, gymId: string, productSetId: number): Promise<void> {
   // #2949 stage 5: and so do the standalone cart purchases its checkout joined (pending, never in_cart:

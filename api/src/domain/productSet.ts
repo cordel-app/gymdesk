@@ -68,7 +68,8 @@ export interface PendingAttempt {
 }
 
 const TERMINAL_UNSUCCESSFUL = new Set(['FAILED', 'EXPIRED', 'CANCELED']);
-const LEGACY_TERMINAL_UNSUCCESSFUL = new Set(['failed', 'expired']);
+// #3309: `cancelled` is an attempt the member cancelled (nothing was captured).
+const LEGACY_TERMINAL_UNSUCCESSFUL = new Set(['failed', 'expired', 'cancelled']);
 
 /**
  * May a Pending Payment set be hard-deleted with these attempts (#1325 §6)?

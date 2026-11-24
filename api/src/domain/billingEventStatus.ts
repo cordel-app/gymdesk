@@ -17,7 +17,8 @@
  */
 
 /** `payment_requests.status` — the transaction-level vocabulary. */
-export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'expired';
+/** `cancelled` (#3309): an attempt the member cancelled from the Members App; its event is `cancelled_at`. */
+export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
 
 /** The status vocabulary the Billing Events view filters and badges on. */
 export type BillingEventStatus =
@@ -60,6 +61,8 @@ export function statusFromTransaction(txStatus: string | null | undefined): Bill
     case 'failed':
     case 'expired':   return 'failed';
     case 'pending':   return 'pending';
+    // #3309: a member-cancelled attempt; its event is stamped `cancelled_at` too.
+    case 'cancelled': return 'cancelled';
     default:          return null;
   }
 }

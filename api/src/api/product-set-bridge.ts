@@ -253,6 +253,7 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
   const { rows: ev } = await tx.query<any>(
     `SELECT id FROM billing_events
       WHERE gym_id = ? AND product_set_id = ? AND event_type = 'payment_recorded' AND schedule_id IS NULL
+        AND cancelled_at IS NULL
       ORDER BY id ASC LIMIT 1 FOR UPDATE`, [gymId, set.id]);
   if (!ev[0]) return;
   const startsAt = dateOnly(set.starts_at);

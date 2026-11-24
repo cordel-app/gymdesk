@@ -12,7 +12,7 @@ interface PaymentRequest {
   id: number;
   amount: string;
   currency: string;
-  status: 'pending' | 'completed' | 'failed' | 'expired';
+  status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
   source: string;
   created_at: string;
   completed_at: string | null;
