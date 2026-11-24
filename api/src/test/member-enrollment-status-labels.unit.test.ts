@@ -7,6 +7,11 @@
 // status that can reach the column has no label in one of the admin locales,
 // so the next status added to `ASSIGNMENT_STATUSES` cannot repeat the defect.
 //
+// #3281 stage 2: the value is the exact status of the plan it was derived from, so it reads under
+// the plan row's own key (`status.<value>`, `apps/admin/src/lib/memberPlanStatus.ts`) and there is no
+// Member-level label set any more — that set worded `to_be_canceled` as "Active (cancellation
+// pending)" beside a plan reading "To Be Canceled".
+//
 // It lives in the API suite because CI runs `npm test` in `api/` only.
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -28,14 +33,26 @@ describe('#2803 Members table plan status labels', () => {
 
   for (const code of ['en', 'es', 'ca']) {
     it(`every reported status has a label in ${code}`, () => {
-      const members = JSON.parse(
+      const locale = JSON.parse(
         readFileSync(join(REPO, 'apps', 'admin', 'locales', 'base', `${code}.json`), 'utf8'),
-      ).members as Record<string, string>;
+      ) as { status: Record<string, string>; members: Record<string, string> };
       for (const status of REPORTED) {
-        const label = members[`enrollment_status_${status}`];
-        expect(label, `members.enrollment_status_${status} is missing in ${code}`).toBeTruthy();
+        const label = locale.status[status];
+        expect(label, `status.${status} is missing in ${code}`).toBeTruthy();
         expect(label, `${code} shows the internal value for ${status}`).not.toContain('_');
       }
+      const memberLabels = Object.keys(locale.members).filter((k) => k.startsWith('enrollment_status_'));
+      expect(memberLabels, `${code} keeps a Member-level plan status label`).toEqual(['enrollment_status_none']);
     });
   }
+
+  it('the Members page words the status through the plan row\'s key and filters by every reported value', () => {
+    const lib = readFileSync(join(REPO, 'apps', 'admin', 'src', 'lib', 'memberPlanStatus.ts'), 'utf8');
+    expect(lib).toContain('return `status.${status}`;');
+    const values = /MEMBER_PLAN_STATUS_FILTER_VALUES = \[([^\]]*)\]/.exec(lib)?.[1] ?? '';
+    for (const status of REPORTED) expect(values, `the filter does not offer ${status}`).toContain(`'${status}'`);
+    const page = readFileSync(join(REPO, 'apps', 'admin', 'src', 'app', '[locale]', 'members', 'page.tsx'), 'utf8');
+    expect(page).not.toMatch(/members\.enrollment_status_\$\{/);
+    expect(page).toContain('memberPlanStatusLabelKey(');
+  });
 });

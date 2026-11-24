@@ -12,6 +12,10 @@
 
 {bucket}/
 ├── cordel/
+│   ├── meals/                                                       — #3328, Base Meals
+│   │   ├── {meal_id}-{meal_slug}.webp                              — 1080 × 1080 px
+│   │   └── {meal_id}-{meal_slug}-thumbnail.webp                    — 256 × 256 px
+│   │
 │   ├── nutrition/
 │   │   ├── {food_id}-{food_name}.webp                              — 1080 × 1080 px
 │   │   └── {food_id}-{food_name}-thumbnail.webp                    — 256 × 256 px
