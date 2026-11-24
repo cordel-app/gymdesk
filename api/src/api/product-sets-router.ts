@@ -450,8 +450,10 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
         orderId, amount: toMinorUnits(charge.amount), currency: 'EUR',
         paymentToken: token!.payment_token, sequenceId: token!.sequence_id,
       });
-      const raw = normaliseProviderStatus(result.providerStatus ?? (result.success ? 'SUCCEEDED' : 'FAILED'));
-      const cls = classifyProviderStatus(raw);
+      // #3289: only the provider's own status is stored; an answer with none is
+      // still decided by its success flag.
+      const raw = normaliseProviderStatus(result.providerStatus ?? null);
+      const cls = classifyProviderStatus(raw ?? (result.success ? 'SUCCEEDED' : 'FAILED'));
       const settled = result.success === true && cls === 'settled';
       const internal = settled ? 'completed' : cls === 'in_flight' ? 'pending' : 'failed';
       await db.transaction(async (tx) => {

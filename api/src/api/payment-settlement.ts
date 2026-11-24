@@ -207,10 +207,10 @@ async function settleInTransaction(
       // stores no card (a one-off authorises one charge).
       await tx.query(
         `UPDATE payment_requests
-         SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP(),
+         SET status = 'completed', provider_ref = ?, provider_status = COALESCE(?, provider_status), completed_at = UTC_TIMESTAMP(),
              modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ?`,
-        [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', SYSTEM_ACTOR, pr.id],
+        [payload.providerRef, normaliseProviderStatus(payload.providerStatus ?? null), SYSTEM_ACTOR, pr.id],
       );
 
       // The purchase's `product_purchase` Billing Event was written with the
@@ -254,10 +254,10 @@ async function settleInTransaction(
 
       await tx.query(
         `UPDATE payment_requests
-         SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP(),
+         SET status = 'completed', provider_ref = ?, provider_status = COALESCE(?, provider_status), completed_at = UTC_TIMESTAMP(),
              modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ?`,
-        [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', SYSTEM_ACTOR, pr.id],
+        [payload.providerRef, normaliseProviderStatus(payload.providerStatus ?? null), SYSTEM_ACTOR, pr.id],
       );
       await closeSiblingAttempts(tx, pr.gym_id, pr.billing_event_id, pr.id);
 
@@ -343,10 +343,10 @@ async function settleInTransaction(
     if (payload.status === 'failed' || payload.status === 'expired') {
       await tx.query(
         `UPDATE payment_requests
-            SET status = ?, provider_ref = ?, provider_status = ?,
+            SET status = ?, provider_ref = ?, provider_status = COALESCE(?, provider_status),
                 modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ?`,
-        [payload.status, payload.providerRef, payload.providerStatus ?? null, SYSTEM_ACTOR, pr.id],
+        [payload.status, payload.providerRef, normaliseProviderStatus(payload.providerStatus ?? null), SYSTEM_ACTOR, pr.id],
       );
       // #1121 stage 2: a purchase nobody paid for is `cancelled`, which frees
       // the pending key so the member can try again.
