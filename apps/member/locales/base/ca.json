@@ -702,8 +702,7 @@
   },
   "payment_banner": {
     "pending_heading": "Tens un pagament pendent",
-    "pay_now": "Pagar ara",
-    "start_payment": "Iniciar pagament"
+    "pay_now": "Pagar ara"
   },
   "payment_consent": {
     "title_once": "Autorització de pagament",
