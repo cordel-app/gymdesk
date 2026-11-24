@@ -887,6 +887,8 @@
     "progress_delete_confirm": "¿Eliminar este registro definitivamente? No se puede deshacer.",
     "pay_method": "Método de pago",
     "pay_method_choose": "Selecciona un método de pago",
+    "cart_pay_title": "Pagar el carrito",
+    "cart_pay_method_members_app": "App de miembros",
     "pay_method_unavailable": "no disponible",
     "pay_monei_no_token": "Este miembro no tiene un token de pago de Monei.",
     "pay_error_method_required": "Selecciona un método de pago antes de continuar.",
