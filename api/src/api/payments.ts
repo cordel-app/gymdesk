@@ -37,6 +37,7 @@ import {
 } from '../domain/billingEventStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment, waiveBillingEvent } from '../domain/billingEventPayments';
+import { ledgerEventStatus } from '../domain/memberPaymentView';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
@@ -479,7 +480,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const past: BillingEventRow[] = realRows.map((r) => {
       const scheduledEvent = Number(r.is_scheduled) === 1;
       const cancelled = r.cancelled_at != null;
-      const status = scheduledEvent ? 'scheduled' : deriveBillingEventStatus(r.event_type, r.latest_tx_status, cancelled);
+      const status = ledgerEventStatus(r.event_type, r.latest_tx_status, cancelled, scheduledEvent);
       const refund = refundsByEvent.get(Number(r.id));
       return {
         id: r.id,
