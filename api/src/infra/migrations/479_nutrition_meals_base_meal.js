@@ -36,18 +36,19 @@ const constraintExists = (knex, table, name) =>
 
 exports.up = async (knex) => {
   for (const { table, check, fk, idx } of TABLES) {
-    if (await constraintExists(knex, table, check)) {
-      await knex.raw(`ALTER TABLE ${table} DROP CHECK ${check}`);
-    }
-    await knex.raw(`ALTER TABLE ${table} MODIFY COLUMN meal_type VARCHAR(120) NULL`);
+    // One ALTER per table, so each table is rebuilt once (the widening and the FK
+    // both need ALGORITHM=COPY); every clause is guarded, so a re-run is a no-op.
+    const clauses = [];
+    if (await constraintExists(knex, table, check)) clauses.push(`DROP CHECK ${check}`);
+    clauses.push('MODIFY COLUMN meal_type VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL');
     if (!(await knex.schema.hasColumn(table, 'base_meal_id'))) {
-      await knex.raw(`ALTER TABLE ${table} ADD COLUMN base_meal_id INT UNSIGNED NULL AFTER meal_type`);
+      clauses.push('ADD COLUMN base_meal_id INT UNSIGNED NULL AFTER meal_type');
     }
     if (!(await constraintExists(knex, table, fk))) {
-      await knex.raw(`ALTER TABLE ${table}
-        ADD KEY ${idx} (base_meal_id),
-        ADD CONSTRAINT ${fk} FOREIGN KEY (base_meal_id) REFERENCES base_meals(id) ON DELETE RESTRICT`);
+      clauses.push(`ADD KEY ${idx} (base_meal_id)`);
+      clauses.push(`ADD CONSTRAINT ${fk} FOREIGN KEY (base_meal_id) REFERENCES base_meals(id) ON DELETE RESTRICT`);
     }
+    await knex.raw(`ALTER TABLE ${table} ${clauses.join(', ')}`);
     await knex.raw(`
       UPDATE ${table} t
         JOIN base_meals bm ON bm.slug = t.meal_type
