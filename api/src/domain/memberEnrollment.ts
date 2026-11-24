@@ -37,6 +37,10 @@ import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL, assignment
  * **current** snapshot (`assignmentCoversMemberSql()`), never of a copy an uncommitted cart owns, so
  * a beneficiary proposed in a Draft changes nothing until it is committed. A plan that neither
  * belongs to nor covers the Member (another family member's own) is not counted.
+ *
+ * #3281 stage 2: the rank only *chooses* a plan; the value reported is that plan's own stored status,
+ * never adapted (`to_be_canceled` stays `to_be_canceled`), and the Admin words it with the plan row's
+ * own `status.<value>` key (`apps/admin/src/lib/memberPlanStatus.ts`).
  */
 export function ENROLLMENT_STATUS_RANK_SQL(col: string): string {
   return `CASE WHEN ${col} IN ('active', 'to_be_canceled') THEN 0

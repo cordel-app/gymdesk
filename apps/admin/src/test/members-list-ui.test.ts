@@ -286,7 +286,7 @@ describe('Members list: one list with Products (#928)', () => {
       '{m.email}',
       "{m.nif_nie_passport || '—'}",
       'label={t(`members.payment_status_${m.payment_status}`)',
-      'label={t(`members.enrollment_status_${m.enrollment_status}`)',
+      'label={t(memberPlanStatusLabelKey(m.enrollment_status))}',
       "{t('members.payment_status_none')}",
       "{t('members.enrollment_status_none')}",
       '<ContextMenu',
