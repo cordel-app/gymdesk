@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, inFlightSetTitle, pendingPlanChangeCount, cartCancelContents, cartCancelIntroKey, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount,
+  billingMode, cancelRequestFor, inFlightSetTitle, pendingPlanChangeCount, cartCancelContents, cartCancelIntroKey, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount, cartExpirySeconds, hasCartInCart,
 } from '@/app/[locale]/members/productsWorkflowView';
 import { displayedEndsAt } from '@/components/assignedPlan/assignedPlanProfile';
 
@@ -179,5 +179,32 @@ describe('#3114 stage 3 — a cart that only reactivates (or cancels) a plan', (
   it('reads open-ended in the plan list while the stored end date stays', () => {
     expect(displayedEndsAt({ ends_at: '2026-12-06', lifecycle_status: 'to_be_reactivated' })).toBeNull();
     expect(displayedEndsAt({ ends_at: '2026-12-06', lifecycle_status: 'cancels_on_end_date' })).toBe('2026-12-06');
+  });
+});
+
+describe('#3274 follow-up — the cart has one countdown, the purchase\'s', () => {
+  const now = Date.parse('2026-11-24T12:00:00Z');
+  const inCartSet = (seconds: number | null, expired = false) => ({ status: 'in_cart', expired, expires_in_seconds: seconds });
+  it('reads the in-cart set\'s seconds, which the server takes from the purchase', () => {
+    expect(cartExpirySeconds(inCartSet(5400), [], now)).toBe(5400);
+  });
+  it('reads a standalone cart from its purchases\' cart_expires_at', () => {
+    expect(cartExpirySeconds(null, [{ status: 'in_cart', cart_expires_at: '2026-11-24T13:30:00Z' }], now)).toBe(5400);
+  });
+  it('gives one value for a cart holding a set and standalone Products', () => {
+    expect(cartExpirySeconds(inCartSet(5400), [
+      { status: 'in_cart', cart_expires_at: '2026-11-24T13:30:00Z' },
+      { status: 'in_cart', cart_expires_at: '2026-11-24T13:30:00Z' },
+    ], now)).toBe(5400);
+  });
+  it('shows nothing outside In Cart', () => {
+    expect(cartExpirySeconds({ status: 'pending_payment', expired: false, expires_in_seconds: null }, [{ status: 'pending_payment', cart_expires_at: null }], now)).toBeNull();
+    expect(cartExpirySeconds(inCartSet(100, true), [], now)).toBeNull();
+    expect(hasCartInCart({ status: 'active', expired: false }, [])).toBe(false);
+    expect(hasCartInCart({ status: 'in_cart', expired: false }, [])).toBe(true);
+    expect(hasCartInCart(null, [{ status: 'in_cart', cart_expires_at: '2026-11-24T13:30:00Z' }])).toBe(true);
+  });
+  it('never counts below zero', () => {
+    expect(cartExpirySeconds(null, [{ status: 'in_cart', cart_expires_at: '2026-11-24T11:00:00Z' }], now)).toBe(0);
   });
 });

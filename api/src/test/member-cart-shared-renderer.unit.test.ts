@@ -26,7 +26,7 @@ describe('shared cart renderer', () => {
     expect(cart).toContain('<CartCard');
     expect(cart).toContain('cartBeneficiaryLabel');
     expect(cart).toContain('<CartSummary');
-    expect(cart).toContain('data-draft-expiry');
+    expect(cart).toContain('data-cart-expiry');
     expect(cart).toContain('cart_discard_title');
     expect(cart).toContain('payment_consent');
     expect(cart).not.toContain('add_plan');

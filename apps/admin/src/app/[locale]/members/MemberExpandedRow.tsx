@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
@@ -33,8 +33,8 @@ import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { useProductSetDetail } from './MemberProductSet';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { ProposedSetForecast } from './ProposedSetForecast';
-import { ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
-import { billingMode, pendingOneOffCount, saveAndPayTarget, standaloneCartCount } from './productsWorkflowView';
+import { CartStatusBar, ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
+import { billingMode, cartExpirySeconds, hasCartInCart, pendingOneOffCount, saveAndPayTarget, standaloneCartCount } from './productsWorkflowView';
 import { StandaloneCartSummary } from './StandaloneCartSummary';
 import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
@@ -212,6 +212,11 @@ export function MemberExpandedRow({
     // and with no Draft they are a cart of their own with its own Summary.
     cartPurchases: standaloneCartCount(purchasedProducts),
   };
+  // #3274 follow-up — the cart's one countdown (the purchase's clock), taken when the data is read.
+  const cartSeconds = useMemo(
+    () => cartExpirySeconds(configuration.current_product_set, purchasedProducts, Date.now()),
+    [configuration.current_product_set, purchasedProducts],
+  );
   const [cartPaymentLink, setCartPaymentLink] = useState<string | null>(null);
   const [cartPaying, setCartPaying] = useState(false);
   async function payStandaloneCart() {
@@ -519,7 +524,6 @@ export function MemberExpandedRow({
             current={configuration.current_product_set}
             loading={productSetDetail.loading}
             error={productSetDetail.error}
-            onDraftExpired={reloadProducts}
           />
           <Section label={t('members.section_membership_plan')} divider={false}>
             <span id="member-membership-plans-section" />
@@ -598,6 +602,10 @@ export function MemberExpandedRow({
               the tab, with Save & Pay / Cancel directly beneath. */}
           {(inFlightSetsShown || saveAndPayTarget(workflow) === 'cart' || cartPaymentLink != null) && (
             <Section label={t('members.section_summary')}>
+              {/* #3274 follow-up — the cart's one In Cart status and countdown. */}
+              {hasCartInCart(configuration.current_product_set, purchasedProducts) && (
+                <CartStatusBar seconds={cartSeconds} onExpire={reloadProducts} />
+              )}
               {!inFlightSetsShown && (
                 <StandaloneCartSummary memberId={memberId} reloadKey={purchasedProducts} paymentLink={cartPaymentLink} />
               )}
