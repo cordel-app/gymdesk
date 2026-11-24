@@ -972,15 +972,17 @@ describe('type filter', () => {
     }
   });
 
-  it('default list (no ?type) includes both base and gym-owned templates', async () => {
+  // #3333: the gym's list holds its own templates only; System ones are imported.
+  it('default list (no ?type) holds only gym-owned templates', async () => {
     const res = await request
       .get('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     const ownerTypes = res.body.items.map((t: any) => t.owner_type);
-    expect(ownerTypes).toContain('base');
+    expect(ownerTypes).not.toContain('base');
     expect(ownerTypes).toContain('gym');
+    expect(res.body.items.find((t: any) => t.id === baseTemplateId)).toBeUndefined();
   });
 });
 
