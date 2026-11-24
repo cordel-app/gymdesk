@@ -1,8 +1,8 @@
 // #2940 — Billing Event names, written by the event's own writer and reported to
-// both apps. Integration: a member's first plan is `Initial Engagement`, its
-// recurring obligations are named for their month, a later purchase is named for
-// what it adds, and the Admin's Payments read and the member's ledger report the
-// same stored name.
+// both apps. Integration: recurring obligations are named for their month, and the
+// Admin's Payments read and the member's ledger report the same stored name. Since
+// #3287 a checkout's event a Purchase owns carries that purchase's canonical name
+// (#3288) instead of `Initial Engagement` or a name for what it adds.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // Only the call that would reach Monei is stubbed.
@@ -34,7 +34,6 @@ let adminClerk: string;
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
 const today = () => new Date().toISOString().slice(0, 10);
-const ddmmyyyy = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 
 const h = () => ({ Authorization: TEST_AUTH_HEADER, 'x-gym-id': gymId });
 const once = (sub: string) => vi.mocked(verifyToken).mockResolvedValueOnce({ sub } as any);
@@ -75,6 +74,9 @@ const set = (clerk: string, method: 'get' | 'post', path: string) => {
 
 const initialName = async (setId: number) => (await db.query<any>(
   `SELECT name FROM billing_events WHERE product_set_id = ? AND event_type = 'payment_recorded'`, [setId])).rows[0]?.name;
+/** #3287: the canonical name of the purchase (cart) the set belongs to. */
+const purchaseNameOfSet = async (setId: number) => (await db.query<any>(
+  'SELECT p.name FROM product_sets ps JOIN purchases p ON p.id = ps.purchase_id WHERE ps.id = ?', [setId])).rows[0]?.name;
 
 beforeAll(async () => {
   process.env.MONEI_API_KEY = 'test-api-key';
@@ -94,7 +96,7 @@ afterAll(async () => {
 });
 
 describe('Billing Event names (#2940)', () => {
-  it('names a first plan Initial Engagement, its obligations by month, and a later Product by itself', async () => {
+  it("names a first plan's event and a later Product's by their purchase, and its obligations by month", async () => {
     const m = await member();
     const planId = await plan(`Premium ${uniq()}`);
     once(m.clerk);
@@ -103,7 +105,9 @@ describe('Billing Event names (#2940)', () => {
     const first = Number(assigned.body.id);
 
     expect((await set(m.clerk, 'post', `/${first}/save-and-pay`).send({})).status).toBe(201);
-    expect(await initialName(first)).toBe('Initial Engagement');
+    const firstName = await purchaseNameOfSet(first);
+    expect(firstName).toMatch(/ - Purchase - /);
+    expect(await initialName(first)).toBe(firstName);
 
     expect((await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: first, today: today(), actor: 'System' }))).kind).toBe('ok');
     const { rows: scheduled } = await db.query<any>(
@@ -121,28 +125,29 @@ describe('Billing Event names (#2940)', () => {
     const draft = (await set(m.clerk, 'post', '/draft')).body;
     expect((await set(m.clerk, 'post', `/${draft.id}/services`).send({ product_id: await product(locker, '10.00', 'month') })).status).toBe(200);
     expect((await set(m.clerk, 'post', `/${draft.id}/save-and-pay`).send({})).status).toBe(201);
-    expect(await initialName(Number(draft.id))).toBe(`${gymName} - ${locker}`);
+    const lockerName = await purchaseNameOfSet(Number(draft.id));
+    expect(await initialName(Number(draft.id))).toBe(lockerName);
 
     // Both apps read the same stored name.
     once(adminClerk);
     const admin = await request.get(`/payments/billing-events?member_id=${m.id}&limit=200`).set(h());
     expect(admin.status).toBe(200);
     const adminNames = admin.body.items.map((r: any) => r.name);
-    expect(adminNames).toContain('Initial Engagement');
-    expect(adminNames).toContain(`${gymName} - ${locker}`);
+    expect(adminNames).toContain(firstName);
+    expect(adminNames).toContain(lockerName);
     once(m.clerk);
     const own = await request.get('/me/billing-events').set(h());
     expect(own.status).toBe(200);
-    expect(own.body.items.map((r: any) => r.name)).toContain(`${gymName} - ${locker}`);
+    expect(own.body.items.map((r: any) => r.name)).toContain(lockerName);
   });
 
-  it('names a cart of one Product by that Product and of several as a purchase on its date', async () => {
+  it("names a cart's event by its purchase, whether it holds one Product or several", async () => {
     const single = await member();
     const gloves = `Boxing Gloves ${uniq()}`;
     const d1 = (await set(single.clerk, 'post', '/draft')).body;
     expect((await set(single.clerk, 'post', `/${d1.id}/purchases`).send({ product_id: await product(gloves, '25.00', 'once') })).status).toBe(200);
     expect((await set(single.clerk, 'post', `/${d1.id}/save-and-pay`).send({})).status).toBe(201);
-    expect(await initialName(Number(d1.id))).toBe(`${gymName} - ${gloves}`);
+    expect(await initialName(Number(d1.id))).toBe(await purchaseNameOfSet(Number(d1.id)));
 
     const several = await member();
     const d2 = (await set(several.clerk, 'post', '/draft')).body;
@@ -150,10 +155,10 @@ describe('Billing Event names (#2940)', () => {
       expect((await set(several.clerk, 'post', `/${d2.id}/purchases`).send({ product_id: await product(`${n} ${uniq()}`, '5.00', 'once') })).status).toBe(200);
     }
     expect((await set(several.clerk, 'post', `/${d2.id}/save-and-pay`).send({})).status).toBe(201);
-    expect(await initialName(Number(d2.id))).toBe(`${gymName} - Compra ${ddmmyyyy(today())}`);
+    expect(await initialName(Number(d2.id))).toBe(await purchaseNameOfSet(Number(d2.id)));
   });
 
-  it('names a one-time purchase outside a Product Set by its Product', async () => {
+  it('names a one-time purchase outside a Product Set by its own purchase', async () => {
     const m = await member();
     const mat = `Yoga Mat ${uniq()}`;
     const productId = await product(mat, '15.00', 'once');
@@ -161,7 +166,10 @@ describe('Billing Event names (#2940)', () => {
     const res = await request.post(`/me/products/${productId}/purchase`).set(h()).send({});
     expect(res.status).toBeLessThan(300);
     const { rows } = await db.query<any>(
-      `SELECT name FROM billing_events WHERE gym_id = ? AND member_id = ? AND event_type = 'product_purchase'`, [gymId, m.id]);
-    expect(rows.map((r: any) => r.name)).toEqual([`${gymName} - ${mat}`]);
+      `SELECT be.name, p.name AS purchase_name FROM billing_events be JOIN purchases p ON p.id = be.purchase_id
+        WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type = 'product_purchase'`, [gymId, m.id]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe(rows[0].purchase_name);
+    expect(rows[0].name).not.toContain(mat);
   });
 });
