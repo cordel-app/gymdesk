@@ -178,8 +178,23 @@ Draft (#1991 stage 4). `api/src/api/product-set-cancellation.ts` is the one plac
    the set. The owner's in-flight slot is free again. A second cancel answers 200 and changes
    nothing.
 
-Since stage 2 this is what every Cancel button on a version awaiting payment does, in both apps,
-after a confirmation; no screen sends a Pending Payment set back to Draft any more.
+Since stage 2 this is what every Cancel button on a version awaiting payment does in the Admin,
+after a confirmation. The Members App's Cancel is #3309's, below.
+
+**A member cancelling their own pending payment (#3309).** `POST /me/product-sets/:id/cancel`
+ends the **payment attempt**, not the purchase: `returnCancelledCheckoutToCart()` (same module)
+runs the same provider read-back and the same `pendingCancellation()` guard, then closes the set's
+open attempts as **`cancelled`** (migration 477 widens `chk_payment_requests_status`; `expired`
+stays a real timeout, and `provider_status` keeps whatever the provider answered), stamps the
+initial event `cancelled_at` (kept, with its lines and amount, in the payment history), unlinks
+the set's one-time purchases and the standalone cart purchases it joined from that event and
+moves the set, its purchases and its linked assignment back to **`in_cart`** with the
+configuration untouched. The member pays again through the existing Save & Pay, which writes a
+**new** initial event (`ensureInitialEvent()` ignores a cancelled one) and a new attempt on it. A
+repeated cancel on a set already back in the cart answers 200 and changes nothing. A payment that
+settles afterwards on the cancelled attempt is recorded (a `completed` payload may reopen a
+`cancelled` attempt, as it may an `expired` one) but activates nothing, and staff refund it.
+Staff cancellation and the expiry/`DELETE` return to Draft are unchanged.
 
 A payment that arrives after the cancellation is recorded on its attempt but activates nothing
 (the event is cancelled, #2533 stage 2, and `activate()` refuses a `cancelled` set). The money is

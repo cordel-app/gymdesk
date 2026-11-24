@@ -29,14 +29,15 @@ async function hasCheck(knex) {
 exports.up = async (knex) => {
   const clause = await hasCheck(knex);
   if (clause && clause.includes('cancelled')) return;
-  if (clause) await knex.raw('ALTER TABLE payment_requests DROP CHECK chk_payment_requests_status');
-  await knex.raw(`ALTER TABLE payment_requests ADD CONSTRAINT chk_payment_requests_status CHECK (${NEW})`);
+  // One statement, so the table is never without the constraint.
+  await knex.raw(clause
+    ? `ALTER TABLE payment_requests DROP CHECK chk_payment_requests_status, ADD CONSTRAINT chk_payment_requests_status CHECK (${NEW})`
+    : `ALTER TABLE payment_requests ADD CONSTRAINT chk_payment_requests_status CHECK (${NEW})`);
 };
 
 exports.down = async (knex) => {
   const clause = await hasCheck(knex);
   if (!clause || !clause.includes('cancelled')) return;
   await knex.raw("UPDATE payment_requests SET status = 'expired' WHERE status = 'cancelled'");
-  await knex.raw('ALTER TABLE payment_requests DROP CHECK chk_payment_requests_status');
-  await knex.raw(`ALTER TABLE payment_requests ADD CONSTRAINT chk_payment_requests_status CHECK (${OLD})`);
+  await knex.raw(`ALTER TABLE payment_requests DROP CHECK chk_payment_requests_status, ADD CONSTRAINT chk_payment_requests_status CHECK (${OLD})`);
 };
