@@ -102,8 +102,14 @@ export function PaymentsSubcard({ title, summary, defaultOpen = false, forceOpen
  * subcards remain one structure.
  */
 export function BillingEventCard({
-  date, total, totalLabel, lines, badge, prominent = false, footer, anchorId, highlighted = false,
+  title, date, total, totalLabel, lines, badge, prominent = false, documents, details, footer, anchorId, highlighted = false,
 }: {
+  /** #3299 — the payment's own name (a past payment's), above its date. */
+  title?: string | null;
+  /** #3299 — the payment's own documents, inside the payment they belong to (#3297). */
+  documents?: ReactNode;
+  /** #3299 — payment method and notes, under the lines and documents. */
+  details?: ReactNode;
   /** #3235 — the DOM id *View payment* scrolls to. */
   anchorId?: string;
   /** #3235 — the payment *View payment* opened, outlined so the member finds it. */
@@ -119,6 +125,7 @@ export function BillingEventCard({
 }) {
   return (
     <div id={anchorId} style={highlighted ? { ...styles.eventCard, ...styles.eventCardHighlighted } : styles.eventCard}>
+      {title && <div style={styles.eventTitle} title={title}>{title}</div>}
       <div style={styles.eventHead}>
         <span style={prominent ? styles.eventDateLarge : styles.eventDate}>{date}</span>
         {badge}
@@ -136,9 +143,16 @@ export function BillingEventCard({
           ))}
         </ul>
       )}
+      {documents && <div style={styles.eventDocuments}>{documents}</div>}
+      {details && <div style={styles.eventDetails}>{details}</div>}
       {footer && <div style={styles.eventFooter}>{footer}</div>}
     </div>
   );
+}
+
+/** #3299 — several pills (status, payment type, refund type) as one card badge. */
+export function BillingEventBadges({ children }: { children: ReactNode }) {
+  return <span style={styles.eventBadges}>{children}</span>;
 }
 
 /**
@@ -388,5 +402,16 @@ const styles: Record<string, CSSProperties> = {
   pastLine: { display: 'flex', padding: '7px 0' },
   pastDocuments: { paddingTop: 4 },
   pastDetails: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 8, fontSize: 12, color: memberTheme.textMuted },
+  // #3299 — a past payment's name, documents and details on the detailed card.
+  eventTitle: {
+    fontSize: 13.5, fontWeight: 600, color: memberTheme.text, marginBottom: 2,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  eventBadges: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  eventDocuments: { ...rowDividerStyle, marginTop: 10, paddingTop: 2 },
+  eventDetails: {
+    ...rowDividerStyle, marginTop: 10, paddingTop: 8,
+    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12, color: memberTheme.textMuted,
+  },
   eventFooter: { ...rowDividerStyle, marginTop: 10, paddingTop: 8, fontSize: 12, color: memberTheme.textMuted },
 };
