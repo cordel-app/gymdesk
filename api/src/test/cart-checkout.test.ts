@@ -167,7 +167,10 @@ describe('POST /me/cart/checkout (#2949 stage 4)', () => {
     const { rows: ev } = await db.query<any>(
       'SELECT event_type, amount, product_set_id, name FROM billing_events WHERE id = ?', [eventId]);
     expect(ev[0]).toMatchObject({ event_type: 'product_purchase', amount: '42.50', product_set_id: null });
-    expect(ev[0].name).toContain('Compra');
+    // #3287: the event carries its purchase's canonical name, verbatim.
+    const { rows: pur } = await db.query<any>(
+      'SELECT p.name FROM purchases p JOIN billing_events be ON be.purchase_id = p.id WHERE be.id = ?', [eventId]);
+    expect(ev[0].name).toBe(pur[0].name);
     const { rows: lines } = await db.query<any>(
       'SELECT amount, source FROM billing_event_lines WHERE billing_event_id = ? ORDER BY amount', [eventId]);
     expect(lines.map((l: any) => l.amount)).toEqual(['12.50', '30.00']);

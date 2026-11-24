@@ -20,7 +20,7 @@ import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 import { cartChargeLine, cartPurchasesForCharge, joinCartPurchasesToEvent } from './cart-checkout';
-import { purchaseOfSet, stampEventPurchase } from './purchases';
+import { purchaseName, purchaseOfSet, stampEventPurchase } from './purchases';
 import { writeEventLines } from './billing-event-lines-writer';
 import { initialEventNameFor } from './billing-event-name';
 import { loadInitialChargeTaxRates } from './initial-charge-taxes';
@@ -402,11 +402,16 @@ export async function createProductSetCheckout(input: {
   const orderId = crypto.randomUUID();
   const pageToken = crypto.randomUUID();
   const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
+  // #3288: the payment's description is the canonical name of the purchase (the set's cart) it
+  // charges, the very string its initial Billing Event carries (`stampEventPurchase()`); a version
+  // no checkout made keeps the generic one.
+  const description = (await purchaseName(db, input.gymId, await purchaseOfSet(db, input.gymId, input.productSetId)))
+    ?? 'Membership';
   const result = await getPaymentProvider().createPaymentRequest({
     orderId,
     amount: toMinorUnits(input.charge.amount),
     currency: 'EUR',
-    description: 'Membership',
+    description,
     memberEmail: input.memberEmail,
     okUrl: process.env.PAYMENT_OK_URL ?? '',
     koUrl: process.env.PAYMENT_KO_URL ?? '',

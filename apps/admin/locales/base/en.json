@@ -706,7 +706,6 @@
     "review_initial_payment": "Initial payment",
     "checkout_initial_payment": "Initial Payment",
     "checkout_contracted": "Contracted Products & Plans",
-    "purchase_name": "Purchase - {date}",
     "purchase_status_completed": "Completed",
     "checkout_col_item": "Item",
     "checkout_col_quantity": "Qty",
