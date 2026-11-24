@@ -7,14 +7,13 @@
 // its invoicing is exactly what it was. Nothing is submitted here (stage 4).
 import type { Tx } from '../infra/db';
 import type { InvoiceType } from '../domain/billingDocumentKeys';
-import { negateTotals } from '../domain/billingInvoice';
 import { verifactuIssuerNif, verifactuQrFromRecord } from '../domain/verifactu';
 import { VERIFACTU_ENVIRONMENT } from '../infra/verifactu-environment';
 import {
   anulacionRefusal, buildAltaRecord, buildAnulacionRecord, VERIFACTU_INTEGRATION_TYPE, VERIFACTU_PROVIDER,
   type AnulacionRefusal, type VerifactuRecordView,
 } from '../domain/verifactuRecords';
-import { loadInvoiceFigures } from './invoice-figures';
+import { loadDocumentFigures } from './invoice-figures';
 import { recordComplianceEvent } from './compliance-audit-events';
 
 /** The gym's enabled VeriFactu integration, or null when records are off. */
@@ -55,7 +54,7 @@ export async function recordVerifactuAlta(
   }
 
   const { rows: invRows } = await tx.query<any>(
-    `SELECT i.id, i.fiscal_number, i.invoice_type, i.issued_at, i.customer_tax_id, i.related_invoice_id,
+    `SELECT i.id, i.fiscal_number, i.invoice_type, i.issued_at, i.customer_tax_id, i.related_invoice_id, i.refund_payment_request_id,
             i.replaces_invoice_id, i.billing_event_id, be.amount, o.invoice_type AS rectified_type
        FROM invoices i
        JOIN billing_events be ON be.id = i.billing_event_id AND be.gym_id = i.gym_id
@@ -64,7 +63,8 @@ export async function recordVerifactuAlta(
   const inv = invRows[0];
   if (!inv) refuse(404, 'invoice_not_found', 'Invoice not found');
 
-  const { totals } = await loadInvoiceFigures(tx, gymId, inv.billing_event_id, parseFloat(inv.amount));
+  // #3298 stage 4: signed as the invoice states them (a rectification's own, negated).
+  const { totals } = await loadDocumentFigures(tx, gymId, inv, parseFloat(inv.amount));
   const rectifies = inv.related_invoice_id ? { invoiceType: inv.rectified_type as InvoiceType } : null;
 
   const prev = await lockChainTail(tx, gymId);
@@ -77,7 +77,7 @@ export async function recordVerifactuAlta(
     },
     rectifies,
     replacesSimplified: inv.replaces_invoice_id != null,
-    totals: rectifies ? negateTotals(totals) : totals,
+    totals,
     timeZone: gymRows[0].time_zone || 'Europe/Madrid',
     previous: prev,
     now: new Date(),

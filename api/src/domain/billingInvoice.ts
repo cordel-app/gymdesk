@@ -213,6 +213,11 @@ export interface EventInvoiceState {
   replacesInvoiceId: number | null;
   /** The invoice's VERI*FACTU record was cancelled (Registro de Anulación). */
   hasAnulacion: boolean;
+  /**
+   * #3298 stage 4, on a rectifying invoice: the cents of the refund it
+   * rectified, or null/absent when it cancelled its original in full.
+   */
+  refundCents?: number | null;
 }
 
 /**
@@ -233,26 +238,82 @@ export function replacementTarget(invoices: EventInvoiceState[]): number | null 
 }
 
 /** #3298 stage 3: why a completed refund issued no rectifying invoice. */
-export type RefundRectificationSkip = 'partial_refund' | 'no_standing_invoice';
+export type RefundRectificationSkip = 'no_standing_invoice';
 
 /**
- * #3298 stage 3 — the invoice a completed refund rectifies, or why none is.
- * Only a refund that leaves the payment fully refunded rectifies anything: the
- * rectifying invoice cancels its original in full (`negateLines()`, R1/R5 by
- * differences), so a partial refund — which would need a rectification of part
- * of the lines — issues none yet. The invoice is the event's standing one:
- * issued, not itself rectifying, not already rectified, not replaced by a
- * complete invoice (that one is rectified instead) and not cancelled through a
- * Registro de Anulación. The latest when, exceptionally, there are several.
+ * #3298 stage 4 — what of an invoice is still left to rectify by differences:
+ * nothing once a rectification cancelled it in full (staff's manual one, which
+ * carries no refund), else its total less the refunds already rectified.
+ */
+export function rectifiableRemainderCents(
+  invoiceId: number, totalCents: number, invoices: readonly EventInvoiceState[],
+): number {
+  const own = invoices.filter((r) => r.relatedInvoiceId === invoiceId);
+  if (own.some((r) => r.refundCents == null)) return 0;
+  return Math.max(0, totalCents - own.reduce((s, r) => s + (r.refundCents ?? 0), 0));
+}
+
+/**
+ * #3298 stage 3/4 — the invoice a completed refund rectifies, or why none is.
+ * Every completed refund rectifies, full or partial: the rectifying invoice is
+ * by differences (TipoRectificativa I) and states the refund's own figures
+ * (`refundRectificationLines()`), so several partial refunds each issue one
+ * against the same invoice. The invoice is the event's standing one: issued,
+ * not itself rectifying, not cancelled in full by a manual rectification, not
+ * already rectified up to its total, not replaced by a complete invoice (that
+ * one is rectified instead) and not cancelled through a Registro de
+ * Anulación. The latest when, exceptionally, there are several.
  */
 export function refundRectificationTarget(
-  invoices: EventInvoiceState[], fullyRefunded: boolean,
+  invoices: EventInvoiceState[], totalCents: number,
 ): { invoiceId: number } | { skip: RefundRectificationSkip } {
-  if (!fullyRefunded) return { skip: 'partial_refund' };
-  const rectified = new Set(invoices.map((i) => i.relatedInvoiceId).filter((id): id is number => id != null));
   const replaced = new Set(invoices.map((i) => i.replacesInvoiceId).filter((id): id is number => id != null));
   const candidates = invoices.filter((i) => i.status === 'issued' && i.relatedInvoiceId == null
-    && !rectified.has(i.id) && !replaced.has(i.id) && !i.hasAnulacion);
+    && !replaced.has(i.id) && !i.hasAnulacion
+    && rectifiableRemainderCents(i.id, totalCents, invoices) > 0);
   if (candidates.length === 0) return { skip: 'no_standing_invoice' };
   return { invoiceId: candidates.reduce((m, i) => (i.id > m ? i.id : m), candidates[0].id) };
+}
+
+/** A line of the event a refund named, with the amount it returned (VAT-inclusive). */
+export interface RefundedLine { index: number; amount: number }
+
+/**
+ * #3298 stage 4 — the lines (VAT-inclusive, positive) a refund's rectifying
+ * invoice states, before `invoiceLineTaxes()` and `negateLines()`. A refund of
+ * selected lines states each named line at the amount returned on it; any
+ * other refund spreads its amount over the event's lines in proportion to
+ * them (largest remainder, to the cent), so a full refund of the whole event
+ * states its lines unchanged. A line's net is scaled with its amount and its
+ * own rate is kept; a line left at zero is dropped.
+ */
+export function refundRectificationLines(
+  eventLines: LineInput[], refundAmount: number, refundedLines: readonly RefundedLine[] = [],
+): LineInput[] {
+  const cents = (n: number) => Math.round(n * 100);
+  const scaled = (l: LineInput, amountCents: number): LineInput => ({
+    ...l,
+    amount: amountCents / 100,
+    amountExclTax: l.amountExclTax == null ? null
+      : cents(l.amount) === 0 ? 0 : r2(l.amountExclTax * amountCents / cents(l.amount)),
+  });
+  if (refundedLines.length > 0) {
+    return refundedLines
+      .filter((r) => eventLines[r.index] && cents(r.amount) !== 0)
+      .map((r) => scaled(eventLines[r.index], cents(r.amount)));
+  }
+  const totalCents = eventLines.reduce((s, l) => s + cents(l.amount), 0);
+  const refundCents = cents(refundAmount);
+  if (totalCents === 0 || eventLines.length === 0) return [];
+  if (refundCents === totalCents) return eventLines.map((l) => ({ ...l }));
+  const shares = eventLines.map((l, i) => {
+    const exact = (cents(l.amount) * refundCents) / totalCents;
+    return { i, floor: Math.floor(exact), rest: exact - Math.floor(exact) };
+  });
+  let left = refundCents - shares.reduce((s, x) => s + x.floor, 0);
+  for (const x of [...shares].sort((a, b) => b.rest - a.rest || a.i - b.i)) {
+    if (left <= 0) break;
+    x.floor += 1; left -= 1;
+  }
+  return shares.filter((x) => x.floor !== 0).map((x) => scaled(eventLines[x.i], x.floor));
 }

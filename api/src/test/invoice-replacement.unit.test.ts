@@ -75,27 +75,63 @@ describe('FacturasSustituidas', () => {
   });
 });
 
-// #3298 stage 3 — the invoice a completed refund rectifies.
-import { refundRectificationTarget } from '../domain/billingInvoice';
+// #3298 stage 3/4 — the invoice a completed refund rectifies, and what it states.
+import { refundRectificationTarget, refundRectificationLines, rectifiableRemainderCents, invoiceLineTaxes } from '../domain/billingInvoice';
 describe('refundRectificationTarget', () => {
   const inv = (o: Partial<EventInvoiceState> & { id: number }): EventInvoiceState => ({
     invoiceType: 'simplified', status: 'issued', relatedInvoiceId: null, replacesInvoiceId: null, hasAnulacion: false, ...o,
   });
-  it('rectifies nothing for a partial refund', () => {
-    expect(refundRectificationTarget([inv({ id: 1 })], false)).toEqual({ skip: 'partial_refund' });
+  it('rectifies the standing simplified invoice, whatever the refund\'s size', () => {
+    expect(refundRectificationTarget([inv({ id: 1 })], 4000)).toEqual({ invoiceId: 1 });
   });
-  it('rectifies the standing simplified invoice of a fully refunded payment', () => {
-    expect(refundRectificationTarget([inv({ id: 1 })], true)).toEqual({ invoiceId: 1 });
+  it('keeps rectifying an invoice by differences until its refunds reach its total', () => {
+    const partial = inv({ id: 2, relatedInvoiceId: 1, refundCents: 1500 });
+    expect(refundRectificationTarget([inv({ id: 1 }), partial], 4000)).toEqual({ invoiceId: 1 });
+    const rest = inv({ id: 3, relatedInvoiceId: 1, refundCents: 2500 });
+    expect(refundRectificationTarget([inv({ id: 1 }), partial, rest], 4000)).toEqual({ skip: 'no_standing_invoice' });
   });
   it('rectifies the complete invoice that replaced a simplified one', () => {
-    expect(refundRectificationTarget([inv({ id: 1 }), inv({ id: 2, invoiceType: 'full', replacesInvoiceId: 1 })], true))
+    expect(refundRectificationTarget([inv({ id: 1 }), inv({ id: 2, invoiceType: 'full', replacesInvoiceId: 1 })], 4000))
       .toEqual({ invoiceId: 2 });
   });
-  it('has no target when the invoice is already rectified, cancelled or absent', () => {
-    expect(refundRectificationTarget([inv({ id: 1 }), inv({ id: 2, relatedInvoiceId: 1 })], true))
+  it('has no target when the invoice was cancelled in full, by Anulación, or is absent', () => {
+    expect(refundRectificationTarget([inv({ id: 1 }), inv({ id: 2, relatedInvoiceId: 1 })], 4000))
       .toEqual({ skip: 'no_standing_invoice' });
-    expect(refundRectificationTarget([inv({ id: 1, hasAnulacion: true })], true)).toEqual({ skip: 'no_standing_invoice' });
-    expect(refundRectificationTarget([inv({ id: 1, status: 'draft' })], true)).toEqual({ skip: 'no_standing_invoice' });
-    expect(refundRectificationTarget([], true)).toEqual({ skip: 'no_standing_invoice' });
+    expect(refundRectificationTarget([inv({ id: 1, hasAnulacion: true })], 4000)).toEqual({ skip: 'no_standing_invoice' });
+    expect(refundRectificationTarget([inv({ id: 1, status: 'draft' })], 4000)).toEqual({ skip: 'no_standing_invoice' });
+    expect(refundRectificationTarget([], 4000)).toEqual({ skip: 'no_standing_invoice' });
+  });
+  it('a manual rectification leaves nothing to rectify', () => {
+    expect(rectifiableRemainderCents(1, 4000, [inv({ id: 2, relatedInvoiceId: 1, refundCents: 1000 }), inv({ id: 3, relatedInvoiceId: 1 })])).toBe(0);
+    expect(rectifiableRemainderCents(1, 4000, [inv({ id: 2, relatedInvoiceId: 1, refundCents: 1000 })])).toBe(3000);
+  });
+});
+
+describe('refundRectificationLines', () => {
+  const line = (name: string, amount: number, taxRate: number | null = 21) =>
+    ({ name, quantity: 1, amount, amountExclTax: null, taxRate });
+  const fee = line('Membership fee', 30);
+  const locker = line('Locker', 10, 10);
+  it('states a full refund\'s lines unchanged', () => {
+    expect(refundRectificationLines([fee, locker], 40)).toEqual([fee, locker]);
+  });
+  it('spreads a partial amount over the lines in proportion, to the cent, keeping each rate', () => {
+    const out = refundRectificationLines([fee, locker], 15);
+    expect(out.map((l) => [l.name, l.amount, l.taxRate])).toEqual([['Membership fee', 11.25, 21], ['Locker', 3.75, 10]]);
+    const odd = refundRectificationLines([line('A', 10), line('B', 10), line('C', 10)], 10);
+    expect(odd.reduce((s, l) => s + Math.round(l.amount * 100), 0)).toBe(1000);
+  });
+  it('states only the lines a refund named, at the amount returned on each', () => {
+    const out = refundRectificationLines([fee, locker], 5, [{ index: 1, amount: 5 }]);
+    expect(out).toEqual([{ ...locker, amount: 5 }]);
+  });
+  it('scales a stored net with its amount', () => {
+    const out = refundRectificationLines([{ ...fee, amountExclTax: 24.79 }], 15);
+    expect(out[0].amountExclTax).toBe(12.4);
+  });
+  it('reconciles to the refund amount once taxed', () => {
+    const { totals } = invoiceLineTaxes(refundRectificationLines([fee, locker], 15), 15, 21);
+    expect(totals.total).toBe(15);
+    expect(Math.round((totals.net + totals.tax) * 100)).toBe(1500);
   });
 });
