@@ -47,6 +47,7 @@ import crypto from 'crypto';
 import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-purchases';
 import { cartPurchasesForCharge } from './cart-checkout';
 import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartCounts } from '../domain/shoppingCart';
+import { refuseIfStaffPreparesCart } from './staff-cart';
 import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { isDraftAddable, parsePurchaseQuantity, purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
@@ -96,6 +97,7 @@ async function loadSet(gymId: string, id: unknown) {
   if (!Number.isInteger(numeric) || numeric <= 0) return null;
   const { rows } = await db.query<any>(
     `SELECT ps.*, ${productSetLegacyAssignmentIdSql()} AS linked_user_membership_id,
+            (SELECT pu.channel FROM purchases pu WHERE pu.id = ps.purchase_id) AS cart_channel,
             ${setCartExpiredSql('ps')} AS stale, ${setCartExpiresAtSql('ps')} AS cart_expires_at
        FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ?`, [numeric, gymId]);
   return rows[0] ?? null;
@@ -876,6 +878,8 @@ meProductSetsRouter.post('/draft', async (req, res, next) => {
     try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { return res.status(404).json({ error: 'Member not found' }); }
     // #2770: only the Family Owner starts a Draft to add Plans or Products to.
     if (await refuseUnlessMayAdd(res, ctx.gymId, memberId)) return;
+    // #3305: a cart staff are still preparing is not opened for the member to add to.
+    if (await refuseIfStaffPreparesCart(res, ctx.gymId, memberId)) return;
     const blocking = await loadEditLockForDraftEdit(ctx.gymId, memberId, todayUtc());
     if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
     const out = await db.transaction((tx) => ensureRecurringDraft(tx, {

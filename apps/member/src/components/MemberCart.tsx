@@ -124,7 +124,10 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
 
   const load = useCallback(async () => {
     const cart = await apiFetch<MemberStandaloneCart>('/me/cart/purchases')
-      .then((c) => ({ purchases: c?.purchases ?? [], total: c?.total == null ? null : Number(c.total), currency: c?.currency ?? null }))
+      .then((c) => ({
+        purchases: c?.purchases ?? [], total: c?.total == null ? null : Number(c.total), currency: c?.currency ?? null,
+        awaiting_staff_setup: c?.awaiting_staff_setup === true,
+      }))
       .catch(() => EMPTY_STANDALONE_CART);
     let v: MemberCartView | null = null;
     let expired = false;
@@ -148,7 +151,8 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
       summary = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
     } else if (v && v.status === 'pending_payment') {
       summary = await apiFetch<MemberSetReview>(`/me/product-sets/${v.id}/review`).catch(() => null);
-    } else if (!v && cart.purchases.length > 0) {
+    } else if (cart.purchases.length > 0 && (!v || cart.awaiting_staff_setup)) {
+      // #3305: a staff-prepared cart of standalone purchases shows its Summary too, read-only.
       summary = await apiFetch<MemberSetReview>('/me/cart/summary').catch(() => null);
     }
     setStandalone(cart);
@@ -409,7 +413,7 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
     main = (
       <PreparingCartCard
         key="staff"
-        content={preparingCartContent(view, gymFmt)}
+        content={preparingCartContent(view, gymFmt, standalone)}
         initialPayment={due == null ? '—' : formatPaymentAmount(due, cartSummary?.currency ?? 'EUR', gymFmt) ?? '—'}
         summary={cartSummary ? <CartSummary review={cartSummary} /> : undefined}
       />

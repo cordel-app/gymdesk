@@ -77,3 +77,13 @@ describe('Promotion terms name no amount', () => {
     expect(JSON.stringify(terms)).not.toContain('5');
   });
 });
+
+describe('the preparing card of a staff cart of standalone purchases (#3305)', () => {
+  it('lists those purchases as its Products, with or without a staff Product Set', () => {
+    const standalone = { purchases: [{ id: 60, product_id: 3, product_name: 'Gym bag', amount: 25 }], total: 25, currency: 'EUR', awaiting_staff_setup: true };
+    expect(preparingCartContent(null, undefined, standalone).products.map((p) => p.name)).toEqual(['Gym bag']);
+    expect(preparingCartContent(view, undefined, standalone).products.map((p) => p.name)).toEqual(['Locker', 'Water', 'Gym bag']);
+    // The member's own standalone purchases are not the gym's.
+    expect(preparingCartContent(view, undefined, { ...standalone, awaiting_staff_setup: false }).products.map((p) => p.name)).toEqual(['Locker', 'Water']);
+  });
+});

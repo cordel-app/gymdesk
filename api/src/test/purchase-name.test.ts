@@ -121,7 +121,9 @@ describe('a purchase name, generated once in canonical form (#3288)', () => {
     expect(inFlight.purchase).toEqual({ id: cartId, name: born.name, status: 'in_cart' });
 
     // Editing the cart (in another language) and moving it to Pending Payment leave the name as it was.
-    expect((await asMember(m.clerk, 'post', '/me/cart/purchases').send({ product_id: await product('9.00', 'once') })).status).toBe(201);
+    // (#3305: a cart staff opened is theirs to edit until they submit it, so staff make the edit.)
+    expect((await staff('post', `/members/${m.id}/product-purchases`).set('x-locale', 'es')
+      .send({ product_id: await product('9.00', 'month') })).status).toBe(201);
     const pay = await staff('post', `/product-sets/${setId}/save-and-pay`).send({});
     expect(pay.status).toBe(201);
     const after = await purchaseRow(cartId);

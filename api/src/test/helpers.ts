@@ -1221,3 +1221,18 @@ export async function ageTestCart(
   await db.query(
     `UPDATE purchases SET expires_at = UTC_TIMESTAMP() + INTERVAL ? MINUTE WHERE id = ?`, [120 - minutesAgo, purchaseId]);
 }
+
+/**
+ * #3305 — the member `clerk` opens their own cart (`POST /me/product-sets/draft`), so a cart staff
+ * add to afterwards stays the member's to pay: a cart staff open is one they are still preparing,
+ * which the member can read but not add to, pay or cancel. Answers the Draft Product Set's id.
+ */
+export async function openMemberCart(gymId: string, clerk: string): Promise<number> {
+  const { verifyToken } = await import('@clerk/backend');
+  const { vi } = await import('vitest');
+  // `/me` authenticates first, then falls through to the product-sets router: two verifications.
+  vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any).mockResolvedValueOnce({ sub: clerk } as any);
+  const res = await request.post('/me/product-sets/draft').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+  if (res.status !== 201 && res.status !== 200) throw new Error(`openMemberCart: ${res.status} ${JSON.stringify(res.body)}`);
+  return Number(res.body.id);
+}

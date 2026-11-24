@@ -11,6 +11,9 @@
  *   DELETE /purchases/:id    removes one (a hard delete: it has charged nothing)
  *   POST   /checkout         pays them together, one Billing Event (`startCartCheckout()`)
  *
+ * #3305: a cart staff are still preparing (`staffPreparesCart()`) is reported as `awaiting_staff_setup`
+ * and every write above answers `409 awaiting_staff_setup` while it is.
+ *
  * The body names a Product, its Promotions and who it is for — never a price or a discount.
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
@@ -37,6 +40,7 @@ import { MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams } from './p
 import { lockPurchase, deletePurchase } from './purchase-writer';
 import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
 import { chargeLineView, contractedItems } from '../domain/checkoutSummary';
+import { refuseIfStaffPreparesCart, staffPreparesOpenCart } from './staff-cart';
 
 export const meCartRouter = Router();
 meCartRouter.use(requireRole('member'), requireFeatureEnabled('member_web.my_membership'), requireFeatureEnabled('financials.products'));
@@ -73,6 +77,8 @@ async function cartBody(gymId: string, memberId: number) {
     })),
     total: cartTotal(purchases),
     currency: purchases[0]?.currency ?? null,
+    // #3305: the cart staff are still preparing — readable here, never payable or editable.
+    awaiting_staff_setup: await staffPreparesOpenCart(db, gymId, memberId),
   };
 }
 
@@ -118,6 +124,7 @@ meCartRouter.get('/summary', async (req: Request, res: Response, next: NextFunct
       tax_total: null,
       currency: cart[0]?.currency ?? 'EUR',
       error: null,
+      awaiting_staff_setup: await staffPreparesOpenCart(db, gymId, memberId),
       contracted_items: contractedItems({
         plans: [], lines: [],
         purchases: cart.map((p) => ({
@@ -144,6 +151,9 @@ meCartRouter.post('/purchases', async (req: Request, res: Response, next: NextFu
   try {
     const { gymId, memberId } = await memberOf(req);
     if (await refuseUnlessMayAdd(res, gymId, memberId)) return;
+    await expireCarts({ gymId, ownerMemberId: memberId });
+    // #3305: nothing is added to a cart staff are still preparing.
+    if (await refuseIfStaffPreparesCart(res, gymId, memberId)) return;
     const { rows: m } = await db.query<{ name: string; email: string; billing_frequency: string | null }>(
       `SELECT m.name, m.email, p.billing_frequency FROM members m
          LEFT JOIN products p ON p.id = ? AND p.gym_id = m.gym_id
@@ -153,7 +163,6 @@ meCartRouter.post('/purchases', async (req: Request, res: Response, next: NextFu
     if (isDraftAddable({ billing_frequency: m[0].billing_frequency })) {
       return res.status(400).json({ error: 'recurring_product', message: 'A recurring Product is added to a Product Set' });
     }
-    await expireCarts({ gymId, ownerMemberId: memberId });
     // One of each Product in the cart, wherever the cart holds it (standalone or in a cart Product Set).
     const { rows: held } = await db.query<{ id: number }>(
       `SELECT mp.id FROM ${MEMBER_PURCHASE_SNAPSHOTS_SQL} mp WHERE mp.product_id = ? AND mp.status = ? LIMIT 1`,
@@ -201,6 +210,7 @@ meCartRouter.put('/purchases/:id', async (req: Request, res: Response, next: Nex
     const { gymId, memberId } = await memberOf(req);
     if (await refuseUnlessMayAdd(res, gymId, memberId)) return;
     await expireCarts({ gymId, ownerMemberId: memberId });
+    if (await refuseIfStaffPreparesCart(res, gymId, memberId)) return;
     const cart = await loadCartPurchases(db, gymId, memberId);
     const current = cart.find((p) => p.id === purchaseId);
     if (!current || current.product_id == null) return res.status(404).json({ error: 'not_found' });
@@ -238,6 +248,7 @@ meCartRouter.delete('/purchases/:id', async (req: Request, res: Response, next: 
   if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'not_found' });
   try {
     const { gymId, memberId } = await memberOf(req);
+    if (await refuseIfStaffPreparesCart(res, gymId, memberId)) return;
     const removed = await db.transaction(async (tx) => {
       if (!(await lockPurchase(tx, gymId, memberId, purchaseId))) return false;
       // Only a standalone one: a purchase a cart Product Set carries is removed through that set.
@@ -260,6 +271,7 @@ meCartRouter.post('/checkout', cartCheckoutRateLimit as any, async (req: Request
       return res.status(403).json({ error: 'family_owner_pays', message: 'Your family owner pays for this purchase' });
     }
     await expireCarts({ gymId, ownerMemberId: memberId });
+    if (await refuseIfStaffPreparesCart(res, gymId, memberId)) return;
     const { rows: m } = await db.query<{ email: string | null }>(
       'SELECT email FROM members WHERE gym_id = ? AND id = ?', [gymId, memberId]);
     if (!m[0]) return res.status(404).json({ error: 'Member profile not found' });

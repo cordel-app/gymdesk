@@ -8,7 +8,7 @@
 // Set's Initial Payment, the server's review (`commitCharge()`). This module
 // resolves no `t()`, computes no money and spells no colour: it turns the
 // set view into rows and locale keys, and `PreparingCartCard.tsx` draws them.
-import type { CartPromotion, MemberCartView } from './memberCart';
+import { standaloneAwaitsStaff, type CartPromotion, type MemberCartView, type MemberStandaloneCart } from './memberCart';
 import type { ProductNote } from './memberProducts';
 import { formatGymNumber, type GymFormatSettings } from './gymFormat';
 
@@ -100,8 +100,19 @@ function promotionOf(owner: string, p: ViewPromotionLike, terms: ProductNote[]):
  * What the card lists: the plans the Draft adds and the Products it adds
  * (recurring lines and one-time Products), in the cart's own order.
  */
-export function preparingCartContent(view: MemberCartView | null, gym?: GymFormatSettings): PreparingCartContent {
-  if (!view) return { plans: [], products: [] };
+export function preparingCartContent(
+  view: MemberCartView | null,
+  gym?: GymFormatSettings,
+  standalone?: MemberStandaloneCart | null,
+): PreparingCartContent {
+  // #3305: the standalone one-time purchases of a cart staff are preparing are its Products too.
+  const standaloneProducts: PreparingItem[] = standaloneAwaitsStaff(standalone)
+    ? standalone!.purchases.map((p) => ({
+      key: `standalone-${p.id}`, name: p.product_name, thumbnailUrl: null, imageUrl: null,
+      description: null, included: [], promotions: [],
+    }))
+    : [];
+  if (!view || !view.awaiting_staff_setup) return { plans: [], products: standaloneProducts };
   const plans: PreparingItem[] = (view.plans ?? [])
     .filter((p) => p.change === 'added' && !p.entitlement_only)
     .map((p) => {
@@ -142,5 +153,5 @@ export function preparingCartContent(view: MemberCartView | null, gym?: GymForma
       promotions: (p.promotions ?? []).map((x) => promotionOf(key, x, productPromotionTerms(x, gym))),
     };
   });
-  return { plans, products: [...lines, ...purchases] };
+  return { plans, products: [...lines, ...purchases, ...standaloneProducts] };
 }

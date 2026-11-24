@@ -175,7 +175,7 @@ export async function loadProductSetSimulationAssignments(
   return out;
 }
 
-const PLAN_ROW_SELECT = `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_at, s.previous_end_date, s.membership_fee_price,
+const PLAN_ROW_SELECT = `SELECT s.id, COALESCE(cf.anchor_plan_snapshot_id, cf.id, s.anchor_plan_snapshot_id, s.id) AS plan_instance_key, s.membership_plan_id, s.starts_at, s.ends_at, s.previous_end_date, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
             s.personal_fee_benefit_action, s.personal_fee_benefit_value,
             mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
@@ -183,6 +183,7 @@ const PLAN_ROW_SELECT = `SELECT s.id, s.membership_plan_id, s.starts_at, s.ends_
             ${feeMemberDiscountsSql('s')} AS fee_member_discounts
        FROM product_set_plan_snapshots psj
        JOIN plan_snapshots s ON s.id = psj.plan_snapshot_id
+       LEFT JOIN plan_snapshots cf ON cf.id = s.copied_from_plan_snapshot_id
        LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
        LEFT JOIN product_set_schedules sch ON sch.id = s.schedule_id`;
 
@@ -198,6 +199,9 @@ async function planRowAssignment(
     // version's id stands in for the first plan and the snapshot's for any other.
     userMembershipId: index === 0 ? version!.userMembershipId : Number(row.id),
     planName: row.plan_name ?? null,
+    // #3303 — the instance's identity across versions, never its Membership Plan or its name: the
+    // assignment it continues (a copy-on-write or an ⋮ → Edit Draft keeps its source's), else its own.
+    planInstanceKey: String(row.plan_instance_key),
     startsAt: toDateOnly(row.starts_at),
     endsAt: row.ends_at != null ? toDateOnly(row.ends_at) : null,
     membershipFeePrice: row.membership_fee_price != null ? Number(row.membership_fee_price) : null,
