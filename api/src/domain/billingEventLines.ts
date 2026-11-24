@@ -43,13 +43,78 @@ export interface BillingEventLineRow {
   prepaid_cadence?: { interval: number; unit: string } | null;
   /** #2970 — a Membership Fee's prorated stretch and prepaid periods kept apart; carried, never persisted. */
   fee_split?: FeeChargeSplit | null;
+  /**
+   * #3284 — every treatment that explains the line's amount, in the order the engine applied them
+   * (`lineReasons()`); persisted one row each in `billing_event_line_reasons`. The `treatment_*` /
+   * `promotion_name` columns above stay the line's single primary treatment for older readers.
+   */
+  reasons: LineReason[];
+}
+
+/**
+ * #3284 — what a reason is to the person reading the line: `benefit` (the Membership Plan's own
+ * configured treatment), `discount` (an applied Promotion) or `manual_adjustment` (a Direct
+ * Discount (%), the Personal Membership Fee Benefit; stage 2 adds the Initial Payment waive).
+ */
+export const LINE_REASON_TYPES = ['benefit', 'discount', 'manual_adjustment'] as const;
+export type LineReasonType = (typeof LINE_REASON_TYPES)[number];
+
+/** Where a reason came from: the engine's own `SimulationBenefit.source`. */
+export const LINE_REASON_SOURCES = ['membership_plan', 'promotion', 'personal'] as const;
+export type LineReasonSource = (typeof LINE_REASON_SOURCES)[number];
+
+export interface LineReason {
+  type: LineReasonType;
+  source: LineReasonSource;
+  /** The explicit evidence of a manual adjustment (`direct_discount`, `personal_fee_benefit`); else `null`. */
+  code: string | null;
+  action: string;
+  value: number | null;
+  /** A Promotion's name; `null` for a Plan benefit or a manual adjustment (the line names the item). */
+  name: string | null;
 }
 
 export const roundCents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
-/** The benefit that explains the line's price, if any: a promotion first. */
-function primaryBenefit(benefits: readonly SimulationBenefit[]): SimulationBenefit | null {
-  return benefits.find((b) => b.source === 'promotion') ?? benefits[0] ?? null;
+/**
+ * The benefit that explains the line's price, if any: a promotion first — unless another benefit
+ * takes the line to nothing on its own (a Waive, or a 100% discount). The engine folds every
+ * benefit over the line (`resolveCoveredCharge()`), so once one of them leaves nothing to charge
+ * the rest discount nothing, and naming a 50% Promotion beside a €0.00 line reports a waiver it
+ * did not give (#3282).
+ */
+export function primaryBenefit(benefits: readonly SimulationBenefit[]): SimulationBenefit | null {
+  return benefits.find(takesLineToZero)
+    ?? benefits.find((b) => b.source === 'promotion') ?? benefits[0] ?? null;
+}
+
+function takesLineToZero(b: SimulationBenefit): boolean {
+  return b.action === 'waive' || b.action === 'included'
+    || (b.action === 'percentage_discount' && Number(b.value) >= 100);
+}
+
+/**
+ * #3284 — the one place a treatment is classified: by the engine's `source` and the explicit `code`,
+ * never by the action or the amount (a `waive` is a Benefit or a Discount depending on where it came
+ * from, and a Promotion's percentage stays a Discount). A treatment that changes nothing
+ * (`no_benefit`) and a Pre-paid period's coverage (money collected earlier, not a reduction) are
+ * not reasons. Order is the engine's order of application.
+ */
+export function lineReasons(benefits: readonly SimulationBenefit[]): LineReason[] {
+  const out: LineReason[] = [];
+  for (const b of benefits) {
+    if (b.action === 'no_benefit' || b.period_status === 'prepaid_plan') continue;
+    const type: LineReasonType = b.source === 'promotion' ? 'discount'
+      : b.source === 'personal' ? 'manual_adjustment' : 'benefit';
+    out.push({
+      type, source: b.source,
+      code: type === 'manual_adjustment' ? b.code ?? null : null,
+      action: b.action === 'included' ? 'waive' : b.action,
+      value: b.value != null ? Number(b.value) : null,
+      name: b.source === 'promotion' ? b.name ?? null : null,
+    });
+  }
+  return out;
 }
 
 export interface LineContext {
@@ -96,6 +161,7 @@ export function lineFromSimulation(line: SimulationLine, ctx: LineContext = {}):
     prepaid_periods: line.prepaid_periods ?? null,
     prepaid_cadence: line.prepaid_cadence ?? null,
     fee_split: line.fee_split ?? null,
+    reasons: lineReasons(line.benefits),
   };
 }
 

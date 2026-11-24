@@ -588,13 +588,23 @@ export function pendingPaymentPlanSnapshotId(view: MemberSetView | null, viewerM
  * Save & Pay wrote), else an open membership-fee payment request. Its *Pay now*
  * opens the existing consent and checkout on My Products, so it creates nothing
  * itself. `null` when nothing is pending.
+ *
+ * #3286 — a pending payment that belongs to the Pending Payment Product Set the
+ * Home's cart card already shows (`cartPendingSetId`, reported by `MemberCart`)
+ * is that card's to pay and cancel, so it raises no banner. The relationship is
+ * the server's `product_set_id` on each candidate, never an amount or a label;
+ * a candidate with no Product Set, or another one, still raises the banner.
  */
 export function homePendingPayment(
-  pending: { membership_fee: number | null } | null | undefined,
-  requests: { status: string; source?: string | null; amount: string | number; currency?: string | null }[],
+  pending: { membership_fee: number | null; product_set_id?: number | null } | null | undefined,
+  requests: { status: string; source?: string | null; amount: string | number; currency?: string | null; product_set_id?: number | null }[],
+  cartPendingSetId: number | null = null,
 ): { amount: number; currency: string } | null {
-  if (pending?.membership_fee != null && pending.membership_fee > 0) return { amount: pending.membership_fee, currency: 'EUR' };
-  const request = requests.find((r) => r.status === 'pending' && isMembershipFeeRequest(r.source));
+  const shownByCart = (setId: number | null | undefined) => cartPendingSetId != null && setId != null && Number(setId) === cartPendingSetId;
+  if (pending?.membership_fee != null && pending.membership_fee > 0 && !shownByCart(pending.product_set_id)) {
+    return { amount: pending.membership_fee, currency: 'EUR' };
+  }
+  const request = requests.find((r) => r.status === 'pending' && isMembershipFeeRequest(r.source) && !shownByCart(r.product_set_id));
   if (!request) return null;
   const amount = Number(request.amount);
   return Number.isFinite(amount) ? { amount, currency: request.currency ?? 'EUR' } : null;
