@@ -77,6 +77,7 @@ import {
   yesNoKey,
   sharingTypeKey,
   purchaseEndDisplay,
+  purchasePriceCell,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
@@ -280,9 +281,9 @@ export function MemberPurchasedProducts({
     },
     {
       key: 'price',
-      header: t('purchase_col_price_incl_vat'),
+      header: t('purchase_col_base_price_incl_vat'),
       mobile: 'secondary',
-      render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.regular_amount, item.currency)}</span>,
+      render: (item) => <PriceCell item={item} which="base" />,
     },
     {
       key: 'promotion',
@@ -310,9 +311,9 @@ export function MemberPurchasedProducts({
     },
     {
       key: 'final',
-      header: t('purchase_col_final_price'),
+      header: t('purchase_col_final_price_incl_vat'),
       mobile: 'secondary',
-      render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.amount, item.currency)}</span>,
+      render: (item) => <PriceCell item={item} which="final" />,
     },
     {
       key: 'payment_status',
@@ -638,14 +639,14 @@ function PurchaseFacts({
         label={t('purchase_validity')}
         value={item.validity_state ? t(`purchase_validity_${item.validity_state}` as any) : dash}
       />
-      <CardDetailRow label={t('purchase_col_price_incl_vat')} value={money(item.regular_amount, item.currency)} />
+      <CardDetailRow label={t('purchase_col_base_price_incl_vat')} value={<PriceCell item={item} which="base" />} />
       <CardDetailRow label={t('purchase_col_applied_tax')} value={formatAppliedTax(item.tax_rate_percent) ?? dash} />
       <CardDetailRow
         label={t('purchase_col_applied_promotion')}
         value={item.promotion ? promotionLabel(item.promotion) : dash}
       />
       <CardDetailRow label={t('purchase_col_direct_discount')} value={formatDirectDiscount(item.direct_discount_percent) ?? dash} />
-      <CardDetailRow label={t('purchase_col_final_price')} value={money(item.amount, item.currency)} />
+      <CardDetailRow label={t('purchase_col_final_price_incl_vat')} value={<PriceCell item={item} which="final" />} />
       <CardDetailRow
         label={t('purchase_col_payment_status')}
         value={payKey ? t(`purchase_payment_status_${payKey}` as any) : dash}
@@ -670,6 +671,25 @@ function money(amount: number | null | undefined, currency: string): string {
   if (amount == null || !Number.isFinite(Number(amount))) return '—';
   const value = Number(amount).toFixed(2);
   return currency === 'EUR' ? `${value}€` : `${value} ${currency}`;
+}
+
+/**
+ * #3359 — a price cell: the line total, and under it (quantity above 1) the `2 × 15.00€`
+ * breakdown in the card's muted text, smaller than the total. The figures are
+ * `purchasePriceCell()`'s, which takes them from the API.
+ */
+function PriceCell({ item, which }: { item: PurchasedProduct; which: 'base' | 'final' }) {
+  const { total, breakdown } = purchasePriceCell(item, which);
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', whiteSpace: 'nowrap' }}>
+      <span data-price-total>{money(total, item.currency)}</span>
+      {breakdown && (
+        <small data-price-breakdown style={{ ...cardMutedTextStyle, fontSize: 11 }}>
+          {breakdown.quantity} × {money(breakdown.unit, item.currency)}
+        </small>
+      )}
+    </span>
+  );
 }
 
 function date(value: string | null, settings: GymFormatSettings): string {

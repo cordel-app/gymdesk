@@ -38,7 +38,7 @@ export interface PurchasedProduct {
   product_type: string;
   billing_frequency: string | null;
   units: number | null;
-  /** What was charged, VAT included. */
+  /** What was charged for the whole line, VAT included. */
   amount: number;
   currency: string;
   purchased_at: string | null;
@@ -52,7 +52,7 @@ export interface PurchasedProduct {
   created_by: string | null;
   /** #1883 — `members_app` | `admin`; null/absent reads Unknown. */
   origin?: string | null;
-  /** The price before the Promotion, VAT included. */
+  /** The line's price before any Promotion or discount, VAT included (a line total since #3359). */
   regular_amount: number;
   promotion: PurchasedProductPromotion | null;
   /** Every Promotion applied, in the order they were applied (the API's `promotions`). */
@@ -73,8 +73,12 @@ export interface PurchasedProduct {
   pending_termination?: boolean;
   /** #2856 — the line the member's open Draft carries for this row; `null` when no open Draft carries it. */
   draft_line_id?: number | null;
-  /** #2856 — a recurring line's own quantity. */
+  /** #2856 — a recurring line's own quantity; since #3359 a one-time purchase's too. */
   quantity?: number;
+  /** #3359 — the final price of one unit, VAT included (the API's; never derived here). */
+  unit_amount?: number;
+  /** #3359 — the base price of one unit, VAT included, before Promotions and discounts. */
+  regular_unit_amount?: number;
   /** #2609 — the family member the Product is for (the purchaser when none was chosen). */
   assigned_member_id?: number | null;
   assigned_member_name?: string | null;
@@ -399,4 +403,23 @@ export function purchaseEndDisplay(
   if (item.product_type === 'merchandise') return { kind: 'dash' };
   const end = item.valid_until ?? item.cancelled_on ?? null;
   return end ? { kind: 'date', value: end } : { kind: 'open_ended' };
+}
+
+/**
+ * #3359 — what a price cell of the Products table shows: the line total as the main value and,
+ * for a quantity above 1, the `quantity × unit` breakdown under it. Both figures are the API's
+ * (`regular_amount` / `regular_unit_amount` for the base price, `amount` / `unit_amount` for the
+ * final one); nothing is multiplied or divided here, and a row with no unit figure shows no breakdown.
+ */
+export function purchasePriceCell(
+  item: Pick<PurchasedProduct, 'amount' | 'regular_amount' | 'quantity' | 'unit_amount' | 'regular_unit_amount'>,
+  which: 'base' | 'final',
+): { total: number; breakdown: { quantity: number; unit: number } | null } {
+  const total = which === 'base' ? item.regular_amount : item.amount;
+  const unit = which === 'base' ? item.regular_unit_amount : item.unit_amount;
+  const quantity = item.quantity ?? 1;
+  const breakdown = quantity > 1 && unit != null && Number.isFinite(Number(unit))
+    ? { quantity, unit: Number(unit) }
+    : null;
+  return { total, breakdown };
 }
