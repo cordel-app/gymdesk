@@ -41,3 +41,40 @@ describe('homePendingPayment', () => {
     expect(homePendingPayment({ membership_fee: 0 }, [])).toBeNull();
   });
 });
+
+// #3286 — the Home banner stands aside for the checkout the cart card already shows.
+describe('homePendingPayment beside the pending cart card', () => {
+  it('raises nothing when the pending plan is the cart card\'s Product Set, even with its legacy projection and request', () => {
+    expect(homePendingPayment(
+      { membership_fee: 840, product_set_id: 9 },
+      [{ status: 'pending', source: 'customer', amount: '871.61', product_set_id: 9 }],
+      9,
+    )).toBeNull();
+  });
+
+  it('raises nothing for the cart card\'s Product Set reported without a legacy assignment', () => {
+    expect(homePendingPayment({ membership_fee: 871.61, product_set_id: 9 }, [], 9)).toBeNull();
+  });
+
+  it('keeps the banner for a legacy pending plan with no Product Set', () => {
+    expect(homePendingPayment({ membership_fee: 40, product_set_id: null }, [], 9)).toEqual({ amount: 40, currency: 'EUR' });
+    expect(homePendingPayment({ membership_fee: 40 }, [], null)).toEqual({ amount: 40, currency: 'EUR' });
+  });
+
+  it('keeps the banner for an unrelated membership-fee request while another Product Set is pending', () => {
+    expect(homePendingPayment(
+      { membership_fee: 871.61, product_set_id: 9 },
+      [
+        { status: 'pending', source: 'customer', amount: '871.61', product_set_id: 9 },
+        { status: 'pending', source: 'customer', amount: '30.00', product_set_id: 4 },
+      ],
+      9,
+    )).toEqual({ amount: 30, currency: 'EUR' });
+    expect(homePendingPayment(null, [{ status: 'pending', source: 'customer', amount: '12.00', product_set_id: null }], 9))
+      .toEqual({ amount: 12, currency: 'EUR' });
+  });
+
+  it('never matches by amount', () => {
+    expect(homePendingPayment({ membership_fee: 40, product_set_id: 3 }, [], 9)).toEqual({ amount: 40, currency: 'EUR' });
+  });
+});

@@ -9,7 +9,7 @@
 // server's. The `+ Add Plan` / `+ Add Product` actions are NOT part of the
 // cart: the host renders them beside it, and tells the component through
 // `onChanged` / `refreshKey` when the cart changed elsewhere.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useApp } from '@/context/AppContext';
@@ -35,6 +35,7 @@ import {
   cartItemsRemovable,
   cartPendingAmount,
   cartPhase,
+  pendingCheckoutSetId,
   pendingCartCancelErrorKey,
   separateStandaloneCart,
   standaloneCartItems,
@@ -83,9 +84,15 @@ export interface MemberCartProps {
   refreshKey?: unknown;
   /** Called after the cart changed through one of its own actions, so the host re-reads what it shows. */
   onChanged?: () => void;
+  /**
+   * #3286 — told after every read which Pending Payment Product Set this card
+   * shows the member as their own checkout (`null` when it shows none), so the
+   * Home can leave that payment to the card instead of raising a second notice.
+   */
+  onPendingCheckout?: (productSetId: number | null) => void;
 }
 
-export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
+export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberCartProps) {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { member, gymName } = useApp();
@@ -110,6 +117,10 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
   const [consentSubmitting, setConsentSubmitting] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [consentCadence, setConsentCadence] = useState<{ interval: number | null; unit: string | null }>({ interval: null, unit: null });
+
+  // A ref, so a host passing a fresh callback each render does not re-run the read.
+  const pendingCheckoutRef = useRef(onPendingCheckout);
+  pendingCheckoutRef.current = onPendingCheckout;
 
   const load = useCallback(async () => {
     const cart = await apiFetch<MemberStandaloneCart>('/me/cart/purchases')
@@ -143,10 +154,11 @@ export function MemberCart({ refreshKey, onChanged }: MemberCartProps) {
     setStandalone(cart);
     setStandaloneSeconds(standaloneSecondsLeft(cart, Date.now()));
     setView(v);
+    pendingCheckoutRef.current?.(pendingCheckoutSetId(v, viewerId, cart));
     setReview(r);
     setCartSummary(summary);
     if (expired) setDraftErrorKeyState('membership.draft_error_expired');
-  }, [apiFetch]);
+  }, [apiFetch, viewerId]);
 
   useEffect(() => {
     load();
