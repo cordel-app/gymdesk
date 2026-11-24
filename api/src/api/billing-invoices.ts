@@ -14,10 +14,10 @@ import {
 } from '../domain/billingDocumentKeys';
 import {
   AUTO_INVOICE_BATCH_SIZE, autoInvoiceEventTypes, autoInvoiceFromDate, shouldAutoIssueSimplified,
-  formatFiscalNumber, formatRectifyingNumber, refundRectificationTarget, type RefundRectificationSkip, invoiceLanguage, negateLines, negateTotals, parseRectificationReason, parseCustomerInput, parseFiscalSeq, replacementTarget, representationToCreate,
+  formatFiscalNumber, formatRectifyingNumber, refundRectificationTarget, type RefundRectificationSkip, invoiceLanguage, parseRectificationReason, parseCustomerInput, parseFiscalSeq, replacementTarget, representationToCreate,
 } from '../domain/billingInvoice';
-import { loadInvoiceFigures } from './invoice-figures';
-import { refundState, toCents } from '../domain/billingEventRefund';
+import { loadDocumentFigures } from './invoice-figures';
+import { toCents } from '../domain/billingEventRefund';
 import { anulacionRefusal } from '../domain/verifactuRecords';
 import {
   enabledVerifactuIntegration, loadInvoiceVerifactuQr, loadInvoiceVerifactuRecords, recordVerifactuAlta, recordVerifactuAnulacion,
@@ -59,7 +59,8 @@ async function renderRepresentation(
   const { rows: gymRows } = await db.query<any>(
     'SELECT name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?', [ev.gym_id]);
   const gym = gymRows[0];
-  const { lines, totals } = await loadInvoiceFigures(db, ev.gym_id, ev.id, ev.amount);
+  // #3298 stage 4: a rectifying invoice states its own figures, already negated.
+  const { lines, totals } = await loadDocumentFigures(db, ev.gym_id, inv, ev.amount);
   const type = inv.invoice_type as InvoiceType;
   // #2648 stage 7: a complete invoice issued in place of a simplified one names it.
   let replaces: { number: string } | undefined;
@@ -75,8 +76,7 @@ async function renderRepresentation(
     customer: type === 'full'
       ? { name: inv.customer_name, taxId: inv.customer_tax_id, address: inv.customer_address }
       : { name: ev.memberName ?? '', taxId: null, address: null },
-    lines: rectifies ? negateLines(lines) : lines,
-    totals: rectifies ? negateTotals(totals) : totals,
+    lines, totals,
     currency: 'EUR', rectifies, replaces,
     // #2648 stage 3: the QR and legend come from the invoice's own Alta record.
     verifactu: await loadInvoiceVerifactuQr(db, ev.gym_id, inv.id),
@@ -365,9 +365,10 @@ type RectifyOutcome = { status: number; error?: string; id?: number };
 
 /**
  * Issues the rectifying invoice of invoice `id` inside `tx`: its own row and
- * number (R series), linked to the original, which it cancels in full, with its
- * VERI*FACTU Alta (R1/R5). The original is never edited; one rectification per
- * original. #3298 stage 3: `refundId` names the refund whose completion issued
+ * number (R series), linked to the original, with its VERI*FACTU Alta (R1/R5,
+ * by differences). Staff's manual one cancels the original in full and is the
+ * only one it takes; a refund's states that refund's figures (#3298 stage 4),
+ * so several partial refunds each issue one. The original is never edited. #3298 stage 3: `refundId` names the refund whose completion issued
  * it (`invoices.refund_payment_request_id`). Answers 201 with the new id, or the
  * refusal. The PDF is rendered after commit (`renderRectifyingInvoice()`).
  */
@@ -379,9 +380,15 @@ export async function rectifyInvoiceInTx(
   if (!orig) return { status: 404, error: 'Invoice not found' };
   if (orig.status !== 'issued') return { status: 409, error: 'Only an issued invoice can be rectified' };
   if (orig.related_invoice_id) return { status: 409, error: 'A rectifying invoice cannot be rectified' };
-  const { rows: existing } = await tx.query<any>(
-    'SELECT id FROM invoices WHERE gym_id = ? AND related_invoice_id = ?', [gymId, id]);
-  if (existing[0]) return { status: 409, error: 'Invoice already rectified' };
+  // #3298 stage 4: a refund's rectification is by differences, so an invoice
+  // takes one per refund until they reach its total; staff's manual one cancels
+  // it in full and is refused once anything rectified it. The refund path has
+  // already checked the remainder (`refundRectificationTarget()`).
+  if (refundId == null) {
+    const { rows: existing } = await tx.query<any>(
+      'SELECT id FROM invoices WHERE gym_id = ? AND related_invoice_id = ?', [gymId, id]);
+    if (existing[0]) return { status: 409, error: 'Invoice already rectified' };
+  }
   // #2648 stage 7: a replaced simplified invoice is corrected through the complete invoice that replaced it.
   const { rows: replacing } = await tx.query<any>(
     'SELECT id FROM invoices WHERE gym_id = ? AND replaces_invoice_id = ?', [gymId, id]);
@@ -424,7 +431,8 @@ export type RefundRectificationResult =
   | { issued: false; reason: RefundRectificationSkip | 'not_completed' | 'already_issued' | 'storage_not_configured' };
 
 /**
- * #3298 stage 3 — the rectifying invoice a completed refund owes. Called once a
+ * #3298 stage 3/4 — the rectifying invoice a completed refund owes, full or
+ * partial (by differences: it states that refund's figures). Called once a
  * refund is `completed` (the manual refund after its commit, the provider
  * refund once MONEI confirms it, the cleanup's reconciliation), after the
  * Refund Receipt: the receipt is the financial proof that money went back, this
@@ -440,7 +448,7 @@ export async function issueRefundRectification(
   if (!isPrivateStorageConfigured()) return { issued: false, reason: 'storage_not_configured' };
   const outcome = await db.transaction(async (tx): Promise<RefundRectificationResult> => {
     const { rows: refRows } = await tx.query<any>(
-      `SELECT r.id, r.status, o.id AS original_id, o.amount AS collected, o.billing_event_id
+      `SELECT r.id, r.status, o.billing_event_id
          FROM payment_requests r JOIN payment_requests o ON o.id = r.refund_of_payment_request_id
         WHERE r.id = ? AND r.gym_id = ? AND r.transaction_type = 'refund'`, [refundId, gymId]);
     const refund = refRows[0];
@@ -451,19 +459,20 @@ export async function issueRefundRectification(
     const { rows: done } = await tx.query<any>(
       'SELECT id FROM invoices WHERE gym_id = ? AND refund_payment_request_id = ?', [gymId, refundId]);
     if (done[0]) return { issued: false, reason: 'already_issued' };
-    const { rows: refunded } = await tx.query<any>(
-      `SELECT COALESCE(SUM(amount), 0) AS total FROM payment_requests
-        WHERE refund_of_payment_request_id = ? AND transaction_type = 'refund' AND status = 'completed'`,
-      [refund.original_id]);
-    const fullyRefunded = refundState(toCents(refund.collected), toCents(refunded[0].total)) === 'full';
     const { rows: invoices } = await tx.query<any>(
       `SELECT i.id, i.invoice_type, i.status, i.related_invoice_id, i.replaces_invoice_id,
+              rf.amount AS refund_amount, be.amount AS event_amount,
               EXISTS (SELECT 1 FROM verifactu_records v WHERE v.invoice_id = i.id AND v.record_type = 'anulacion') AS has_anulacion
-         FROM invoices i WHERE i.gym_id = ? AND i.billing_event_id = ?`, [gymId, refund.billing_event_id]);
+         FROM invoices i
+         JOIN billing_events be ON be.id = i.billing_event_id AND be.gym_id = i.gym_id
+         LEFT JOIN payment_requests rf ON rf.id = i.refund_payment_request_id
+        WHERE i.gym_id = ? AND i.billing_event_id = ?`, [gymId, refund.billing_event_id]);
+    const eventCents = invoices[0] ? toCents(invoices[0].event_amount) : 0;
     const target = refundRectificationTarget(invoices.map((r: any) => ({
       id: r.id, invoiceType: r.invoice_type, status: r.status, relatedInvoiceId: r.related_invoice_id,
       replacesInvoiceId: r.replaces_invoice_id, hasAnulacion: !!r.has_anulacion,
-    })), fullyRefunded);
+      refundCents: r.refund_amount == null ? null : toCents(r.refund_amount),
+    })), eventCents);
     if ('skip' in target) return { issued: false, reason: target.skip };
     const { rows: rr } = await tx.query<any>(
       'SELECT receipt_number FROM refund_receipts WHERE payment_request_id = ?', [refundId]);

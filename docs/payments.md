@@ -868,7 +868,7 @@ answer of `REFUNDED`/`PARTIALLY_REFUNDED` completes the row (with `provider_stat
 event's displayed payment status reads `refunded` / `partially_refunded` from completed
 refunds. Nothing else moves: the original attempt, the ledger row, its lines, a receipt
 or invoice, the attempt counter and every contracted item stay as they were (since #3298 stage 3 a
-refund that leaves the payment fully refunded issues a *new* rectifying invoice, below).
+refund issues a *new* rectifying invoice, below; since stage 4 a partial one too).
 
 **A refunded event shows it in its status** (#2480 follow-up, 2026-11-24). The Billing Events list and
 detail report a paid event as `partially_refunded` or `refunded` from its completed refunds
@@ -913,20 +913,32 @@ own gapless per-gym, per-year series, `R-YYYY-NNNN` (`refund_receipt_sequences`,
 under the refund row's lock. The original receipt number, its PDF and every invoice are not
 touched.
 
-**A full refund issues the rectifying invoice of the invoice it refunds** (#3298 stage 3,
-migration 476). Once a refund is `completed` and the payment's completed refunds equal what was
-collected, `issueRefundRectification()` (`api/src/api/billing-invoices.ts`) rectifies the event's
-standing invoice through `rectifyInvoiceInTx()`, the manual rectify route's own writer: its own
-`R-` number, the original cancelled in full by differences (R5 for a simplified invoice, R1 for a
-complete one), its VERI*FACTU Alta in the same transaction, and `invoices.refund_payment_request_id`
-naming the refund. The Refund Receipt (the proof the money went back) stays its own record; the
-Admin links the two (*For refund …* / *Rectified in …*). Which invoice is `refundRectificationTarget()`'s:
-issued, not rectifying, not already rectified, not replaced (a complete invoice that replaced the
-simplified one is the one rectified) and not cancelled by an Anulación. It runs after the refund
-commits on all three completion paths (manual, Monei's answer, the cleanup's reconciliation),
-best-effort: a failure is logged and staff can still rectify by hand. Decisions: a partial refund
-issues no rectification yet (a rectification by differences of part of the lines is a later
-stage); the reason printed is `Refund <refund receipt number>`.
+**Every completed refund issues a rectifying invoice of the invoice it refunds, by differences**
+(#3298 stages 3–4, migration 476). Once a refund is `completed`, `issueRefundRectification()`
+(`api/src/api/billing-invoices.ts`) rectifies the event's standing invoice through
+`rectifyInvoiceInTx()`, the manual rectify route's own writer: its own `R-` number, R5 for a
+simplified invoice and R1 for a complete one (TipoRectificativa `I`), its VERI*FACTU Alta in the
+same transaction, and `invoices.refund_payment_request_id` naming the refund. The rectifying
+invoice states **that refund's own figures**, negated (`loadDocumentFigures()` in
+`api/src/api/invoice-figures.ts`, the one source of the PDF, the Alta's totals and its Desglose,
+over the pure `refundRectificationLines()`): a Selected Line Items refund the lines it named at
+the amounts it returned on them; a full or ad-hoc refund its amount spread over the event's lines
+in proportion (largest remainder, to the cent; a full refund of the whole event states its lines
+unchanged), each line keeping its own rate and a stored net scaled with it. So a partial refund
+gets its own rectification, and a later one another against the same invoice, until their
+amounts reach the invoice's total (`rectifiableRemainderCents()`). Staff's manual rectification
+still cancels an invoice in full and is refused (`409 Invoice already rectified`) once anything
+rectified it; a manual one leaves nothing for a later refund to rectify. The Refund Receipt (the
+proof the money went back) stays its own record; the Admin links the two (*For refund …* /
+*Rectified in …*) and lists every *Rectified by* on the original. Which invoice is
+`refundRectificationTarget()`'s: issued, not rectifying, not cancelled in full, not rectified up
+to its total, not replaced (a complete invoice that replaced the simplified one is the one
+rectified) and not cancelled by an Anulación. It runs after the refund commits on all three
+completion paths (manual, Monei's answer, the cleanup's reconciliation), best-effort: a failure
+is logged and staff can still rectify by hand. Decisions: the reason printed is
+`Refund <refund receipt number>`; a simplified invoice partly rectified is not replaced by a
+later complete invoice (`replacementTarget()` already skips a rectified one, so that complete
+invoice is an F1), unchanged from before.
 
 The PDF ("JUSTIFICANTE DE DEVOLUCIÓN / REFUND RECEIPT", `lib/refund-receipt-pdf.ts`) prints the
 gym's legal name, NIF and fiscal address; the payer's name and tax id (the event's issued full
