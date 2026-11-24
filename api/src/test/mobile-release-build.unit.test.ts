@@ -76,6 +76,19 @@ describe('the Android release job', () => {
   });
 });
 
+describe('the Firebase config (push)', () => {
+  for (const name of ['android', 'android-release']) {
+    it(`${name} writes google-services.json from the environment before applying the profile`, () => {
+      const job = jobBlock(name);
+      expect(job).toContain('GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}');
+      const write = job.indexOf('google-services.json"');
+      expect(write).toBeGreaterThan(-1);
+      expect(write).toBeLessThan(job.indexOf('npm run profile:apply'));
+      expect(runScripts(job)).not.toMatch(/\$\{\{\s*secrets\./);
+    });
+  }
+});
+
 describe('the Gradle release signing', () => {
   it('reads the upload key from the environment and commits none', () => {
     for (const name of [

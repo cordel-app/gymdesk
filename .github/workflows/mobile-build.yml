@@ -63,6 +63,8 @@ jobs:
       MOBILE_GOOGLE_IOS_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
       MOBILE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       MOBILE_ALLOW_NAVIGATION_VAR: ${{ vars.MOBILE_ALLOW_NAVIGATION }}
+      # Firebase config for push (FCM): the environment's own project, never committed.
+      GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
       ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
     steps:
       - uses: actions/checkout@v7
@@ -120,6 +122,19 @@ jobs:
           # ever goes up — what Play's versionCode and iOS's build number need).
           echo "BUILD_VERSION=$(node -p "require('./apps/mobile/package.json').version")" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Firebase config
+        working-directory: apps/mobile
+        run: |
+          # profile:apply copies profiles/<profile>/google-services.json into the
+          # Android project; without it the shell has no push (MainActivity's placeholder).
+          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
+            mkdir -p "profiles/$MOBILE_APP_PROFILE"
+            echo "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > "profiles/$MOBILE_APP_PROFILE/google-services.json"
+            echo "google-services.json written for $MOBILE_APP_PROFILE"
+          else
+            echo "::warning::No GOOGLE_SERVICES_JSON_B64 in this environment: the app is built without push."
+          fi
 
       - name: Apply the app profile and sync
         working-directory: apps/mobile
@@ -208,6 +223,8 @@ jobs:
       MOBILE_GOOGLE_IOS_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
       MOBILE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       MOBILE_ALLOW_NAVIGATION_VAR: ${{ vars.MOBILE_ALLOW_NAVIGATION }}
+      # Firebase config for push (FCM): the environment's own project, never committed.
+      GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
       # The Play upload key (docs/mobile-runbook.md, "Release builds for Google Play").
       ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
       ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
@@ -264,6 +281,19 @@ jobs:
           echo "BUILD_VERSION=$(node -p "require('./apps/mobile/package.json').version")" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
           echo "APP_ID=$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appId")" >> "$GITHUB_ENV"
+
+      - name: Firebase config
+        working-directory: apps/mobile
+        run: |
+          # profile:apply copies profiles/<profile>/google-services.json into the
+          # Android project; without it the shell has no push (MainActivity's placeholder).
+          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
+            mkdir -p "profiles/$MOBILE_APP_PROFILE"
+            echo "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > "profiles/$MOBILE_APP_PROFILE/google-services.json"
+            echo "google-services.json written for $MOBILE_APP_PROFILE"
+          else
+            echo "::warning::No GOOGLE_SERVICES_JSON_B64 in this environment: the app is built without push."
+          fi
 
       - name: Apply the app profile and sync
         working-directory: apps/mobile

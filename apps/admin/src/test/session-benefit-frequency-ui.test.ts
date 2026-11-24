@@ -3,13 +3,17 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   SESSION_BENEFIT_FREQUENCIES,
+  productSessionFrequency,
   sessionFrequencyLabelKey,
   toSessionBenefitFrequency,
 } from '@/lib/sessionBenefitFrequency';
 import {
   PRODUCT_BENEFIT_COLUMNS,
   ProductBenefitRow,
+  ProductOption,
+  addBenefitRow,
   toBenefitItems,
+  updateBenefitRow,
 } from '@/components/ProductBenefits';
 
 // #918 — a Session Benefit carries a renewal **Frequency** ("2 Personal
@@ -152,4 +156,62 @@ describe('every option has a label', () => {
       }
     });
   }
+});
+
+// #3306 — a Session Product that names a renewing period decides the Frequency.
+// The API enforces it (`productSessionFrequency()` in the domain module, asked
+// by the section `PUT`); this mirror only decides what the editor renders.
+describe('#3306 — the Session Product decides the Frequency', () => {
+  const apiSrc = readFileSync(API_DECLARATION, 'utf-8');
+
+  it('mirrors the API\'s set of deciding Product frequencies', () => {
+    const block = apiSrc.match(/PRODUCT_DECIDED_SESSION_FREQUENCY[^{]*\{([^}]*)\}/);
+    const apiKeys = [...(block?.[1] ?? '').matchAll(/^\s*(\w+):/gm)].map((m) => m[1]).sort();
+    expect(apiKeys).toEqual(['four_weeks', 'month', 'week', 'year']);
+    for (const f of apiKeys) expect(productSessionFrequency(f)).toBe(f);
+    for (const f of ['once', 'per_session', null, undefined]) expect(productSessionFrequency(f)).toBeNull();
+  });
+
+  const catalogue: ProductOption[] = [
+    { id: 1, name: 'Monthly PT', type: 'sessions', billing_frequency: 'month', status: 'active', benefit_category: 'session' },
+    { id: 2, name: 'PT Package', type: 'sessions', billing_frequency: 'once', status: 'active', benefit_category: 'session' },
+  ];
+  const run = (initial: ProductBenefitRow[], fn: (setDraft: any) => void) => {
+    let draft = initial;
+    fn((f: (prev: ProductBenefitRow[]) => ProductBenefitRow[]) => { draft = f(draft); });
+    return draft;
+  };
+
+  it('starts a new Session line on the Product\'s frequency', () => {
+    const draft = run([], (setDraft) => addBenefitRow(setDraft, catalogue, [], { frequency: null }));
+    expect(draft[0]).toMatchObject({ product_id: 1, frequency: 'month' });
+  });
+
+  it('configured → unconfigured clears the value the Product had set', () => {
+    const draft = run(
+      [row({ product_id: 1, product_billing_frequency: 'month', frequency: 'month' })],
+      (setDraft) => updateBenefitRow(setDraft, catalogue, 0, { product_id: 2 }),
+    );
+    expect(draft[0]).toMatchObject({ product_id: 2, frequency: null });
+  });
+
+  it('unconfigured → configured takes the Product\'s frequency over the chosen one', () => {
+    const draft = run(
+      [row({ product_id: 2, product_billing_frequency: 'once', frequency: 'week' })],
+      (setDraft) => updateBenefitRow(setDraft, catalogue, 0, { product_id: 1 }),
+    );
+    expect(draft[0]).toMatchObject({ product_id: 1, frequency: 'month' });
+  });
+
+  it('leaves a section that does not configure the Frequency without the key', () => {
+    const draft = run(
+      [row({ product_id: 2, product_billing_frequency: 'once' })],
+      (setDraft) => updateBenefitRow(setDraft, catalogue, 0, { product_id: 1 }),
+    );
+    expect('frequency' in draft[0]).toBe(false);
+  });
+
+  it('renders a deciding Product\'s frequency as a value, not the select', () => {
+    expect(componentSrc).toMatch(/productSessionFrequency\(row\.product_billing_frequency\)\s*\?\s*\(/);
+  });
 });

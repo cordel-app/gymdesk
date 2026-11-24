@@ -15,6 +15,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   RENEWING_SESSION_BENEFIT_FREQUENCIES,
+  effectiveSessionFrequency,
+  effectiveSessionFrequencySql,
+  productSessionFrequency,
   SESSION_BENEFIT_FREQUENCIES,
   describeSessionBenefitFrequencies,
   isRenewingSessionFrequency,
@@ -155,5 +158,34 @@ describe('#918 — renewals inside a billing cycle (the Q1 summary rule)', () =>
   it('answers 0 for an empty or inverted period', () => {
     expect(renewalsInPeriod('2026-01-01', '2026-01-01', '2026-01-01', 'week')).toBe(0);
     expect(renewalsInPeriod('2026-01-01', '2026-02-01', '2026-01-01', 'week')).toBe(0);
+  });
+});
+
+describe('#3306 — a Session Product that names a renewing period decides the Frequency', () => {
+  it('maps the four renewing Product frequencies onto the same Session Benefit Frequency', () => {
+    for (const f of ['week', 'four_weeks', 'month', 'year'] as const) {
+      expect(productSessionFrequency(f)).toBe(f);
+    }
+  });
+
+  it('leaves the choice to the Plan for once, per_session and no frequency', () => {
+    for (const f of ['once', 'per_session', null, undefined, '']) {
+      expect(productSessionFrequency(f as any)).toBeNull();
+    }
+  });
+
+  it('effectiveSessionFrequency: the Product wins where it decides, else the line keeps its own', () => {
+    expect(effectiveSessionFrequency('month', 'week')).toBe('month');
+    expect(effectiveSessionFrequency('month', null)).toBe('month');
+    expect(effectiveSessionFrequency('once', 'week')).toBe('week');
+    expect(effectiveSessionFrequency(null, null)).toBeNull();
+    expect(effectiveSessionFrequency(null, 'bogus')).toBeNull();
+  });
+
+  it('the SQL spelling decides on the same four values', () => {
+    const sql = effectiveSessionFrequencySql('gc.billing_frequency', 'b.frequency');
+    expect(sql).toBe(
+      "CASE WHEN gc.billing_frequency IN ('week', 'four_weeks', 'month', 'year') THEN gc.billing_frequency ELSE b.frequency END",
+    );
   });
 });

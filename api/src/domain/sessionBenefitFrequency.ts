@@ -172,3 +172,47 @@ export function renewalDatesThrough(
   }
   return dates;
 }
+
+// #3306 — a Session Product whose own `billing_frequency` names a renewing
+// period **decides** the Session Benefit's Frequency: the Plan's row shows it
+// read-only and the server writes it whatever the request says, so a Plan
+// cannot carry a renewal that contradicts the Product it renews. A Product with
+// no period (`once` — a package bought once, the default Personal Training
+// package —, the legacy `per_session`, or none) leaves the Frequency the
+// Plan's own choice, exactly as #918 made it: locking those to `Once` would
+// make the weekly allowance #918 exists for impossible, because `week` is
+// retired from the Product surface (#821).
+//
+// This is the one place the rule lives: `productSessionFrequency()` for code,
+// `effectiveSessionFrequencySql()` for the two snapshot copies that read the
+// Plan's rows in SQL. The admin mirrors it in `lib/sessionBenefitFrequency.ts`.
+
+/** Product frequencies that decide a Session Benefit's Frequency, mapped onto it. */
+const PRODUCT_DECIDED_SESSION_FREQUENCY: Record<string, SessionBenefitFrequency> = {
+  week: 'week',
+  four_weeks: 'four_weeks',
+  month: 'month',
+  year: 'year',
+};
+
+/** The Frequency a Session Product decides, or `null` when it leaves it to the Plan. */
+export function productSessionFrequency(
+  productBillingFrequency: string | null | undefined,
+): SessionBenefitFrequency | null {
+  if (!productBillingFrequency) return null;
+  return PRODUCT_DECIDED_SESSION_FREQUENCY[productBillingFrequency] ?? null;
+}
+
+/** The Frequency a Session Benefit line carries: the Product's when it decides one, else the line's own. */
+export function effectiveSessionFrequency(
+  productBillingFrequency: string | null | undefined,
+  configured: unknown,
+): SessionBenefitFrequency | null {
+  return productSessionFrequency(productBillingFrequency) ?? toSessionBenefitFrequency(configured);
+}
+
+/** `effectiveSessionFrequency()` in SQL, over a Product's frequency column and the line's own. */
+export function effectiveSessionFrequencySql(productFrequencyCol: string, lineFrequencyCol: string): string {
+  const decided = Object.keys(PRODUCT_DECIDED_SESSION_FREQUENCY).map((f) => `'${f}'`).join(', ');
+  return `CASE WHEN ${productFrequencyCol} IN (${decided}) THEN ${productFrequencyCol} ELSE ${lineFrequencyCol} END`;
+}

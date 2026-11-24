@@ -40,7 +40,7 @@
 
 import { ProductBenefitCategory, classifyProduct } from './productClassification';
 import { DEFAULT_BENEFIT_ACTION, ProductBenefit } from './productBenefitActions';
-import { SessionBenefitFrequency } from './sessionBenefitFrequency';
+import { SessionBenefitFrequency, productSessionFrequency } from './sessionBenefitFrequency';
 
 /**
  * The quantity a mandatory item is added with when a Plan does not have it
@@ -142,8 +142,9 @@ export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
       product_status: item.status,
       product_mandatory: 1,
       // #918: no row exists, so no renewal Frequency was configured — the
-      // allowance is a one-time one until someone saves the section and sets one.
-      frequency: null,
+      // allowance is a one-time one until someone saves the section and sets one —
+      // unless the Product decides it (#3306), which is what a save would write.
+      frequency: item.type === 'sessions' ? productSessionFrequency(item.billing_frequency) : null,
       // #916: the same three price columns a stored row carries from its own
       // join, under the same names, so one pricing pass serves both kinds of
       // row and an implicit item cannot end up quoted differently.

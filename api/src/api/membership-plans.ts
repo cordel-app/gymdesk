@@ -66,6 +66,7 @@ import {
 } from '../domain/productBenefitActions';
 import {
   SessionBenefitFrequency,
+  effectiveSessionFrequency,
   parseSessionBenefitFrequencyInput,
   toSessionBenefitFrequency,
 } from '../domain/sessionBenefitFrequency';
@@ -1710,7 +1711,13 @@ async function loadPlanBenefits(
     const shaped = shapeProductBenefitRow('plan', row) as PlanProductBenefitRow;
     // #918: `b.*` brings the column along raw; normalize it so the wire shape is
     // a known frequency or `null`, exactly as the snapshot's reader does.
-    if ('frequency' in row) shaped.frequency = toSessionBenefitFrequency(row.frequency);
+    // #3306: and the Product's own Frequency wins where it decides one, so a row
+    // saved before the rule reads (and simulates) what the Product says.
+    if ('frequency' in row) {
+      shaped.frequency = effectiveSessionFrequency(
+        (row as { product_billing_frequency?: string | null }).product_billing_frequency, row.frequency,
+      );
+    }
     // #1184 stage 2: `b.*` carries mandatory as mysql2's 0/1; the wire is a boolean.
     shaped.mandatory = toPlanBenefitMandatory(row.mandatory);
     // #2490 stage 3: and the Direct Discount as a number or `null`, not a DECIMAL string.
@@ -1925,6 +1932,17 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         const keptDirect = new Map<number, number | null>(
           stored.map((r: any) => [Number(r.product_id), toLineDirectDiscount(r.direct_discount_percent)]),
         );
+        // #3306: the Products' own frequencies, for every line written (a mandatory
+        // item re-added by `withMandatoryBenefits()` included).
+        const productFrequency = new Map<number, string | null>();
+        if (isSessionSection && toWrite.length > 0) {
+          const ids = toWrite.map((i) => i.product_id);
+          const { rows: freqRows } = await tx.query(
+            `SELECT id, billing_frequency FROM products WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')})`,
+            [gymId, ...ids],
+          );
+          for (const r of freqRows as any[]) productFrequency.set(Number(r.id), r.billing_frequency ?? null);
+        }
         await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
         for (const item of toWrite) {
           const directPercent = item.direct_discount_percent !== undefined
@@ -1934,9 +1952,12 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
             ? item.mandatory
             : (keptMandatory.get(item.product_id) ?? DEFAULT_PLAN_BENEFIT_MANDATORY);
           const benefit = item.benefit ?? kept.get(item.product_id) ?? NO_PRODUCT_BENEFIT;
-          const frequency = item.frequency !== undefined
-            ? item.frequency
-            : (keptFrequency.get(item.product_id) ?? null);
+          // #3306: a Session Product that names a renewing period decides it, whatever
+          // the request sent or the line held; otherwise the Plan's own choice stands.
+          const frequency = effectiveSessionFrequency(
+            productFrequency.get(item.product_id),
+            item.frequency !== undefined ? item.frequency : (keptFrequency.get(item.product_id) ?? null),
+          );
           await tx.query(
             `INSERT INTO ${table}
                (gym_id, membership_plan_id, product_id, quantity, \`action\`, \`value\`,
