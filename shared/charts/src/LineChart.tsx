@@ -25,7 +25,7 @@ import { type ChartPoint, type ChartSeries, segmentPoints } from './series';
  */
 export function LineChart({
   points, series, height, ariaLabel, reference, area, zoom = true,
-  xAxisType, axisLabelFormatter, style, onPointClick, selectedX, legend,
+  xAxisType, axisLabelFormatter, style, onPointClick, selectedX, legend, xMarker, xMinInterval,
 }: {
   /** One series' points. Ignored when `series` is given. */
   points?: ChartPoint[];
@@ -42,17 +42,19 @@ export function LineChart({
   onPointClick?: (x: number) => void;
   selectedX?: number | null;
   legend?: LineChartInput['legend'];
+  xMarker?: LineChartInput['xMarker'];
+  xMinInterval?: number;
 }) {
   const resolved: ChartSeries[] = series ?? segmentPoints(points ?? []);
 
   const build = useCallback(
     (theme: ChartTheme) => lineChartOption(
-      { series: resolved, reference, area, zoom, xAxisType, axisLabelFormatter, selectedX, legend },
+      { series: resolved, reference, area, zoom, xAxisType, axisLabelFormatter, selectedX, legend, xMarker, xMinInterval },
       theme,
     ),
     // The series are rebuilt on every render by the caller's own memoisation, so
     // the option is keyed on their content rather than on their identity.
-    [JSON.stringify(resolved), reference?.value, reference?.label, area, zoom, xAxisType, axisLabelFormatter, selectedX, JSON.stringify(legend)],
+    [JSON.stringify(resolved), reference?.value, reference?.label, area, zoom, xAxisType, axisLabelFormatter, selectedX, JSON.stringify(legend), xMarker?.value, xMarker?.label, xMinInterval],
   );
 
   return <EChartCanvas build={build} height={height} ariaLabel={ariaLabel} style={style} onPointClick={onPointClick} />;

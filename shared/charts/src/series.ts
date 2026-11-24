@@ -53,6 +53,8 @@ export interface ChartSeries {
    * are the *previous* segment's real point rather than an interpolated one).
    */
   bridgeCount?: number;
+  /** #3311 — draws the line dashed, for a series that is a projection rather than a record. */
+  dashed?: boolean;
 }
 
 /**

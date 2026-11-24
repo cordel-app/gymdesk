@@ -1204,6 +1204,8 @@ The package owns ECharts (loaded by `loadECharts()`, **dynamically**, so it neve
 
 `api/src/test/charts-layer.unit.test.ts` is the gate (in the API suite, because CI runs `npm test` in `api/` only): no `echarts` import in either app, no quoted colour in a chart component, no `t()` inside the layer, and the workspace wired into both apps' `package.json`, `next.config.js` and `Dockerfile`. Adding a chart type is four steps, in `shared/charts/README.md`.
 
+**Payments History and Forecast (#3311)** is the Admin Member card's Payments-tab chart: `GET /payments/members/:memberId/timeline` (`api/src/api/payments-timeline.ts`, read-only, PAYMENTS module) reads the member's ledger and the Active Product Set's forecast (`productSetForecast()`, shared with the version's own simulation) and `domain/paymentsTimeline.ts` decides each point — `payment` (at its completed payment's day, else its billing date), `scheduled` (a persisted, unexecuted obligation) or `forecast` (an engine date no persisted schedule event already stands on). The Admin half is `members/paymentsTimelineView.ts` (series, month ticks, selection) and `PaymentsTimelineChart.tsx`; the layer's `xMarker` draws its Today line and a `dashed` series its forecast.
+
 ### Middleware (both apps)
 Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime).
 

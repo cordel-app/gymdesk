@@ -304,3 +304,28 @@ describe('the layer is the only charting implementation', () => {
     }
   });
 });
+
+describe('the Today marker and a dashed series (#3311)', () => {
+  it('draws a vertical marker at the given x, labelled by the page, beside the reference line', () => {
+    const o = lineChartOption({
+      series: [{ id: 'a', points: [{ x: 10, y: 5 }] }],
+      xMarker: { value: 15, label: 'Today' },
+      reference: { value: 3 },
+    }, THEME) as any;
+    expect(o.series[0].markLine.data).toEqual([{ xAxis: 15 }, { yAxis: 3 }]);
+    expect(o.series[0].markLine.label.formatter).toBe('Today');
+  });
+
+  it('draws a dashed series dashed and every other one solid', () => {
+    const o = lineChartOption({
+      series: [
+        { id: 'record', points: [{ x: 1, y: 1 }] },
+        { id: 'projection', dashed: true, points: [{ x: 2, y: 2 }] },
+      ],
+      xMinInterval: 1000,
+    }, THEME) as any;
+    expect(o.series[0].lineStyle.type).toBe('solid');
+    expect(o.series[1].lineStyle.type).toBe('dashed');
+    expect(o.xAxis.minInterval).toBe(1000);
+  });
+});
