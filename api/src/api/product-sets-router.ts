@@ -1,4 +1,5 @@
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { loadPendingInitialPayment } from './pending-initial-payment';
 import { centerAccessWarnings } from './plan-center-access';
 import { cartExpiresAtIso, setCartExpiredSql, setCartExpiresAtSql } from '../domain/cartExpiry';
 import { refreshSetCart } from './purchases';
@@ -690,7 +691,15 @@ async function reviewHandler(req: any, res: any, next: any) {
     let amountDue: number | null = null;
     let lines: any[] = [];
     let error: string | null = null;
-    try {
+    // #3307 stage 5 — a version awaiting payment states the Initial Payment Save & Pay persisted
+    // (its initial Billing Event and lines), never a re-price: its Summary keeps showing what the
+    // member is asked to pay.
+    const persisted = set.status === 'pending_payment'
+      ? await loadPendingInitialPayment(gymId, Number(set.id)) : null;
+    if (persisted) {
+      amountDue = persisted.amount;
+      lines = persisted.lines;
+    } else try {
       const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
       if (blocking.length > 0) {
         error = 'edit_locked';

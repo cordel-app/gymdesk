@@ -2,7 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import { lineFromSimulation, lineReasons } from '../domain/billingEventLines';
 import { chargeLineView, initialPaymentBreakdown } from '../domain/checkoutSummary';
-import type { SimulationBenefit, SimulationLine } from '../domain/billingSimulation';
+import { BENEFIT_DURATION_UNITS, type SimulationBenefit, type SimulationLine } from '../domain/billingSimulation';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const b = (over: Partial<SimulationBenefit>): SimulationBenefit =>
   ({ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: null, ...over });
@@ -55,5 +57,32 @@ describe('lineReasons (#3284)', () => {
         { reason_type: 'bogus', source: 'personal', action: 'x' }],
     });
     expect(view.reasons).toEqual([{ type: 'manual_adjustment', source: 'personal', code: 'direct_discount', action: 'percentage_discount', value: 10, name: null }]);
+  });
+
+  it('#3282 — a Promotion reason carries its duration; no other reason does', () => {
+    const reasons = lineReasons([
+      b({ source: 'promotion', name: 'Half', action: 'percentage_discount', value: 50, duration: { count: 3, unit: 'month' } }),
+      b({ action: 'percentage_discount', value: 20, duration: { count: 2, unit: 'month' } }),
+    ]);
+    expect(reasons[0].duration).toEqual({ count: 3, unit: 'month' });
+    expect(reasons[1]).not.toHaveProperty('duration');
+  });
+
+  it('#3282 — a stored reason reads its duration columns, and an invalid one reads as none', () => {
+    const view = chargeLineView({
+      item_name: 'X', quantity: 1, amount: 1,
+      reasons: [
+        { reason_type: 'discount', source: 'promotion', action: 'percentage_discount', value: '50.00', name: 'Half', duration_count: 3, duration_unit: 'month' },
+        { reason_type: 'discount', source: 'promotion', action: 'waive', value: null, name: 'Old', duration_count: null, duration_unit: null },
+        { reason_type: 'discount', source: 'promotion', action: 'waive', value: null, name: 'Bad', duration_count: 2, duration_unit: 'once' },
+      ],
+    });
+    expect(view.reasons?.map((r) => r.duration ?? null)).toEqual([{ count: 3, unit: 'month' }, null, null]);
+  });
+
+  it('#3282 — chk_belr_duration admits exactly BENEFIT_DURATION_UNITS', () => {
+    const sql = readFileSync(join(__dirname, '../infra/migrations/488_billing_event_line_reason_duration.js'), 'utf8');
+    const listed = [...sql.match(/duration_unit IN \(([^)]*)\)/)![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    expect(listed).toEqual([...BENEFIT_DURATION_UNITS]);
   });
 });

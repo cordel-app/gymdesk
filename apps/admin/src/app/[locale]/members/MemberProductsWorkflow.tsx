@@ -18,9 +18,17 @@ import { cancelRequestFor, cartCancelContents, cartCancelIntroKey, pendingCancel
 
 /** The Draft's review (`changes` + `amount_due`), re-read whenever the configuration was. */
 export function useDraftReview(current: ProductSetSummary | null, reloadKey: unknown): ReviewSummary | null {
+  return useSetReview(current?.status === 'in_cart' && !current.expired ? current.id : null, reloadKey);
+}
+
+/**
+ * #3307 stage 5 — the review of one in-flight version by id (`null` reads nothing). A version
+ * awaiting payment is read the same way, so its Summary keeps the In Cart detail; the server states
+ * its Initial Payment from the persisted initial Billing Event.
+ */
+export function useSetReview(id: number | null, reloadKey: unknown): ReviewSummary | null {
   const { apiFetch } = useApiClient();
   const [review, setReview] = useState<ReviewSummary | null>(null);
-  const id = current?.status === 'in_cart' && !current.expired ? current.id : null;
   useEffect(() => {
     if (id == null) { setReview(null); return; }
     let cancelled = false;

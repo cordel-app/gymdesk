@@ -57,4 +57,27 @@ describe('LineReasonText (#3284)', () => {
     const html = renderToStaticMarkup(createElement(LineReasonText, { entry: entries[0], translate: (k: string) => en.members[k as keyof typeof en.members] as string }));
     expect(html).toBe('waived');
   });
+
+  it('#3282 — a Promotion with a duration reads it beside its name, in every language', () => {
+    const withDuration = {
+      ...line,
+      reasons: [
+        { type: 'discount', source: 'promotion', code: null, action: 'percentage_discount', value: 50, name: 'Todos los productos al 50%', duration: { count: 3, unit: 'month' } },
+        { type: 'discount', source: 'promotion', code: null, action: 'waive', value: null, name: 'Uno', duration: { count: 1, unit: 'month' } },
+        { type: 'discount', source: 'promotion', code: null, action: 'waive', value: null, name: 'Grid', duration: { count: 2, unit: 'four_weeks' } },
+      ],
+    } as any;
+    const out = (messages: any, locale: string) => {
+      const translate = (key: string, values?: Record<string, string | number>) =>
+        String(new IntlMessageFormat(messages.members[key], locale).format(values));
+      return discountEntries(withDuration).map((entry) => renderToStaticMarkup(createElement(LineReasonText, { entry, translate })));
+    };
+    expect(out(en, 'en')).toEqual([
+      '<strong>Promotion</strong> Todos los productos al 50% (3 months)',
+      '<strong>Promotion</strong> Uno (1 month)',
+      '<strong>Promotion</strong> Grid (2 × 4 weeks)',
+    ]);
+    expect(out(es, 'es')[0]).toBe('<strong>Promoción</strong> Todos los productos al 50% (3 meses)');
+    expect(out(ca, 'ca')[0]).toBe('<strong>Promoció</strong> Todos los productos al 50% (3 mesos)');
+  });
 });

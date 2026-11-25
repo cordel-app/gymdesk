@@ -11,6 +11,10 @@
 // #3307 stage 4 — a version awaiting payment offers no payment action here (the
 // payment link and cash payment were removed by the owner's request): its row shows
 // the 24-hour expiry by the server's clock and opens the purchase's detail.
+//
+// #3307 stage 5 — and it keeps the In Cart Summary's detail (Initial Payment and Contracted
+// Products & Plans, from the same review read), with only the status changed and no Waive /
+// Revert waive: a version awaiting payment is not edited.
 
 import React, { useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
@@ -22,6 +26,7 @@ import { CheckoutSummaryPanel } from './CheckoutSummarySections';
 import { PurchaseHeading, type CartExpiry } from './PurchaseHeading';
 import { CartExpiryIndicator } from './CartExpiryIndicator';
 import { SummaryPurchaseDetail, SummaryPurchaseDetailToggle } from './SummaryPurchaseDetail';
+import { useSetReview } from './MemberProductsWorkflow';
 
 interface Props {
   /** #3307 stage 4 — whose purchases the awaiting-payment row's detail reads. */
@@ -115,6 +120,7 @@ export function ProductSetsInFlight({ memberId, productSets, canWrite, review = 
             {ps.status === 'in_cart' && review && (
               <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} waive={waiveControl(ps.id)} />
             )}
+            {ps.status === 'pending_payment' && !ps.expired && <PendingSetSummary setId={ps.id} reloadKey={ps} />}
           </div>
           {ps.status === 'pending_payment' && ps.purchase && (
             <SummaryPurchaseDetailToggle
@@ -133,6 +139,13 @@ export function ProductSetsInFlight({ memberId, productSets, canWrite, review = 
       {error && <p style={{ ...formErrorStyle, margin: '6px 0 0' }}>{error}</p>}
     </div>
   );
+}
+
+/** #3307 stage 5 — the Summary of a version awaiting payment: the In Cart panel, read-only. */
+function PendingSetSummary({ setId, reloadKey }: { setId: number; reloadKey: unknown }) {
+  const review = useSetReview(setId, reloadKey);
+  if (!review) return null;
+  return <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} waive={null} />;
 }
 
 /** #3284 stage 2 — the waive refusals the screen words itself (one map, `productsWorkflowView.ts`); anything else is the server's message. */
