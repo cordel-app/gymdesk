@@ -867,12 +867,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
     if (!ids.includes(id)) ids.push(id);
   }
   try {
-    const marks = ids.map(() => '?').join(',');
-    const { rows: baseRows } = await db.query(
-      `${selectForReq(req)} WHERE e.id IN (${marks}) AND e.gym_id IS NULL AND e.status = 'active'`,
-      ids,
-    );
-    const base = new Map<number, any>(baseRows.map((row: any) => [Number(row.id), row]));
+    const base = await loadImportableBaseExercises(db, ids, getRequestLocale(req));
     const invalidIds = ids.filter((id) => !base.has(id));
     if (invalidIds.length > 0) {
       return res.status(400).json({
@@ -890,15 +885,8 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         const src = base.get(id);
         // `ORDER BY id` so the copy refreshed here is the one MEDIA_REFRESHABLE
         // reported on, for a gym that holds both a provenance and a name match.
-        const { rows: existing } = await tx.query<ExerciseMediaRefs & { id: number; name: string }>(
-          `SELECT id, name, image_male_url, image_female_url, video_male_url, video_female_url
-             FROM exercises
-            WHERE gym_id = ? AND status != 'deleted' AND (COALESCE(base_exercise_id, cloned_from_id) = ? OR name = ?)
-            ORDER BY id ASC LIMIT 1`,
-          [gymId, id, src.name],
-        );
-        if (existing.length > 0) {
-          const copy = existing[0];
+        const copy = await findGymExerciseForBase(tx, gymId, id, src.name);
+        if (copy) {
           // #719 §12: re-import restores the Base Exercise's current media
           // references onto the copy the gym already has. Media only, and only
           // the pairs the Base Exercise actually has.
@@ -933,38 +921,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
           });
           continue;
         }
-        // #2951 §6: the imported copy keeps the Base Exercise's slug.
-        const slug = await allocateGymExerciseSlug(gymId, { name: src.name, carried: src.slug }, tx);
-        const { insertId } = await tx.query(
-          `INSERT INTO exercises
-            (gym_id, name, slug, description,
-           image_male_url, image_female_url, video_male_url, video_female_url,
-             min_reps_default, max_reps_default, rest_default_seconds, sets_default,
-             status, created_by, cloned_from_id, base_exercise_id, category, equipment)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?, ?)`,
-          // #719 §2: references only — the System objects stay where they are.
-          [gymId, src.name, slug, src.description,
-         src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
-           src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
-           actor, id, src.category ?? null, src.equipment ?? null],
-        );
-        const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
-        await replaceMuscles(tx, gymId, insertId, muscles);
-        // #1360: the copy's Recorded Metrics follow the category it carries; a
-        // Base Exercise with no supported category keeps its stored rows.
-        const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
-        if (resultTypeSlugsForCategory(src.category)) await syncExerciseResultTypes(tx, insertId, src.category);
-        else for (const rt of rts) {
-          await tx.query('INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)', [insertId, rt.id]);
-        }
-        // #967 §4: the import preserves the Base Exercise's per-locale names, so
-        // the gym's copy reads in the member's own language from the first day.
-        // Only on the **create** arm: a re-import refreshes media (#719 §12) and
-        // deliberately not translations — the gym may have corrected one, and
-        // overwriting that is what §4's "do not overwrite an existing
-        // translation" forbids.
-        await copyExerciseTranslations(tx, id, insertId, BASE_EXERCISE_TABLES);
-      await copyExerciseDescriptionTranslations(tx, id, insertId, BASE_EXERCISE_TABLES);
+        const insertId = await insertGymExerciseFromBase(tx, gymId, src, actor);
         insertedIds.push(insertId);
       }
       return { insertedIds, refreshed, skipped };
@@ -1017,6 +974,86 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
     });
   } catch (err) { next(err); }
 });
+
+/**
+ * #3337: the importable Base Exercises among `ids`, read as the Import modal
+ * reads them (the catalogue view, the caller's locale), keyed by id. Shared by
+ * POST /exercises/import and the cascading Training Plan Template import.
+ */
+export async function loadImportableBaseExercises(
+  exec: Pick<Tx, 'query'>, ids: number[], locale: Parameters<typeof localizedExerciseNameExpr>[1],
+): Promise<Map<number, any>> {
+  if (ids.length === 0) return new Map();
+  const marks = ids.map(() => '?').join(',');
+  const { rows } = await exec.query(
+    `${selectFor(locale)} WHERE e.id IN (${marks}) AND e.gym_id IS NULL AND e.status = 'active'`,
+    ids,
+  );
+  return new Map<number, any>(rows.map((row: any) => [Number(row.id), row]));
+}
+
+/**
+ * #3337: the gym's own copy of a Base Exercise — by provenance, else by name —
+ * the one "already imported" rule POST /exercises/import and the cascade share.
+ * `ORDER BY id` so the copy refreshed by a re-import is the one
+ * MEDIA_REFRESHABLE reported on, for a gym that holds both a provenance and a
+ * name match.
+ */
+export async function findGymExerciseForBase(
+  exec: Pick<Tx, 'query'>, gymId: string, baseId: number, name: string,
+): Promise<(ExerciseMediaRefs & { id: number; name: string }) | null> {
+  const { rows } = await exec.query<ExerciseMediaRefs & { id: number; name: string }>(
+    `SELECT id, name, image_male_url, image_female_url, video_male_url, video_female_url
+       FROM exercises
+      WHERE gym_id = ? AND status != 'deleted' AND (COALESCE(base_exercise_id, cloned_from_id) = ? OR name = ?)
+      ORDER BY id ASC LIMIT 1`,
+    [gymId, baseId, name],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * #3337: the create arm of the import — a gym copy of one Base Exercise (`src`
+ * as `loadImportableBaseExercises()` reads it) with its muscles, Recorded
+ * Metrics and translations. The one writer POST /exercises/import and the
+ * cascading Training Plan Template import share.
+ */
+export async function insertGymExerciseFromBase(tx: Tx, gymId: string, src: any, actor: string | null): Promise<number> {
+  const baseId = Number(src.id);
+  // #2951 §6: the imported copy keeps the Base Exercise's slug.
+  const slug = await allocateGymExerciseSlug(gymId, { name: src.name, carried: src.slug }, tx);
+  const { insertId } = await tx.query(
+    `INSERT INTO exercises
+      (gym_id, name, slug, description,
+     image_male_url, image_female_url, video_male_url, video_female_url,
+       min_reps_default, max_reps_default, rest_default_seconds, sets_default,
+       status, created_by, cloned_from_id, base_exercise_id, category, equipment)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, (SELECT id FROM base_exercises WHERE id = ?), ?, ?)`,
+    // #719 §2: references only — the System objects stay where they are.
+    [gymId, src.name, slug, src.description,
+   src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
+     src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
+     actor, baseId, src.category ?? null, src.equipment ?? null],
+  );
+  const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
+  await replaceMuscles(tx, gymId, insertId, muscles);
+  // #1360: the copy's Recorded Metrics follow the category it carries; a
+  // Base Exercise with no supported category keeps its stored rows.
+  const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
+  if (resultTypeSlugsForCategory(src.category)) await syncExerciseResultTypes(tx, insertId, src.category);
+  else for (const rt of rts) {
+    await tx.query('INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)', [insertId, rt.id]);
+  }
+  // #967 §4: the import preserves the Base Exercise's per-locale names, so
+  // the gym's copy reads in the member's own language from the first day.
+  // Only on the **create** arm: a re-import refreshes media (#719 §12) and
+  // deliberately not translations — the gym may have corrected one, and
+  // overwriting that is what §4's "do not overwrite an existing
+  // translation" forbids.
+  await copyExerciseTranslations(tx, baseId, insertId, BASE_EXERCISE_TABLES);
+  await copyExerciseDescriptionTranslations(tx, baseId, insertId, BASE_EXERCISE_TABLES);
+  return Number(insertId);
+}
 
 /* ── Media helpers shared by re-import and the gender-specific routes (#1420) ── */
 //
