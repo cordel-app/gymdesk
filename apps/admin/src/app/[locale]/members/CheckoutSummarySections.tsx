@@ -2,9 +2,10 @@
 
 // #2860 — the Product Set Summary shown before Save & Pay, as two sections:
 //
-//   - Initial Payment: the commit charge line by line (quantity, the price of
-//     one unit, the line total before discounts, the discount and what it is,
-//     tax rate, tax, final amount — #2890) with the subtotal, the discounts, the tax
+//   - Initial Payment: the commit charge line by line (source, quantity, the
+//     cart's final price with only the proration applied, the base price before
+//     discounts, what the benefit or discount is, VAT rate, VAT amount and the
+//     amount, 0 when waived — #3282 stage 3) with the subtotal, the discounts, the tax
 //     breakdown by rate and the total. Every figure is the server's
 //     (`initial_payment` on `GET /product-sets/:id/review`, which restates
 //     `commitCharge()`): nothing here adds anything up.
@@ -101,8 +102,8 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
             <th style={th}>{t('checkout_col_item')}</th>
             <th style={th}>{tLine('col_line_source')}</th>
             <th style={thNum}>{t('checkout_col_quantity')}</th>
-            <th style={thNum}>{t('checkout_col_unit_price')}</th>
-            <th style={thNum}>{t('checkout_col_line_total')}</th>
+            <th style={thNum}>{t('checkout_col_price')}</th>
+            <th style={thNum}>{t('checkout_col_base_price')}</th>
             <th style={th}>{t('checkout_col_discount')}</th>
             <th style={thNum}>{t('checkout_col_tax_rate')}</th>
             <th style={thNum}>{t('checkout_col_tax')}</th>
@@ -154,9 +155,9 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                   {(() => { const key = lineSourceLabelKey(l.source); return key ? tLine(key) : '—'; })()}
                 </td>
                 <td style={tdNum}>{l.quantity}</td>
-                <td style={tdNum} data-charged-unit-price>
-                  {/* #3381 — what one unit is charged, after discounts and the proration (the server's). */}
-                  {money(l.charged_unit_price ?? l.unit_price)}
+                <td style={tdNum} data-line-price>
+                  {/* #3282 stage 3 — the cart's final price of the line, with only the proration applied (the server's). */}
+                  {money(l.price ?? l.amount)}
                   {l.charged_unit_breakdown && (
                     <span data-charged-unit-breakdown style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
                       {t('checkout_unit_price_breakdown', {
@@ -168,9 +169,10 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                     </span>
                   )}
                 </td>
-                <td style={tdNum} data-line-total>{money(l.line_total)}</td>
+                <td style={tdNum} data-line-base-price>{money(l.base_price ?? l.line_total)}</td>
                 <td style={td}>
-                  {l.discount > 0 ? `−${money(l.discount)}` : (entries.length === 0 ? '—' : null)}
+                  {/* #3282 stage 3 — explanatory text only; the column states no amount of its own. */}
+                  {entries.length === 0 ? '—' : null}
                   {/* #3284 — every treatment: a bold label (Benefit / Promotion / Manual adjustment / Initial payment) and its detail. */}
                   {entries.map((e, k) => (
                     <span key={k} data-line-reason={e.typeKey ?? ''} style={{ ...cardHintStyle, margin: 0, display: 'block' }}>

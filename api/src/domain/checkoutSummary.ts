@@ -49,6 +49,8 @@ export interface ChargeLineLike {
   waivable?: boolean;
   /** #3284 stage 3 — why Waive is disabled on this line; `null` when it is not. */
   waive_refusal?: WaiveRefusalCode | null;
+  /** #3282 stage 3 — a waived line's In Cart final price before the waiver; absent where unknown. */
+  price_before_waive?: number | null;
 }
 
 /** #3284 stage 3 — the codes a disabled Waive states (`domain/initialPaymentWaiver.ts`). */
@@ -108,6 +110,7 @@ export function chargeLineView(l: any): ChargeLineLike {
     waived: l.waived === true,
     waivable: l.waivable === true,
     waive_refusal: waiveRefusalOf(l.waive_refusal),
+    price_before_waive: l.price_before_waive != null ? Number(l.price_before_waive) : null,
   };
 }
 
@@ -155,6 +158,18 @@ export interface InitialPaymentLine {
   /** The line total minus the charge; 0 when nothing was taken off. */
   discount: number;
   /**
+   * #3282 stage 3 — **Base Price (incl. VAT)**: quantity × the Product's base price, prorated, before
+   * any discount (the same figure as `line_total`).
+   */
+  base_price: number;
+  /**
+   * #3282 stage 3 — **Price (incl. VAT)**: the cart's own final price of the line (the engine's
+   * charge, every Promotion, Direct Discount and benefit already in it), with only the Initial
+   * Payment proration applied. Nothing re-prices it here. A staff waiver does not change it: a
+   * waived line keeps the price the waiver took to zero, and only `amount` and `tax_amount` are 0.
+   */
+  price: number;
+  /**
    * #3381 — what one unit is actually charged, VAT included: the line's final `amount` over its
    * quantity, so it carries every discount, benefit, adjustment and the proration exactly once.
    */
@@ -170,8 +185,9 @@ export interface InitialPaymentLine {
   treatment_action: string | null;
   treatment_value: number | null;
   tax_rate_percent: number | null;
+  /** The VAT included in `price`; 0 on a waived line, whose amount is 0. */
   tax_amount: number;
-  /** The line's final amount, VAT included. */
+  /** The line's final amount, VAT included: `price`, or 0 on a waived line. */
   amount: number;
   /**
    * #2883 — on the Membership Fee line that collects a Pre-paid Duration up front: how many billing
@@ -220,9 +236,11 @@ export interface InitialPaymentTaxRow {
 
 export interface InitialPayment {
   lines: InitialPaymentLine[];
-  /** #2890 — the lines' totals before discounts, VAT included; minus `discount_total` it is the charge. */
+  /** #2890 / #3282 stage 3 — SUM(base_price), VAT included. */
   total_before_discounts: number;
+  /** #3282 stage 3 — SUM(amount − tax_amount). */
   subtotal_excl_tax: number;
+  /** #3282 stage 3 — SUM(base_price) − SUM(price); a staff waiver is not a discount. */
   discount_total: number;
   taxes: InitialPaymentTaxRow[];
   tax_total: number;
@@ -280,12 +298,15 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     const amount = round2(Number(l.amount));
     const net = l.amount_excl_tax != null ? round2(Number(l.amount_excl_tax)) : amount;
     const tax = round2(amount - net);
+    // #3282 stage 3 — the cart's price before a staff waiver; a line read with no such figure (a
+    // persisted waived line awaiting payment) states its amount.
+    const price = l.waived === true && l.price_before_waive != null ? round2(Number(l.price_before_waive)) : amount;
     const { unit } = regularLinePrices(l.regular_unit_price, quantity, amount);
     const regular = lineRegularTotal(l);
     const lineTotal = regular != null ? regular : amount;
     const discount = Math.max(0, round2(lineTotal - amount));
     const proration = lineProration(l);
-    const charged = chargedUnitPrice(amount, quantity, proration);
+    const charged = chargedUnitPrice(price, quantity, proration);
     const rate = l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null;
     const key = rate == null ? '' : String(rate);
     const row = taxes.get(key) ?? { rate_percent: rate, base: 0, tax: 0 };
@@ -294,6 +315,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     taxes.set(key, row);
     return {
       name: l.item_name, quantity, unit_price: unit, line_total: lineTotal, discount,
+      base_price: lineTotal, price,
       charged_unit_price: charged.unit, charged_unit_breakdown: charged.breakdown,
       promotion_name: l.promotion_name, treatment_action: l.treatment_action, treatment_value: l.treatment_value,
       tax_rate_percent: rate, tax_amount: tax, amount,
@@ -316,7 +338,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     lines: out,
     total_before_discounts: round2(out.reduce((n, l) => n + l.line_total, 0)),
     subtotal_excl_tax: round2(out.reduce((n, l) => n + (l.amount - l.tax_amount), 0)),
-    discount_total: round2(out.reduce((n, l) => n + l.discount, 0)),
+    discount_total: round2(out.reduce((n, l) => n + l.base_price, 0) - out.reduce((n, l) => n + l.price, 0)),
     taxes: taxRows,
     tax_total: round2(out.reduce((n, l) => n + l.tax_amount, 0)),
     total: amountDue,

@@ -126,6 +126,7 @@ export function applyInitialPaymentWaivers(
     }
     return {
       ...l,
+      price_before_waive: Number(l.amount),
       amount: 0,
       amount_excl_tax: l.amount_excl_tax != null ? 0 : null,
       reasons: [...(l.reasons ?? []), INITIAL_PAYMENT_WAIVE_REASON],
