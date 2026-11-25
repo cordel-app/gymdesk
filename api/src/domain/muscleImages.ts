@@ -4,8 +4,12 @@
 // A muscle is a global catalogue row (`muscles`, no `gym_id`) administered from
 // Cordel, so its images go in the platform's own folder. Since #1412 a muscle has
 // one image per sex, each a 1080x1080 WebP master plus a 256x256 WebP thumbnail:
-// `cordel/muscles/images/<muscle name>-<male|female>[-thumbnail].webp`. Upload,
-// replacement and removal act on one sex at a time.
+// `cordel/muscles/images/<muscle slug>-<male|female>[-thumbnail].webp`. Upload,
+// replacement and removal act on one sex at a time. Since #3350 stage 4 the key
+// names the muscle's persisted `slug` (the snake_case link key, never rewritten),
+// never its display or translated name, so a rename moves no object; an image
+// stored before under `<muscle name>-…` keeps rendering from its stored URL and
+// is swept the next time that sex's image is replaced or removed.
 //
 // The server makes both files from the one picture a client sends
 // (`muscleImageProcessing.ts`, the Member photo's rule since #1449): the browser
@@ -25,9 +29,12 @@ export const PLATFORM_MUSCLE_IMAGES_PREFIX = `${PLATFORM_STORAGE_ROOT}/${MUSCLES
 
 const MAX_KEY_NAME_CHARS = 80;
 
-/** A muscle name as it appears in an object key (`Middle Back` → `Middle-Back`). */
-export function sanitizeMuscleImageName(name: string): string {
-  return sanitizeStorageObjectName(name, 'muscle').slice(0, MAX_KEY_NAME_CHARS).replace(/-$/, '');
+/**
+ * A muscle slug as it appears in an object key (`middle_back` stays
+ * `middle_back`); anything a key cannot carry is still sanitised.
+ */
+export function sanitizeMuscleImageSlug(slug: string): string {
+  return sanitizeStorageObjectName(slug, 'muscle').slice(0, MAX_KEY_NAME_CHARS).replace(/-$/, '');
 }
 
 export const MUSCLE_SEXES = ['male', 'female'] as const;
@@ -49,14 +56,14 @@ export const MUSCLE_IMAGE_THUMBNAIL_SIZE = 256;
 export const MUSCLE_IMAGE_MASTER_MAX_BYTES = 8 * 1024 * 1024;
 export const MUSCLE_IMAGE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 
-/** `cordel/muscles/images/<muscle name>-<sex>.webp` — the 1080x1080 master. */
-export function buildMuscleImageKey(name: string, sex: MuscleSex): string {
-  return `${PLATFORM_MUSCLE_IMAGES_PREFIX}/${sanitizeMuscleImageName(name)}-${sex}.webp`;
+/** `cordel/muscles/images/<muscle slug>-<sex>.webp` — the 1080x1080 master. */
+export function buildMuscleImageKey(slug: string, sex: MuscleSex): string {
+  return `${PLATFORM_MUSCLE_IMAGES_PREFIX}/${sanitizeMuscleImageSlug(slug)}-${sex}.webp`;
 }
 
 /** The same key with `-thumbnail` before the extension — the 256x256 companion. */
-export function buildMuscleImageThumbnailKey(name: string, sex: MuscleSex): string {
-  return `${PLATFORM_MUSCLE_IMAGES_PREFIX}/${sanitizeMuscleImageName(name)}-${sex}-thumbnail.webp`;
+export function buildMuscleImageThumbnailKey(slug: string, sex: MuscleSex): string {
+  return `${PLATFORM_MUSCLE_IMAGES_PREFIX}/${sanitizeMuscleImageSlug(slug)}-${sex}-thumbnail.webp`;
 }
 
 const DEFAULT_MAX_MB = 10;

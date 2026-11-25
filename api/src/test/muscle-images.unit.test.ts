@@ -8,7 +8,7 @@ import {
   buildMuscleImageThumbnailKey,
   isPlatformOwnedMuscleImageUrl,
   muscleImageFolderKeys,
-  sanitizeMuscleImageName,
+  sanitizeMuscleImageSlug,
   parseMuscleSex,
   muscleImageMaxBytes,
   muscleImageUploadRateLimitMax,
@@ -19,14 +19,14 @@ import { readWebpMetadata } from '../domain/webpImage';
 import { slugFromMuscleName } from '../api/platform-muscles';
 
 describe('muscle image keys (#1368 stage 3)', () => {
-  it('builds the cordel/muscles/images keys from the name', () => {
+  it('builds the cordel/muscles/images keys from the slug (#3350 stage 4)', () => {
     expect(PLATFORM_MUSCLE_IMAGES_PREFIX).toBe('cordel/muscles/images');
-    expect(buildMuscleImageKey('Middle Back', 'male')).toBe('cordel/muscles/images/Middle-Back-male.webp');
-    expect(buildMuscleImageThumbnailKey('Middle Back', 'female')).toBe('cordel/muscles/images/Middle-Back-female-thumbnail.webp');
+    expect(buildMuscleImageKey('middle_back', 'male')).toBe('cordel/muscles/images/middle_back-male.webp');
+    expect(buildMuscleImageThumbnailKey('middle_back', 'female')).toBe('cordel/muscles/images/middle_back-female-thumbnail.webp');
   });
 
-  it('falls back for a name with nothing usable', () => {
-    expect(sanitizeMuscleImageName('///')).toBe('muscle');
+  it('falls back for a slug with nothing usable', () => {
+    expect(sanitizeMuscleImageSlug('///')).toBe('muscle');
   });
 
   it('lists the folder markers outermost first', () => {
