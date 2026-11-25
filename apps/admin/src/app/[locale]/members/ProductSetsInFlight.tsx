@@ -14,7 +14,7 @@ import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
-import { inFlightSetTitle, type ReviewSummary } from './productsWorkflowView';
+import { WAIVE_REFUSAL_KEYS, inFlightSetTitle, type ReviewSummary } from './productsWorkflowView';
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
 import { PurchaseHeading } from './PurchaseHeading';
 
@@ -150,12 +150,8 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
   );
 }
 
-/** #3284 stage 2 — the waive refusals the screen words itself; anything else is the server's message. */
-const WAIVE_ERROR_KEYS: Record<string, string> = {
-  prepaid_fee: 'checkout_waive_error_prepaid',
-  would_leave_nothing_to_pay: 'checkout_waive_error_nothing_left',
-  nothing_to_waive: 'checkout_waive_unavailable',
-};
+/** #3284 stage 2 — the waive refusals the screen words itself (one map, `productsWorkflowView.ts`); anything else is the server's message. */
+const WAIVE_ERROR_KEYS = WAIVE_REFUSAL_KEYS;
 
 const row: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', margin: '6px 0',

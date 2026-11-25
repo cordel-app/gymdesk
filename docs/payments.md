@@ -149,6 +149,11 @@ than guessed: a Membership Fee that collects a Pre-paid Duration (`prepaid_fee`:
 periods would stay prepaid yet unpaid), and one that would take the whole Initial Payment to zero
 (`would_leave_nothing_to_pay`: a zero charge writes no initial Billing Event, so the first period
 would be charged as an obligation). A stored waiver whose line no longer exists applies to nothing.
+Since stage 3 a prorated Membership Fee with no Pre-paid Duration may be waived (its `fee_split`
+carries a prorated stretch only, so `prepaid_fee` applies only when `fee_split.prepaid` or
+`prepaid_periods` is set), and each line whose Waive is disabled carries `waive_refusal`
+(`nothing_to_waive` · `prepaid_fee` · `would_leave_nothing_to_pay`), which the Admin words beside
+the disabled button.
 
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
 current plan exactly as it was, and the pending row is discarded through `POST /:id/close`,

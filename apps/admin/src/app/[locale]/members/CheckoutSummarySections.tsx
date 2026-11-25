@@ -179,11 +179,17 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                         data-line-action={action.kind}
                         style={secondaryBtnSmall}
                         disabled={!action.enabled || waive.busyKey != null}
-                        title={!action.enabled ? t('checkout_waive_unavailable') : undefined}
+                        title={action.disabledReasonKey ? t(action.disabledReasonKey as any) : undefined}
                         onClick={() => waive.onAction(action.kind, action.lineKey)}
                       >
                         {t(action.kind === 'waive' ? 'checkout_action_waive' : 'checkout_action_revert_waive')}
                       </button>
+                    )}
+                    {action?.disabledReasonKey && (
+                      // #3284 stage 3 — the reason a Waive is disabled, visible rather than only a tooltip.
+                      <span data-waive-refusal style={{ ...cardHintStyle, margin: '4px 0 0', display: 'block', textAlign: 'left', maxWidth: 220 }}>
+                        {t(action.disabledReasonKey as any)}
+                      </span>
                     )}
                   </td>
                 )}
