@@ -1025,6 +1025,16 @@
     "purchases_payment_method": "Método de pago",
     "purchases_payment_status": "Estado del pago",
     "purchases_payment_date": "Fecha de pago",
+    "purchases_col_purchase": "Compra",
+    "purchases_col_created_by": "Creado por",
+    "purchases_col_created_at": "Creado el",
+    "purchases_col_modified_at": "Modificado el",
+    "purchases_col_total": "Importe total",
+    "purchases_col_status": "Estado",
+    "purchases_actions_for": "Acciones de {purchase}",
+    "purchases_details_id": "ID de la compra",
+    "purchases_details_owner": "Titular",
+    "purchases_details_modified_by": "Modificado por",
     "timeline_status_expired_24h": "Caducado (24 h)"
   },
   "member_payments": {
