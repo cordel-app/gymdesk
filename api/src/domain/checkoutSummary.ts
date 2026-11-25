@@ -144,6 +144,17 @@ export interface InitialPaymentLine {
   line_total: number;
   /** The line total minus the charge; 0 when nothing was taken off. */
   discount: number;
+  /**
+   * #3381 — what one unit is actually charged, VAT included: the line's final `amount` over its
+   * quantity, so it carries every discount, benefit, adjustment and the proration exactly once.
+   */
+  charged_unit_price: number;
+  /**
+   * #3381 — how a prorated line's charge is made up: `quantity × unit_price × days/period_days`,
+   * where `unit_price` is one unit's full-period price after discounts and benefits. Derived from
+   * the engine's `amount` and proration, never re-priced; `null` on a line that was not prorated.
+   */
+  charged_unit_breakdown: { quantity: number; unit_price: number; days: number; period_days: number } | null;
   /** What the discount is: the Promotion's name, else the line's own treatment. */
   promotion_name: string | null;
   treatment_action: string | null;
@@ -227,6 +238,27 @@ export function regularLinePrices(regularLinePrice: number | null, quantity: num
 }
 
 /**
+ * #3381 — a line's charge per unit and, for a prorated line, the full-period unit price after
+ * discounts it was prorated from. Both are read back from the engine's own `amount` (which already
+ * applied quantity, every treatment and the proration once), so nothing is priced or prorated here.
+ */
+export function chargedUnitPrice(
+  amount: number, quantity: number, proration: { days: number; period_days: number } | null,
+): { unit: number; breakdown: InitialPaymentLine['charged_unit_breakdown'] } {
+  const perUnit = quantity > 0 ? amount / quantity : amount;
+  if (!proration) return { unit: round2(perUnit), breakdown: null };
+  return {
+    unit: round2(perUnit),
+    breakdown: {
+      quantity,
+      unit_price: round2(perUnit * proration.period_days / proration.days),
+      days: proration.days,
+      period_days: proration.period_days,
+    },
+  };
+}
+
+/**
  * The Initial Payment breakdown of a commit charge. `total` is `amountDue`
  * itself — the engine's lines already sum to it (`billingEventLines.ts`), so the
  * screen's total and the charge cannot disagree.
@@ -242,6 +274,8 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     const regular = lineRegularTotal(l);
     const lineTotal = regular != null ? regular : amount;
     const discount = Math.max(0, round2(lineTotal - amount));
+    const proration = lineProration(l);
+    const charged = chargedUnitPrice(amount, quantity, proration);
     const rate = l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null;
     const key = rate == null ? '' : String(rate);
     const row = taxes.get(key) ?? { rate_percent: rate, base: 0, tax: 0 };
@@ -250,12 +284,13 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     taxes.set(key, row);
     return {
       name: l.item_name, quantity, unit_price: unit, line_total: lineTotal, discount,
+      charged_unit_price: charged.unit, charged_unit_breakdown: charged.breakdown,
       promotion_name: l.promotion_name, treatment_action: l.treatment_action, treatment_value: l.treatment_value,
       tax_rate_percent: rate, tax_amount: tax, amount,
       prepaid_periods: l.prepaid_periods != null && l.prepaid_periods > 0 ? Number(l.prepaid_periods) : null,
       prepaid_cadence: l.prepaid_periods != null && l.prepaid_periods > 0 ? l.prepaid_cadence ?? null : null,
       fee_split: l.fee_split ?? null,
-      proration: lineProration(l),
+      proration,
       source: l.source ?? null,
       reasons: l.reasons ?? [],
       line_key: l.line_key ?? null,
