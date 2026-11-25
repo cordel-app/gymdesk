@@ -150,6 +150,8 @@ export interface MemberConfiguration {
    * and not followed by a newer cart (decided by the API, `domain/paidCartVisibility.ts`).
    */
   paid_cart?: PaidCart | null;
+  /** #3355 stage 1 — the member owns a Purchase awaiting payment: no new purchase may start. */
+  has_pending_payment_purchase?: boolean;
 }
 
 /** #3307 stage 2 — a recently paid cart as the configuration read reports it. */

@@ -12,6 +12,7 @@ import { createDraftSetForAssignment } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import { Router, Request } from 'express';
 import { db, Tx } from '../infra/db';
+import { refuseWhilePurchasePending } from './pending-purchase-guard';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
@@ -911,6 +912,8 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   if (ownerRows.length === 0) {
     return res.status(400).json({ error: 'One or more selected members were not found.' });
   }
+  // #3355 stage 1: no new purchase while the owner's current one awaits payment.
+  if (await refuseWhilePurchasePending(db, gymId, ownerId, res)) return;
   const familyMemberIds = await ownerFamilyMemberIds(db, gymId, ownerId);
   const selectionError = beneficiarySelectionError({ limit: plan.member_limit, familyMemberIds, beneficiaryIds });
   if (selectionError) {

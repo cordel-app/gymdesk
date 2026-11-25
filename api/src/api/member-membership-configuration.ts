@@ -15,6 +15,7 @@ import { primaryPlanSnapshotSql, promotionHolderSql } from './plan-snapshot-line
 import { ASSIGNMENT_HISTORY_ROWS_SQL, assignmentOfAnchorSql, productSetLegacyAssignmentIdSql, productSetAssignmentSql } from '../domain/planAssignments';
 import { purchaseView } from '../domain/purchaseView';
 import { visiblePaidCartSql } from '../domain/paidCartVisibility';
+import { hasPendingPaymentPurchase } from './pending-purchase-guard';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -308,8 +309,12 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     completed_at: paid.completed_at instanceof Date ? paid.completed_at.toISOString() : paid.completed_at ?? null,
   } : null;
 
+  // #3355 stage 1 — whether + Add Product / + Add Membership Plan may open their workflow.
+  const hasPendingPurchase = await hasPendingPaymentPurchase(db, gymId, memberId);
+
   res.json({
     paid_cart: paidCart,
+    has_pending_payment_purchase: hasPendingPurchase,
     current_product_set: currentRow ? summary(currentRow) : null,
     past_product_sets: setRows.filter((r: any) => r.status === 'superseded').map(summary),
     product_sets: inFlight.map((r: any) => ({
