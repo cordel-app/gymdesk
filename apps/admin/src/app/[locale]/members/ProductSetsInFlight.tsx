@@ -16,7 +16,8 @@ import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
 import { WAIVE_REFUSAL_KEYS, inFlightSetTitle, type ReviewSummary } from './productsWorkflowView';
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
-import { PurchaseHeading } from './PurchaseHeading';
+import { PurchaseHeading, type CartExpiry } from './PurchaseHeading';
+import { CartExpiryIndicator } from './CartExpiryIndicator';
 
 interface Props {
   productSets: ProductSetRow[];
@@ -29,9 +30,11 @@ interface Props {
   review?: ReviewSummary | null;
   /** Re-reads the Member's configuration after an action. */
   onChanged: () => void;
+  /** #3378 — the cart's countdown, shown in the In Cart version's header beside its status. */
+  cartExpiry?: CartExpiry | null;
 }
 
-export function ProductSetsInFlight({ productSets, canWrite, review = null, onChanged }: Props) {
+export function ProductSetsInFlight({ productSets, canWrite, review = null, onChanged, cartExpiry = null }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -91,6 +94,7 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
                 <PurchaseHeading
                   purchase={ps.purchase}
                   statusOverride={ps.expired ? { status: 'expired', label: t('product_set_status_expired') } : null}
+                  expiry={ps.status === 'in_cart' ? cartExpiry : null}
                 />
                 {ps.amount_due != null && <span style={cardHintStyle}>{` · ${ps.amount_due.toFixed(2)} €`}</span>}
               </>
@@ -104,6 +108,9 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
                     : t(ps.status === 'pending_payment' ? 'product_set_status_pending_payment' : 'product_set_status_in_cart')}
                   {ps.amount_due != null ? ` · ${ps.amount_due.toFixed(2)} €` : ''}
                 </span>
+                {ps.status === 'in_cart' && !ps.expired && cartExpiry && (
+                  <>{' '}<CartExpiryIndicator seconds={cartExpiry.seconds} onExpire={cartExpiry.onExpire} /></>
+                )}
               </>
             )}
             {ps.status === 'in_cart' && review && (

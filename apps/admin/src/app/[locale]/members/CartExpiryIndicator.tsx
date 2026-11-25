@@ -11,7 +11,8 @@ import { formatDraftRemaining, isDraftWarning, remainingNow, showsDraftExactTime
  *
  * #3274 follow-up — it is the **cart's** countdown ("Cart expires in 1h 45m"),
  * shown once beside the cart's In Cart status in the Summary, never on the
- * Product Set header: the clock is the purchase's `expires_at`.
+ * Product Set header: the clock is the purchase's `expires_at`. Since #3378 it
+ * sits in the Purchase header ("Expires in 1h 45m"), right after the status badge.
  */
 export function CartExpiryIndicator({ seconds, onExpire }: {
   seconds: number | null | undefined; onExpire?: () => void;

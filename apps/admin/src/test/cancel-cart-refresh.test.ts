@@ -17,7 +17,9 @@ describe('#3164 the Products table refreshes when the cart ends', () => {
   it('wires the cart Cancel, the cart expiry and the in-flight sets to it', () => {
     expect(src).toContain('onDiscarded={reloadProducts}');
     expect(src).not.toContain('onDiscarded={reloadConfiguration}');
-    expect(src).toContain('<CartStatusBar seconds={cartSeconds} onExpire={reloadProducts} />');
+    // #3378 — the countdown lives in the Purchase header; its expiry still re-reads the Products table.
+    expect(src).toContain('{ seconds: cartSeconds, onExpire: reloadProducts }');
+    expect(src).not.toContain('<CartStatusBar');
     expect(src).toMatch(/review=\{draftReview\}\s*onChanged=\{reloadProducts\}/);
   });
 });
