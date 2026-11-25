@@ -12,17 +12,22 @@
  * rendering its own inputs over the same keys, because each control needs its
  * own type, options and validation.
  *
- * Two of the fields are `editable: false`. `code` is persisted and shown in the
- * expanded card, but no control has ever edited it — the old modal carried it
- * through its payload untouched and `toCenterUpdatePayload()` still does, which
- * is why it is part of the form *values* and not of the form. `created_by`
- * is an audit column the card has always shown. Neither may grow a control here
- * without the API side being decided first.
+ * #3342: the read-only view shows **exactly** the fields the Edit form does, in
+ * the same sections and layout, so every field here is editable. `code` (which
+ * no control edits; `toCenterUpdatePayload()` carries it through untouched) and
+ * `created_by` moved to the Details modal. The translatable `description` is the
+ * one full-width multiline field; the read-only view shows it in the request
+ * locale (`display_description`), the form edits the base text plus its
+ * translations (`description_translations`, the globe button).
  */
 
 /** The persisted `centers` columns the Edit form manages. */
 export interface CenterProfile {
   name: string;
+  /** #3342: the base-locale description (the fallback). */
+  description: string | null;
+  /** #3342: `{ locale: description }` for the non-base locales. */
+  description_translations?: Record<string, string>;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -38,12 +43,14 @@ export interface CenterDisplayRow extends CenterProfile {
   /** The gym-level theme a Center with no `theme_id` of its own inherits. */
   gym_theme_name: string | null;
   created_by: string | null;
+  /** #3342: the description in the request locale, else the base one. */
+  display_description?: string | null;
 }
 
 export type CenterFieldKey = keyof CenterDisplayRow;
 
 /** How a value is rendered read-only. The Edit form's control is its own concern. */
-export type CenterFieldFormat = 'text' | 'status' | 'theme';
+export type CenterFieldFormat = 'text' | 'multiline' | 'status' | 'theme';
 
 export interface CenterProfileField {
   key: CenterFieldKey;
@@ -52,6 +59,8 @@ export interface CenterProfileField {
   format: CenterFieldFormat;
   /** `false` for a column the card shows but no control writes. */
   editable: boolean;
+  /** Spans the whole row in both halves (#3342: the description). */
+  fullWidth?: boolean;
 }
 
 export interface CenterProfileSection {
@@ -61,17 +70,15 @@ export interface CenterProfileSection {
 }
 
 /**
- * Sections in the order both halves render them. Flattening the `editable`
- * fields gives Name → Email → Phone → Address → Status → Theme, which is the
- * order the ticket specifies for the inline form.
+ * Sections in the order both halves render them: Name → Description → Email →
+ * Phone → Address → Status → Theme, then the Media section (#3342).
  */
 export const CENTER_PROFILE_SECTIONS: CenterProfileSection[] = [
   {
     titleKey: 'section_general',
     fields: [
       { key: 'name', labelKey: 'col_name', format: 'text', editable: true },
-      { key: 'code', labelKey: 'label_code', format: 'text', editable: false },
-      { key: 'created_by', labelKey: 'col_created_by', format: 'text', editable: false },
+      { key: 'description', labelKey: 'label_description', format: 'multiline', editable: true, fullWidth: true },
     ],
   },
   {
@@ -134,7 +141,8 @@ export function formatCenterField(
       inheritedSuffix,
     );
   }
-  const raw = row[field.key];
+  // #3342: the description reads in the request locale, falling back to the base text.
+  const raw = field.key === 'description' ? (row.display_description ?? row.description) : row[field.key];
   if (raw === null || raw === undefined || raw === '') return EMPTY_VALUE;
   if (field.format === 'status') return translateStatus(String(raw));
   return String(raw);
@@ -143,6 +151,8 @@ export function formatCenterField(
 /** The inline form's values. Every control is controlled, so no value is ever null. */
 export interface CenterEditFormValues {
   name: string;
+  description: string;
+  description_translations: Record<string, string>;
   code: string;
   address: string;
   phone: string;
@@ -160,6 +170,8 @@ export interface CenterEditFormValues {
 export function toCenterEditFormValues(row: CenterProfile & { code?: string | null }): CenterEditFormValues {
   return {
     name: row.name,
+    description: row.description ?? '',
+    description_translations: { ...(row.description_translations ?? {}) },
     code: row.code ?? '',
     address: row.address ?? '',
     phone: row.phone ?? '',
@@ -177,6 +189,13 @@ export function toCenterEditFormValues(row: CenterProfile & { code?: string | nu
 export function toCenterUpdatePayload(values: CenterEditFormValues) {
   return {
     name: values.name.trim(),
+    description: values.description.trim() || null,
+    // Replace-all: a blank locale drops its row (#3342).
+    description_translations: Object.fromEntries(
+      Object.entries(values.description_translations)
+        .map(([locale, text]) => [locale, (text ?? '').trim()] as const)
+        .filter(([, text]) => text.length > 0),
+    ),
     code: values.code.trim() || null,
     address: values.address.trim() || null,
     phone: values.phone.trim() || null,

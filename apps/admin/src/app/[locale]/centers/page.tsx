@@ -37,7 +37,10 @@ import {
 } from './centerProfile';
 import { inlineActionsRowStyle } from '@/components/formChrome';
 import { MemberAvatar } from '@/components/MemberAvatar';
-import { MemberImageField } from '@/components/MemberImageField';
+import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { FieldTranslationsModal, GlobeButton } from '@/components/exercises/FieldTranslationsModal';
+import { localeLabel, NAMED_LOCALES } from '@/lib/localeLabels';
+import { CenterImageModal } from './CenterImageModal';
 import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 
@@ -49,6 +52,8 @@ import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/
  */
 interface Center extends CenterProfile {
   id: number;
+  /** #3342: the description in the request locale, else the base text. */
+  display_description: string | null;
   code: string | null;
   theme_name: string | null;
   gym_theme_name: string | null;
@@ -73,6 +78,11 @@ const inputStyle: React.CSSProperties = {
 
 const selectStyle: React.CSSProperties = { ...inputStyle, background: '#fff', cursor: 'pointer' };
 
+/** A thumbnail is a button that opens the image modal (#3342); it draws no chrome of its own. */
+const thumbButtonStyle: React.CSSProperties = {
+  background: 'transparent', border: 'none', padding: 0, cursor: 'zoom-in', flexShrink: 0, lineHeight: 0,
+};
+
 const subsectionLabelStyle: React.CSSProperties = {
   margin: '0 0 12px 0',
   fontSize: 11,
@@ -81,6 +91,12 @@ const subsectionLabelStyle: React.CSSProperties = {
   letterSpacing: '0.05em',
   color: '#aaa',
 };
+
+/** #3342: the description spans the whole row in both halves. */
+const fullWidthCellStyle: React.CSSProperties = { gridColumn: '1 / -1' };
+
+/** The base locale is the entity's own column; the others are its translations (#3342). */
+const BASE_LOCALE = NAMED_LOCALES[0];
 
 const fieldGridStyle: React.CSSProperties = {
   display: 'grid',
@@ -163,6 +179,7 @@ const colHeaderStyle: React.CSSProperties = {
 export default function CentersPage() {
   const t = useTranslations('centers');
   const tStatus = useTranslations('status');
+  const tAll = useTranslations();
   const locale = useLocale();
   const gymFmt = useGymFormatSettings();
   const router = useRouter();
@@ -187,6 +204,10 @@ export default function CentersPage() {
   const [form, setForm] = useState<CenterEditFormValues | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // #3342: the description's translations modal (the form) and the thumbnail modal (the list).
+  const [translationsOpen, setTranslationsOpen] = useState(false);
+  const [imageCenter, setImageCenter] = useState<Center | null>(null);
 
   // Details / delete
   const [detailsCenter, setDetailsCenter] = useState<Center | null>(null);
@@ -317,11 +338,11 @@ export default function CentersPage() {
   // affordance. Editing is ⋮ → Edit, which renders renderInlineEditor().
   // ---------------------------------------------------------------------------
 
-  function ReadRow({ label, value }: { label: string; value: string }) {
+  function ReadRow({ label, value, fullWidth }: { label: string; value: string; fullWidth?: boolean }) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, ...(fullWidth ? fullWidthCellStyle : {}) }}>
         <div style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>{label}</div>
-        <div style={{ fontSize: 14, overflowWrap: 'anywhere' }}>{value}</div>
+        <div style={{ fontSize: 14, overflowWrap: 'anywhere', whiteSpace: fullWidth ? 'pre-wrap' : undefined }}>{value}</div>
       </div>
     );
   }
@@ -338,12 +359,19 @@ export default function CentersPage() {
                   <ReadRow
                     key={field.key}
                     label={t(field.labelKey as any)}
+                    fullWidth={field.fullWidth}
                     value={formatCenterField(center, field, (key) => tStatus(key as any), t('theme_inherited_suffix'))}
                   />
                 ))}
               </div>
             </div>
           ))}
+        </div>
+
+        {/* #3342: the Edit form's Media section, read-only — the same preview, no controls. */}
+        <div style={{ marginTop: 28 }}>
+          <p style={subsectionLabelStyle}>{t('section_media')}</p>
+          <MemberImagePreview src={memberImagePreviewSrc(center.image_url, center.modified_at)} emptyLabel={t('image_none')} />
         </div>
       </div>
     );
@@ -366,10 +394,18 @@ export default function CentersPage() {
                 <p style={subsectionLabelStyle}>{t(section.titleKey as any)}</p>
                 <div style={fieldGridStyle}>
                   {fields.map((field) => (
-                    <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-                      <label htmlFor={`center-${center.id}-${field.key}`} style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>
-                        {t(field.labelKey as any)}
-                      </label>
+                    <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, ...(field.fullWidth ? fullWidthCellStyle : {}) }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <label htmlFor={`center-${center.id}-${field.key}`} style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>
+                          {t(field.labelKey as any)}
+                        </label>
+                        {field.key === 'description' && (
+                          <GlobeButton
+                            label={t('translations_open', { field: t('label_description') })}
+                            onClick={() => setTranslationsOpen(true)}
+                          />
+                        )}
+                      </div>
                       {renderFieldControl(center, field.key)}
                     </div>
                   ))}
@@ -425,6 +461,16 @@ export default function CentersPage() {
             value={form.name}
             autoFocus
             onChange={(e) => patchForm({ name: e.target.value })}
+          />
+        );
+      case 'description':
+        return (
+          <textarea
+            id={id}
+            rows={4}
+            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+            value={form.description}
+            onChange={(e) => patchForm({ description: e.target.value })}
           />
         );
       case 'email':
@@ -508,7 +554,15 @@ export default function CentersPage() {
         {view === 'cards' ? (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {center.image_url && (
-              <CardSquareImage src={center.image_url} alt={center.name} version={center.modified_at} placeholder={null} />
+              <button
+                type="button"
+                aria-label={t('image_open', { name: center.name })}
+                title={t('image_open', { name: center.name })}
+                onClick={() => setImageCenter(center)}
+                style={{ ...thumbButtonStyle, display: 'block', width: '100%' }}
+              >
+                <CardSquareImage src={center.image_url} alt={center.name} version={center.modified_at} placeholder={null} />
+              </button>
             )}
             <div
               style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, cursor: isEditing ? 'default' : 'pointer' }}
@@ -543,13 +597,27 @@ export default function CentersPage() {
           <div className={CELL_CLASS.name} title={center.name} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* No image → no thumbnail at all, not an empty placeholder (#2261). */}
             {(center.image_thumbnail_url ?? center.image_url) && (
-              <MemberAvatar name={center.name} imageUrl={center.image_thumbnail_url ?? center.image_url ?? null} stamp={center.modified_at} size={36} />
+              <button
+                type="button"
+                aria-label={t('image_open', { name: center.name })}
+                title={t('image_open', { name: center.name })}
+                onClick={(e) => { e.stopPropagation(); setImageCenter(center); }}
+                style={thumbButtonStyle}
+              >
+                <MemberAvatar name={center.name} imageUrl={center.image_thumbnail_url ?? center.image_url ?? null} stamp={center.modified_at} size={36} />
+              </button>
             )}
             <span style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{center.name}</span>
           </div>
 
           {/* Description */}
-          <div className={CELL_CLASS.description} style={{ minWidth: 0, fontSize: 13, color: '#aaa' }}>{EMPTY_VALUE}</div>
+          <div
+            className={CELL_CLASS.description}
+            title={center.display_description ?? undefined}
+            style={{ minWidth: 0, fontSize: 13, color: center.display_description ? '#666' : '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {center.display_description || EMPTY_VALUE}
+          </div>
 
           {/* Created By */}
           <div className={CELL_CLASS.created_by} style={{ minWidth: 0, fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -640,6 +708,8 @@ export default function CentersPage() {
           onSave={() => setDetailsCenter(null)}
         >
           <DetailRow label={t('col_name')} value={detailsCenter.name} />
+          <DetailRow label={t('label_description')} value={detailsCenter.display_description} />
+          <DetailRow label={t('label_code')} value={detailsCenter.code} />
           <DetailRow label={t('label_email')} value={detailsCenter.email} />
           <DetailRow label={t('label_phone')} value={detailsCenter.phone} />
           <DetailRow label={t('label_address')} value={detailsCenter.address} />
@@ -657,6 +727,32 @@ export default function CentersPage() {
             </>
           )}
         </CrudModal>
+      )}
+
+      {/* #3342: the description's translations (the base locale is the form's own textarea). */}
+      <FieldTranslationsModal
+        open={translationsOpen && form !== null}
+        title={t('translations_title', { field: t('label_description') })}
+        locales={NAMED_LOCALES.filter((c) => c !== BASE_LOCALE).map((c) => ({ code: c, label: localeLabel(c, (key) => tAll(key as any)) }))}
+        values={form?.description_translations ?? {}}
+        multiline
+        saveLabel={t('translations_save')}
+        cancelLabel={t('cancel')}
+        closeLabel={t('translations_close')}
+        emptyLabel={EMPTY_VALUE}
+        onSave={(values) => { patchForm({ description_translations: values }); setTranslationsOpen(false); }}
+        onClose={() => setTranslationsOpen(false)}
+      />
+
+      {imageCenter && (
+        <CenterImageModal
+          name={imageCenter.name}
+          imageUrl={memberImagePreviewSrc(imageCenter.image_url, imageCenter.modified_at)}
+          description={imageCenter.display_description}
+          descriptionLabel={t('label_description')}
+          closeLabel={t('translations_close')}
+          onClose={() => setImageCenter(null)}
+        />
       )}
 
       <ConfirmDialog

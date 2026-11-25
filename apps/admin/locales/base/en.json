@@ -3639,7 +3639,12 @@
     "image_error_unreadable": "The image could not be read.",
     "image_error_too_large": "The image is too large.",
     "image_error_upload_failed": "Failed to upload the image.",
-    "image_error_remove_failed": "Failed to remove the image."
+    "image_error_remove_failed": "Failed to remove the image.",
+    "translations_title": "Translations: {field}",
+    "translations_open": "Open translations for {field}",
+    "translations_save": "Apply",
+    "translations_close": "Close",
+    "image_open": "Open the image of {name}"
   },
   "gym_themes": {
     "title": "Themes",

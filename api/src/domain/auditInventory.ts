@@ -49,6 +49,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "exercise_muscles": ["parent", "exercises"],
   "exercise_translations": ["parent", "exercises"],
   "exercise_description_translations": ["parent", "exercises"],
+  "center_description_translations": ["parent", "centers"],
   "base_payment_method_translations": ["parent", "base_payment_methods"],
   "base_personal_goal_translations": ["parent", "base_personal_goals"],
   "base_nutrition_goal_translations": ["parent", "base_nutrition_goals"],

@@ -144,9 +144,8 @@ describe('Centers: inline editing (#800)', () => {
         expect(editorSrc + pageSrc, `${field.key} has no control`).toContain(`case '${field.key}':`);
         expect(pageSrc, `${field.key} is not written back to the form`).toContain(`patchForm({ ${field.key}:`);
       }
-      for (const field of CENTER_PROFILE_FIELDS.filter((f) => !f.editable)) {
-        expect(pageSrc, `${field.key} must stay read-only`).not.toContain(`patchForm({ ${field.key}:`);
-      }
+      // #3342: the read-only view shows exactly the fields the form edits.
+      expect(CENTER_PROFILE_FIELDS.every((f) => f.editable)).toBe(true);
     });
 
     it('renders Save Changes and Cancel inside the expanded row (AC4, AC5)', () => {
@@ -240,13 +239,32 @@ describe('Centers: inline editing (#800)', () => {
 
     it('orders the editable fields the way the ticket specifies', () => {
       expect(CENTER_EDITABLE_FIELDS.map((f) => f.key)).toEqual([
-        'name', 'email', 'phone', 'address', 'status', 'theme_id',
+        'name', 'description', 'email', 'phone', 'address', 'status', 'theme_id',
       ]);
     });
 
-    it('marks Code and Created By read-only — no control has ever edited them', () => {
-      expect(CENTER_PROFILE_FIELDS.filter((f) => !f.editable).map((f) => f.key).sort())
-        .toEqual(['code', 'created_by']);
+    it('shows Code and Created By in the Details modal, not in the card (#3342)', () => {
+      expect(CENTER_PROFILE_FIELDS.map((f) => f.key)).not.toContain('code');
+      expect(CENTER_PROFILE_FIELDS.map((f) => f.key)).not.toContain('created_by');
+      expect(pageSrc).toContain("label={t('label_code')} value={detailsCenter.code}");
+      expect(pageSrc).toContain("label={t('created_by')} value={detailsCenter.created_by}");
+    });
+
+    it('renders the Media section in both halves (#3342)', () => {
+      expect(readOnlySrc).toContain("t('section_media')");
+      expect(readOnlySrc).toContain('<MemberImagePreview');
+      expect(editorSrc).toContain("t('section_media')");
+    });
+
+    it('offers the description translations behind the globe icon in the form only (#3342)', () => {
+      expect(editorSrc).toContain('<GlobeButton');
+      expect(readOnlySrc).not.toContain('GlobeButton');
+      expect(pageSrc).toContain('<FieldTranslationsModal');
+    });
+
+    it('opens the image and description modal from a thumbnail (#3342)', () => {
+      expect(pageSrc).toContain('setImageCenter(center)');
+      expect(pageSrc).toContain('<CenterImageModal');
     });
 
     it('has an en/es/ca label for every field and section', () => {
@@ -259,6 +277,13 @@ describe('Centers: inline editing (#800)', () => {
         'save_changes',
         'theme_inherited_suffix',
         'theme_none',
+        'translations_title',
+        'translations_open',
+        'translations_save',
+        'translations_close',
+        'image_open',
+        'section_media',
+        'image_none',
       ];
       for (const code of LOCALE_CODES) {
         for (const key of keys) {
@@ -285,11 +310,19 @@ describe('Centers: inline editing (#800)', () => {
       for (const f of CENTER_PROFILE_FIELDS) {
         for (const value of [null, undefined, '']) {
           const out = formatCenterField({ [f.key]: value } as any, f, translateStatus, inherited);
+          // (the description also reads `display_description`, absent here)
           expect(out).not.toMatch(/null|undefined|NaN|Invalid/);
           if (f.format !== 'theme') expect(out).toBe(EMPTY_VALUE);
         }
         expect(formatCenterField({}, f, translateStatus, inherited)).not.toMatch(/null|undefined/);
       }
+    });
+
+    it('reads the description in the request locale, falling back to the base text (#3342)', () => {
+      expect(formatCenterField({ description: 'Base', display_description: 'Traducida' } as any, field('description'), translateStatus, inherited))
+        .toBe('Traducida');
+      expect(formatCenterField({ description: 'Base', display_description: null } as any, field('description'), translateStatus, inherited))
+        .toBe('Base');
     });
 
     it('translates Status with the keys the form’s select uses', () => {
@@ -316,6 +349,8 @@ describe('Centers: inline editing (#800)', () => {
   describe('the persisted row → form mapping', () => {
     const row = {
       name: 'Downtown',
+      description: 'A calm gym',
+      description_translations: { es: 'Un gimnasio tranquilo' },
       code: 'DT',
       address: 'Main St 1',
       phone: '+34 600 000 000',
@@ -330,20 +365,20 @@ describe('Centers: inline editing (#800)', () => {
 
     it('never seeds a control with null — every input is controlled', () => {
       const values = toCenterEditFormValues({
-        name: 'Empty', code: null, address: null, phone: null, email: null,
+        name: 'Empty', description: null, code: null, address: null, phone: null, email: null,
         status: 'active', theme_id: null,
       });
       expect(values).toEqual({
-        name: 'Empty', code: '', address: '', phone: '', email: '', status: 'active', theme_id: '',
+        name: 'Empty', description: '', description_translations: {}, code: '', address: '', phone: '', email: '', status: 'active', theme_id: '',
       });
     });
 
     it('submits the same payload the modal did — trimmed, emptied fields cleared to null (AC14)', () => {
       expect(toCenterUpdatePayload({
-        name: '  Downtown  ', code: ' DT ', address: '  ', phone: '', email: ' a@b.c ',
+        name: '  Downtown  ', description: '  ', description_translations: { es: ' Hola ', ca: '  ' }, code: ' DT ', address: '  ', phone: '', email: ' a@b.c ',
         status: 'inactive', theme_id: '',
       })).toEqual({
-        name: 'Downtown', code: 'DT', address: null, phone: null, email: 'a@b.c',
+        name: 'Downtown', description: null, description_translations: { es: 'Hola' }, code: 'DT', address: null, phone: null, email: 'a@b.c',
         status: 'inactive', theme_id: null,
       });
     });
