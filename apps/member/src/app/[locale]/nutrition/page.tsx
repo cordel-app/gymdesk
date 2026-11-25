@@ -352,19 +352,22 @@ export default function NutritionPage() {
             {mealsForDate.length === 0 ? (
               <p style={styles.hint}>{t('nutrition.no_meals_today')}</p>
             ) : (
-              <div style={styles.card}>
+              <div style={styles.mealList}>
                 {mealsForDate.map((meal) => {
                   const done = doneKeys.has(`${meal.id}|${selectedDate}`);
                   const title = mealTitleOf(meal);
                   return (
-                    <div key={meal.id} style={styles.mealRow}>
+                    // #3428: a meal is a section of its own — its header sits on
+                    // the page background, outside the grey card, exactly as the
+                    // page's other headings do, and only its foods sit in the card.
+                    <div key={meal.id} style={styles.mealBlock}>
                       <div style={styles.mealHead}>
                         {/* #3404: the meal's Base Meal picture, a fixed circle left of its name. */}
                         <MealThumbnail meal={meal} title={title.title} />
-                        <p style={{ ...styles.mealName, flex: 1, minWidth: 0 }}>
+                        <h3 style={styles.mealName}>
                           {title.title}
                           {title.suffix && <span style={styles.mealType}> · {title.suffix}</span>}
-                        </p>
+                        </h3>
                         {done && <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px' }}>✓ {t('nutrition.meal_done')}</span>}
                         {/* #1580: completion belongs to the whole meal, so its action sits in the meal's own header. */}
                         {completionActions('meal', done ? 'done' : undefined, selectedDate, today).showMarkDone && (
@@ -374,11 +377,15 @@ export default function NutritionPage() {
                           </button>
                         )}
                       </div>
-                      {/* #722: the meal's foods are swipeable image cards, one
-                          carousel per meal — the items of a meal are the
-                          alternatives the member chooses between. */}
-                      <NutritionFoodCarousel items={meal.items} label={title.title} />
-                      {meal.notes && <p style={styles.mealNotes}>{meal.notes}</p>}
+                      {(meal.items.length > 0 || meal.notes) && (
+                      <div style={styles.mealCard}>
+                        {/* #722: the meal's foods are swipeable image cards, one
+                            carousel per meal — the items of a meal are the
+                            alternatives the member chooses between. */}
+                        <NutritionFoodCarousel items={meal.items} label={title.title} />
+                        {meal.notes && <p style={{ ...styles.mealNotes, ...(meal.items.length === 0 ? { marginTop: 0 } : {}) }}>{meal.notes}</p>}
+                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -397,7 +404,10 @@ const styles: Record<string, React.CSSProperties> = {
   section:    { marginBottom: 20 },
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:       { ...sectionCardStyle, padding: '4px 18px' },
-  mealHead:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  mealList:   { display: 'flex', flexDirection: 'column', gap: 28 },
+  mealBlock:  { display: 'flex', flexDirection: 'column', gap: 14 },
+  mealHead:   { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14 },
+  mealCard:   { ...sectionCardStyle, padding: '14px 18px' },
   reqActions: { display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'stretch' },
   reqBtn:     { ...primaryButtonStyle, padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 },
   cardBtn:    { ...primaryButtonStyle, display: 'block', boxSizing: 'border-box', maxWidth: '100%', width: '100%', margin: 0, padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
@@ -415,10 +425,9 @@ const styles: Record<string, React.CSSProperties> = {
   statusBtn:  { background: 'none', border: 'none', padding: 6, cursor: 'pointer', display: 'flex' },
   statusDot:  { width: 12, height: 12, borderRadius: '50%', display: 'block' },
   srOnly:     { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
-  mealRow:    { padding: '12px 0', borderBottom: `1px solid ${memberTheme.separator}` },
-  mealName:   { margin: 0, fontSize: 15, fontWeight: 700, color: memberTheme.text },
-  mealType:   { fontSize: 12, fontWeight: 500, color: memberTheme.textMuted, textTransform: 'none' },
-  mealNotes:  { margin: '4px 0 0', fontSize: 12, color: memberTheme.textMuted, fontStyle: 'italic' },
+  mealName:   { margin: 0, flex: 1, minWidth: 0, fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: memberTheme.title2, fontFamily: memberTheme.title2Font, overflowWrap: 'anywhere' },
+  mealType:   { fontSize: 14, fontWeight: 500, color: memberTheme.textMuted, textTransform: 'none' },
+  mealNotes:  { margin: '8px 0 0', fontSize: 12, color: memberTheme.textMuted, fontStyle: 'italic' },
   sectionEmpty: { color: memberTheme.textMuted, fontSize: 13, margin: '14px 0' },
   emptyCard:  { ...sectionCardStyle, padding: '40px 24px', textAlign: 'center' },
   hint:       { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },

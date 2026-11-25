@@ -39,8 +39,8 @@ describe('mealThumbnailView', () => {
       .toEqual({ thumbnailSrc: null, fullSrc: null, description: null });
   });
 
-  it('is a fixed size', () => {
-    expect(MEAL_THUMBNAIL_SIZE).toBe(40);
+  it('is a fixed, heading-sized circle (#3428: 64–72 px)', () => {
+    expect(MEAL_THUMBNAIL_SIZE).toBe(68);
   });
 });
 
@@ -52,6 +52,22 @@ describe('My Nutrition meal rows', () => {
     const name = PAGE.indexOf('styles.mealName', head);
     expect(thumb).toBeGreaterThan(head);
     expect(thumb).toBeLessThan(name);
+  });
+
+  // #3428 — the meal header is a section heading on the page background:
+  // outside the grey card, which holds only the meal's foods.
+  it('put the meal header outside the grey card that holds its foods', () => {
+    const block = PAGE.indexOf('<div key={meal.id} style={styles.mealBlock}>');
+    const head = PAGE.indexOf('<div style={styles.mealHead}>', block);
+    const card = PAGE.indexOf('<div style={styles.mealCard}>', block);
+    const carousel = PAGE.indexOf('<NutritionFoodCarousel', block);
+    expect(block).toBeGreaterThan(-1);
+    expect(head).toBeGreaterThan(block);
+    expect(card).toBeGreaterThan(head);
+    expect(carousel).toBeGreaterThan(card);
+    expect(PAGE).not.toMatch(/mealsForDate\.length === 0[\s\S]{0,200}<div style=\{styles\.card\}>\s*\{mealsForDate/);
+    expect(PAGE).toMatch(/mealCard:\s*\{ \.\.\.sectionCardStyle/);
+    expect(PAGE).toMatch(/mealName:[^\n]*fontSize: 22, fontWeight: 700/);
   });
 
   it('reuse the app avatar circle and the one image preview dialog', () => {
