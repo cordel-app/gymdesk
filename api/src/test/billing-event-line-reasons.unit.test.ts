@@ -2,7 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import { lineFromSimulation, lineReasons } from '../domain/billingEventLines';
 import { chargeLineView, initialPaymentBreakdown } from '../domain/checkoutSummary';
-import type { SimulationBenefit, SimulationLine } from '../domain/billingSimulation';
+import { BENEFIT_DURATION_UNITS, type SimulationBenefit, type SimulationLine } from '../domain/billingSimulation';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const b = (over: Partial<SimulationBenefit>): SimulationBenefit =>
   ({ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: null, ...over });
@@ -76,5 +78,11 @@ describe('lineReasons (#3284)', () => {
       ],
     });
     expect(view.reasons?.map((r) => r.duration ?? null)).toEqual([{ count: 3, unit: 'month' }, null, null]);
+  });
+
+  it('#3282 — chk_belr_duration admits exactly BENEFIT_DURATION_UNITS', () => {
+    const sql = readFileSync(join(__dirname, '../infra/migrations/488_billing_event_line_reason_duration.js'), 'utf8');
+    const listed = [...sql.match(/duration_unit IN \(([^)]*)\)/)![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    expect(listed).toEqual([...BENEFIT_DURATION_UNITS]);
   });
 });

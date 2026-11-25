@@ -460,7 +460,7 @@ export interface SimulationBenefit {
   duration?: BenefitDuration | null;
 }
 
-/** #3282 — a Promotion's duration as a count of one billing period. */
+/** #3282 — a Promotion's duration as a count of one billing period. Mirrored by `chk_belr_duration` (migration 488): a new unit goes in both. */
 export const BENEFIT_DURATION_UNITS = ['week', 'four_weeks', 'month', 'year'] as const;
 export type BenefitDurationUnit = (typeof BENEFIT_DURATION_UNITS)[number];
 export interface BenefitDuration { count: number; unit: BenefitDurationUnit }
