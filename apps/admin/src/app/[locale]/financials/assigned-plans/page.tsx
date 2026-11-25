@@ -10,7 +10,7 @@ import { AssignedPlansTable, type AssignedPlanTableRow } from '@/components/assi
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LifecycleStatus = 'in_cart' | 'pending_payment' | 'pending' | 'active' | 'paused' | 'expired' | 'cancels_on_end_date' | 'to_be_reactivated' | 'cancelled' | 'superseded';
+type LifecycleStatus = 'in_cart' | 'pending_payment' | 'pending' | 'active' | 'paused' | 'expired' | 'cancels_on_end_date' | 'to_be_reactivated' | 'to_be_canceled_immediately' | 'cancelled' | 'superseded';
 
 interface AssignedPlan extends AssignedPlanTableRow {
   member_name: string;

@@ -46,7 +46,7 @@ const ASSIGNED_JOIN = `
   LEFT JOIN plan_snapshots pa
          ON pa.membership_plan_id = p.id
         AND pa.gym_id = p.gym_id
-        AND pa.status NOT IN ('in_cart', 'pending_payment', 'active_cancel_at_period_end', 'to_be_reactivated', 'cancelled', 'expired', 'superseded')
+        AND pa.status NOT IN ('in_cart', 'pending_payment', 'active_cancel_at_period_end', 'to_be_reactivated', 'to_be_canceled_immediately', 'cancelled', 'expired', 'superseded')
         AND NOT (pa.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) AND pa.ends_at IS NOT NULL AND pa.ends_at < CURDATE())
         AND ${isCurrentAssignmentSnapshotSql('pa')}
         AND EXISTS (

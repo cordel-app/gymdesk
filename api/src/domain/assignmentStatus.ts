@@ -11,8 +11,8 @@
  * transitions it to `cancelled` once `ends_at` has passed.
  *
  * A new status goes in **three** places: `ASSIGNMENT_STATUSES`, the
- * `chk_plan_snapshots_status` CHECK (current definition: migration 447) and the anchor's
- * `chk_plan_snapshots_assignment_status` (migration 460).
+ * `chk_plan_snapshots_status` CHECK (current definition: migration 485) and the anchor's
+ * `chk_plan_snapshots_assignment_status` (migration 485).
  */
 export const CANCELS_AT_PERIOD_END_STATUS = 'active_cancel_at_period_end' as const;
 
@@ -31,9 +31,18 @@ export const PENDING_CANCELLATION_STATUS = 'to_be_canceled' as const;
  */
 export const PENDING_REACTIVATION_STATUS = 'to_be_reactivated' as const;
 
+/**
+ * #3358: a plan cancelling at its period end that staff marked, in the owner's open In Cart, to be
+ * cancelled today (Cancel Immediately). Its End Date is today and its previous one is remembered;
+ * it keeps reading and entitling like the cancelling plan it still is until the cart is committed,
+ * when it becomes `cancelled`; discarding the cart puts it back.
+ */
+export const PENDING_IMMEDIATE_CANCELLATION_STATUS = 'to_be_canceled_immediately' as const;
+
 export const ASSIGNMENT_STATUSES = [
   'in_cart', 'pending_payment', 'active', PENDING_CANCELLATION_STATUS, 'paused',
-  CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, 'cancelled', 'expired', 'superseded',
+  CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, PENDING_IMMEDIATE_CANCELLATION_STATUS,
+  'cancelled', 'expired', 'superseded',
 ] as const;
 export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];
 
@@ -55,7 +64,9 @@ export function isRunningAssignmentStatus(status: unknown): boolean {
  * running to its end date and the finished one. Every reader that asks "was
  * this plan cancelled" asks this set, never `'cancelled'` alone.
  */
-export const CANCELLED_ASSIGNMENT_STATUSES = [CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, 'cancelled'] as const;
+export const CANCELLED_ASSIGNMENT_STATUSES = [
+  CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, PENDING_IMMEDIATE_CANCELLATION_STATUS, 'cancelled',
+] as const;
 
 /** `CANCELLED_ASSIGNMENT_STATUSES` as a SQL list body, for `status IN (…)`. */
 export const CANCELLED_ASSIGNMENT_STATUSES_SQL = CANCELLED_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(', ');
@@ -82,7 +93,7 @@ export function cancellationStatusFor(endsAt: string | null, today: string): 'ac
  * the nightly sweep moving the row to `cancelled`.
  */
 export function entitledAssignmentSql(alias = 'um'): string {
-  return `(${alias}.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) OR (${alias}.status IN ('${CANCELS_AT_PERIOD_END_STATUS}', '${PENDING_REACTIVATION_STATUS}') AND ${alias}.ends_at >= UTC_DATE()))`;
+  return `(${alias}.status IN (${RUNNING_ASSIGNMENT_STATUSES_SQL}) OR (${alias}.status IN ('${CANCELS_AT_PERIOD_END_STATUS}', '${PENDING_REACTIVATION_STATUS}', '${PENDING_IMMEDIATE_CANCELLATION_STATUS}') AND ${alias}.ends_at >= UTC_DATE()))`;
 }
 
 /**

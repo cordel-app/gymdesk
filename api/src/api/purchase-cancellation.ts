@@ -10,6 +10,7 @@ import { deletePurchase, updatePurchase } from './purchase-writer';
 import { touchPurchases } from './purchases';
 import { restorePendingCancellations } from './plan-pending-cancellation';
 import { restorePendingReactivations } from './plan-pending-reactivation';
+import { restorePendingImmediateCancellations } from './plan-pending-immediate-cancellation';
 
 /**
  * #3355 stage 3 — staff cancel a Purchase (#3251's cart, `purchases`) that awaits its payment,
@@ -186,6 +187,7 @@ export async function cancelPendingPurchase(
   for (const owner of owners) {
     await restorePendingCancellations(tx, gymId, owner, who.actor);
     await restorePendingReactivations(tx, gymId, owner, who.actor);
+    await restorePendingImmediateCancellations(tx, gymId, owner, who.actor);
   }
   await touchPurchases(tx, gymId, [purchaseId]);
   return { kind: 'cancelled', mode: 'deleted' };

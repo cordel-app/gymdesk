@@ -1,5 +1,5 @@
 import {
-  CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, RUNNING_ASSIGNMENT_STATUSES,
+  CANCELS_AT_PERIOD_END_STATUS, PENDING_IMMEDIATE_CANCELLATION_STATUS, PENDING_REACTIVATION_STATUS, RUNNING_ASSIGNMENT_STATUSES,
 } from '../domain/assignmentStatus';
 import { db } from '../infra/db';
 import { canAccess, type AppRole } from '../infra/permissions';
@@ -30,7 +30,7 @@ const n = (v: unknown) => Number(v ?? 0);
  * Cancels on End Date (with a reactivation pending in the cart, still the same).
  */
 export const BADGE_PLAN_STATUSES = [
-  ...RUNNING_ASSIGNMENT_STATUSES, CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS,
+  ...RUNNING_ASSIGNMENT_STATUSES, CANCELS_AT_PERIOD_END_STATUS, PENDING_REACTIVATION_STATUS, PENDING_IMMEDIATE_CANCELLATION_STATUS,
 ] as const;
 const BADGE_PLAN_STATUSES_SQL = BADGE_PLAN_STATUSES.map((s) => `'${s}'`).join(', ');
 
