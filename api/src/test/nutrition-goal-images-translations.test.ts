@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createClerkClient } from '@clerk/backend';
 import sharp from 'sharp';
 import { db } from '../infra/db';
+import { sanitizeNutritionGoalImageName } from '../domain/nutritionGoalImages';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
 const sendMock = vi.hoisted(() => vi.fn());
@@ -201,9 +202,12 @@ describe('POST/DELETE /nutrition-goals/:id/image', () => {
     // Live names are unique per gym, so each test needs its own goal name.
     seq += 1;
     NAME = `Image Goal ${seq} ${RUN}`;
-    sanitized = `Image-Goal-${seq}-${RUN}`;
     const created = await createGoal({ name: NAME });
     goalId = created.body.id;
+    // #3350: the key carries the goal's own `entity_slug`, never its name.
+    const { rows } = await db.query<{ entity_slug: string }>('SELECT entity_slug FROM nutrition_goals WHERE id = ?', [goalId]);
+    sanitized = sanitizeNutritionGoalImageName(rows[0].entity_slug);
+    expect(sanitized).not.toContain(' ');
   });
 
   it('stores a 1080 and a 256 WebP under nutrition_goals/ and points the row at both', async () => {
@@ -256,17 +260,18 @@ describe('POST/DELETE /nutrition-goals/:id/image', () => {
     expect(deletedKeys()).toHaveLength(0);
   });
 
-  it('a rename moves the image onto the keys the new name builds', async () => {
-    const key = `${gymPrefix}/nutrition_goals/${goalId}-${sanitized}.webp`;
-    const thumbKey = `${gymPrefix}/nutrition_goals/${goalId}-${sanitized}-thumbnail.webp`;
-    await db.query('UPDATE nutrition_goals SET image_url = ?, image_thumbnail_url = ? WHERE id = ?', [url(key), url(thumbKey), goalId]);
+  it('a rename moves nothing: the key carries the slug (#3350)', async () => {
+    expect((await upload(goalId, gymId, await photo())).status).toBe(200);
+    const before = await urlsOf(goalId);
+    sendMock.mockClear();
     const res = await api('put', `/nutrition-goals/${goalId}`, gymId).send({ name: `Renamed ${RUN}` });
     expect(res.status).toBe(200);
-    const newKey = `${gymPrefix}/nutrition_goals/${goalId}-Renamed-${RUN}.webp`;
-    const newThumb = `${gymPrefix}/nutrition_goals/${goalId}-Renamed-${RUN}-thumbnail.webp`;
-    expect(await urlsOf(goalId)).toEqual({ image_url: url(newKey), image_thumbnail_url: url(newThumb) });
-    expect(sent('copy')).toHaveLength(2);
-    expect(deletedKeys().sort()).toEqual([key, thumbKey].sort());
+    expect(await urlsOf(goalId)).toEqual(before);
+    expect(sent('copy')).toHaveLength(0);
+    expect(deletedKeys()).toHaveLength(0);
+    // A replacement after the rename overwrites the same keys.
+    expect((await upload(goalId, gymId, await photo())).status).toBe(200);
+    expect(await urlsOf(goalId)).toEqual(before);
   });
 });
 

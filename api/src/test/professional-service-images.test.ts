@@ -281,18 +281,27 @@ describe('a gym service image: upload, replacement and inheritance', () => {
     expect(deletedKeys().sort()).toEqual([masterKey(), thumbKey()].sort());
   });
 
-  it('a rename moves both objects to the new name', async () => {
+  it('a rename moves nothing: the key does not carry the name (#3350)', async () => {
     await upload(`/professional-services/${serviceId}/image`, gymId, await photo());
+    const before = await urlsOf(serviceId);
     sendMock.mockClear();
     const res = await request.put(`/professional-services/${serviceId}`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ name: 'Renamed Coaching' });
     expect(res.status).toBe(200);
-    expect(copies().map((c) => c.to).sort()).toEqual([
-      `${gymPrefix}/professional_services/${serviceId}-Renamed-Coaching-thumbnail.webp`,
-      `${gymPrefix}/professional_services/${serviceId}-Renamed-Coaching.webp`,
-    ]);
-    expect((await urlsOf(serviceId)).image_url).toBe(url(`${gymPrefix}/professional_services/${serviceId}-Renamed-Coaching.webp`));
+    expect(copies()).toEqual([]);
+    expect(deletedKeys()).toEqual([]);
+    expect(await urlsOf(serviceId)).toEqual(before);
     await db.query('UPDATE professional_services SET name = ? WHERE id = ?', [NAME, serviceId]);
+  });
+
+  it("keys a service's image by its slug, never its name (#3350)", async () => {
+    const id = await createService(gymId, `Slugged Coaching ${Date.now()}`);
+    await db.query('UPDATE professional_services SET slug = ? WHERE id = ?', [`slugged-coaching-${id}`, id]);
+    expect((await upload(`/professional-services/${id}/image`, gymId, await photo())).status).toBe(200);
+    expect(await urlsOf(id)).toEqual({
+      image_url: url(`${gymPrefix}/professional_services/${id}-slugged-coaching-${id}.webp`),
+      image_thumbnail_url: url(`${gymPrefix}/professional_services/${id}-slugged-coaching-${id}-thumbnail.webp`),
+    });
   });
 });
 
