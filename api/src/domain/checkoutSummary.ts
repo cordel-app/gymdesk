@@ -46,7 +46,15 @@ export interface ChargeLineLike {
   line_key?: string | null;
   waived?: boolean;
   waivable?: boolean;
+  /** #3284 stage 3 — why Waive is disabled on this line; `null` when it is not. */
+  waive_refusal?: WaiveRefusalCode | null;
 }
+
+/** #3284 stage 3 — the codes a disabled Waive states (`domain/initialPaymentWaiver.ts`). */
+export type WaiveRefusalCode = 'nothing_to_waive' | 'prepaid_fee' | 'would_leave_nothing_to_pay';
+const WAIVE_REFUSAL_CODES: readonly string[] = ['nothing_to_waive', 'prepaid_fee', 'would_leave_nothing_to_pay'];
+const waiveRefusalOf = (v: unknown): WaiveRefusalCode | null =>
+  typeof v === 'string' && WAIVE_REFUSAL_CODES.includes(v) ? v as WaiveRefusalCode : null;
 
 /** #3284 — a line's reasons as a reader received them (the row shape or the stored rows), validated. */
 export function lineReasonsView(raw: unknown): LineReason[] {
@@ -89,6 +97,7 @@ export function chargeLineView(l: any): ChargeLineLike {
     line_key: l.line_key ?? null,
     waived: l.waived === true,
     waivable: l.waivable === true,
+    waive_refusal: waiveRefusalOf(l.waive_refusal),
   };
 }
 
@@ -158,6 +167,8 @@ export interface InitialPaymentLine {
   line_key: string | null;
   waived: boolean;
   waivable: boolean;
+  /** #3284 stage 3 — why Waive is disabled, worded beside the button; `null` when it is enabled or absent. */
+  waive_refusal: WaiveRefusalCode | null;
 }
 
 export interface InitialPaymentTaxRow {
@@ -229,6 +240,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       line_key: l.line_key ?? null,
       waived: l.waived === true,
       waivable: l.waivable === true,
+      waive_refusal: l.waivable === true ? null : waiveRefusalOf(l.waive_refusal),
     };
   });
   const taxRows = [...taxes.values()]
