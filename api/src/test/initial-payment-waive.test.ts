@@ -131,7 +131,11 @@ describe('Initial Payment per-line waive (#3284 stage 2)', () => {
     expect(fee.amount).toBeCloseTo(before.initial_payment.lines.find((l: any) => l.line_key === feeKey).amount, 2);
     expect(after.amount_due).toBeCloseTo(before.amount_due - kitBefore.amount, 2);
     expect(after.initial_payment.total).toBeCloseTo(after.amount_due, 2);
-    expect(after.initial_payment.discount_total).toBeCloseTo(before.initial_payment.discount_total + kitBefore.amount, 2);
+    // #3282 stage 3 — a waiver is not a discount: the line keeps its Price, so Total discounts
+    // (SUM(base) − SUM(price)) is unchanged and only the Amount and VAT Amount drop.
+    expect(kit.price).toBeCloseTo(kitBefore.price, 2);
+    expect(kit.base_price).toBeCloseTo(kitBefore.base_price, 2);
+    expect(after.initial_payment.discount_total).toBeCloseTo(before.initial_payment.discount_total, 2);
     expect(after.initial_payment.tax_total).toBeCloseTo(before.initial_payment.tax_total - kitBefore.tax_amount, 2);
     // #3284 stage 4: the last positive line is still offered Waive (the total may reach zero).
     expect(fee).toMatchObject({ waivable: true, waive_refusal: null });
