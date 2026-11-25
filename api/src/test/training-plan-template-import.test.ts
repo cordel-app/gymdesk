@@ -115,9 +115,14 @@ describe('POST /training-plan-templates/import', () => {
       'SELECT gym_id, workout_template_id, position, scheduled_weekday FROM training_plan_template_workouts WHERE training_plan_template_id = ? ORDER BY position',
       [copyId],
     );
+    // #3337: the import cascades, so the links name the gym's own copy of the
+    // System Workout Template, never the System one.
+    const gymWorkoutId = res.body.workout_templates.created[0];
+    const { rows: wt } = await db.query<any>('SELECT gym_id, cloned_from_id FROM workout_templates WHERE id = ?', [gymWorkoutId]);
+    expect(wt[0]).toMatchObject({ gym_id: gymId, cloned_from_id: baseWorkoutId });
     expect(links).toEqual([
-      { gym_id: gymId, workout_template_id: baseWorkoutId, position: 1, scheduled_weekday: 1 },
-      { gym_id: gymId, workout_template_id: baseWorkoutId, position: 2, scheduled_weekday: 3 },
+      { gym_id: gymId, workout_template_id: gymWorkoutId, position: 1, scheduled_weekday: 1 },
+      { gym_id: gymId, workout_template_id: gymWorkoutId, position: 2, scheduled_weekday: 3 },
     ]);
   });
 

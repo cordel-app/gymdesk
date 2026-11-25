@@ -9,6 +9,7 @@ import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
 import { parseNumDaysInput, templateResyncChanges, templateSource } from '../domain/trainingPlanTemplateDays';
+import { CascadeImportError, cascadeImportTrainingPlanTemplates, copyTemplateWorkoutsTx, planCascadingImport } from './training-plan-template-cascade';
 
 /**
  * #55: TrainingPlanTemplate (reusable multi-day program) + the ordered
@@ -34,21 +35,6 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
   for (let i = 0; i < orderedIds.length; i++) {
     await tx.query(`UPDATE ${table} SET position = ? WHERE id = ? AND ${parentColumn} = ?`, [i + 1, orderedIds[i], parentId]);
   }
-}
-
-/**
- * #3334: copies one template's workout list (order and weekday) onto another.
- * The one content copy Duplicate, Clone and Import share. A System template's
- * workouts name System workout templates, and the copy keeps naming them — the
- * cascade that imports those workout templates too is #3337's.
- */
-async function copyTemplateWorkoutsTx(tx: Tx, gymId: string, sourceId: number | string, targetId: number | string) {
-  await tx.query(
-    `INSERT INTO training_plan_template_workouts (gym_id, training_plan_template_id, workout_template_id, position, scheduled_weekday)
-     SELECT ?, ?, workout_template_id, position, scheduled_weekday
-       FROM training_plan_template_workouts WHERE training_plan_template_id = ? ORDER BY position ASC`,
-    [gymId, targetId, sourceId],
-  );
 }
 
 const LIST_COLUMNS = `tpt.*,
@@ -143,68 +129,68 @@ trainingPlanTemplatesRouter.get('/base', async (req, res, next) => {
 
 const MAX_IMPORT_IDS = 100;
 
+/** The `baseTemplateIds` body both import routes take, or the 400 message. */
+function parseImportIds(raw: unknown): number[] | string {
+  if (!Array.isArray(raw) || raw.length === 0) return 'baseTemplateIds must be a non-empty array';
+  if (raw.length > MAX_IMPORT_IDS) return `baseTemplateIds may hold at most ${MAX_IMPORT_IDS} ids`;
+  if (!raw.every((v: unknown) => typeof v === 'number' && Number.isInteger(v) && v > 0)) {
+    return 'baseTemplateIds must hold positive integer ids';
+  }
+  return [...new Set(raw as number[])];
+}
+
 /**
- * #3334: imports System templates into the gym, as POST /exercises/import does.
- * Each becomes an `active` gym template under the System name with
- * `cloned_from_id` set and its workouts copied; one the gym already has (by
- * provenance or by name) is reported under `skipped`. An id that is not an
- * active System template refuses the whole batch.
+ * #3337: the cascading import's preview — the System Training Plan Templates
+ * the selection imports (or already has), the Workout Templates it creates or
+ * updates and the Base Exercises it imports, each listed once across the whole
+ * selection. Writes nothing; POST /import executes this same plan.
+ */
+trainingPlanTemplatesRouter.post('/import/preview', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const ids = parseImportIds(req.body?.baseTemplateIds);
+  if (typeof ids === 'string') return res.status(400).json({ error: ids });
+  try {
+    res.json(await planCascadingImport(db, gymId, ids, getRequestLocale(req)));
+  } catch (err: any) {
+    if (err instanceof CascadeImportError) return res.status(400).json({ error: err.message, invalid_ids: err.invalid_ids });
+    next(err);
+  }
+});
+
+/**
+ * #3334, cascading since #3337: imports System templates into the gym. Each
+ * becomes an `active` gym template under the System name with `cloned_from_id`
+ * set and its workouts copied; one the gym already has (by provenance or by
+ * name) is reported under `skipped`. In the same transaction the Workout
+ * Templates they link to are created or updated, the Base Exercises those name
+ * and the gym lacks are imported, and every gym-side link is re-pointed at the
+ * gym's own Workout Templates and Exercises (`training-plan-template-cascade.ts`).
+ * An id that is not an active System template refuses the whole batch.
  */
 trainingPlanTemplatesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
-  const raw = req.body?.baseTemplateIds;
-  if (!Array.isArray(raw) || raw.length === 0) {
-    return res.status(400).json({ error: 'baseTemplateIds must be a non-empty array' });
-  }
-  if (raw.length > MAX_IMPORT_IDS) {
-    return res.status(400).json({ error: `baseTemplateIds may hold at most ${MAX_IMPORT_IDS} ids` });
-  }
-  if (!raw.every((v: unknown) => typeof v === 'number' && Number.isInteger(v) && v > 0)) {
-    return res.status(400).json({ error: 'baseTemplateIds must hold positive integer ids' });
-  }
-  const ids = [...new Set(raw as number[])];
+  const ids = parseImportIds(req.body?.baseTemplateIds);
+  if (typeof ids === 'string') return res.status(400).json({ error: ids });
   try {
-    const result = await db.transaction(async (tx) => {
-      const placeholders = ids.map(() => '?').join(', ');
-      const { rows: bases } = await tx.query(
-        `SELECT id, name, description, num_days FROM training_plan_templates
-          WHERE id IN (${placeholders}) AND gym_id IS NULL AND status = 'active'`,
-        ids,
-      );
-      const found = new Set(bases.map((b: any) => Number(b.id)));
-      const invalid = ids.filter((id) => !found.has(id));
-      if (invalid.length > 0) {
-        throw Object.assign(new Error('Some ids are not active System training plan templates'), { status: 400, invalid_ids: invalid });
-      }
-      const imported: number[] = [];
-      const skipped: number[] = [];
-      for (const id of ids) {
-        const base = bases.find((b: any) => Number(b.id) === id);
-        const { rows: existing } = await tx.query(
-          `SELECT id FROM training_plan_templates
-            WHERE gym_id = ? AND status != 'deleted' AND (cloned_from_id = ? OR name = ?) LIMIT 1`,
-          [gymId, id, base.name],
-        );
-        if (existing.length > 0) { skipped.push(id); continue; }
-        const { insertId } = await tx.query(
-          `INSERT INTO training_plan_templates
-             (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id)
-           VALUES (?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?, ?)`,
-          [gymId, base.name, base.description ?? null, base.num_days ?? 0, actor, actor, id],
-        );
-        await copyTemplateWorkoutsTx(tx, gymId, id, insertId);
-        imported.push(Number(insertId));
-      }
-      return { imported, skipped };
-    });
+    const result = await db.transaction((tx) =>
+      cascadeImportTrainingPlanTemplates(tx, gymId, ids, getRequestLocale(req), actor));
+    for (const id of result.exercises.imported) {
+      recordAudit(req, { action: 'create', entityType: 'exercise', entityId: id });
+    }
+    for (const id of result.workout_templates.created) {
+      recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: id });
+    }
+    for (const id of result.workout_templates.updated) {
+      recordAudit(req, { action: 'update', entityType: 'workout_template', entityId: id });
+    }
     for (const newId of result.imported) {
       recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: newId });
     }
     res.status(201).json(result);
   } catch (err: any) {
-    if (err.status === 400) return res.status(400).json({ error: err.message, invalid_ids: err.invalid_ids });
+    if (err instanceof CascadeImportError) return res.status(400).json({ error: err.message, invalid_ids: err.invalid_ids });
     next(err);
   }
 });
