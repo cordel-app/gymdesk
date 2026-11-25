@@ -331,7 +331,8 @@ export function ExpandedRow({
                           .map((e, k) => (
                             <span key={k} data-line-reason={e.typeKey ?? ''} style={{ color: '#6b7280', display: 'block', fontSize: 12 }}>
                               {e.key === 'checkout_reason_initial_payment_waive' ? (
-                                <strong>{t(`members.${e.key}`, e.values as any)}</strong>
+                                <>
+                                  <strong>{t(`members.${e.key}`).split(':')[0]}</strong>:{t(`members.${e.key}`).split(':').slice(1).join(':')}
                               ) : (
                                 <>
                                   {e.typeKey && <strong>{t(`members.${e.typeKey}`)}{e.typeKey === 'checkout_reason_type_manual_adjustment' ? ' ' : ': '}</strong>}
