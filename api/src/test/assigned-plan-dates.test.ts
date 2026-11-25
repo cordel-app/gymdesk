@@ -55,13 +55,14 @@ describe('PUT /member-nutrition-plans/:id start_date', () => {
   });
 
   it('accepts a new start date', async () => {
-    const id = await insertNutritionPlan('active', '2026-02-01', null, null);
+    // #3405: only a plan not yet effective before today is edited in place.
+    const id = await insertNutritionPlan('active', '2099-02-01', null, null);
     const res = await request.put(`/member-nutrition-plans/${id}`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
-      .send({ start_date: '2026-03-05' });
+      .send({ start_date: '2099-03-05' });
     expect(res.status).toBe(200);
     const { rows } = await db.query<any>('SELECT DATE_FORMAT(start_date, "%Y-%m-%d") AS d FROM member_nutrition_plans WHERE id = ?', [id]);
-    expect(rows[0].d).toBe('2026-03-05');
+    expect(rows[0].d).toBe('2099-03-05');
   });
 });
 

@@ -25,3 +25,30 @@ export function versionedNutritionPlanName(name: string, start: string, end: str
 export function nextDay(date: string): string {
   return DateTime.fromISO(date, { zone: 'UTC' }).plus({ days: 1 }).toISODate() as string;
 }
+
+/**
+ * #3405: how an assigned Nutrition Plan is edited, decided in one place.
+ *
+ * - `in_place`: the plan itself is edited. A Draft (a version not yet published), and an
+ *   Active plan that has not been effective before today — its start date is today or later,
+ *   so no member has been shown it on an earlier date and nothing historical can move.
+ * - `versioned`: an Active plan effective before today is an immutable snapshot; Edit opens
+ *   (or resumes) a Draft copy and only `publish-version` replaces it.
+ * - `read_only`: completed, cancelled or deleted — never edited.
+ *
+ * `today` is the gym's own date (YYYY-MM-DD); a plan with no start date is treated as
+ * started long ago, since it has been effective on every date.
+ */
+export type NutritionPlanEditMode = 'in_place' | 'versioned' | 'read_only';
+
+export function nutritionPlanEditMode(
+  plan: { status: string; start_date: string | Date | null },
+  today: string,
+): NutritionPlanEditMode {
+  if (plan.status === 'draft') return 'in_place';
+  if (plan.status !== 'active') return 'read_only';
+  const start = plan.start_date == null
+    ? null
+    : typeof plan.start_date === 'string' ? plan.start_date.slice(0, 10) : plan.start_date.toISOString().slice(0, 10);
+  return start !== null && start >= today ? 'in_place' : 'versioned';
+}

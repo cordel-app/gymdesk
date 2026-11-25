@@ -52,7 +52,9 @@ async function createTestPlan(): Promise<any> {
     .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
-    .send({ confirm: true, member_id: memberId });
+    // #3405: a plan that starts in the future is edited in place; one effective
+    // before today is a snapshot only `edit-draft` + `publish-version` may change.
+    .send({ confirm: true, member_id: memberId, start_date: '2099-01-01' });
   expect(assignRes.status).toBe(201);
   return assignRes.body;
 }

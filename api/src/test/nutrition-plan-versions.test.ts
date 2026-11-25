@@ -22,7 +22,7 @@ describe('assigned nutrition plan versions (#1970)', () => {
     const m = await db.query(`INSERT INTO members (gym_id, name, email) VALUES (?, 'N Member', ?)`, [gymId, `nv-${Date.now()}@test.com`]);
     memberId = m.insertId;
     const ins = await db.query(
-      `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Cut', 'active', CURRENT_DATE)`,
+      `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Cut', 'active', CURRENT_DATE - INTERVAL 7 DAY)`,
       [gymId, memberId],
     );
     planId = ins.insertId;
@@ -66,7 +66,7 @@ describe('assigned nutrition plan versions (#1970)', () => {
 
   it('cancelling a draft (DELETE) leaves the original unchanged', async () => {
     const ins = await db.query(
-      `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Bulk', 'active', CURRENT_DATE)`,
+      `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Bulk', 'active', CURRENT_DATE - INTERVAL 7 DAY)`,
       [gymId, memberId],
     );
     const d = await auth(request.post(`/member-nutrition-plans/${ins.insertId}/edit-draft`));
@@ -74,5 +74,59 @@ describe('assigned nutrition plan versions (#1970)', () => {
     const orig = await auth(request.get(`/member-nutrition-plans/${ins.insertId}`));
     expect(orig.body.status).toBe('active');
     expect(orig.body.name).toBe('Bulk');
+  });
+
+  // #3405: an Active plan effective before today is an immutable snapshot.
+  it('refuses a direct write to an Active plan effective before today and leaves it unchanged', async () => {
+    const ins = await db.query(
+      `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Snap', 'active', CURRENT_DATE - INTERVAL 7 DAY)`,
+      [gymId, memberId],
+    );
+    const id = ins.insertId;
+    const day = await auth(request.post(`/member-nutrition-plans/${id}/days`)).send({ weekday: 2 });
+    expect(day.status).toBe(409);
+    expect(day.body.code).toBe('edit_as_version');
+    const put = await auth(request.put(`/member-nutrition-plans/${id}`)).send({ name: 'Renamed' });
+    expect(put.status).toBe(409);
+    const got = await auth(request.get(`/member-nutrition-plans/${id}`));
+    expect(got.body.name).toBe('Snap');
+    expect(got.body.edit_mode).toBe('versioned');
+    expect(Number(got.body.day_count)).toBe(0);
+    // Completing it is not an edit of its content.
+    expect((await auth(request.post(`/member-nutrition-plans/${id}/complete`))).status).toBe(200);
+  });
+
+  it('edits an Active plan that started today in place, without a Draft', async () => {
+    const { rows: tz } = await db.query<any>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+    const { gymToday } = await import('../domain/workoutProgress');
+    const today = gymToday(new Date(), tz[0]?.time_zone ?? 'Europe/Madrid');
+    const ins = await db.query(
+      `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Fresh', 'active', ?)`,
+      [gymId, memberId, today],
+    );
+    const id = ins.insertId;
+    const got = await auth(request.get(`/member-nutrition-plans/${id}`));
+    expect(got.body.edit_mode).toBe('in_place');
+    const draft = await auth(request.post(`/member-nutrition-plans/${id}/edit-draft`));
+    expect(draft.status).toBe(409);
+    expect(draft.body.code).toBe('edit_in_place');
+    const { rows: drafts } = await db.query<any>('SELECT id FROM member_nutrition_plans WHERE draft_of_plan_id = ?', [id]);
+    expect(drafts).toHaveLength(0);
+    expect((await auth(request.post(`/member-nutrition-plans/${id}/days`)).send({ weekday: 3 })).status).toBe(201);
+    expect((await auth(request.put(`/member-nutrition-plans/${id}`)).send({ name: 'Fresh 2' })).body.name).toBe('Fresh 2');
+  });
+
+  it('a Draft stays editable and changing it leaves the Active plan and its dates alone', async () => {
+    const ins = await db.query(
+      `INSERT INTO member_nutrition_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Keep', 'active', CURRENT_DATE - INTERVAL 7 DAY)`,
+      [gymId, memberId],
+    );
+    const d = await auth(request.post(`/member-nutrition-plans/${ins.insertId}/edit-draft`));
+    expect(d.status).toBe(201);
+    expect((await auth(request.post(`/member-nutrition-plans/${d.body.id}/days`)).send({ weekday: 4 })).status).toBe(201);
+    const orig = await auth(request.get(`/member-nutrition-plans/${ins.insertId}`));
+    expect(orig.body.status).toBe('active');
+    expect(orig.body.end_date).toBeNull();
+    expect(Number(orig.body.day_count)).toBe(0);
   });
 });
