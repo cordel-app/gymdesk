@@ -195,3 +195,54 @@ describe('GET /platform/nutrition-plan-templates — list', () => {
     expect(filtered.body.map((r: any) => r.id)).toEqual([ids[1]]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #3376: a Base template's foods carry their Base Nutrition Library image
+// ---------------------------------------------------------------------------
+
+describe('GET /platform/nutrition-plan-templates/:id/hierarchy — food images', () => {
+  const auth = { Authorization: TEST_AUTH_HEADER };
+  const uniq = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  let foodId: number;
+  let tplId: number;
+
+  afterAll(async () => {
+    if (tplId) await db.query('DELETE FROM nutrition_plan_templates WHERE id = ?', [tplId]);
+    if (foodId) {
+      await db.query('DELETE FROM base_nutrition_library_items WHERE id = ?', [foodId]);
+      await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [foodId]);
+    }
+  });
+
+  it('reports each meal item and restriction image from the Base Nutrition Library', async () => {
+    const img = `https://cdn.example/cordel/nutrition/${uniq}.webp`;
+    const food = await db.query(
+      "INSERT INTO nutrition_library_items (gym_id, name, status, image_url) VALUES (NULL, ?, 'active', ?)",
+      [`NPT Img ${uniq}`, img],
+    );
+    foodId = food.insertId;
+    await syncLegacySystemFoodsToBase();
+
+    const tpl = await request.post('/platform/nutrition-plan-templates').set(auth).send({ name: `NPT Img ${uniq}` });
+    expect(tpl.status).toBe(201);
+    tplId = tpl.body.id;
+    const day = await request.post(`/platform/nutrition-plan-templates/${tplId}/days`).set(auth).send({ weekday: 1 });
+    expect(day.status).toBe(201);
+    const meal = await request.post(`/platform/nutrition-plan-templates/${tplId}/days/${day.body.id}/meals`).set(auth)
+      .send({ meal_type: 'breakfast' });
+    expect(meal.status).toBe(201);
+    const item = await request.post(`/platform/nutrition-plan-templates/${tplId}/days/${day.body.id}/meals/${meal.body.id}/items`)
+      .set(auth).send({ nutrition_library_item_id: foodId, component_type: 'main_dish', quantity: 1, unit: 'g' });
+    expect(item.status).toBe(201);
+    expect(item.body.item_image_url).toBe(img);
+    const restriction = await request.post(`/platform/nutrition-plan-templates/${tplId}/restrictions`).set(auth)
+      .send({ nutrition_library_item_id: foodId });
+    expect(restriction.status).toBe(201);
+    expect(restriction.body.item_image_url).toBe(img);
+
+    const tree = await request.get(`/platform/nutrition-plan-templates/${tplId}/hierarchy`).set(auth);
+    expect(tree.status).toBe(200);
+    expect(tree.body.days[0].meals[0].items[0].item_image_url).toBe(img);
+    expect(tree.body.restrictions[0].item_image_url).toBe(img);
+  });
+});
