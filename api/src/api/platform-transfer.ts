@@ -283,8 +283,15 @@ platformTransferRouter.get('/base_payment_methods', requireSuperadmin, async (_r
       type: 'base_payment_methods',
       entities: rows.filter((m) => !m.deleted_at).map((m) => ({
         slug: m.slug,
-        data: { code: m.code, status: m.status, translations: m.translations },
+        // The stored URLs are informational (#3373): an import never writes them,
+        // it restores the images by uploading the archived master through the
+        // method's own image writer, which makes the thumbnail again.
+        data: {
+          code: m.code, status: m.status, translations: m.translations,
+          image_url: m.image_url ?? null, image_thumbnail_url: m.image_thumbnail_url ?? null,
+        },
         images: { image: m.image_url ?? null },
+        thumbnails: { image: m.image_thumbnail_url ?? null },
       })),
     });
   } catch (err) { next(err); }

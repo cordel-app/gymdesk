@@ -11,7 +11,11 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
  *  - `manifest.json` — the format, its version, when and what was exported;
  *  - `<type>/<slug>.json` — one file per entity: its `slug`, its own content
  *    (`data`) and, per image slot, the path of that image inside the archive;
- *  - `images/<type>/<slug>-<slot>.<ext>` — the image files themselves.
+ *  - `images/<type>/<slug>-<slot>.<ext>` — the image files themselves;
+ *  - `images/<type>/<slug>-<slot>-thumbnail.<ext>` — the stored thumbnail of a
+ *    slot, for a type whose export reports one (#3373). It is the archive's copy
+ *    of what the source held; an import never uploads it, because the entity's
+ *    own image writer makes the thumbnail again from the master it receives.
  *
  * Which types exist is the API's answer (`GET /platform/transfer/types`); this
  * module only knows their labels.
@@ -44,6 +48,8 @@ export interface ExportRecord {
   data: Record<string, unknown>;
   /** The stored URL of each image slot, or null when the slot is empty. */
   images: Record<string, string | null>;
+  /** The stored thumbnail URL of each image slot, for a type that reports them (#3373). */
+  thumbnails?: Record<string, string | null>;
 }
 
 /** One entity collected for the archive: the record and the bytes of each image it has. */
@@ -51,6 +57,7 @@ export interface CollectedEntity {
   type: string;
   record: ExportRecord;
   images: Record<string, { bytes: Uint8Array; extension: string }>;
+  thumbnails?: Record<string, { bytes: Uint8Array; extension: string }>;
 }
 
 /** One entity read back from an archive, ready to import. */
@@ -59,6 +66,8 @@ export interface ArchiveEntity {
   slug: string;
   data: Record<string, unknown>;
   images: Record<string, { bytes: Uint8Array; mime: string }>;
+  /** The archived thumbnails, read for completeness and never uploaded. */
+  thumbnails: Record<string, { bytes: Uint8Array; mime: string }>;
 }
 
 export interface ArchiveProblem {
@@ -72,6 +81,10 @@ export function entityJsonPath(type: string, slug: string): string {
 
 export function imageArchivePath(type: string, slug: string, slot: string, extension: string): string {
   return `images/${type}/${slug}-${slot}.${extension}`;
+}
+
+export function thumbnailArchivePath(type: string, slug: string, slot: string, extension: string): string {
+  return `images/${type}/${slug}-${slot}-thumbnail.${extension}`;
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -101,6 +114,13 @@ export function imageSlotsToCollect(record: ExportRecord): { slot: string; url: 
     .map(([slot, url]) => ({ slot, url }));
 }
 
+/** The thumbnail slots of a record that hold one, in the record's order. */
+export function thumbnailSlotsToCollect(record: ExportRecord): { slot: string; url: string }[] {
+  return Object.entries(record.thumbnails ?? {})
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '')
+    .map(([slot, url]) => ({ slot, url }));
+}
+
 /** `cordel-export-2026-11-17T10-30-00Z.zip` — sortable and safe on every file system. */
 export function archiveFileName(now: Date): string {
   return `cordel-export-${now.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-')}.zip`;
@@ -121,6 +141,17 @@ export function buildArchive(types: string[], entities: CollectedEntity[], now: 
       files[path] = image.bytes;
       imagePaths[slot] = path;
     }
+    let thumbnailPaths: Record<string, string | null> | undefined;
+    if (record.thumbnails) {
+      thumbnailPaths = {};
+      for (const slot of Object.keys(record.thumbnails)) {
+        const thumb = entity.thumbnails?.[slot];
+        if (!thumb) { thumbnailPaths[slot] = null; continue; }
+        const path = thumbnailArchivePath(type, record.slug, slot, thumb.extension);
+        files[path] = thumb.bytes;
+        thumbnailPaths[slot] = path;
+      }
+    }
     files[entityJsonPath(type, record.slug)] = strToU8(JSON.stringify({
       format: TRANSFER_FORMAT,
       version: TRANSFER_FORMAT_VERSION,
@@ -128,6 +159,7 @@ export function buildArchive(types: string[], entities: CollectedEntity[], now: 
       slug: record.slug,
       data: record.data,
       images: imagePaths,
+      ...(thumbnailPaths ? { thumbnails: thumbnailPaths } : {}),
     }, null, 2));
     counts[type] = (counts[type] ?? 0) + 1;
   }
@@ -186,6 +218,16 @@ export function readArchive(
       if (!bytes || !mime) { missing = String(imagePath); break; }
       images[slot] = { bytes, mime };
     }
+    const thumbnails: ArchiveEntity['thumbnails'] = {};
+    if (!missing && doc.thumbnails && typeof doc.thumbnails === 'object') {
+      for (const [slot, thumbPath] of Object.entries(doc.thumbnails)) {
+        if (thumbPath == null) continue;
+        const mime = typeof thumbPath === 'string' ? mimeForImagePath(thumbPath) : null;
+        const bytes = typeof thumbPath === 'string' ? files[thumbPath] : undefined;
+        if (!bytes || !mime) { missing = String(thumbPath); break; }
+        thumbnails[slot] = { bytes, mime };
+      }
+    }
     if (missing) {
       problems.push({ path, message: 'missing_image' });
       continue;
@@ -195,6 +237,7 @@ export function readArchive(
       slug: doc.slug,
       data: doc.data && typeof doc.data === 'object' && !Array.isArray(doc.data) ? doc.data : {},
       images,
+      thumbnails,
     });
   }
   return { entities, problems };
@@ -233,9 +276,18 @@ export function recordOutcome(summary: TransferSummary, outcome: { type: string;
   };
 }
 
-/** Steps an operation counts its progress in: one per entity plus one per image. */
+/**
+ * Steps an operation counts its progress in: one per entity plus one per image
+ * it moves. An export also reads each thumbnail (`thumbnails` on an
+ * `ExportRecord`); an import uploads none, so an archive entity's are not counted.
+ */
 export function stepsForEntities(entities: { images: Record<string, unknown> }[]): number {
-  return entities.reduce((n, e) => n + 1 + Object.values(e.images ?? {}).filter((v) => v != null && v !== '').length, 0);
+  const filled = (m: Record<string, unknown> | undefined) => Object.values(m ?? {}).filter((v) => v != null && v !== '').length;
+  return entities.reduce((n, e) => n + 1 + filled(e.images), 0);
+}
+
+export function stepsForExport(records: ExportRecord[]): number {
+  return records.reduce((n, r) => n + 1 + imageSlotsToCollect(r).length + thumbnailSlotsToCollect(r).length, 0);
 }
 
 /** Progress as a whole percentage, 0 while nothing is known and never above 100. */

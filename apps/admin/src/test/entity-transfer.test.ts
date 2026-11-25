@@ -13,6 +13,8 @@ import {
   readArchive,
   recordOutcome,
   stepsForEntities,
+  stepsForExport,
+  thumbnailSlotsToCollect,
 } from '../lib/entityTransfer';
 
 const NOW = new Date('2026-11-17T10:30:00.123Z');
@@ -70,6 +72,51 @@ describe('entity transfer archive', () => {
     expect(progressPercent(1, 3)).toBe(33);
     expect(progressPercent(5, 3)).toBe(100);
     expect(progressPercent(0, 0)).toBe(0);
+  });
+
+  it('carries a Payment Method thumbnail beside its master, and never offers it for upload (#3373)', () => {
+    const card = {
+      slug: 'card',
+      data: { code: 'card', status: 'active', translations: { en: { name: 'Card', description: null } } },
+      images: { image: 'https://cdn.example/cordel/payment_method/1-card.webp' },
+      thumbnails: { image: 'https://cdn.example/cordel/payment_method/1-card-thumbnail.webp' },
+    };
+    expect(thumbnailSlotsToCollect(card)).toEqual([{ slot: 'image', url: card.thumbnails.image }]);
+    expect(stepsForExport([card])).toBe(3);
+    const zip = buildArchive(['base_payment_methods'], [{
+      type: 'base_payment_methods',
+      record: card,
+      images: { image: { bytes: new Uint8Array([1]), extension: 'webp' } },
+      thumbnails: { image: { bytes: new Uint8Array([2]), extension: 'webp' } },
+    }], NOW);
+    const files = unzipSync(zip);
+    expect(Object.keys(files).sort()).toEqual([
+      'base_payment_methods/card.json',
+      'images/base_payment_methods/card-image-thumbnail.webp',
+      'images/base_payment_methods/card-image.webp',
+      'manifest.json',
+    ]);
+    const doc = JSON.parse(new TextDecoder().decode(files['base_payment_methods/card.json']));
+    expect(doc.thumbnails).toEqual({ image: 'images/base_payment_methods/card-image-thumbnail.webp' });
+
+    const { entities, problems } = readArchive(zip, ['base_payment_methods']);
+    expect(problems).toEqual([]);
+    expect(Object.keys(entities[0].images)).toEqual(['image']);
+    expect(Array.from(entities[0].thumbnails.image.bytes)).toEqual([2]);
+    // Only the master is uploaded: one step for the entity, one for its image.
+    expect(stepsForEntities(entities)).toBe(2);
+  });
+
+  it('reports an archive naming a thumbnail it does not hold', () => {
+    const files = {
+      'base_payment_methods/x.json': strToU8(JSON.stringify({
+        format: 'cordel-entity-transfer', version: 1, type: 'base_payment_methods', slug: 'x', data: {},
+        images: {}, thumbnails: { image: 'images/base_payment_methods/x-image-thumbnail.webp' },
+      })),
+    };
+    const { entities, problems } = readArchive(zipSync(files), ['base_payment_methods']);
+    expect(entities).toEqual([]);
+    expect(problems).toEqual([{ path: 'base_payment_methods/x.json', message: 'missing_image' }]);
   });
 
   it('names the file and the image extension safely', () => {
