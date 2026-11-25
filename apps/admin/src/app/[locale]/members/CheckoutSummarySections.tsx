@@ -161,7 +161,8 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                   {entries.map((e, k) => (
                     <span key={k} data-line-reason={e.typeKey ?? ''} style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
                       {e.key === 'checkout_reason_initial_payment_waive' ? (
-                        <strong>{t(e.key as any, e.values as any)}</strong>
+                        <>
+                          <strong>{t(e.key as any).split(':')[0]}</strong>:{t(e.key as any).split(':').slice(1).join(':')}
                       ) : (
                         <>
                           {e.typeKey && <strong>{t(e.typeKey as any)}{e.typeKey === 'checkout_reason_type_manual_adjustment' ? ' ' : ': '}</strong>}
