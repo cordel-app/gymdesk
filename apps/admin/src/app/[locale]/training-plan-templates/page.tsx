@@ -27,6 +27,7 @@ import { inlineActionsRowStyle, secondaryBtnSmall } from '@/components/formChrom
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
 import { ImportTrainingPlanTemplatesModal, type ImportTemplatesResult } from './ImportTrainingPlanTemplatesModal';
+import { cascadeResultParts } from './cascadeImportPreview';
 import { TrainingPlanTemplateCard } from './TrainingPlanTemplateCard';
 import {
   EMPTY_TEMPLATE_FORM, NUM_DAYS_OPTIONS, canResyncWithSystem, templateFormFromRow, templatePayload,
@@ -274,8 +275,8 @@ export default function TrainingPlanTemplatesPage() {
 
   function handleImported(result: ImportTemplatesResult) {
     setImportOpen(false);
-    const parts = [t('imported', { n: result.imported.length })];
-    if (result.skipped.length > 0) parts.push(t('imported_skipped', { n: result.skipped.length }));
+    // #3337 stage 2: the templates, then the Workout Templates and Exercises the cascade wrote.
+    const parts = cascadeResultParts(result).map(([key, n]) => t(key, { n }));
     toast(parts.join(' '), 'success');
     load();
   }
