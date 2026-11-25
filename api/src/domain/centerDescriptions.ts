@@ -62,7 +62,7 @@ export function parseCenterDescriptionTranslations(body: Record<string, unknown>
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return { provided: true, error: 'description_translations must be an object keyed by locale' };
   }
-  const out: Record<string, string> = {};
+  const out = new Map<string, string>();
   for (const [locale, entry] of Object.entries(value as Record<string, unknown>)) {
     if (!isSupportedLocale(locale)) {
       return { provided: true, error: `description_translations contains an unsupported locale: ${locale}` };
@@ -77,9 +77,16 @@ export function parseCenterDescriptionTranslations(body: Record<string, unknown>
     if (text.length > CENTER_DESCRIPTION_MAX) {
       return { provided: true, error: `description_translations.${locale} must be ${CENTER_DESCRIPTION_MAX} characters or fewer` };
     }
-    if (text) out[locale.toLowerCase()] = text;
+    // The key written is the allowlist's own element, never the request's string (data flow, not trust).
+    const key = TRANSLATABLE_LOCALES.find((candidate) => candidate === locale.toLowerCase());
+    if (text && key) out.set(key, text);
   }
-  return { provided: true, value: out };
+  const result: Record<string, string> = {};
+  for (const l of TRANSLATABLE_LOCALES) {
+    const text = out.get(l);
+    if (text) result[l] = text;
+  }
+  return { provided: true, value: result };
 }
 
 /** Replace every translation of one Center, inside the caller's transaction. */
