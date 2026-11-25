@@ -182,7 +182,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
       [id],
     );
     const { rows: goalRows } = await db.query(
-      goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id IS NULL'),
+      goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id IS NULL', getRequestLocale(req)),
       [id],
     );
 
@@ -621,7 +621,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/goals', requireSuperadmin, async 
   try {
     if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
     const { rows } = await db.query(
-      goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id IS NULL'),
+      goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id IS NULL', getRequestLocale(req)),
       [id],
     );
     res.json(rows);
@@ -652,7 +652,7 @@ platformNutritionPlanTemplatesRouter.post('/:id/goals', requireSuperadmin, async
       'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
       [id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id, illustration.id],
     );
-    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [insertId]);
+    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?', getRequestLocale(req)), [insertId]);
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
 });
@@ -675,7 +675,7 @@ platformNutritionPlanTemplatesRouter.put('/:id/goals/:gid', requireSuperadmin, a
       [illustration.id, illustration.id, gid, id],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Goal not found' });
-    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [gid]);
+    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?', getRequestLocale(req)), [gid]);
     res.json(rows[0]);
   } catch (err) { next(err); }
 });

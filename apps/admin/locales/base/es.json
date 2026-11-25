@@ -4534,7 +4534,10 @@
     "created": "Plantilla creada.",
     "updated": "Plantilla actualizada.",
     "deleted": "Plantilla eliminada.",
-    "hierarchy_failed": "No se ha podido cargar el plan."
+    "hierarchy_failed": "No se ha podido cargar el plan.",
+    "tree_goal_image_close": "Cerrar",
+    "tree_goal_image_none": "Sin imagen",
+    "tree_goal_no_description": "No hay descripción disponible."
   },
   "nutrition_library": {
     "details_slug": "Slug",

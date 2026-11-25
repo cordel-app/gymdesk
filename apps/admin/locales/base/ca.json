@@ -4561,7 +4561,10 @@
     "created": "Plantilla creada.",
     "updated": "Plantilla actualitzada.",
     "deleted": "Plantilla eliminada.",
-    "hierarchy_failed": "No s'ha pogut carregar el pla."
+    "hierarchy_failed": "No s'ha pogut carregar el pla.",
+    "tree_goal_image_close": "Tanca",
+    "tree_goal_image_none": "Sense imatge",
+    "tree_goal_no_description": "No hi ha cap descripció disponible."
   },
   "nutrition_library": {
     "details_slug": "Slug",
