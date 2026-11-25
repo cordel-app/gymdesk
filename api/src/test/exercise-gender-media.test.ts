@@ -13,6 +13,13 @@ import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createBaseExercise, createTestGym, createTestMembership, deleteBaseExercises, request } from './helpers';
 import { buildMp4 } from './mp4-fixtures';
 
+// The upload budget (default 30 per 15 minutes, one signed-in person) is read
+// once, when the router module is evaluated, so it is raised before the helpers
+// import the app: this file alone makes more uploads than one window allows.
+vi.hoisted(() => {
+  process.env.EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX = '1000';
+});
+
 const sendMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@aws-sdk/client-s3', () => ({
@@ -85,6 +92,9 @@ function uploadedBody(key: string): Buffer {
 
 const GYM_NAME = 'GenderMediaGym';
 const EXERCISE_NAME = 'Test Gender Media Press';
+// Keys are built from the slug, never the name (#3350): the two differ on purpose.
+const EXERCISE_SLUG = 'gender-media-press';
+const BASE_SLUG = `gender-media-base-${Date.now()}`;
 
 let gymId: string;
 let otherGymId: string;
@@ -93,8 +103,11 @@ let exerciseId: number;
 let otherGymExerciseId: number;
 let baseExerciseId: number;
 
-async function createExercise(gym: string | null, name: string): Promise<number> {
-  const { insertId } = await db.query("INSERT INTO exercises (gym_id, name, status) VALUES (?, ?, 'active')", [gym, name]);
+async function createExercise(gym: string | null, name: string, slug: string): Promise<number> {
+  const { insertId } = await db.query(
+    "INSERT INTO exercises (gym_id, name, slug, status) VALUES (?, ?, ?, 'active')",
+    [gym, name, slug],
+  );
   return insertId as number;
 }
 
@@ -124,9 +137,9 @@ beforeAll(async () => {
   await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [gymPrefix, gymId]);
   otherGymId = await createTestGym('GenderMediaGymOther');
 
-  exerciseId = await createExercise(gymId, EXERCISE_NAME);
-  otherGymExerciseId = await createExercise(otherGymId, 'Test Gender Media Other');
-  baseExerciseId = await createBaseExercise({ name: 'Test Gender Media Base' });
+  exerciseId = await createExercise(gymId, EXERCISE_NAME, EXERCISE_SLUG);
+  otherGymExerciseId = await createExercise(otherGymId, 'Test Gender Media Other', 'gender-media-other');
+  baseExerciseId = await createBaseExercise({ name: 'Test Gender Media Base', slug: BASE_SLUG });
 });
 
 afterAll(async () => {
@@ -174,7 +187,7 @@ describe('Gym Exercise gender images', () => {
     const res = await gymPost('image/male', IMAGE_BODY);
     expect(res.status).toBe(200);
 
-    const master = `${gymPrefix}/exercises/images/${exerciseId}-Test-Gender-Media-Press-male.webp`;
+    const master = `${gymPrefix}/exercises/images/${exerciseId}-${EXERCISE_SLUG}-male.webp`;
     expect(putKeys()).toEqual([master, master.replace('.webp', '-thumbnail.webp')]);
     expect(res.body.image_male_url).toBe(url(master));
     expect(res.body.image_male_thumbnail_url).toBe(url(master.replace('.webp', '-thumbnail.webp')));
@@ -192,12 +205,37 @@ describe('Gym Exercise gender images', () => {
     expect(media.image_female_url).toMatch(/-female\.webp$/);
   });
 
+  it('keys the image by the slug, so a rename moves nothing (#3350)', async () => {
+    await db.query('UPDATE exercises SET name = ? WHERE id = ?', ['Test Gender Media Renamed', exerciseId]);
+    try {
+      sendMock.mockClear();
+      const res = await gymPost('image/male', IMAGE_BODY);
+      expect(res.status).toBe(200);
+      const master = `${gymPrefix}/exercises/images/${exerciseId}-${EXERCISE_SLUG}-male.webp`;
+      expect(putKeys()).toEqual([master, master.replace('.webp', '-thumbnail.webp')]);
+      expect(putKeys().join()).not.toContain('Renamed');
+    } finally {
+      await db.query('UPDATE exercises SET name = ? WHERE id = ?', [EXERCISE_NAME, exerciseId]);
+    }
+  });
+
+  it('moves a pre-#3350 name-keyed image onto the slug key when it is replaced (#3350)', async () => {
+    const legacy = `${gymPrefix}/exercises/images/${exerciseId}-Test-Gender-Media-Press-male.webp`;
+    await db.query('UPDATE exercises SET image_male_url = ? WHERE id = ?', [url(legacy), exerciseId]);
+    sendMock.mockClear();
+    const res = await gymPost('image/male', IMAGE_BODY);
+    expect(res.status).toBe(200);
+    const master = `${gymPrefix}/exercises/images/${exerciseId}-${EXERCISE_SLUG}-male.webp`;
+    expect(await mediaOf(exerciseId)).toMatchObject({ image_male_url: url(master) });
+    expect(deletedKeys().sort()).toEqual([legacy, legacy.replace('.webp', '-thumbnail.webp')].sort());
+  });
+
   it('centre-crops a non-square picture to a 1080 master and a 256 thumbnail, with no transparent band (#1527)', async () => {
     // 1600x900 JPEG, fully opaque: cropped to its middle 900x900, then 1080x1080 —
     // every row is picture, so My Training shows no band between photo and card.
     const res = await gymPost('image/male', IMAGE_BODY);
     expect(res.status).toBe(200);
-    const master = `${gymPrefix}/exercises/images/${exerciseId}-Test-Gender-Media-Press-male.webp`;
+    const master = `${gymPrefix}/exercises/images/${exerciseId}-${EXERCISE_SLUG}-male.webp`;
     const thumb = master.replace('.webp', '-thumbnail.webp');
 
     const m = await sharp(uploadedBody(master)).metadata();
@@ -288,7 +326,7 @@ describe('Gym Exercise gender videos', () => {
     const res = await gymPost('video/female', VIDEO_BODY);
     expect(res.status).toBe(200);
 
-    const video = `${gymPrefix}/exercises/videos/${exerciseId}-Test-Gender-Media-Press-female.mp4`;
+    const video = `${gymPrefix}/exercises/videos/${exerciseId}-${EXERCISE_SLUG}-female.mp4`;
     expect(putKeys()).toEqual([
       video,
       video.replace('.mp4', '.webp'),
@@ -307,7 +345,7 @@ describe('Gym Exercise gender videos', () => {
   it('makes the preview and its thumbnail from the frame', async () => {
     const res = await gymPost('video/male', VIDEO_BODY);
     expect(res.status).toBe(200);
-    const video = `${gymPrefix}/exercises/videos/${exerciseId}-Test-Gender-Media-Press-male.mp4`;
+    const video = `${gymPrefix}/exercises/videos/${exerciseId}-${EXERCISE_SLUG}-male.mp4`;
     expect(await sharp(uploadedBody(video.replace('.mp4', '.webp'))).metadata()).toMatchObject({
       format: 'webp', width: 1080, height: 1080, hasAlpha: false,
     });
@@ -357,7 +395,7 @@ describe('Base Exercise gender media (/platform/exercises)', () => {
   it('stores an image under cordel/exercises/images', async () => {
     const res = await basePost('image/female', IMAGE_BODY);
     expect(res.status).toBe(200);
-    const master = `cordel/exercises/images/${baseExerciseId}-Test-Gender-Media-Base-female.webp`;
+    const master = `cordel/exercises/images/${baseExerciseId}-${BASE_SLUG}-female.webp`;
     expect(putKeys()).toEqual([master, master.replace('.webp', '-thumbnail.webp')]);
     expect(res.body.image_female_url).toBe(url(master));
   });
@@ -365,7 +403,7 @@ describe('Base Exercise gender media (/platform/exercises)', () => {
   it('stores a video and previews under cordel/exercises/videos', async () => {
     const res = await basePost('video/male', VIDEO_BODY);
     expect(res.status).toBe(200);
-    const video = `cordel/exercises/videos/${baseExerciseId}-Test-Gender-Media-Base-male.mp4`;
+    const video = `cordel/exercises/videos/${baseExerciseId}-${BASE_SLUG}-male.mp4`;
     expect(putKeys()).toEqual([video, video.replace('.mp4', '.webp'), video.replace('.mp4', '-thumbnail.webp')]);
   });
 

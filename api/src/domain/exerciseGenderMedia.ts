@@ -6,11 +6,16 @@
 // `video_male_url`, `video_female_url`); the companions are derived from it by
 // the naming convention below, so no thumbnail column exists:
 //
-//   images/<id>-<name>-<gender>.webp              1080x1080 master  (stored)
-//   images/<id>-<name>-<gender>-thumbnail.webp     256x256          (derived)
-//   videos/<id>-<name>-<gender>.mp4               the video         (stored)
-//   videos/<id>-<name>-<gender>.webp              1080x1080 preview (derived)
-//   videos/<id>-<name>-<gender>-thumbnail.webp     256x256          (derived)
+//   images/<id>-<slug>-<gender>.webp              1080x1080 master  (stored)
+//   images/<id>-<slug>-<gender>-thumbnail.webp     256x256          (derived)
+//   videos/<id>-<slug>-<gender>.mp4               the video         (stored)
+//   videos/<id>-<slug>-<gender>.webp              1080x1080 preview (derived)
+//   videos/<id>-<slug>-<gender>-thumbnail.webp     256x256          (derived)
+//
+// `<slug>` is the exercise's persisted slug (#3350), generated once and never
+// rewritten (#2951), so renaming an exercise never moves its media. Objects
+// stored before #3350 under `<id>-<name>-…` keep rendering from their stored
+// URL; replacing that image is what moves it (the route's sweep).
 //
 // A video's preview stays under `videos/`: it belongs to the video and must never
 // replace a separately uploaded image. The gender suffix is mandatory on every
@@ -97,27 +102,37 @@ export function exerciseMediaUploadRateLimitMax(env: NodeJS.ProcessEnv = process
 
 // ─── Keys ─────────────────────────────────────────────────────────────────────
 
-const stem = (id: number | string, name: string, gender: ExerciseGender) =>
-  `${id}-${sanitizeExerciseImageName(name)}-${gender}`;
-
-/** `<gym prefix>/exercises/images/<id>-<name>-<gender>.webp` */
-export function buildGymExerciseGenderImageKey(prefix: string, id: number | string, name: string, gender: ExerciseGender): string {
-  return `${prefix}/${EXERCISE_IMAGES_FOLDER}/${stem(id, name, gender)}.webp`;
+/**
+ * The identifier an exercise's media keys are built from: its persisted slug
+ * (#3350). A row with no slug (none should exist since migration 437 gave every
+ * exercise one) keeps the pre-#3350 name-based key rather than failing the upload.
+ */
+export function exerciseMediaKeyIdentifier(row: { slug?: string | null; name: string }): string {
+  const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
+  return slug || row.name;
 }
 
-/** `<gym prefix>/exercises/videos/<id>-<name>-<gender>.mp4` */
-export function buildGymExerciseGenderVideoKey(prefix: string, id: number | string, name: string, gender: ExerciseGender): string {
-  return `${prefix}/${EXERCISE_VIDEOS_FOLDER}/${stem(id, name, gender)}.mp4`;
+const stem = (id: number | string, slug: string, gender: ExerciseGender) =>
+  `${id}-${sanitizeExerciseImageName(slug)}-${gender}`;
+
+/** `<gym prefix>/exercises/images/<id>-<slug>-<gender>.webp` */
+export function buildGymExerciseGenderImageKey(prefix: string, id: number | string, slug: string, gender: ExerciseGender): string {
+  return `${prefix}/${EXERCISE_IMAGES_FOLDER}/${stem(id, slug, gender)}.webp`;
 }
 
-/** `cordel/exercises/images/<id>-<name>-<gender>.webp` */
-export function buildBaseExerciseGenderImageKey(id: number | string, name: string, gender: ExerciseGender): string {
-  return `${PLATFORM_STORAGE_ROOT}/${EXERCISE_IMAGES_FOLDER}/${stem(id, name, gender)}.webp`;
+/** `<gym prefix>/exercises/videos/<id>-<slug>-<gender>.mp4` */
+export function buildGymExerciseGenderVideoKey(prefix: string, id: number | string, slug: string, gender: ExerciseGender): string {
+  return `${prefix}/${EXERCISE_VIDEOS_FOLDER}/${stem(id, slug, gender)}.mp4`;
 }
 
-/** `cordel/exercises/videos/<id>-<name>-<gender>.mp4` */
-export function buildBaseExerciseGenderVideoKey(id: number | string, name: string, gender: ExerciseGender): string {
-  return `${PLATFORM_STORAGE_ROOT}/${EXERCISE_VIDEOS_FOLDER}/${stem(id, name, gender)}.mp4`;
+/** `cordel/exercises/images/<id>-<slug>-<gender>.webp` */
+export function buildBaseExerciseGenderImageKey(id: number | string, slug: string, gender: ExerciseGender): string {
+  return `${PLATFORM_STORAGE_ROOT}/${EXERCISE_IMAGES_FOLDER}/${stem(id, slug, gender)}.webp`;
+}
+
+/** `cordel/exercises/videos/<id>-<slug>-<gender>.mp4` */
+export function buildBaseExerciseGenderVideoKey(id: number | string, slug: string, gender: ExerciseGender): string {
+  return `${PLATFORM_STORAGE_ROOT}/${EXERCISE_VIDEOS_FOLDER}/${stem(id, slug, gender)}.mp4`;
 }
 
 /** The key beside `key` with `-thumbnail` before the `.webp` extension. */

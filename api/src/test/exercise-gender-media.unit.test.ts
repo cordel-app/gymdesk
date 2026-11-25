@@ -6,6 +6,7 @@ import {
   buildBaseExerciseGenderVideoKey,
   buildGymExerciseGenderImageKey,
   buildGymExerciseGenderVideoKey,
+  exerciseMediaKeyIdentifier,
   gymExerciseGenderFolderKeys,
   imageObjectUrls,
   imageThumbnailUrlFor,
@@ -39,6 +40,14 @@ describe('exercise gender media keys (#1420)', () => {
   it('builds the platform keys under cordel/exercises', () => {
     expect(buildBaseExerciseGenderImageKey(3, 'Squat', 'male')).toBe('cordel/exercises/images/3-Squat-male.webp');
     expect(buildBaseExerciseGenderVideoKey(3, 'Squat', 'female')).toBe('cordel/exercises/videos/3-Squat-female.mp4');
+  });
+
+  it('uses the slug as the key identifier, and the name only for a row with none (#3350)', () => {
+    expect(exerciseMediaKeyIdentifier({ slug: 'barbell-press', name: 'Barbell Press' })).toBe('barbell-press');
+    expect(exerciseMediaKeyIdentifier({ slug: null, name: 'Barbell Press' })).toBe('Barbell Press');
+    expect(exerciseMediaKeyIdentifier({ slug: '  ', name: 'Squat' })).toBe('Squat');
+    expect(buildGymExerciseGenderImageKey('gyms/1-Fit', 7, exerciseMediaKeyIdentifier({ slug: 'barbell-press', name: 'Renamed' }), 'male'))
+      .toBe('gyms/1-Fit/exercises/images/7-barbell-press-male.webp');
   });
 
   it('keeps a video preview under videos/, never under images/', () => {

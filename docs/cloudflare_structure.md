@@ -60,18 +60,18 @@
 │   │
 │   ├── exercises/
 │   │   ├── images/
-│   │   │   ├── {exercise_id}-{exercise_name}-male.webp                          — 1080 × 1080 px
-│   │   │   ├── {exercise_id}-{exercise_name}-male-thumbnail.webp                — 256 × 256 px
-│   │   │   ├── {exercise_id}-{exercise_name}-female.webp                        — 1080 × 1080 px
-│   │   │   └── {exercise_id}-{exercise_name}-female-thumbnail.webp              — 256 × 256 px
+│   │   │   ├── {exercise_id}-{exercise_slug}-male.webp                          — 1080 × 1080 px
+│   │   │   ├── {exercise_id}-{exercise_slug}-male-thumbnail.webp                — 256 × 256 px
+│   │   │   ├── {exercise_id}-{exercise_slug}-female.webp                        — 1080 × 1080 px
+│   │   │   └── {exercise_id}-{exercise_slug}-female-thumbnail.webp              — 256 × 256 px
 │   │   │
 │   │   └── videos/
-│   │       ├── {exercise_id}-{exercise_name}-male.mp4                    — video
-│   │       ├── {exercise_id}-{exercise_name}-male.webp                   — 1080 x 1080        
-│   │       ├── {exercise_id}-{exercise_name}-male-thumbnail.webp         — 256 x 256        
-│   │       ├── {exercise_id}-{exercise_name}-female.webp                 — 1080 x 1080        
-│   │       ├── {exercise_id}-{exercise_name}-female-thumbnail.webp       — 256 x 256        
-│   │       └── {exercise_id}-{exercise_name}-female.mp4                  — vídeo
+│   │       ├── {exercise_id}-{exercise_slug}-male.mp4                    — video
+│   │       ├── {exercise_id}-{exercise_slug}-male.webp                   — 1080 x 1080        
+│   │       ├── {exercise_id}-{exercise_slug}-male-thumbnail.webp         — 256 x 256        
+│   │       ├── {exercise_id}-{exercise_slug}-female.webp                 — 1080 x 1080        
+│   │       ├── {exercise_id}-{exercise_slug}-female-thumbnail.webp       — 256 x 256        
+│   │       └── {exercise_id}-{exercise_slug}-female.mp4                  — vídeo
 │   │
 │   └── themes/
 │       └── {theme_id}-{theme_name}/
@@ -144,18 +144,18 @@
         │       
         ├── exercises/
         │   ├── images/
-        │   │   ├── {exercise_id}-{exercise_name}-male.webp                    — 1080 × 1080 px        
-        │   │   ├── {exercise_id}-{exercise_name}-male-thumbnail.webp          — 256 × 256 px        
-        │   │   ├── {exercise_id}-{exercise_name}-female.webp                  — 1080 × 1080 px
-        │   │   └── {exercise_id}-{exercise_name}-female-thumbnail.webp        — 256 × 256 px
+        │   │   ├── {exercise_id}-{exercise_slug}-male.webp                    — 1080 × 1080 px        
+        │   │   ├── {exercise_id}-{exercise_slug}-male-thumbnail.webp          — 256 × 256 px        
+        │   │   ├── {exercise_id}-{exercise_slug}-female.webp                  — 1080 × 1080 px
+        │   │   └── {exercise_id}-{exercise_slug}-female-thumbnail.webp        — 256 × 256 px
         │   │
         │   └── videos/
-        │       ├── {exercise_id}-{exercise_name}-male.mp4                    — video
-        │       ├── {exercise_id}-{exercise_name}-male.webp                   — 1080 x 1080        
-        │       ├── {exercise_id}-{exercise_name}-male-thumbnail.webp         — 256 x 256        
-        │       ├── {exercise_id}-{exercise_name}-female.webp                 — 1080 x 1080        
-        │       ├── {exercise_id}-{exercise_name}-female-thumbnail.webp       — 256 x 256        
-        │       └── {exercise_id}-{exercise_name}-female.mp4                  — vídeo
+        │       ├── {exercise_id}-{exercise_slug}-male.mp4                    — video
+        │       ├── {exercise_id}-{exercise_slug}-male.webp                   — 1080 x 1080        
+        │       ├── {exercise_id}-{exercise_slug}-male-thumbnail.webp         — 256 x 256        
+        │       ├── {exercise_id}-{exercise_slug}-female.webp                 — 1080 x 1080        
+        │       ├── {exercise_id}-{exercise_slug}-female-thumbnail.webp       — 256 x 256        
+        │       └── {exercise_id}-{exercise_slug}-female.mp4                  — vídeo
         │
         └── themes/
             └── {theme_id}-{theme_name}/
@@ -301,5 +301,7 @@ Since stage 2 the **server** makes the WebP files, through `POST`/`DELETE /exerc
 - **A video upload** sends `{ video, frame }`: the MP4 (validated from its bytes, `EXERCISE_VIDEO_MAX_MB`) and one frame the browser captured from it, because `sharp` cannot decode MP4 and no `ffmpeg` is installed. The frame is processed exactly like an image upload and stored as the video's preview and preview thumbnail under `videos/`; it never touches an image column. A request with no frame is a 400.
 - **Nothing is uploaded or written until every file is valid**; a failed upload removes only the objects it created, and the row takes its column in one `UPDATE`.
 - **Uploads are rate limited per signed-in person** (`EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX`, default 30 per 15 minutes, on top of the global budget) and decoding is bounded process-wide (`api/src/domain/imageProcessingSlot.ts`, shared with the Member photo).
+
+**Keys name the slug (#3350 stage 1).** `{exercise_slug}` is the exercise's persisted slug (`base_exercises.slug` / `exercises.slug`, #2951 stage 2), never its display or translated name, so a rename moves no object. Media stored before #3350 under `{exercise_id}-{exercise_name}-…` keeps rendering from its stored URL; replacing that image or video uploads it under the slug key and the route's sweep then deletes the name-keyed objects (only the gym's or the platform's own, and only when no other exercise references them). Nothing is migrated in bulk.
 
 **Legacy media (#1420, last stage).** The pre-#1420 exercise objects (`<id>-<name>.png`, `…-thumbnail.png`, the MP4 with its 512 PNG poster, and anything under the pre-#1035 `Exercises/Images/` / `Exercises/Videos/` folders) are not carried over: migration 277 dropped the columns that pointed at them and `npm run exercises:purge-legacy-media` removes the objects by key (a dry run unless `--execute`; the *Purge legacy exercise media* workflow runs it on the VPS). Only the `-male` / `-female` WebP and MP4 names above are valid in an exercise media folder.
