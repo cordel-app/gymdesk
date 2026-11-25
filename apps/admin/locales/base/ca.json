@@ -435,6 +435,7 @@
     "purchase_actions_for": "Accions de {product}",
     "action_view_billing_event": "Veure esdeveniment de facturació",
     "billing_event_unavailable": "Aquesta compra encara no té esdeveniment de facturació.",
+    "purchase_pending_payment_blocked": "No pots fer noves compres fins que no s'hagi completat el pagament de la teva compra actual pendent.",
     "products_add": "+ Afegir producte",
     "products_add_unavailable": "Les compres iniciades pel personal encara no estan disponibles. Els membres compren productes des de l'app de membres.",
     "products_card_collapse": "Replega Productes",

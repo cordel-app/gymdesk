@@ -54,6 +54,7 @@ import { useApiClient } from '@/lib/apiClient';
 import type { AssignablePlan } from '../plans/AssignPlanToMembersEditor';
 import { apiErrorMessage } from '@/lib/apiClient';
 import { formControlStyle, formErrorStyle, inlineEditorStyle, secondaryBtnSmall } from '@/components/formChrome';
+import { addPurchaseAction, PENDING_PURCHASE_BLOCKED_KEY } from './pendingPurchaseBlock';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { AssignPlanToMembersEditor } from '../plans/AssignPlanToMembersEditor';
 import { AssignedPlansTable, type AssignedPlanRowHelpers } from '@/components/assignedPlan/AssignedPlansTable';
@@ -85,10 +86,12 @@ interface Props {
   /** The inline "Assign New Plan" editor for a plan, rendered under the list (#628). */
   renderAssignEditor: (plan: MemberPlanRow) => React.ReactNode;
   assignBusy: boolean;
+  /** #3355 stage 1 — the member owns a Purchase awaiting payment: `+ Add Membership Plan` opens nothing. */
+  purchasePending?: boolean;
 }
 
 export function MemberMembershipPlans({
-  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, onReactivatePlan, renderAssignEditor, assignBusy,
+  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, onReactivatePlan, renderAssignEditor, assignBusy, purchasePending = false,
 }: Props) {
   const t = useTranslations('members');
   const locale = useLocale();
@@ -97,6 +100,9 @@ export function MemberMembershipPlans({
   const optionsLoadedRef = useRef(false);
 
   const [adding, setAdding] = useState(false);
+  // #3355 stage 1: the red notice a blocked `+ Add Membership Plan` shows; gone once nothing is pending.
+  const [addBlocked, setAddBlocked] = useState(false);
+  useEffect(() => { if (!purchasePending) setAddBlocked(false); }, [purchasePending]);
   // #1533: the Draft just created from the picker — opened in Edit mode in the list.
   const [newDraftId, setNewDraftId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
@@ -184,6 +190,8 @@ export function MemberMembershipPlans({
   }
 
   function startAdding() {
+    // #3355 stage 1: no new purchase while one awaits payment — say so under the button instead.
+    if (addPurchaseAction(purchasePending) === 'blocked') { setAddBlocked(true); return; }
     setAdding(true);
   }
 
@@ -288,6 +296,11 @@ export function MemberMembershipPlans({
           live, the assignment answers the Add-or-Replace dialog instead of refusing. */}
       {canWrite && !adding && (
         <button onClick={startAdding} style={addBtn}>{t('add_membership_plan')}</button>
+      )}
+      {canWrite && !adding && addBlocked && (
+        <p role="alert" style={{ ...formErrorStyle, margin: '6px 0 0' }} data-pending-purchase-blocked>
+          {t(PENDING_PURCHASE_BLOCKED_KEY)}
+        </p>
       )}
 
       {/* #1450/#1460: the one Assign Plan to Member workflow (the Plans page's
