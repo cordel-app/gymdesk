@@ -61,6 +61,11 @@ export interface BillingEventLineRow {
   waivable?: boolean;
   /** #3284 stage 3 — why Waive is disabled on this line (`waiveRefusal()`'s code), `null` when it is not; carried. */
   waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | null;
+  /**
+   * #3282 stage 3 — on a waived line, the cart's own final price the waiver set to zero (VAT
+   * included), so the Initial Payment can still state its Price; carried, never persisted.
+   */
+  price_before_waive?: number | null;
 }
 
 /**

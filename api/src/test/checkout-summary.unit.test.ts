@@ -106,6 +106,35 @@ describe('initialPaymentBreakdown', () => {
     expect(out.discount_total).toBe(8.25);
   });
 
+  // #3282 stage 3 — Price is the cart's final price (prorated), Base Price the prorated line before
+  // discounts; a staff waiver zeroes Amount and VAT Amount only and is not counted as a discount.
+  it('states Price and Base Price, and totals discounts as SUM(base) − SUM(price) with a waived line kept at its price', () => {
+    const out = initialPaymentBreakdown([
+      // Locker: 5 × €15, 50% Promotion, 8 of 30 days → base €20.00, price €10.00.
+      line({ item_name: 'Locker', quantity: 5, amount: 10, regular_unit_price: 75, prorated_days: 8, period_days: 30,
+        tax_rate_percent: 21, amount_excl_tax: 8.26 }),
+      // Towel waived by staff: the cart priced it €12.10 (VAT 21%); amount and VAT now 0.
+      line({ item_name: 'Towel', quantity: 1, amount: 0, regular_unit_price: 12.1, tax_rate_percent: 21,
+        amount_excl_tax: 0, waived: true, price_before_waive: 12.1 }),
+    ], 10);
+    expect(out.lines[0]).toEqual(expect.objectContaining({ base_price: 20, price: 10, tax_amount: 1.74, amount: 10 }));
+    expect(out.lines[0].charged_unit_breakdown).toEqual({ quantity: 5, unit_price: 7.5, days: 8, period_days: 30 });
+    expect(out.lines[1]).toEqual(expect.objectContaining({ base_price: 12.1, price: 12.1, tax_amount: 0, amount: 0 }));
+    expect(out.total_before_discounts).toBe(32.1);
+    expect(out.discount_total).toBe(10);
+    expect(out.subtotal_excl_tax).toBe(8.26);
+    expect(out.tax_total).toBe(1.74);
+    expect(out.total).toBe(10);
+  });
+
+  it('a waived line read with no price before the waiver states its amount as its price', () => {
+    const out = initialPaymentBreakdown([
+      line({ item_name: 'Towel', amount: 0, regular_unit_price: 12.1, waived: true }),
+    ], 0);
+    expect(out.lines[0]).toEqual(expect.objectContaining({ base_price: 12.1, price: 0, amount: 0 }));
+    expect(out.discount_total).toBe(12.1);
+  });
+
   it('reports the charge it was handed, null included, never a re-added figure', () => {
     expect(initialPaymentBreakdown([], null).total).toBeNull();
     expect(initialPaymentBreakdown([], 0).total).toBe(0);
