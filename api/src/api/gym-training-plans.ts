@@ -31,6 +31,7 @@ const SORT_COLUMNS: Record<string, string> = {
   template: 'tpt.name',
   status: 'tp.status',
   start_date: 'tp.start_date',
+  end_date: 'tp.end_date',
   created_by: 'tp.created_by',
   created_at: 'tp.created_at',
   modified_at: 'tp.modified_at',
@@ -101,7 +102,8 @@ gymTrainingPlansRouter.get('/', async (req, res, next) => {
       `SELECT tp.id, tp.name, tp.description, tp.status, tp.start_date, tp.end_date,
               tp.member_id, m.name AS member_name, tp.draft_of_plan_id,
               tp.template_id, tpt.name AS template_name,
-              tp.created_by, tp.created_at, tp.modified_at, tp.modified_by
+              tp.created_by, tp.created_at, tp.modified_at, tp.modified_by,
+              (SELECT COUNT(*) FROM workouts w WHERE w.training_plan_id = tp.id AND w.deleted_at IS NULL) AS day_count
        ${fromSql}
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,

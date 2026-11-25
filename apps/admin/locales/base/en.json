@@ -3191,7 +3191,10 @@
     "conclude": "Conclude Plan",
     "confirm_conclude": "Mark this training plan as concluded? The status will change to Completed. If no end date is set, today will be used. This cannot be undone.",
     "conclude_confirm_btn": "Conclude Plan",
-    "error_end_date_required_expired": "End Date is required when status is Expired."
+    "error_end_date_required_expired": "End Date is required when status is Expired.",
+    "col_days": "Days",
+    "day_count": "{count, plural, one {# day} other {# days}}",
+    "open_ended": "Open-ended"
   },
   "template_workouts": {
     "title": "Workouts",
@@ -5924,7 +5927,10 @@
     "label_modified_by": "Modified By",
     "details_dialog_title": "Nutrition Plan Details",
     "unsaved_changes": "You have unsaved changes. Discard them?",
-    "unsaved_discard": "Discard changes"
+    "unsaved_discard": "Discard changes",
+    "col_end_date": "End Date",
+    "label_end_date": "End Date",
+    "open_ended": "Open-ended"
   },
   "operating_hours": {
     "title": "Operating Hours & Holidays",

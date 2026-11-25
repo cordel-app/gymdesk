@@ -16,6 +16,8 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { AssignedPlanDateFields } from '@/components/AssignedPlanDateFields';
+import { assignedPlanDateTexts } from '@/lib/assignedPlanDates';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, LIST_PADDING_X, type ListGridColumn,
@@ -49,13 +51,15 @@ interface TrainingPlanRow {
   modified_at: string | null;
   modified_by: string | null;
   workouts?: Workout[] | null;
+  /** #3403: the plan's training days (its workouts). */
+  day_count?: number;
 }
 interface ListResponse { items: TrainingPlanRow[]; total: number; limit: number; offset: number }
 interface CreatedByOption { name: string }
 interface MemberOption { id: number; name: string }
 interface TemplateOption { id: number; name: string }
 
-type SortKey = 'name' | 'member' | 'template' | 'status' | 'start_date' | 'created_by' | 'created_at' | 'modified_at';
+type SortKey = 'name' | 'member' | 'template' | 'status' | 'start_date' | 'end_date' | 'created_by' | 'created_at' | 'modified_at';
 
 const STATUSES = ['draft', 'active', 'expired', 'completed'] as const;
 const EDITABLE_STATUSES = ['draft', 'active', 'expired'] as const;
@@ -91,11 +95,14 @@ const LIST_COLUMNS: ListColumn[] = [
   { key: 'expand', width: 20, mobile: 'keep' },
   { key: 'name', labelKey: 'col_name', sortKey: 'name', width: 180, grow: 2, mobile: 'name' },
   { key: 'member', labelKey: 'col_member', sortKey: 'member', width: 160, mobile: 'secondary' },
-  { key: 'status', labelKey: 'col_status', sortKey: 'status', width: 100, mobile: 'keep' },
+  // #3403: the Assigned Nutrition Plans list's own columns, in its order.
+  { key: 'days', labelKey: 'col_days', width: 80, mobile: 'secondary' },
   { key: 'start_date', labelKey: 'col_start_date', sortKey: 'start_date', width: 120, mobile: 'secondary' },
+  { key: 'end_date', labelKey: 'col_end_date', sortKey: 'end_date', width: 120, mobile: 'secondary' },
   // Wide enough for the longest translated title plus its sort arrow.
   { key: 'created_at', labelKey: 'col_created_at', sortKey: 'created_at', width: 120, mobile: 'secondary' },
-  { key: 'modified_at', labelKey: 'col_modified_at', sortKey: 'modified_at', width: 120, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', sortKey: 'created_by', width: 140, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', sortKey: 'status', width: 100, mobile: 'keep' },
   { key: 'actions', width: 44, mobile: 'actions' },
 ];
 
@@ -398,7 +405,7 @@ export default function TrainingPlansPage() {
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(key); setSortDir(key === 'created_at' || key === 'modified_at' || key === 'start_date' ? 'desc' : 'asc'); }
+    else { setSortKey(key); setSortDir(key === 'created_at' || key === 'modified_at' || key === 'start_date' || key === 'end_date' ? 'desc' : 'asc'); }
   }
 
   if (gymLoading || !canRead) return null;
@@ -617,6 +624,7 @@ function PlanCard({
   onChanged: () => void;
 }) {
   const gymFmt = useGymFormatSettings();
+  const dates = assignedPlanDateTexts(row, gymFmt, t('training_plans.open_ended'));
   const isCompleted = row.status === 'completed';
 
   const roTitle = useReadOnlyTitle(canWrite);
@@ -678,16 +686,17 @@ function PlanCard({
           <div className={CELL_CLASS.member} style={cellStyle} title={row.member_name}>
             <div style={nameCellStyle}>{row.member_name || '—'}</div>
           </div>
+          <div className={CELL_CLASS.days} style={{ ...cellStyle, ...dateCellStyle }}>
+            {row.day_count != null ? t('training_plans.day_count', { count: Number(row.day_count) }) : '—'}
+          </div>
+          <div className={CELL_CLASS.start_date} style={{ ...cellStyle, ...dateCellStyle }}>{dates.start}</div>
+          <div className={CELL_CLASS.end_date} style={{ ...cellStyle, ...dateCellStyle }}>{dates.end}</div>
+          <div className={CELL_CLASS.created_at} style={{ ...cellStyle, ...dateCellStyle }}>{formatDate(row.created_at, gymFmt)}</div>
+          <div className={CELL_CLASS.created_by} style={cellStyle} title={row.created_by ?? undefined}>
+            <div style={nameCellStyle}>{row.created_by ?? '—'}</div>
+          </div>
           <div className={CELL_CLASS.status} style={badgeCellStyle}>
             <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
-          </div>
-          <div className={CELL_CLASS.start_date} style={cellStyle}>
-            <div style={dateCellStyle}>{formatDay(row.start_date, gymFmt)}</div>
-            {row.end_date && <div style={subCellStyle}>→ {formatDay(row.end_date, gymFmt)}</div>}
-          </div>
-          <div className={CELL_CLASS.created_at} style={{ ...cellStyle, ...dateCellStyle }}>{formatDate(row.created_at, gymFmt)}</div>
-          <div className={CELL_CLASS.modified_at} style={{ ...cellStyle, ...dateCellStyle }}>
-            {row.modified_at ? formatDate(row.modified_at, gymFmt) : '—'}
           </div>
           <div className={CELL_CLASS.actions} style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('training_plans.col_actions')} items={menuItems} />
@@ -698,6 +707,12 @@ function PlanCard({
       {/* Expanded content — recessed, like an expanded DataTable row */}
       {expanded && (
         <div style={listExpandedStyle}>
+          <AssignedPlanDateFields
+            startLabel={t('training_plans.label_start_date')}
+            endLabel={t('training_plans.label_end_date')}
+            start={dates.start}
+            end={dates.end}
+          />
           {isCompleted && (
             <div style={{ padding: '8px 20px', fontSize: 13, color: '#888' }}>
               {t('training_plans.completed_read_only')}
@@ -766,7 +781,7 @@ function DetailsDialog({ plan, locale, t, onClose }: {
         <DetailRow label={t('training_plans.col_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('training_plans.label_start_date')} value={formatDay(plan.start_date, gymFmt)} />
-        {plan.end_date && <DetailRow label={t('training_plans.label_end_date')} value={formatDay(plan.end_date, gymFmt)} />}
+        <DetailRow label={t('training_plans.label_end_date')} value={plan.end_date ? formatDay(plan.end_date, gymFmt) : t('training_plans.open_ended')} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('training_plans.label_created_by')} value={plan.created_by ?? '—'} />
         <DetailRow label={t('training_plans.label_created_at')} value={formatDate(plan.created_at, gymFmt)} />
