@@ -133,7 +133,7 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
  * exercises are Base Exercises (`base_exercise_id`) and the copy keeps naming
  * them; the cascade that imports those exercises too is #3339's.
  */
-async function copyTemplateBlocksTx(tx: Tx, gymId: string, sourceId: number | string, targetId: number | string) {
+export async function copyTemplateBlocksTx(tx: Tx, gymId: string, sourceId: number | string, targetId: number | string) {
   const { rows: blocks } = await tx.query(
     'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position ASC',
     [sourceId],
