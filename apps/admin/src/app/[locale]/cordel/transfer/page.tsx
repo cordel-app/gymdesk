@@ -27,6 +27,8 @@ import {
   progressPercent,
   readArchive,
   stepsForEntities,
+  stepsForExport,
+  thumbnailSlotsToCollect,
   transferTypeLabelKey,
 } from '@/lib/entityTransfer';
 import {
@@ -103,7 +105,7 @@ export default function CordelTransferPage() {
         const res = (await ctx.guard(apiFetch(`/platform/transfer/${type}`))) as { entities: ExportRecord[] };
         lists.push({ type, records: res.entities });
       }
-      ctx.setTotal(lists.reduce((n, l) => n + stepsForEntities(l.records), 0));
+      ctx.setTotal(lists.reduce((n, l) => n + stepsForExport(l.records), 0));
 
       const collected: CollectedEntity[] = [];
       for (const { type, records } of lists) {
@@ -119,6 +121,17 @@ export default function CordelTransferPage() {
             } catch (err: any) {
               if (err instanceof TransferCancelled) throw err;
               failure = t('image_failed', { slot, message: apiErrorMessage(err) ?? t('unknown_error') });
+            }
+            ctx.advance();
+          }
+          for (const { slot, url } of thumbnailSlotsToCollect(record)) {
+            if (failure) { ctx.advance(); continue; }
+            try {
+              const blob = await ctx.guard(pdfFetch(`/platform/transfer/object?url=${encodeURIComponent(url)}`));
+              (entity.thumbnails ??= {})[slot] = { bytes: new Uint8Array(await ctx.guard(blob.arrayBuffer())), extension: imageExtensionFromUrl(url) };
+            } catch (err: any) {
+              if (err instanceof TransferCancelled) throw err;
+              failure = t('image_failed', { slot: `${slot}-thumbnail`, message: apiErrorMessage(err) ?? t('unknown_error') });
             }
             ctx.advance();
           }

@@ -157,6 +157,28 @@ describe('Export / Import of Base Payment Methods (#2952 stage 2)', () => {
     expect(Number(count.rows[0].n)).toBe(1);
   });
 
+  it('exports the master and thumbnail of a method, and an import never writes the image URLs it carries (#3373)', async () => {
+    const master = `https://media.example.com/cordel/payment_method/0-${METHOD_SLUG}.webp`;
+    const thumb = `https://media.example.com/cordel/payment_method/0-${METHOD_SLUG}-thumbnail.webp`;
+    await db.query('UPDATE base_payment_methods SET image_url = ?, image_thumbnail_url = ? WHERE slug = ?', [master, thumb, METHOD_SLUG]);
+
+    const res = await request.get('/platform/transfer/base_payment_methods').set(H);
+    expect(res.status).toBe(200);
+    const mine = res.body.entities.find((e: any) => e.slug === METHOD_SLUG);
+    expect(mine.images).toEqual({ image: master });
+    expect(mine.thumbnails).toEqual({ image: thumb });
+    expect(mine.data.image_url).toBe(master);
+    expect(mine.data.image_thumbnail_url).toBe(thumb);
+
+    const imported = await request.post('/platform/transfer/base_payment_methods').set(H)
+      .send({ ...mine.data, slug: METHOD_SLUG, image_url: 'https://evil.example.com/x.webp', image_thumbnail_url: 'https://evil.example.com/y.webp' });
+    expect(imported.status).toBe(200);
+    const row = await db.query<{ image_url: string; image_thumbnail_url: string }>(
+      'SELECT image_url, image_thumbnail_url FROM base_payment_methods WHERE slug = ?', [METHOD_SLUG],
+    );
+    expect(row.rows[0]).toEqual({ image_url: master, image_thumbnail_url: thumb });
+  });
+
   it('never changes the code of an existing method', async () => {
     const res = await request.post('/platform/transfer/base_payment_methods').set(H)
       .send({ slug: METHOD_SLUG, code: `${METHOD_CODE}_other`, status: 'active', translations });
