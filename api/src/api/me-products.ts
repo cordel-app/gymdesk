@@ -935,10 +935,10 @@ export async function loadOwnPurchases(gymId: string, memberId: number) {
   const today = DateTime.now().setZone(resolveTimeZone(rows[0]?.time_zone)).toISODate()!;
   const items: Array<Record<string, any> & { own_state: OwnPurchaseState; end_date: string | null }> = [];
   for (const p of await loadMemberPurchases(gymId, memberId)) {
-    // A recurring line (a ProductSet's, negative id) is active or awaiting
-    // payment and has no cancellation of its own.
+    // A recurring line (a ProductSet's, negative id) carries the shared cancellation lifecycle in
+    // its status since #3358 stage 2, and no cancellation date of its own.
     const row = { status: p.status, valid_until: p.valid_until ?? null, cancelled_on: p.cancelled_on ?? null };
-    const state = ownPurchaseState(row, today);
+    const state = ownPurchaseState(row, today, { recurring: p.source === 'recurring' });
     if (!state) continue;
     items.push({ ...p, own_state: state, end_date: ownPurchaseEndDate(row) });
   }

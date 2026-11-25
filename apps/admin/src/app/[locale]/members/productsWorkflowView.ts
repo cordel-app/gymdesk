@@ -84,14 +84,18 @@ export interface ReviewSummary {
   plans_to_cancel?: Array<{ user_membership_id: number; plan_name: string | null }>;
   /** #3358: the plans cancelling at their period end that this commit cancels today instead. */
   plans_to_cancel_immediately?: Array<{ user_membership_id: number; plan_name: string | null }>;
+  /** #3358 stage 2: the recurring Product lines this commit cancels today instead of at their End Date. */
+  lines_to_cancel_immediately?: Array<{ line_id: number; product_name: string | null }>;
 }
 
 /** #3114 stage 3 — how many plans the cart reactivates or cancels. */
 export function pendingPlanChangeCount(
-  review: Pick<ReviewSummary, 'plans_to_reactivate' | 'plans_to_cancel' | 'plans_to_cancel_immediately'> | null,
+  review: Pick<ReviewSummary, 'plans_to_reactivate' | 'plans_to_cancel' | 'plans_to_cancel_immediately' | 'lines_to_cancel_immediately'> | null,
 ): number {
   return (review?.plans_to_reactivate?.length ?? 0) + (review?.plans_to_cancel?.length ?? 0)
-    + (review?.plans_to_cancel_immediately?.length ?? 0);
+    + (review?.plans_to_cancel_immediately?.length ?? 0)
+    // #3358 stage 2 — a Product cancelled today changes no diff line either, and is what the cart commits.
+    + (review?.lines_to_cancel_immediately?.length ?? 0);
 }
 
 /** Whether the Draft's review lists anything to commit: a diff line or a plan reactivated or cancelled. */

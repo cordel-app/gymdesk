@@ -69,8 +69,10 @@ export interface PurchasedProduct {
   purchase_id?: number | null;
   /** #1661 — `recurring` for a line of the member's ProductSet (negative `id`). */
   source?: 'one_off' | 'recurring';
-  /** #1882 — removed in the open Draft, still Active until Save & Pay. */
-  pending_termination?: boolean;
+  /** #3358 stage 2 — the line's committed end date (`null` = open-ended). */
+  ends_at?: string | null;
+  /** #3358 stage 2 — whether Cancel Immediately may bring that end date forward to today. */
+  can_cancel_immediately?: boolean;
   /** #2856 — the line the member's open Draft carries for this row; `null` when no open Draft carries it. */
   draft_line_id?: number | null;
   /** #2856 — a recurring line's own quantity; since #3359 a one-time purchase's too. */
@@ -305,6 +307,17 @@ export const PURCHASE_STATUS_FILTER_DEFAULT = 'open';
 export const PURCHASE_STATUS_FILTER_VALUES = ['open', 'in_cart', 'active', 'pending_payment', 'cancelled'] as const;
 
 /**
+ * #3358 stage 2 — the statuses the default `open` filter shows: In Cart (#1657, #2949), Active,
+ * Pending payment, and the two cancellation states that still grant the Product
+ * (`to_be_canceled` / `to_be_canceled_immediately` awaiting Save & Pay, `active_cancel_at_period_end`
+ * entitled until its End Date). `cancelled` is not open.
+ */
+export const OPEN_PURCHASE_STATUSES: string[] = [
+  'in_cart', 'active', 'pending_payment',
+  'to_be_canceled', 'to_be_canceled_immediately', 'active_cancel_at_period_end',
+];
+
+/**
  * Which purchases a filter value shows. The default, `open`, is In Cart (#1657, #2949: a saved
  * one-time purchase stays in the list), Active plus Pending payment (a purchase not yet paid is the pre-active state a Draft is
  * for a recurring Product); `''` shows every status. Presentation only — the
@@ -313,7 +326,8 @@ export const PURCHASE_STATUS_FILTER_VALUES = ['open', 'in_cart', 'active', 'pend
 export function filterPurchasesByStatus<T extends { status: string }>(items: T[], filter: string): T[] {
   if (filter === '') return items;
   if (filter === PURCHASE_STATUS_FILTER_DEFAULT) {
-    return items.filter((i) => i.status === 'in_cart' || i.status === 'active' || i.status === 'pending_payment');
+    // #3358 stage 2 — a line the cart cancels and one cancelling at its End Date are still live work.
+    return items.filter((i) => OPEN_PURCHASE_STATUSES.includes(i.status));
   }
   return items.filter((i) => i.status === filter);
 }
@@ -336,19 +350,14 @@ export function orderPurchasesForTable<T extends { id: number; created_at: strin
     .map(({ item }) => item);
 }
 
-/** #1882 — the status a row shows: a line the Draft removes reads `pending_termination`. */
-export function displayPurchaseStatus(item: { status: string; pending_termination?: boolean }): string {
-  return item.status === 'active' && item.pending_termination ? 'pending_termination' : item.status;
-}
-
 /**
  * #2856 — the Draft line a row's `⋮ → Edit` / `⋮ → Delete` act on: a recurring
  * row the member's open Draft Product Set carries. Every other row (a committed
  * line with no open Draft, a line the Draft removed, a one-time purchase) gets
  * neither action, so a committed version is never edited from here.
  */
-export function editableDraftLineId(item: Pick<PurchasedProduct, 'source' | 'draft_line_id' | 'pending_termination'>): number | null {
-  if (item.source !== 'recurring' || item.pending_termination) return null;
+export function editableDraftLineId(item: Pick<PurchasedProduct, 'source' | 'draft_line_id'>): number | null {
+  if (item.source !== 'recurring') return null;
   return item.draft_line_id ?? null;
 }
 

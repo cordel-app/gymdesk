@@ -47,8 +47,8 @@ import {
   vatPortion,
 } from '../domain/productPurchasePricing';
 import { purchaseBlockResponse, parsePurchaseQuantity } from '../domain/memberProductPurchase';
-import { editRecurringPurchaseLine, startRecurringPurchaseDraft, BillingFrequencyDiffers } from './recurring-purchase-draft';
-import { isRefusal, lockDraft, removeService } from './product-set-draft';
+import { editRecurringPurchaseLine, ensureRecurringDraft, startRecurringPurchaseDraft, BillingFrequencyDiffers } from './recurring-purchase-draft';
+import { cancelServiceImmediately, isRefusal, lockDraft, removeService } from './product-set-draft';
 import { DateTime } from 'luxon';
 import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -530,6 +530,56 @@ memberProductPurchasesRouter.put('/recurring/:lineId', requireModuleWrite('MEMBE
       next: { edit_recurring_line: out.lineId, quantity, promotion_ids: promotionIds, direct_discount_percent: discount.percent },
     });
     res.json({ product_set_id: out.productSetId, line_id: out.lineId });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #3358 stage 2 — Cancel Immediately for a recurring Product line whose cancellation is already
+ * committed (`active_cancel_at_period_end`): the owner's In Cart Draft (opened or reused, as every
+ * staff Product change does) takes its own copy of the line with today as its end date, so the
+ * line reads `to_be_canceled_immediately` until Save & Pay commits the version and nothing is
+ * charged or refunded here. A line that is not cancelling, or one already ending today, is a 409.
+ */
+memberProductPurchasesRouter.post('/recurring/:lineId/cancel-immediately', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const memberId = memberIdOf(req);
+  const lineId = parseInt(String(req.params.lineId), 10);
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (!Number.isInteger(lineId) || lineId <= 0) return res.status(404).json({ error: 'Draft line not found' });
+    const blocking = await loadEditLockForDraftEdit(gymId, memberId, todayUtc(), { staff: true });
+    if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
+    const actorName = resolveRequestActor(tenantCtx) ?? member.name;
+    class Refused extends Error { constructor(public out: any) { super('draft refused'); } }
+    let out: { productSetId: number; endsAt: string };
+    try {
+      out = await db.transaction(async (tx) => {
+        const draft = await ensureRecurringDraft(tx, {
+          gymId, memberId, actor: { name: actorName }, today: todayUtc(), staff: true,
+        });
+        if (draft.kind !== 'ok') throw new Refused(draft);
+        const locked = await lockDraft(tx, gymId, draft.productSetId);
+        if (isRefusal(locked)) throw new Refused(locked);
+        const r = await cancelServiceImmediately(tx, locked, lineId);
+        if ('kind' in r) throw new Refused(r);
+        return { productSetId: locked.id, endsAt: r.ends_at };
+      });
+    } catch (e: any) {
+      if (e instanceof Refused) {
+        if (e.out.kind === 'in_flight') {
+          return res.status(409).json({ error: 'in_flight', product_set_id: e.out.productSetId, status: e.out.status });
+        }
+        return draftEditRefusal(res, e.out);
+      }
+      throw e;
+    }
+    recordAudit(req, {
+      action: 'update', entityType: 'product_set', entityId: out.productSetId,
+      next: { cancel_recurring_line_immediately: lineId, ends_at: out.endsAt },
+    });
+    res.json({ product_set_id: out.productSetId, line_id: lineId, ends_at: out.endsAt });
   } catch (err) { next(err); }
 });
 
