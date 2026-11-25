@@ -282,6 +282,7 @@ export function statusTone(status: string): StatusTone {
     case 'cancels_on_end_date':
     case 'active_cancel_at_period_end':
     case 'to_be_reactivated':
+    case 'to_be_canceled_immediately':
     case 'to_be_canceled':
       return 'warning';
     case 'cancelled':

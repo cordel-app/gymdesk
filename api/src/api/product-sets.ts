@@ -2,6 +2,7 @@ import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 import { db, Tx } from '../infra/db';
 import { restorePendingCancellations } from './plan-pending-cancellation';
 import { restorePendingReactivations } from './plan-pending-reactivation';
+import { restorePendingImmediateCancellations } from './plan-pending-immediate-cancellation';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
 import { syncPlanSnapshot } from './plan-snapshot-sync';
@@ -244,6 +245,8 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
     // #3007: the plans the discarded Draft marked as pending cancellation run on as they were.
     await restorePendingCancellations(tx, gymId, Number(row.owner_member_id));
     await restorePendingReactivations(tx, gymId, Number(row.owner_member_id));
+    // #3358: and the plans it marked to be cancelled immediately keep their previous End Date.
+    await restorePendingImmediateCancellations(tx, gymId, Number(row.owner_member_id));
     // #2967: Cancel is the whole cart, so the owner's standalone In Cart purchases go with it.
     await deleteStandaloneCartPurchases(tx, gymId, Number(row.owner_member_id));
     return { kind: 'cancelled' };

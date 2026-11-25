@@ -350,6 +350,29 @@ export function MemberExpandedRow({
 
   // #3114: Reactivate marks a plan cancelling at its period end in the member's open In Cart (nothing
   // changes, and nothing is charged or audited, until Save & Pay); the same menu item un-marks it.
+  // #3358: Cancel Immediately asks first (the modal below); its undo does not.
+  const [cancellingNow, setCancellingNow] = useState<{ id: number; plan_name?: string | null } | null>(null);
+  async function handleCancelImmediately(plan: { id: number; plan_name?: string | null }, action: 'mark' | 'unmark') {
+    if (action === 'mark') { setCancellingNow(plan); return; }
+    try {
+      await apiFetch(`/user-memberships/${plan.id}/unmark-cancel-immediately`, { method: 'POST', body: JSON.stringify({}) });
+      reloadConfiguration();
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'));
+    }
+  }
+  async function confirmCancelImmediately() {
+    const plan = cancellingNow;
+    setCancellingNow(null);
+    if (!plan) return;
+    try {
+      await apiFetch(`/user-memberships/${plan.id}/mark-cancel-immediately`, { method: 'POST', body: JSON.stringify({}) });
+      reloadConfiguration();
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'));
+    }
+  }
+
   async function handleReactivatePlan(plan: { id: number }, action: 'mark' | 'unmark') {
     try {
       await apiFetch(`/user-memberships/${plan.id}/${action}-reactivate`, { method: 'POST', body: JSON.stringify({}) });
@@ -543,6 +566,7 @@ export function MemberExpandedRow({
               onAssignNewPlan={setAssigningFor}
               onCancelPlan={setCancelling}
               onReactivatePlan={handleReactivatePlan}
+              onCancelImmediately={handleCancelImmediately}
               assignBusy={assigningFor !== null}
               purchasePending={configuration.has_pending_payment_purchase === true}
               renderAssignEditor={(m) => (
@@ -948,6 +972,15 @@ export function MemberExpandedRow({
         cancelLabel={cancelling?.status === 'in_cart' ? t('members.action_remove_cart_plan_keep') : t('members.cancel_plan_go_back')}
         onConfirm={handleCancelPlan}
         onCancel={() => setCancelling(null)}
+      />
+      <ConfirmDialog
+        open={cancellingNow !== null}
+        title={t('members.cancel_plan_immediately_title')}
+        message={t('members.confirm_cancel_plan_immediately', { plan: cancellingNow?.plan_name ?? '' })}
+        confirmLabel={t('members.action_cancel_plan_immediately')}
+        cancelLabel={t('members.cancel_plan_go_back')}
+        onConfirm={() => void confirmCancelImmediately()}
+        onCancel={() => setCancellingNow(null)}
       />
 
     </div>

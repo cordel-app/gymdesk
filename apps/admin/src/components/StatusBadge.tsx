@@ -38,6 +38,8 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   active_cancel_at_period_end: { bg: '#fff4e0', fg: '#b26a00' },
   // #3114: a cancelling plan marked for reactivation in the open In Cart.
   to_be_reactivated: { bg: '#fff4e0', fg: '#b26a00' },
+  // #3358: a cancelling plan the open In Cart cancels today instead.
+  to_be_canceled_immediately: { bg: '#fff4e0', fg: '#b26a00' },
   completed:    { bg: '#e6f6ec', fg: '#1e7e40' },
   failed:       { bg: '#fdeaea', fg: '#c0392b' },
   // #3186: a persisted obligation due and not collected (Home's mandatory-product section).

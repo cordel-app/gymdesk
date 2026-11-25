@@ -14,6 +14,7 @@ export const MEMBER_PLAN_STATUS_FILTER_VALUES = [
   'paused',
   'active_cancel_at_period_end',
   'to_be_reactivated',
+  'to_be_canceled_immediately',
   'cancelled',
   'expired',
   'superseded',

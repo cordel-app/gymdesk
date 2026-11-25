@@ -45,7 +45,7 @@ import { OWNED_ASSIGNMENTS_FROM_SQL, OWNED_ASSIGNMENT_IS_CURRENT_SQL, assignment
 export function ENROLLMENT_STATUS_RANK_SQL(col: string): string {
   return `CASE WHEN ${col} IN ('active', 'to_be_canceled') THEN 0
                WHEN ${col} = 'paused' THEN 1
-               WHEN ${col} IN ('active_cancel_at_period_end', 'to_be_reactivated') THEN 2
+               WHEN ${col} IN ('active_cancel_at_period_end', 'to_be_reactivated', 'to_be_canceled_immediately') THEN 2
                ELSE 3 END`;
 }
 

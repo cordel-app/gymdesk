@@ -62,7 +62,7 @@ import { LIFECYCLE_STATUS_SQL } from './user-memberships';
  */
 export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
   ORDER BY
-    FIELD(um.status, 'active','to_be_canceled','paused','expired','active_cancel_at_period_end','to_be_reactivated','cancelled','superseded'),
+    FIELD(um.status, 'active','to_be_canceled','paused','expired','active_cancel_at_period_end','to_be_reactivated','to_be_canceled_immediately','cancelled','superseded'),
     um.starts_at DESC`;
 
 /**
