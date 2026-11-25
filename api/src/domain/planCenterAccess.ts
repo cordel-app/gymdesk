@@ -119,3 +119,25 @@ export function parseCenterAccessInput(
   if (!Array.isArray(body.center_ids)) return { error: 'center_ids must be an array' };
   return { mode, centerIds: body.center_ids, online };
 }
+
+/**
+ * #3358 stage 3: the physical centers a Member uses today and would no longer
+ * use once a Draft commits — the Save & Pay access warning. `before` and `after`
+ * are `resolveCenterAccess()` over the Member's live plans now and after the
+ * whole Draft is applied; `activeCenterIds` are the gym's active physical
+ * centers, which is what `all` spans. A center another plan still grants is not
+ * lost. A Member with no live plan today loses nothing (the booking gate checks
+ * no center for them). Sorted ascending; On-line is not a center here.
+ */
+export function lostCenterIds(
+  before: EffectiveCenterAccess,
+  after: EffectiveCenterAccess,
+  activeCenterIds: number[],
+  hadPlansBefore: boolean,
+): number[] {
+  if (!hadPlansBefore || after.all) return [];
+  const active = [...new Set(activeCenterIds.map(Number))];
+  return active
+    .filter((c) => centerAllowed(before, c) && !after.centerIds.has(c))
+    .sort((a, b) => a - b);
+}

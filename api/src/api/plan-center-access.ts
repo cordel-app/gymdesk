@@ -1,9 +1,10 @@
 import { db } from '../infra/db';
-import { assignmentCoversMemberSql, entitlingAssignmentSql } from '../domain/planAssignments';
+import { assignmentCoversMemberSql, entitlingAssignmentSql, isCurrentAssignmentSnapshotSql } from '../domain/planAssignments';
+import { PENDING_IMMEDIATE_CANCELLATION_STATUS } from '../domain/assignmentStatus';
 import { registerBookingAccessHook } from './bookings';
 import { soleActiveCenterId } from '../infra/centerContext';
 import {
-  allCentersScope, centerAllowed, isPlanCenterAccessMode, resolveCenterAccess, type PlanCenterAccessInput, type PlanCenterAccessMode,
+  allCentersScope, centerAllowed, isPlanCenterAccessMode, lostCenterIds, resolveCenterAccess, type PlanCenterAccessInput, type PlanCenterAccessMode,
 } from '../domain/planCenterAccess';
 import { describePlanAccess, type PlanAccessBeneficiary, type PlanAccessEntry } from '../domain/planAccessBenefit';
 
@@ -18,6 +19,9 @@ import { describePlanAccess, type PlanAccessBeneficiary, type PlanAccessEntry } 
  */
 type Queryable = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
 
+/** #3358 stage 3: read the Member's plans as they will be once the Draft `afterDraftSetId` commits. */
+export interface AfterDraftOptions { afterDraftSetId?: number }
+
 /**
  * The live plans that cover a Member (as owner or covered Member, #374/#2125)
  * and the Member's default center when a plan needs it. The one read behind
@@ -28,13 +32,26 @@ export async function loadMemberCenterAccessInputs(
   tx: Queryable,
   gymId: string,
   memberId: string | number,
+  opts: AfterDraftOptions = {},
 ): Promise<{ plans: PlanCenterAccessInput[]; defaultCenterId: number | null }> {
+  // #3358 stage 3: "after the Draft" — a plan marked to be cancelled immediately stops entitling at
+  // the commit, and a plan the Draft adds (its own `in_cart` snapshot) starts.
+  const excludeNow = opts.afterDraftSetId != null
+    ? ` AND pa.status <> '${PENDING_IMMEDIATE_CANCELLATION_STATUS}'` : '';
+  const added = opts.afterDraftSetId != null
+    ? ` UNION SELECT pa.membership_plan_id, mp.center_access_mode, mp.online_access FROM plan_snapshots pa
+          JOIN product_set_plan_snapshots psj ON psj.plan_snapshot_id = pa.id
+          JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+         WHERE psj.product_set_id = ? AND pa.gym_id = ? AND pa.status = 'in_cart'
+           AND ${assignmentCoversMemberSql('pa')}` : '';
   const { rows: memberships } = await tx.query(
     `SELECT DISTINCT pa.membership_plan_id, mp.center_access_mode, mp.online_access FROM plan_snapshots pa
      JOIN membership_plans mp ON mp.id = pa.membership_plan_id
-     WHERE pa.gym_id = ? AND ${entitlingAssignmentSql('pa')}
-       AND ${assignmentCoversMemberSql('pa')}`,
-    [gymId, memberId],
+     WHERE pa.gym_id = ? AND ${entitlingAssignmentSql('pa')}${excludeNow}
+       AND ${assignmentCoversMemberSql('pa')}${added}`,
+    opts.afterDraftSetId != null
+      ? [gymId, memberId, opts.afterDraftSetId, gymId, memberId]
+      : [gymId, memberId],
   );
   if (memberships.length === 0) return { plans: [], defaultCenterId: null };
 
@@ -244,4 +261,54 @@ export async function centersAvailableToMember(
     [gymId],
   );
   return rows;
+}
+
+export interface CenterAccessWarning {
+  member_id: number;
+  member_name: string | null;
+  centers: { id: number; name: string }[];
+}
+
+/**
+ * #3358 stage 3 — the Save & Pay access warning: for each Member a plan the Draft cancels today
+ * covers, the physical centers they use now and will not once the whole Draft commits (another
+ * live plan, or one the Draft adds, still granting a center keeps it). Read-only, derived on every
+ * read through the booking gate's own loader and resolver; nothing is stored.
+ */
+export async function centerAccessWarnings(
+  gymId: string,
+  ownerMemberId: number,
+  draftSetId: number,
+): Promise<CenterAccessWarning[]> {
+  const { rows: affected } = await db.query<{ member_id: number; name: string | null }>(
+    `SELECT DISTINCT pab.member_id, m.name FROM plan_snapshots pa
+       JOIN plan_snapshot_beneficiaries pab ON pab.plan_snapshot_id = pa.id AND pab.gym_id = pa.gym_id
+       JOIN members m ON m.id = pab.member_id AND m.gym_id = pab.gym_id
+      WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = '${PENDING_IMMEDIATE_CANCELLATION_STATUS}'
+        AND ${isCurrentAssignmentSnapshotSql('pa')}
+      ORDER BY pab.member_id`,
+    [gymId, ownerMemberId],
+  );
+  if (affected.length === 0) return [];
+  const { rows: centers } = await db.query<{ id: number; name: string }>(
+    "SELECT id, name FROM centers WHERE gym_id = ? AND deleted_at IS NULL AND status = 'active' ORDER BY name",
+    [gymId],
+  );
+  const activeIds = centers.map((c) => Number(c.id));
+  const warnings: CenterAccessWarning[] = [];
+  for (const m of affected) {
+    const now = await loadMemberCenterAccessInputs(db, gymId, m.member_id);
+    const later = await loadMemberCenterAccessInputs(db, gymId, m.member_id, { afterDraftSetId: draftSetId });
+    const lost = new Set(lostCenterIds(
+      resolveCenterAccess(now.plans, now.defaultCenterId),
+      resolveCenterAccess(later.plans, later.defaultCenterId),
+      activeIds, now.plans.length > 0,
+    ));
+    if (lost.size === 0) continue;
+    warnings.push({
+      member_id: Number(m.member_id), member_name: m.name ?? null,
+      centers: centers.filter((c) => lost.has(Number(c.id))).map((c) => ({ id: Number(c.id), name: String(c.name) })),
+    });
+  }
+  return warnings;
 }
