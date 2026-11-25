@@ -434,6 +434,7 @@
     "purchase_actions_for": "Acciones de {product}",
     "action_view_billing_event": "Ver evento de facturación",
     "billing_event_unavailable": "Esta compra todavía no tiene evento de facturación.",
+    "purchase_pending_payment_blocked": "No puedes realizar nuevas compras hasta que se haya completado el pago de tu compra actual pendiente.",
     "products_add": "+ Añadir producto",
     "products_add_unavailable": "Las compras iniciadas por el personal aún no están disponibles. Los miembros compran productos desde la app de miembros.",
     "products_card_collapse": "Contraer Productos",

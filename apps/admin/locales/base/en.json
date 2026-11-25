@@ -434,6 +434,7 @@
     "purchase_actions_for": "Actions for {product}",
     "action_view_billing_event": "View billing event",
     "billing_event_unavailable": "This purchase has no billing event yet.",
+    "purchase_pending_payment_blocked": "You cannot make new purchases until your current pending payment has been completed.",
     "products_add": "+ Add Product",
     "products_add_unavailable": "Staff-initiated purchases are not available yet. Members buy Products from the Members App.",
     "products_card_collapse": "Collapse Products",
