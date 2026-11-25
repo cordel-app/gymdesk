@@ -22,6 +22,7 @@ import { db } from '../infra/db';
 import { isNewMemberStatus } from './new-member-eligibility';
 import { type ProductBenefitCategory } from '../domain/productClassification';
 import { toProductBenefit } from '../domain/productBenefitActions';
+import { canCancelLineImmediately, productLineLifecycle } from '../domain/productLineLifecycle';
 import {
   type AppliedPromotion,
   type MemberProductPromotionOffer,
@@ -350,8 +351,13 @@ export interface MemberPurchasedProduct {
    * collide with a purchase id in a list keyed on `id`.
    */
   source?: 'one_off' | 'recurring';
-  /** #1882 — removed in the member's open Draft; still Active until Save & Pay. */
-  pending_termination?: boolean;
+  /**
+   * #3358 stage 2 — the line's committed end date (`null` = open-ended); with `status`
+   * `active_cancel_at_period_end` the day it stops, with `cancelled` today.
+   */
+  ends_at?: string | null;
+  /** #3358 stage 2 — whether `⋮ → Cancel Immediately` may bring the end date forward to today. */
+  can_cancel_immediately?: boolean;
   /**
    * #2856 — the id of the line the member's open Draft carries for this row, which `⋮ → Edit` and
    * `⋮ → Delete` act on (`/members/:id/product-purchases/recurring/:lineId`); `null` when no open
@@ -630,7 +636,9 @@ async function loadRecurringPurchases(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.created_at, s.origin, s.purchase_id, ps.status AS set_status, ps.id AS set_id,
+            s.currency, s.starts_at, s.ends_at, s.created_at, s.origin, s.purchase_id, ps.status AS set_status, ps.id AS set_id,
+            (SELECT src.ends_at FROM product_periodical_snapshots src
+              WHERE src.id = s.copied_from_periodical_snapshot_id) AS source_ends_at,
             COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
                                            WHERE tp.id = s.product_id AND tp.gym_id = s.gym_id)) AS tax_rate_percent,
             COALESCE(s.line_ref, s.source_id) AS line_ref,
@@ -667,7 +675,7 @@ async function loadRecurringPurchases(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.created_at, s.origin, s.purchase_id, ps.id AS set_id,
+            s.currency, s.starts_at, s.ends_at, s.created_at, s.origin, s.purchase_id, ps.id AS set_id,
             COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
                                            WHERE tp.id = s.product_id AND tp.gym_id = s.gym_id)) AS tax_rate_percent,
             COALESCE(s.line_ref, s.source_id) AS line_ref, ps.created_by AS set_created_by,
@@ -688,7 +696,8 @@ async function loadRecurringPurchases(
   )).rows.length > 0;
   const draftByRef = new Map<number, any>(draftRows.map((r: any) => [Number(r.line_ref), r]));
   const activeRefs = new Set(rows.map((r: any) => Number(r.line_ref)));
-  const draftLineRefs = new Set(draftByRef.keys());
+  const today = new Date().toISOString().slice(0, 10);
+  const dayOf = (v: unknown): string | null => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
   const lineInput = (r: any) => {
     const quantity = Number(r.quantity) || 1;
     const unit = Number(r.unit_price);
@@ -749,7 +758,8 @@ async function loadRecurringPurchases(
         billing_event_id: null,
         purchase_id: row.purchase_id == null ? null : Number(row.purchase_id),
         source: 'recurring' as const,
-        pending_termination: false,
+        ends_at: dayOf(row.ends_at),
+        can_cancel_immediately: false,
         draft_line_id: Number(row.id),
         quantity: Number(row.quantity) || 1,
         assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
@@ -758,6 +768,18 @@ async function loadRecurringPurchases(
     });
   const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
     const row = hasDraft ? (draftByRef.get(Number(active.line_ref)) ?? active) : active;
+    // #3358 stage 2 — the shared cancellation lifecycle, derived from the committed line, its
+    // source's end date and the open Draft's copy (`productLineLifecycle()`).
+    const draftLine = draftByRef.get(Number(active.line_ref));
+    const committedEndsOn = dayOf(active.ends_at);
+    const lifecycle = active.set_status === 'active'
+      ? productLineLifecycle({
+        committedEndsOn,
+        committedSourceEndsOn: dayOf(active.source_ends_at),
+        draft: hasDraft ? { carries: draftLine != null, endsOn: dayOf(draftLine?.ends_at) } : undefined,
+        today,
+      })
+      : null;
     const { amount: baseAmount, listPrice, pct, unit, listUnit } = figures(row);
     const lp = promosFor(row);
     const amount = lp?.final ?? baseAmount;
@@ -765,7 +787,7 @@ async function loadRecurringPurchases(
     return {
       id: -Number(active.id),
       product_id: Number(row.product_id),
-      status: active.set_status === 'active' ? 'active' : 'pending_payment',
+      status: lifecycle ?? 'pending_payment',
       product_name: row.item_name,
       product_type: row.item_type,
       billing_frequency: row.item_billing_frequency ?? null,
@@ -789,9 +811,11 @@ async function loadRecurringPurchases(
       billing_event_id: active.billing_event_id == null ? null : Number(active.billing_event_id),
       purchase_id: row.purchase_id == null ? null : Number(row.purchase_id),
       source: 'recurring' as const,
-      pending_termination: active.set_status === 'active' && hasDraft && !draftLineRefs.has(Number(active.line_ref)),
-      draft_line_id: active.set_status === 'active' && draftByRef.has(Number(active.line_ref))
-        ? Number(draftByRef.get(Number(active.line_ref)).id) : null,
+      ends_at: committedEndsOn,
+      can_cancel_immediately: lifecycle != null && canCancelLineImmediately(lifecycle, committedEndsOn, today),
+      // A line the Draft removes or cancels is no longer edited from the list.
+      draft_line_id: (lifecycle === 'active' || lifecycle === 'active_cancel_at_period_end') && draftLine != null
+        ? Number(draftLine.id) : null,
       quantity: Number(row.quantity) || 1,
       assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
       assigned_member_name: row.assigned_member_name ?? null,

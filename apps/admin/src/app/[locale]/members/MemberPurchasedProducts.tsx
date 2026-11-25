@@ -40,6 +40,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { usePurchaseCancel } from './usePurchaseCancel';
+import { usePurchaseCancelImmediately } from './usePurchaseCancelImmediately';
 import { ItemOriginChip } from '@/components/ItemOriginChip';
 import { itemOriginKey } from '@/lib/itemOrigin';
 import { CardDetailRow } from '@/components/CardDetailRow';
@@ -73,7 +74,6 @@ import {
   purchaseDate,
   type PurchasedProduct,
   type PurchasedProductPromotion,
-  displayPurchaseStatus,
   editableDraftLineId,
   yesNoKey,
   sharingTypeKey,
@@ -133,6 +133,11 @@ export function MemberPurchasedProducts({
   const [cancelling, setCancelling] = useState<PurchasedProduct | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // #3358 stage 2 — Cancel Immediately, confirmed in the app's own dialog like Cancel.
+  const cancelNowRequest = usePurchaseCancelImmediately(memberId, onChanged);
+  const [cancellingNow, setCancellingNow] = useState<PurchasedProduct | null>(null);
+  const [cancelNowBusy, setCancelNowBusy] = useState(false);
+  const [cancelNowError, setCancelNowError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [imageOf, setImageOf] = useState<PurchasedProduct | null>(null);
   // #2856 — a line of the open Draft Product Set: `⋮ → Edit` opens the add form on it, `⋮ → Delete` removes it.
@@ -189,6 +194,17 @@ export function MemberPurchasedProducts({
     setCancelBusy(false);
     setCancelling(null);
     if (error) setCancelError(error === 'recurring_not_removable' ? t('purchase_cancel_recurring_unavailable') : error);
+  }
+
+  // #3358 stage 2 — brings a committed cancellation forward to today, in the member's cart.
+  async function cancelPurchaseNow(item: PurchasedProduct) {
+    if (cancelNowBusy) return;
+    setCancelNowBusy(true);
+    setCancelNowError(null);
+    const error = await cancelNowRequest(item);
+    setCancelNowBusy(false);
+    setCancellingNow(null);
+    if (error) setCancelNowError(error);
   }
 
   const dash = '—';
@@ -333,7 +349,7 @@ export function MemberPurchasedProducts({
       mobile: 'keep',
       render: (item) => (
         <>
-          <StatusBadge status={displayPurchaseStatus(item)} label={t(`purchase_status_${displayPurchaseStatus(item)}` as any)} />
+          <StatusBadge status={item.status} label={t(`purchase_status_${item.status}` as any)} />
         </>
       ),
     },
@@ -383,11 +399,22 @@ export function MemberPurchasedProducts({
                 },
               ] : []),
               { kind: 'details' as const, label: t('action_details'), onClick: () => setDetail(item) },
-              ...(item.status === 'active' && !item.cancelled_on && !item.pending_termination
+              ...(item.status === 'active' && !item.cancelled_on
                 ? [{
                     label: t('purchase_cancel_action'),
                     danger: true,
                     onClick: () => { setCancelError(null); setCancelling(item); },
+                    disabled: !canWrite,
+                    title: canWrite ? undefined : t('products_add_read_only'),
+                  }]
+                : []),
+              // #3358 stage 2 — a Product cancelling at its End Date may have that date brought
+              // forward to today; the change goes into the cart and commits with Save & Pay.
+              ...(item.can_cancel_immediately
+                ? [{
+                    label: t('purchase_cancel_immediately_action'),
+                    danger: true,
+                    onClick: () => { setCancelNowError(null); setCancellingNow(item); },
                     disabled: !canWrite,
                     title: canWrite ? undefined : t('products_add_read_only'),
                   }]
@@ -469,6 +496,7 @@ export function MemberPurchasedProducts({
       />
       {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
       {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
+      {cancelNowError && <p role="alert" style={formErrorStyle}>{cancelNowError}</p>}
       {deleteError && <p role="alert" style={formErrorStyle}>{deleteError}</p>}
       <FilterBar style={{ marginBottom: 8 }}>
         <FilterField label={t('purchase_col_status')} htmlFor="purchase-status-filter">
@@ -569,6 +597,16 @@ export function MemberPurchasedProducts({
         busy={cancelBusy}
         onConfirm={() => { if (cancelling) void cancelPurchase(cancelling); }}
         onCancel={() => { if (!cancelBusy) setCancelling(null); }}
+      />
+
+      <ConfirmDialog
+        open={cancellingNow !== null}
+        message={cancellingNow ? t('purchase_cancel_immediately_confirm', { product: cancellingNow.product_name }) : ''}
+        confirmLabel={t('purchase_cancel_immediately_action')}
+        cancelLabel={t('purchase_cancel_keep')}
+        busy={cancelNowBusy}
+        onConfirm={() => { if (cancellingNow) void cancelPurchaseNow(cancellingNow); }}
+        onCancel={() => { if (!cancelNowBusy) setCancellingNow(null); }}
       />
 
       <CrudModal

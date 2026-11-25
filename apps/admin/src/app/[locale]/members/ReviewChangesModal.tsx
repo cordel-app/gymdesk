@@ -32,6 +32,8 @@ interface Review extends ReviewLike {
   plans_to_reactivate?: Array<{ user_membership_id: number; plan_name: string | null }>;
   /** #3358: plans cancelled today instead of at their period end. */
   plans_to_cancel_immediately?: Array<{ user_membership_id: number; plan_name: string | null }>;
+  /** #3358 stage 2 — the recurring Product lines cancelled today instead of at their End Date. */
+  lines_to_cancel_immediately?: Array<{ line_id: number; product_name: string | null }>;
   immediate_lines: Array<{
     item_name: string | null; quantity: number; amount: number;
     regular_unit_price?: number | null; promotion_name?: string | null;
@@ -175,6 +177,7 @@ export function ReviewChangesModal({
             const planCancels = review.plans_to_cancel ?? [];
             const planReactivations = review.plans_to_reactivate ?? [];
             const planCancelsNow = review.plans_to_cancel_immediately ?? [];
+            const lineCancelsNow = review.lines_to_cancel_immediately ?? [];
             const list = (items: ChangeLike[]) => (
               <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }}>
                 {items.map((c, i) => {
@@ -183,7 +186,8 @@ export function ReviewChangesModal({
                 })}
               </ul>
             );
-            if (review.changes.length === 0 && planCancels.length === 0 && planReactivations.length === 0 && planCancelsNow.length === 0) {
+            if (review.changes.length === 0 && planCancels.length === 0 && planReactivations.length === 0
+                && planCancelsNow.length === 0 && lineCancelsNow.length === 0) {
               return (<><div style={cardSectionLabelStyle}>{t('review_changes')}</div><p style={cardHintStyle}>{t('review_no_changes')}</p></>);
             }
             return (
@@ -198,7 +202,15 @@ export function ReviewChangesModal({
                   </ul>
                 )}
                 <div style={cardSectionLabelStyle}>{t('review_cancelled')}</div>
-                {cancelled.length === 0 && planCancels.length === 0 && planCancelsNow.length === 0 ? <p style={cardHintStyle}>{t('review_cancelled_none')}</p> : list(cancelled)}
+                {cancelled.length === 0 && planCancels.length === 0 && planCancelsNow.length === 0 && lineCancelsNow.length === 0
+                  ? <p style={cardHintStyle}>{t('review_cancelled_none')}</p> : list(cancelled)}
+                {lineCancelsNow.length > 0 && (
+                  <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }} data-review-line-cancels-now>
+                    {lineCancelsNow.map((l) => (
+                      <li key={l.line_id}>{t('review_line_cancelled_immediately', { product: l.product_name ?? '—' })}</li>
+                    ))}
+                  </ul>
+                )}
                 {planCancels.length > 0 && (
                   <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }} data-review-plan-cancels>
                     {planCancels.map((p) => (

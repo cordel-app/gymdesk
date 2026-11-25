@@ -29,8 +29,6 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   pending:      { bg: '#fff4e0', fg: '#b26a00' },
   // #1108 stage 2: a membership awaiting its first payment wears the waiting tone.
   pending_payment: { bg: '#fff4e0', fg: '#b26a00' },
-  // #1882: a product the open Draft terminates, still Active until Save & Pay.
-  pending_termination: { bg: '#fff4e0', fg: '#b26a00' },
   // #2625: a cancelled Membership Plan still giving access until its End Date.
   cancels_on_end_date: { bg: '#fff4e0', fg: '#b26a00' },
   // #3302: a running plan the open Draft cancels on Save & Pay — the waiting tone, not Active's.
