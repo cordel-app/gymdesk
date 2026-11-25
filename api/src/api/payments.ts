@@ -24,6 +24,7 @@ import { receiptPdf } from './receipt-documents';
 import {
   MEMBER_PURCHASES_DEFAULT_LIMIT, MEMBER_PURCHASES_MAX_LIMIT, loadMemberPurchases, memberExistsInGym,
 } from './member-purchases';
+import { cancelPendingPurchase, cancelPurchaseResponse, reconcilePurchasePayments } from './purchase-cancellation';
 import {
   BILLING_EVENT_STATUSES,
   deriveBillingEventStatus,
@@ -285,6 +286,38 @@ paymentsRouter.get('/purchases', async (req, res, next) => {
     if (!(await memberExistsInGym(gymId, q.member_id))) return res.status(404).json({ error: 'Member not found' });
     const { items, total } = await loadMemberPurchases(gymId, q.member_id, q.limit, q.offset);
     res.json({ items, total, limit: q.limit, offset: q.offset });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /payments/purchases/:id/cancel — #3355 stage 3. Staff cancel a Purchase awaiting its payment
+ * (`cancelPendingPurchase()`): kept as `cancelled` with its Billing Events when it has any, hard-deleted
+ * when it has none; the plans it marked are restored either way. The provider is asked first.
+ */
+paymentsRouter.post('/purchases/:id/cancel', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  if (ctx.role === 'member') return res.status(403).json({ error: 'Forbidden' });
+  const purchaseId = parseInt(String(req.params.id), 10);
+  if (!purchaseId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const { gymId } = ctx;
+    const { logger } = await import('../lib/logger');
+    await reconcilePurchasePayments(gymId, purchaseId, logger);
+    const out = await db.transaction((tx) => cancelPendingPurchase(tx, gymId, purchaseId, {
+      actor: resolveRequestActor(ctx), actorUserId: ctx.userId ?? null, source: sourceForRole(ctx.role),
+    }));
+    const failure = cancelPurchaseResponse(out);
+    if (failure) return res.status(failure.status).json(failure.body);
+    if (out.kind === 'cancelled') {
+      recordAudit(req, {
+        action: 'cancel', entityType: 'purchase', entityId: purchaseId,
+        previous: { status: 'pending_payment' },
+        next: { status: out.mode === 'kept' ? 'cancelled' : 'deleted' },
+      });
+    }
+    res.json({ purchase_id: purchaseId, status: out.kind === 'cancelled' && out.mode === 'deleted' ? 'deleted' : 'cancelled' });
   } catch (err) {
     next(err);
   }

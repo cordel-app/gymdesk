@@ -150,6 +150,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
     },
   },
 
+  purchase:                       { kind: 'simple',   label: 'Purchases',                table: 'purchases',               nameColumn: 'name' },
   product_set: {
     kind: 'composed', label: 'Product Sets',
     resolve: async (id) => {
