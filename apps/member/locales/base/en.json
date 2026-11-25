@@ -852,7 +852,7 @@
     "progress_day": "Today",
     "progress_week": "This Week",
     "progress_week_of": "Week {date}",
-    "progress_month": "This Month",
+    "progress_this_month": "This Month ({month})",
     "week_nav_hint": "Swipe to change week",
     "week_prev": "Previous week",
     "week_next": "Next week",

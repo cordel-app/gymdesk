@@ -110,13 +110,25 @@ export function deviceToday(now: Date = new Date()): string {
 }
 
 /**
- * #3331 — what My Nutrition's first summary card shows for the selected date.
- * Today reads *Today*; another day of the current week reads its weekday name;
- * a day of another week keeps its dd/mm date (#1874). The figures are the
- * selected day's own, except for today, whose figures are the summary's.
+ * #3331 — which day My Nutrition's first summary card reports. Today reads
+ * *Today*; any other day reads its DD/MM date. `weekday` (a day of the current
+ * week) and `date` (another week) differ only in where the page takes the
+ * figures from; today's figures are the summary's.
  */
 export type DayCardLabel = 'today' | 'weekday' | 'date';
 export function dayCardLabel(selectedDate: string, today: string): DayCardLabel {
   if (selectedDate === today) return 'today';
   return weekStart(selectedDate) === weekStart(today) ? 'weekday' : 'date';
+}
+
+/**
+ * #3331 — the month My Nutrition's third summary card reports: the selected
+ * date's calendar month as `MM/YYYY`, and whether it is today's month (the page
+ * then reads *This Month (MM/YYYY)*).
+ */
+export function monthCardLabel(selectedDate: string, today: string): { current: boolean; mmyyyy: string } {
+  return {
+    current: selectedDate.slice(0, 7) === today.slice(0, 7),
+    mmyyyy: `${selectedDate.slice(5, 7)}/${selectedDate.slice(0, 4)}`,
+  };
 }

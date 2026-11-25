@@ -2,7 +2,7 @@
 // future meals are not in a denominator, a day is complete only when every
 // eligible meal is, and an empty period reads 0 % rather than dividing by zero.
 import { describe, expect, it } from 'vitest';
-import { canCompleteOn, isMealScheduledOn, mondayWeek, nutritionProgress } from '../domain/nutritionProgress';
+import { calendarMonthRange, canCompleteOn, isMealScheduledOn, mondayWeek, nutritionProgress } from '../domain/nutritionProgress';
 
 // 2026-10-14 is a Wednesday: weekday 2 in the nutrition plan's Monday-based numbering.
 const TODAY = '2026-10-14';
@@ -154,5 +154,20 @@ describe('#1957 assignment date windows', () => {
   it('applies an assignment window to a meal on a specific weekday', () => {
     const meals = [{ id: 1, weekday: 2, from: '2026-11-01', to: null }];
     expect(isMealScheduledOn(meals[0], TODAY)).toBe(false);
+  });
+});
+
+describe('nutritionProgress month (#3331)', () => {
+  it('is the selected date\'s calendar month, never past today', () => {
+    expect(calendarMonthRange('2026-11-25', '2026-11-25')).toEqual(['2026-11-01', '2026-11-25']);
+    expect(calendarMonthRange('2026-10-12', '2026-11-25')).toEqual(['2026-10-01', '2026-10-31']);
+    expect(calendarMonthRange('2025-12-03', '2026-01-02')).toEqual(['2025-12-01', '2025-12-31']);
+  });
+
+  it('counts a previous month\'s days after the selected date and none of the next month', () => {
+    const daily = [{ id: 1, weekday: 7 }];
+    // Oct 2026 has 31 days; the 31st is done, Nov 1st is outside the month.
+    const p = nutritionProgress(daily, [{ mealId: 1, date: '2026-10-31' }, { mealId: 1, date: '2026-11-01' }], '2026-11-25', '2026-10-12');
+    expect(p.month).toMatchObject({ completed: 1, total: 31 });
   });
 });
