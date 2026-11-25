@@ -229,6 +229,10 @@ memberNutritionPlansRouter.put('/:id', requireModuleWrite('NUTRITION'), async (r
   const { id } = req.params as { id: string };
   const { name, description, start_date } = req.body;
   if ('name' in req.body && !name?.trim()) return res.status(400).json({ error: 'name cannot be empty' });
+  // #3403: an assigned plan always has a start date — it can be changed, never cleared.
+  if ('start_date' in req.body && !(typeof start_date === 'string' && DATE_RE.test(start_date))) {
+    return res.status(400).json({ error: 'start_date must be YYYY-MM-DD and cannot be cleared' });
+  }
   try {
     const plan = await loadActivePlan(res, id, gymId);
     if (!plan) return;
