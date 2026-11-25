@@ -147,6 +147,14 @@ line's quantity scales that line's regular price with its charge, so both descri
 Example: two €30 lockers, a 50% Promotion and a 10% direct discount, 7 of 30 days: €14.00 before
 discounts, −€7.70, €6.30.
 
+**The Initial Payment's Unit price is what one unit is charged (#3381).** The column states the
+line's `charged_unit_price` (`chargedUnitPrice()`, `domain/checkoutSummary.ts`): the engine's final
+`amount` ÷ quantity, so every discount, benefit, adjustment and the proration are in it once. A
+prorated line also reports `charged_unit_breakdown` (`quantity × unit_price × days/period_days`,
+`unit_price` being one unit's full-period price after discounts), read back from the same `amount`
+and the engine's proration, never re-priced. `unit_price` (the list price) stays on the shape for
+the other readers. Example: one €15 locker at 50%, 7 of 30 days: 1.75 € (1 × 7.50 € × 7/30).
+
 **Waiving one Initial Payment line (#3284 stage 2, migration 474).** While the cart is In Cart,
 staff may waive one line of its Initial Payment (`POST /product-sets/:id/initial-payment/waive`,
 PAYMENTS write, body `{ line_key }`) and revert it (`…/revert-waive`). Each line carries a stable

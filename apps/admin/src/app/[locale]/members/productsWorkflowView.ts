@@ -122,6 +122,9 @@ export interface InitialPaymentLike {
   total_before_discounts: number;
   lines: Array<{
     name: string | null; quantity: number; unit_price: number; line_total: number; discount: number;
+    /** #3381 — what one unit is charged (amount ÷ quantity), and how a prorated one is made up. */
+    charged_unit_price?: number;
+    charged_unit_breakdown?: { quantity: number; unit_price: number; days: number; period_days: number } | null;
     promotion_name: string | null; treatment_action: string | null; treatment_value: number | null;
     tax_rate_percent: number | null; tax_amount: number; amount: number;
     /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; `null` elsewhere. */
