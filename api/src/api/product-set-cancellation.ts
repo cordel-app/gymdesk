@@ -64,26 +64,37 @@ export type CancelPendingOutcome =
  * reached leaves the attempt as it is, and the cancel's own guard refuses.
  */
 export async function reconcileSetPayments(gymId: string, productSetId: number, log: Log): Promise<void> {
-  const { rows } = await db.query<{ id: number; provider_ref: string; provider_order: string | null }>(
+  const { rows } = await db.query<SubmittedAttempt>(
     `SELECT pr.id, pr.provider_ref, pr.provider_order
        FROM payment_requests pr
        JOIN billing_events be ON be.id = pr.billing_event_id AND be.gym_id = pr.gym_id
       WHERE pr.gym_id = ? AND be.product_set_id = ? AND pr.transaction_type = 'payment'
         AND pr.status = 'pending' AND pr.provider_ref IS NOT NULL`,
     [gymId, productSetId]);
+  await reconcileSubmittedAttempts(rows, log);
+}
+
+export interface SubmittedAttempt { id: number; provider_ref: string; provider_order: string | null }
+
+/**
+ * The provider read-back behind `reconcileSetPayments()`, for any list of submitted, unresolved
+ * attempts (#3355 stage 3 asks it of a purchase's standalone Billing Events too). Outside any
+ * transaction; best-effort.
+ */
+export async function reconcileSubmittedAttempts(rows: SubmittedAttempt[], log: Log): Promise<void> {
   if (rows.length === 0) return;
   let provider;
   try {
     provider = getPaymentProvider();
   } catch (err) {
-    log.warn({ productSetId, err: (err as Error).message }, 'Product Set cancel: no payment provider configured, nothing reconciled');
+    log.warn({ err: (err as Error).message }, 'Pending payment cancel: no payment provider configured, nothing reconciled');
     return;
   }
   for (const row of rows) {
     try {
       const payload = await provider.getPaymentStatus(row.provider_ref);
       if (payload.orderId !== row.provider_order) {
-        log.error({ paymentRequestId: row.id }, 'Product Set cancel: provider order id does not match the payment request');
+        log.error({ paymentRequestId: row.id }, 'Pending payment cancel: provider order id does not match the payment request');
         continue;
       }
       const outcome = await settleFromProviderLookup(payload, { via: 'confirm', log });
@@ -96,7 +107,7 @@ export async function reconcileSetPayments(gymId: string, productSetId: number, 
             WHERE id = ? AND status = 'pending'`, [raw, SYSTEM_ACTOR, row.id]);
       }
     } catch (err) {
-      log.warn({ paymentRequestId: row.id, err: (err as Error).message }, 'Product Set cancel: provider lookup failed');
+      log.warn({ paymentRequestId: row.id, err: (err as Error).message }, 'Pending payment cancel: provider lookup failed');
     }
   }
 }
@@ -112,8 +123,8 @@ export async function cancelPendingProductSet(
   // `billing_events.expired_at` (the event reads *24h expired*) and by the purchases'
   // `expired_24h` status (instead of `cancelled`).
   const expire = opts.expire === true;
-  const { rows: sets } = await tx.query<{ id: number; status: string; user_membership_id: number | null }>(
-    `SELECT ps.id, ps.status, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
+  const { rows: sets } = await tx.query<{ id: number; status: string; user_membership_id: number | null; owner_member_id: number | null }>(
+    `SELECT ps.id, ps.status, ps.owner_member_id, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
        FROM product_sets ps WHERE ps.id = ? AND ps.gym_id = ? FOR UPDATE`,
     [productSetId, gymId]);
   const set = sets[0];
@@ -187,6 +198,15 @@ export async function cancelPendingProductSet(
         previousStatus: 'pending_payment', newStatus: 'cancelled', source: who.source, actorUserId: who.actorUserId,
       });
     }
+  }
+  // #3355 stage 3: the plans this checkout marked to be cancelled or reactivated were waiting for its
+  // payment, which will now never come: they run on exactly as before (the owner holds one in-flight
+  // set, so every mark of the owner is this one's), as a discarded Draft's do.
+  if (set.owner_member_id != null) {
+    const { restorePendingCancellations } = await import('./plan-pending-cancellation');
+    const { restorePendingReactivations } = await import('./plan-pending-reactivation');
+    await restorePendingCancellations(tx, gymId, Number(set.owner_member_id), actor);
+    await restorePendingReactivations(tx, gymId, Number(set.owner_member_id), actor);
   }
   await syncPlanSnapshot(tx, gymId, productSetId);
   return { kind: 'cancelled' };

@@ -132,3 +132,19 @@ export function purchaseTotalValue(p: Pick<MemberPurchase, 'total_amount'>): num
   const n = Number(p.total_amount);
   return Number.isFinite(n) ? n : null;
 }
+
+/**
+ * #3355 stage 3 — whether `⋮ → Cancel` is offered: only for a purchase awaiting its payment. The
+ * server decides again (`POST /payments/purchases/:id/cancel` answers 409 for any other status).
+ */
+export function purchaseCanCancel(p: Pick<MemberPurchase, 'status'>): boolean {
+  return p.status === 'pending_payment';
+}
+
+/** The locale key of a refused cancel's explanation, from the API's error code. */
+export function purchaseCancelErrorKey(code: string | null | undefined): string {
+  if (code === 'payment_settled') return 'members.purchases_cancel_error_settled';
+  if (code === 'payment_unresolved') return 'members.purchases_cancel_error_unresolved';
+  if (code === 'not_pending_payment') return 'members.purchases_cancel_error_not_pending';
+  return 'members.purchases_cancel_error';
+}

@@ -161,6 +161,17 @@ which cancels the pending version with it (`cancelPendingSetForAssignment()`; re
 `409 payment_unresolved` while an attempt on its event is still unresolved). See
 [Assigned Plan status model](#assigned-plan-status-model).
 
+**Cancelling a Pending Payment Purchase (#3355 stage 3).** Staff cancel the whole cart from the
+Member card's Purchases tab (`POST /payments/purchases/:id/cancel`, PAYMENTS write, only a
+`pending_payment` purchase). `cancelPendingPurchase()` (`api/src/api/purchase-cancellation.ts`)
+asks the provider about every submitted attempt first and refuses a settled or unresolved payment
+under the locks, exactly as below. With any Billing Event (the purchase's own, its Product Set's
+or its one-time lines') the purchase is kept `cancelled`: the set through the #2747 cancel below,
+a standalone checkout's event stamped `cancelled_at` with its open attempts `expired`, its pending
+one-time Products `cancelled`. With none, what it added is hard-deleted and the empty cart with it.
+The plans its checkout marked `to_be_canceled` / `to_be_reactivated` are restored either way (since
+this stage the #2747 cancel and the 24 h expiry restore them too). Nothing is charged or refunded.
+
 **Cancelling a Pending Payment Product Set (#2747).** Staff (`POST /product-sets/:id/cancel`,
 PAYMENTS write) and the owning member (`POST /me/product-sets/:id/cancel`) can cancel a set that
 awaits its first payment, and the set is **kept** as `cancelled` (migration 410: the status plus
