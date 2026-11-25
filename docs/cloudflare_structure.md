@@ -53,10 +53,10 @@
 │   │
 │   ├── muscles/
 │   │   └── images/
-│   │       ├── {muscle_name}-male.webp                              — 1080 × 1080 px
-│   │       ├── {muscle_name}-male-thumbnail.webp                    — 256 × 256 px
-│   │       ├── {muscle_name}-female.webp                            — 1080 × 1080 px
-│   │       └── {muscle_name}-female-thumbnail.webp                  — 256 × 256 px
+│   │       ├── {muscle_slug}-male.webp                              — 1080 × 1080 px
+│   │       ├── {muscle_slug}-male-thumbnail.webp                    — 256 × 256 px
+│   │       ├── {muscle_slug}-female.webp                            — 1080 × 1080 px
+│   │       └── {muscle_slug}-female-thumbnail.webp                  — 256 × 256 px
 │   │
 │   ├── exercises/
 │   │   ├── images/
@@ -265,8 +265,8 @@ cleared by its `DELETE`, over `api/src/api/promotion-image-storage.ts`; the pipe
 the rename move and the delete rule are the Plan image's. Gym root only; appended
 last to the gym's first-level markers with its writer.
 
-**`muscles/images/` holds a muscle's two images** (#1368 stage 3, #1412, #1413):
-`cordel/muscles/images/{muscle_name}-{male|female}.webp` (1080 × 1080) and
+**`muscles/images/` holds a muscle's two images** (#1368 stage 3, #1412, #1413; keyed by the slug since #3350 stage 4):
+`cordel/muscles/images/{muscle_slug}-{male|female}.webp` (1080 × 1080) and
 `…-thumbnail.webp` (256 × 256), written only by `POST /platform/muscles/:id/image/:sex`
 and cleared by its `DELETE`. The client sends **one** picture as it is (JPEG, PNG,
 WebP or GIF, up to `MUSCLE_IMAGE_MAX_MB`); the **server** centre-crops it to a
@@ -305,3 +305,5 @@ Since stage 2 the **server** makes the WebP files, through `POST`/`DELETE /exerc
 **Keys name the slug (#3350 stage 1).** `{exercise_slug}` is the exercise's persisted slug (`base_exercises.slug` / `exercises.slug`, #2951 stage 2), never its display or translated name, so a rename moves no object. Media stored before #3350 under `{exercise_id}-{exercise_name}-…` keeps rendering from its stored URL; replacing that image or video uploads it under the slug key and the route's sweep then deletes the name-keyed objects (only the gym's or the platform's own, and only when no other exercise references them). Nothing is migrated in bulk.
 
 **Legacy media (#1420, last stage).** The pre-#1420 exercise objects (`<id>-<name>.png`, `…-thumbnail.png`, the MP4 with its 512 PNG poster, and anything under the pre-#1035 `Exercises/Images/` / `Exercises/Videos/` folders) are not carried over: migration 277 dropped the columns that pointed at them and `npm run exercises:purge-legacy-media` removes the objects by key (a dry run unless `--execute`; the *Purge legacy exercise media* workflow runs it on the VPS). Only the `-male` / `-female` WebP and MP4 names above are valid in an exercise media folder.
+
+**Which keys name a slug (#3350).** An item that has a persisted slug is keyed by it, never by its display or translated name, so a rename moves no object: Exercises (`{exercise_slug}`, stage 1), Nutrition Library foods (`{food_slug}`, stage 2), Professional Services, Base Payment Methods, Personal and Nutrition Goals (stage 3), muscles (`{muscle_slug}` = `muscles.slug`, the snake_case link key, stage 4) and Base Meals. An image stored earlier under a name key keeps rendering from its stored URL and is swept when that image is replaced; nothing is migrated in bulk. The entities whose rows carry **no** slug (Products and Base Products, Spaces, Staff, Centres, Activities, Membership Plans, Promotions, Calendar Events, Members, Themes) keep their `{item_name}` keys and the rename move each one already does, because #3350 §2 forbids inventing a slug or silently falling back to the name; they move to slugs only when a ticket gives them one.

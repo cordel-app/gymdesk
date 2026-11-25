@@ -11,7 +11,6 @@ import {
   MUSCLE_IMAGE_COLUMNS,
   MUSCLE_IMAGE_MIME,
   MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_WINDOW_MS,
-  MUSCLE_SEXES,
   MuscleSex,
   buildMuscleImageKey,
   buildMuscleImageThumbnailKey,
@@ -27,7 +26,6 @@ import { muscleTranslationsExpr, parseMuscleTranslations, replaceMuscleTranslati
 import {
   StorageOperationError,
   buildStorageObjectUrl,
-  copyStorageObject,
   deleteStorageObject,
   describeStorageError,
   ensureStorageFolders,
@@ -191,9 +189,9 @@ export async function createMuscle(
 }
 
 /**
- * Writes a muscle's name and (when given) translations. The slug never moves; a
- * rename moves the image objects the key follows, and a failed move leaves the
- * row as it was.
+ * Writes a muscle's name and (when given) translations. The slug never moves,
+ * and since #3350 stage 4 the image keys follow the slug, so a rename moves no
+ * image object.
  */
 export async function updateMuscleContent(
   req: AuditRequest,
@@ -204,53 +202,14 @@ export async function updateMuscleContent(
   const dup = await db.query('SELECT id FROM muscles WHERE LOWER(name) = LOWER(?) AND id != ? LIMIT 1', [name, muscle.id]);
   if (dup.rows.length > 0) return { ok: false, status: 409, body: { error: 'A muscle with this name already exists' } };
 
-  const urls: Record<string, string | null> = {
-    image_male_url: muscle.image_male_url,
-    image_male_url_thumbnail: muscle.image_male_url_thumbnail,
-    image_female_url: muscle.image_female_url,
-    image_female_url_thumbnail: muscle.image_female_url_thumbnail,
-  };
-  const moves: { from: string; to: string }[] = [];
-  if (name !== muscle.name) {
-    // The key follows the name: move whichever of the images are ours to the
-    // new keys before the row is re-pointed. A failed copy aborts the rename
-    // with the row untouched.
-    const targets: { column: string; newKey: string }[] = [];
-    for (const sex of MUSCLE_SEXES) {
-      targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].image, newKey: buildMuscleImageKey(name, sex) });
-      targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].thumbnail, newKey: buildMuscleImageThumbnailKey(name, sex) });
-    }
-    const planned: { column: string; newKey: string }[] = [];
-    for (const { column, newKey } of targets) {
-      const url = urls[column];
-      const oldKey = url && isPlatformOwnedMuscleImageUrl(url) ? storageKeyFromObjectUrl(url) : null;
-      if (oldKey && oldKey !== newKey) { moves.push({ from: oldKey, to: newKey }); planned.push({ column, newKey }); }
-    }
-    try {
-      if (moves.length) await ensureStorageFolders(muscleImageFolderKeys());
-      for (const m of moves) await copyStorageObject(m.from, m.to);
-    } catch (err: any) {
-      const details = err instanceof StorageOperationError
-        ? err.details
-        : describeStorageError(err, { operation: 'copyStorageObject', key: moves[0]?.to });
-      logger.error({ err, details, muscleId: muscle.id }, 'Cloudflare R2 muscle image move failed');
-      return { ok: false, status: 502, body: { error: `Failed to move image: ${details.message}`, details } };
-    }
-    for (const { column, newKey } of planned) urls[column] = buildStorageObjectUrl(newKey);
-  }
-
   const actor = platformActor(req);
   await db.transaction(async (tx) => {
     await tx.query(
-      `UPDATE muscles SET name = ?, image_male_url = ?, image_male_url_thumbnail = ?,
-              image_female_url = ?, image_female_url_thumbnail = ?, modified_at = UTC_TIMESTAMP(),
-              modified_by = ? WHERE id = ?`,
-      [name, urls.image_male_url, urls.image_male_url_thumbnail, urls.image_female_url, urls.image_female_url_thumbnail, actor, muscle.id],
+      'UPDATE muscles SET name = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+      [name, actor, muscle.id],
     );
     if (translations) await replaceMuscleTranslations(tx, muscle.id, translations);
   });
-  if (moves.length) await sweepMuscleObjects(allImageUrls(muscle), Object.values(urls));
-
   recordAudit(req, {
     action: 'update', entityType: 'muscle', entityId: muscle.id,
     previous: { name: muscle.name }, next: { name },
@@ -298,8 +257,8 @@ export async function storeMuscleImage(
 
   const cols = MUSCLE_IMAGE_COLUMNS[sex];
   const previous = [(muscle as any)[cols.image] as string | null, (muscle as any)[cols.thumbnail] as string | null];
-  const imageKey = buildMuscleImageKey(muscle.name, sex);
-  const thumbnailKey = buildMuscleImageThumbnailKey(muscle.name, sex);
+  const imageKey = buildMuscleImageKey(muscle.slug, sex);
+  const thumbnailKey = buildMuscleImageThumbnailKey(muscle.slug, sex);
   const imageUrl = buildStorageObjectUrl(imageKey);
   const thumbnailUrl = buildStorageObjectUrl(thumbnailKey);
   try {
