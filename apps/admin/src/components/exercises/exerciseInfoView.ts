@@ -71,3 +71,16 @@ export function exerciseInfoFields(info: ExerciseInfo): ExerciseInfoFieldId[] {
   if (info.categories.length > 0) out.push('categories');
   return out;
 }
+
+/**
+ * #3407 — whether the modal draws its "No image" placeholder where the image
+ * goes: the original failed to load, or a clicked sex position turned out to
+ * have no original once the details loaded. An exercise opened from its name
+ * with no image at all keeps no image area (#2203).
+ */
+export function showImagePlaceholder({ imageUrl, imageBroken, gender, loaded }: {
+  imageUrl: string | null; imageBroken: boolean; gender?: 'male' | 'female' | null; loaded: boolean;
+}): boolean {
+  if (imageUrl) return imageBroken;
+  return loaded && !!gender;
+}

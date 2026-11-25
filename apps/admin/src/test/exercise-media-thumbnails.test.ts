@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  exerciseImageSrc, exerciseVideoPosterUrl, hasExerciseMedia, youtubeVideoId,
+  exerciseImageSrc, exerciseImageThumbs, exerciseVideoPosterUrl, hasExerciseMedia, youtubeVideoId,
 } from '../components/exerciseMedia';
 
 // #720 — every workout view shows the media the exercise already carries, on
@@ -119,7 +119,8 @@ describe('ExerciseMediaThumbnails (#720)', () => {
   });
 
   it('hides a thumbnail that fails to load without touching the other one', () => {
-    expect(src).toContain('onError={() => setImageBroken(true)}');
+    // #3407: each image tracks its own failure, keyed by its sex position.
+    expect(src).toContain('onError={() => setBrokenImages((b) => ({ ...b, [key]: true }))}');
     expect(src).toContain('onError={() => setPosterBroken(true)}');
   });
 
@@ -161,5 +162,37 @@ describe('exercise media locales (#720)', () => {
       .toEqual(['close_video', 'image', 'image_alt', 'play_video', 'play_video_of']);
     expect(messages.exercise_media.image_alt).toContain('{name}');
     expect(messages.exercise_media.play_video_of).toContain('{name}');
+  });
+});
+
+describe('per-sex thumbnails (#3407)', () => {
+  const both = {
+    exercise_image_url: 'm.webp', exercise_image_thumbnail_url: 'm-thumbnail.webp',
+    exercise_image_male_url: 'm.webp', exercise_image_male_thumbnail_url: 'm-thumbnail.webp',
+    exercise_image_female_url: 'f.webp', exercise_image_female_thumbnail_url: 'f-thumbnail.webp',
+  };
+  it('draws one thumbnail per sex, male first, each opening its own original', () => {
+    expect(exerciseImageThumbs(both)).toEqual([
+      { gender: 'male', thumbnail: 'm-thumbnail.webp', original: 'm.webp' },
+      { gender: 'female', thumbnail: 'f-thumbnail.webp', original: 'f.webp' },
+    ]);
+  });
+  it('draws only the sex that has an image', () => {
+    expect(exerciseImageThumbs({ ...both, exercise_image_male_url: null, exercise_image_male_thumbnail_url: null }))
+      .toEqual([{ gender: 'female', thumbnail: 'f-thumbnail.webp', original: 'f.webp' }]);
+  });
+  it('never offers a thumbnail as the original', () => {
+    const [img] = exerciseImageThumbs({ exercise_image_female_url: null, exercise_image_female_thumbnail_url: 't.webp' });
+    expect(img).toEqual({ gender: 'female', thumbnail: 't.webp', original: null });
+  });
+  it('keeps the single effective image of a payload with no per-sex fields', () => {
+    expect(exerciseImageThumbs({ exercise_image_url: 'i.webp', exercise_image_thumbnail_url: 'i-thumbnail.webp' }))
+      .toEqual([{ gender: null, thumbnail: 'i-thumbnail.webp', original: 'i.webp' }]);
+    expect(exerciseImageThumbs({ exercise_image_url: null })).toEqual([]);
+  });
+  it('hands the clicked sex to the workout tree\'s one modal', () => {
+    const builder = readFileSync(join(__dirname, '..', 'app', '[locale]', 'workout-templates', 'WorkoutBlockBuilder.tsx'), 'utf8');
+    expect(builder).toContain('onOpenImage');
+    expect(builder).not.toContain('exercise.exercise_image_thumbnail_url || exercise.exercise_image_url');
   });
 });

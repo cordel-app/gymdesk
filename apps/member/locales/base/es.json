@@ -121,7 +121,7 @@
     "progress_day": "Hoy",
     "progress_week_of": "Semana {date}",
     "progress_week": "Esta semana",
-    "progress_month": "Este mes",
+    "progress_this_month": "Este mes ({month})",
     "today_marker": "Hoy",
     "week_nav_hint": "Desliza para cambiar de semana",
     "week_prev": "Semana anterior",

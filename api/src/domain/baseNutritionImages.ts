@@ -2,9 +2,15 @@
 // base one (#715, #1035).
 //
 // Both roots are here on purpose: a base food's image and a gym food's image are
-// the same `nutrition/<food_id>-<name>` shape one root apart (#1035 §4/§12), so
+// the same `nutrition/<food_id>-<slug>` shape one root apart (#1035 §4/§12), so
 // the two keys are built from one folder constant and one sanitizer rather than
 // drifting in two modules.
+//
+// Since #3350 stage 2 the name part of the key is the food's persisted **slug**
+// (migration 440, generated once and never rewritten, #2951), never its display
+// or translated name, so renaming a food never moves its image. An object stored
+// before #3350 under `<id>-<name>.webp` keeps rendering from its stored URL;
+// replacing that image is what moves it (the routes' sweep).
 //
 // Everything here is pure: the object key, the sanitizer that feeds it and the
 // upload rules. The router owns the bytes, the row and the authorization — this
@@ -70,7 +76,17 @@ export function sanitizeNutritionImageName(name: string): string {
 }
 
 /**
- * `cordel/nutrition/<food_id>-<sanitized name>.webp`: the key a base food's image
+ * The identifier a food's image key is built from: its persisted slug (#3350).
+ * A row with no slug (none should exist since migration 440 gave every food one)
+ * keeps the pre-#3350 name-based key rather than failing the upload.
+ */
+export function nutritionImageKeyIdentifier(row: { slug?: string | null; name: string }): string {
+  const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
+  return slug || row.name;
+}
+
+/**
+ * `cordel/nutrition/<food_id>-<slug>.webp`: the key a base food's image
  * is stored under (#1035 §4/§12).
  *
  * The id leads, so two foods whose names sanitize alike never share an object —
@@ -78,33 +94,33 @@ export function sanitizeNutritionImageName(name: string): string {
  * It was a fresh UUID per upload until that ticket, which made every upload a
  * new key; the key is deterministic now, so replacing an image overwrites the
  * object in place and the caller has nothing to sweep unless the food was
- * renamed. A surface showing the image therefore cache-busts on the row's own
+ * stored under a pre-#3350 name key. A surface showing the image therefore cache-busts on the row's own
  * `modified_at`, as Cordel's Base Nutrition Library page already does.
  *
  * Since #1562 the object is always the server-made 1080 × 1080 WebP master (its
  * 256 × 256 thumbnail sits beside it, {@link nutritionThumbnailKeyFor}); the
  * uploaded file's own name and format play no part in the key (#713's rule).
  */
-export function buildBaseNutritionImageKey(foodId: number | string, foodName: string): string {
-  return `${PLATFORM_NUTRITION_PREFIX}/${foodId}-${sanitizeNutritionImageName(foodName)}.webp`;
+export function buildBaseNutritionImageKey(foodId: number | string, foodSlug: string): string {
+  return `${PLATFORM_NUTRITION_PREFIX}/${foodId}-${sanitizeNutritionImageName(foodSlug)}.webp`;
 }
 
 /**
- * `<gym prefix>/nutrition/<food_id>-<sanitized name>.<ext>`: the key a **gym**
+ * `<gym prefix>/nutrition/<food_id>-<slug>.webp`: the key a **gym**
  * food's image is stored under (#1035 §4, §5, §12).
  *
  * The same shape one root over. Both roots are `.webp` since #1562, because the
  * server converts whatever was uploaded.
  *
- * Deterministic like the base key, so replacing an image reuses the key and a
- * rename is what leaves an object to sweep.
+ * Deterministic like the base key, so replacing an image reuses the key; only an
+ * image stored under a pre-#3350 name key leaves an object to sweep.
  */
 export function buildGymNutritionImageKey(
   folderPrefix: string,
   foodId: number | string,
-  foodName: string,
+  foodSlug: string,
 ): string {
-  return `${folderPrefix}/${NUTRITION_FOLDER}/${foodId}-${sanitizeNutritionImageName(foodName)}.webp`;
+  return `${folderPrefix}/${NUTRITION_FOLDER}/${foodId}-${sanitizeNutritionImageName(foodSlug)}.webp`;
 }
 
 /**
@@ -132,7 +148,7 @@ export function gymNutritionFolderKeys(folderPrefix: string): string[] {
 
 /**
  * The 256 × 256 thumbnail key beside a food's master key (#1562):
- * `<id>-<name>.webp` → `<id>-<name>-thumbnail.webp`. Derived, never stored, so a
+ * `<id>-<slug>.webp` → `<id>-<slug>-thumbnail.webp`. Derived, never stored, so a
  * food has one image column and the pair cannot disagree.
  */
 export function nutritionThumbnailKeyFor(masterKey: string): string {
