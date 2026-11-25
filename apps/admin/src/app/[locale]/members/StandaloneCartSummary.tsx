@@ -10,7 +10,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle } from '@/components/formChrome';
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
-import { PurchaseHeading } from './PurchaseHeading';
+import { PurchaseHeading, type CartExpiry } from './PurchaseHeading';
 import type { PurchaseLike } from '@/lib/purchaseName';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
 
@@ -22,12 +22,14 @@ interface CartSummary {
   amount_due: number;
 }
 
-export function StandaloneCartSummary({ memberId, reloadKey, paymentLink }: {
+export function StandaloneCartSummary({ memberId, reloadKey, paymentLink, cartExpiry = null }: {
   memberId: number;
   /** Re-read whenever the member's purchases were. */
   reloadKey: unknown;
   /** The checkout link of the last cart Save & Pay, shown once it exists. */
   paymentLink?: string | null;
+  /** #3378 — the cart's countdown, shown in the purchase header beside its In Cart status. */
+  cartExpiry?: CartExpiry | null;
 }) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
@@ -43,7 +45,7 @@ export function StandaloneCartSummary({ memberId, reloadKey, paymentLink }: {
 
   return (
     <div data-standalone-cart style={{ marginBottom: 12 }}>
-      {summary?.purchase && <PurchaseHeading purchase={summary.purchase} />}
+      {summary?.purchase && <PurchaseHeading purchase={summary.purchase} expiry={cartExpiry} />}
       {summary && <CheckoutSummaryPanel payment={summary.initial_payment} contracted={summary.contracted_items} />}
       {paymentLink && (
         <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{paymentLink}</code></div>

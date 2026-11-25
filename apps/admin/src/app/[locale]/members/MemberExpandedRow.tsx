@@ -34,7 +34,7 @@ import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { useProductSetDetail } from './MemberProductSet';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { ProposedSetForecast } from './ProposedSetForecast';
-import { CartStatusBar, ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
+import { ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
 import { billingMode, cartExpirySeconds, hasCartInCart, pendingOneOffCount, saveAndPayTarget, standaloneCartCount, submittedCartNoteKey, submittedCartView, type SubmittedCart } from './productsWorkflowView';
 import { SubmittedCartSummary } from './SubmittedCartSummary';
 import { StandaloneCartSummary } from './StandaloneCartSummary';
@@ -223,6 +223,10 @@ export function MemberExpandedRow({
     () => cartExpirySeconds(configuration.current_product_set, purchasedProducts, Date.now()),
     [configuration.current_product_set, purchasedProducts],
   );
+  // #3378 — handed to the Purchase header, only while the cart is In Cart.
+  const cartExpiry = hasCartInCart(configuration.current_product_set, purchasedProducts)
+    ? { seconds: cartSeconds, onExpire: reloadProducts }
+    : null;
   const [cartPaymentLink, setCartPaymentLink] = useState<string | null>(null);
   // #3313 — the standalone cart's Save & Pay opens the payment step; only its Pay creates the
   // Billing Event and the Members App checkout (`StandaloneCartPayModal`).
@@ -614,18 +618,17 @@ export function MemberExpandedRow({
               the tab, with Save & Pay / Cancel directly beneath. */}
           {(inFlightSetsShown || saveAndPayTarget(workflow) === 'cart' || cartPaymentLink != null || submittedView === 'committed') && (
             <Section label={t('members.section_summary')}>
-              {/* #3274 follow-up — the cart's one In Cart status and countdown. */}
-              {hasCartInCart(configuration.current_product_set, purchasedProducts) && (
-                <CartStatusBar seconds={cartSeconds} onExpire={reloadProducts} />
-              )}
+              {/* #3378 — the cart's In Cart status and its one countdown are the Purchase header's
+                  (no separate Cart row above it). */}
               {!inFlightSetsShown && (
-                <StandaloneCartSummary memberId={memberId} reloadKey={purchasedProducts} paymentLink={cartPaymentLink} />
+                <StandaloneCartSummary memberId={memberId} reloadKey={purchasedProducts} paymentLink={cartPaymentLink} cartExpiry={cartExpiry} />
               )}
               <ProductSetsInFlight
                 productSets={configuration.product_sets}
                 canWrite={canWriteMembers && canManagePackages}
                 review={draftReview}
                 onChanged={reloadProducts}
+                cartExpiry={cartExpiry}
               />
               {/* #3307 — the cart Save & Pay submitted: still awaiting payment, it is the in-flight
                   row above (plus what the submission answered); paid or activated, it stays here. */}
