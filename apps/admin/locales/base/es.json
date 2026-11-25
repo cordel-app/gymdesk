@@ -3178,7 +3178,10 @@
     "conclude": "Concluir plan",
     "confirm_conclude": "¿Marcar este plan de entrenamiento como concluido? El estado cambiará a Completado. Si no hay fecha de fin, se usará la de hoy. No se puede deshacer.",
     "conclude_confirm_btn": "Concluir plan",
-    "error_end_date_required_expired": "La fecha de fin es obligatoria cuando el estado es Expirado."
+    "error_end_date_required_expired": "La fecha de fin es obligatoria cuando el estado es Expirado.",
+    "col_days": "Días",
+    "day_count": "{count, plural, one {# día} other {# días}}",
+    "open_ended": "Sin fecha de fin"
   },
   "template_workouts": {
     "title": "Rutinas",
@@ -5911,7 +5914,10 @@
     "label_modified_by": "Modificado por",
     "details_dialog_title": "Detalles del plan de nutrición",
     "unsaved_changes": "Tienes cambios sin guardar. ¿Descartarlos?",
-    "unsaved_discard": "Descartar cambios"
+    "unsaved_discard": "Descartar cambios",
+    "col_end_date": "Fecha de fin",
+    "label_end_date": "Fecha de fin",
+    "open_ended": "Sin fecha de fin"
   },
   "operating_hours": {
     "title": "Horario y Festivos",

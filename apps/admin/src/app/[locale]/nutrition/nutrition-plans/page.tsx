@@ -11,6 +11,8 @@ import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { AssignedPlanDateFields } from '@/components/AssignedPlanDateFields';
+import { assignedPlanDateTexts } from '@/lib/assignedPlanDates';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -84,6 +86,7 @@ const LIST_COLUMNS: ListColumn[] = [
   { key: 'member', labelKey: 'col_member', width: 120, grow: 1, mobile: 'keep' },
   { key: 'days', labelKey: 'col_days', width: 80, mobile: 'secondary' },
   { key: 'start_date', labelKey: 'col_start_date', width: 110, mobile: 'secondary' },
+  { key: 'end_date', labelKey: 'col_end_date', width: 110, mobile: 'secondary' },
   { key: 'created_at', labelKey: 'col_created_at', width: 100, mobile: 'secondary' },
   { key: 'created_by', labelKey: 'col_created_by', width: 140, mobile: 'secondary' },
   { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
@@ -248,7 +251,12 @@ export default function NutritionPlansPage() {
     if (row.draft_of_plan_id && !versionConfirmOpen) { setVersionConfirmOpen(true); return; }
     setVersionConfirmOpen(false);
     setEditSaving(true); setEditError(null);
-    const body = { name: editForm.name.trim(), description: editForm.description.trim() || null, start_date: editForm.start_date || null };
+    // #3403: a plan always keeps a start date — a blank field leaves the stored one.
+    const body = {
+      name: editForm.name.trim(),
+      description: editForm.description.trim() || null,
+      ...(editForm.start_date ? { start_date: editForm.start_date } : {}),
+    };
     try {
       if (row.draft_of_plan_id) {
         // #1970: name/description first, then one transaction ends the old version and activates this one.
@@ -509,6 +517,7 @@ function PlanCard({
   onChanged: () => void;
 }) {
   const gymFmt = useGymFormatSettings();
+  const dates = assignedPlanDateTexts(plan, gymFmt, t('nutrition_plans.open_ended'));
   const isActive = plan.status === 'active';
   const canEditPlan = canWrite && (isActive || plan.status === 'draft');
   const roTitle = useReadOnlyTitle(canWrite);
@@ -551,6 +560,7 @@ function PlanCard({
                 type="date"
                 value={editForm.start_date}
                 onChange={(e) => onEditFormChange({ ...editForm, start_date: e.target.value })}
+                required
                 style={{ ...inlineInputStyle, width: 'auto' }}
               />
             </div>
@@ -572,14 +582,8 @@ function PlanCard({
           <span className={CELL_CLASS.days} style={metaCellStyle}>
             {t('nutrition_plans.day_count', { count: plan.day_count })}
           </span>
-          <span className={CELL_CLASS.start_date} style={metaCellStyle}>
-            {plan.start_date ? (
-              <>
-                <div>{formatGymDateOnly(plan.start_date, gymFmt)}</div>
-                {plan.end_date && <div style={endDateStyle}>→ {formatGymDateOnly(plan.end_date, gymFmt)}</div>}
-              </>
-            ) : '—'}
-          </span>
+          <span className={CELL_CLASS.start_date} style={metaCellStyle}>{dates.start}</span>
+          <span className={CELL_CLASS.end_date} style={metaCellStyle}>{dates.end}</span>
           <span className={CELL_CLASS.created_at} style={metaCellStyle}>
             {formatDate(plan.created_at, gymFmt)}
           </span>
@@ -598,6 +602,12 @@ function PlanCard({
       {expanded && (
         <>
           <div style={{ borderTop: '1px solid #ececf0' }} />
+          <AssignedPlanDateFields
+            startLabel={t('nutrition_plans.label_start_date')}
+            endLabel={t('nutrition_plans.label_end_date')}
+            start={dates.start}
+            end={dates.end}
+          />
           {hierLoading || !hierarchy ? (
             <p style={{ color: '#888', fontSize: 14, padding: '12px 20px 12px 44px', margin: 0 }}>
               {t('nutrition_plans.loading')}
@@ -657,6 +667,7 @@ function DetailsDialog({
         <DetailRow label={t('nutrition_plans.label_member')} value={plan.member_name} />
         <DetailRow label={t('nutrition_plans.label_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
         <DetailRow label={t('nutrition_plans.label_start_date')} value={plan.start_date ? formatGymDateOnly(plan.start_date, gymFmt) : '—'} />
+        <DetailRow label={t('nutrition_plans.label_end_date')} value={plan.end_date ? formatGymDateOnly(plan.end_date, gymFmt) : t('nutrition_plans.open_ended')} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('nutrition_plans.label_created_at')} value={formatDate(plan.created_at, gymFmt)} />
         <DetailRow label={t('nutrition_plans.label_created_by')} value={plan.created_by ?? '—'} />
@@ -715,7 +726,6 @@ const colHeaderCellStyle: React.CSSProperties = {
   minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 /** The end date under the start date, as in Assigned Training Plans. */
-const endDateStyle: React.CSSProperties = { fontSize: 12, color: '#6b7280' };
 const metaCellStyle: React.CSSProperties = {
   fontSize: 13, color: '#888', whiteSpace: 'nowrap',
 };
