@@ -91,6 +91,8 @@ export interface ProductSetRow {
   expired: boolean;
   /** Seconds left on a Draft by the server's clock (#2477); null for any other status. */
   expires_in_seconds?: number | null;
+  /** #3307 stage 4 — seconds left on a Pending Payment's 24 hours (the server's clock); null otherwise. */
+  payment_expires_in_seconds?: number | null;
   created_by: string | null;
   /** #2747 stage 2 — when a cancelled version was cancelled (date only), and by whom. */
   cancelled_at?: string | null;

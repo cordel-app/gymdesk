@@ -252,6 +252,18 @@ describe('GET /payments/purchases (#3273)', () => {
     expect((await list(owner)).items.find((x) => x.id === pCart).total_amount).toBeNull();
   });
 
+  it('narrows to one purchase of that member with purchase_id, never another member\'s (#3307 stage 4)', async () => {
+    const one = await get(gymA, `/payments/purchases?member_id=${owner}&purchase_id=${pPlan}&limit=1`);
+    expect(one.status).toBe(200);
+    expect(one.body.items.map((p: any) => p.id)).toEqual([pPlan]);
+    expect(one.body.total).toBe(1);
+    expect(one.body.items[0].plans).toHaveLength(1);
+    // A purchase the member neither owns nor benefits from is not reachable through them.
+    const outsider = await get(gymA, `/payments/purchases?member_id=${owner}&purchase_id=${pOutsider}`);
+    expect(outsider.body.items).toEqual([]);
+    expect((await get(gymA, `/payments/purchases?member_id=${owner}&purchase_id=x`)).status).toBe(400);
+  });
+
   it('isolates gyms: another gym\'s member is a 404 and sees none of these purchases', async () => {
     expect((await get(gymB, `/payments/purchases?member_id=${owner}`)).status).toBe(404);
     const other = await member(gymB, 'Gym B member');

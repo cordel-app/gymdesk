@@ -278,13 +278,15 @@ paymentsRouter.get('/purchases', async (req, res, next) => {
   if (role === 'member') return res.status(403).json({ error: 'Forbidden' });
   const q = parseQuery(req, res, z.object({
     member_id: z.coerce.number().int().positive(),
+    // #3307 stage 4 — one purchase of that Member (the Products Summary's detail).
+    purchase_id: z.coerce.number().int().positive().optional(),
     limit: z.coerce.number().int().min(1).max(MEMBER_PURCHASES_MAX_LIMIT).default(MEMBER_PURCHASES_DEFAULT_LIMIT),
     offset: z.coerce.number().int().min(0).default(0),
   }));
   if (!q) return;
   try {
     if (!(await memberExistsInGym(gymId, q.member_id))) return res.status(404).json({ error: 'Member not found' });
-    const { items, total } = await loadMemberPurchases(gymId, q.member_id, q.limit, q.offset);
+    const { items, total } = await loadMemberPurchases(gymId, q.member_id, q.limit, q.offset, q.purchase_id);
     res.json({ items, total, limit: q.limit, offset: q.offset });
   } catch (err) {
     next(err);
