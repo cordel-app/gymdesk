@@ -330,8 +330,14 @@ export function ExpandedRow({
                           // #3284 — the treatments Save & Pay persisted on the line, typed as the Initial Payment showed them.
                           .map((e, k) => (
                             <span key={k} data-line-reason={e.typeKey ?? ''} style={{ color: '#6b7280', display: 'block', fontSize: 12 }}>
-                              {e.key ? t(`members.${e.key}`, e.values as any) : e.text}
-                              {e.typeKey ? ` · ${t(`members.${e.typeKey}`)}` : ''}
+                              {e.key === 'checkout_reason_initial_payment_waive' ? (
+                                <strong>{t(`members.${e.key}`, e.values as any)}</strong>
+                              ) : (
+                                <>
+                                  {e.typeKey && <strong>{t(`members.${e.typeKey}`)}{e.typeKey === 'checkout_reason_type_manual_adjustment' ? ' ' : ': '}</strong>}
+                                  {e.key ? t(`members.${e.key}`, e.values as any) : e.text}
+                                </>
+                              )}
                             </span>
                           ))}
                     </td>
