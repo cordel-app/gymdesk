@@ -13,7 +13,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { CrudModal } from '@/components/CrudModal';
-import { cardHintStyle, cardSectionLabelStyle, formControlStyle } from '@/components/formChrome';
+import { cardHintStyle, cardSectionLabelStyle, formControlStyle, formErrorStyle } from '@/components/formChrome';
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { ProductSetForecast } from './MemberProductSet';
 import { InitialPaymentSection } from './CheckoutSummarySections';
@@ -34,6 +34,8 @@ interface Review extends ReviewLike {
   plans_to_cancel_immediately?: Array<{ user_membership_id: number; plan_name: string | null }>;
   /** #3358 stage 2 — the recurring Product lines cancelled today instead of at their End Date. */
   lines_to_cancel_immediately?: Array<{ line_id: number; product_name: string | null }>;
+  /** #3358 stage 3 — Centers a member loses once the whole Draft commits (another plan's are excluded). */
+  center_access_warnings?: Array<{ member_id: number; member_name: string | null; centers: Array<{ id: number; name: string }> }>;
   immediate_lines: Array<{
     item_name: string | null; quantity: number; amount: number;
     regular_unit_price?: number | null; promotion_name?: string | null;
@@ -224,6 +226,18 @@ export function ReviewChangesModal({
                       <li key={p.user_membership_id}>{t('review_plan_cancelled_immediately', { plan: p.plan_name ?? '—' })}</li>
                     ))}
                   </ul>
+                )}
+                {(review.center_access_warnings ?? []).length > 0 && (
+                  <div role="alert" style={{ ...formErrorStyle, margin: '4px 0 12px' }} data-review-center-access-warning>
+                    <strong>{t('review_center_access_warning_title')}</strong>
+                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                      {(review.center_access_warnings ?? []).map((w) => (
+                        <li key={w.member_id}>{t('review_center_access_warning_member', {
+                          member: w.member_name ?? '—', centers: w.centers.map((c) => c.name).join(', '),
+                        })}</li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </>
             );

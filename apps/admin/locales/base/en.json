@@ -705,6 +705,8 @@
     "review_plan_cancelled": "Membership Plan {plan} ends (no charge)",
     "review_plan_reactivated": "Membership Plan {plan} is reactivated (no extra initial charge)",
     "review_plan_cancelled_immediately": "Membership Plan {plan} is cancelled today (no charge)",
+    "review_center_access_warning_title": "Access to Centers will be removed",
+    "review_center_access_warning_member": "{member} will lose access to: {centers}",
     "review_line_cancelled_immediately": "{product} is cancelled today (no charge)",
     "review_initial_payment": "Initial payment",
     "checkout_initial_payment": "Initial Payment",

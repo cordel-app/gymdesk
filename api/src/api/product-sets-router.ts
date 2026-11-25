@@ -1,4 +1,5 @@
 import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../domain/planAssignments';
+import { centerAccessWarnings } from './plan-center-access';
 import { cartExpiresAtIso, setCartExpiredSql, setCartExpiresAtSql } from '../domain/cartExpiry';
 import { refreshSetCart } from './purchases';
 import { amountChangedBody, isStaleAmount, parseExpectedAmountInput, sameAmount } from '../domain/expectedCheckoutAmount';
@@ -785,7 +786,11 @@ async function reviewHandler(req: any, res: any, next: any) {
         WHERE lnk.product_set_id = ? AND s.gym_id = ?
           AND s.ends_at IS NOT NULL AND src.ends_at IS NOT NULL AND s.ends_at < src.ends_at`,
       [Number(set.id), gymId]);
+    // #3358 stage 3 — the centers a member loses once the whole Draft commits (warning only).
+    const centerWarnings = cancellingNow.length > 0
+      ? await centerAccessWarnings(gymId, Number(set.owner_member_id), Number(set.id)) : [];
     res.json({
+      center_access_warnings: centerWarnings,
       lines_to_cancel_immediately: linesCancellingNow.map((r: any) => ({ line_id: Number(r.line_id), product_name: r.product_name ?? null })),
       plans_to_cancel_immediately: cancellingNow.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       plans_to_reactivate: reactivating.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
