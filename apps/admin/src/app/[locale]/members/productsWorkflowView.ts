@@ -236,7 +236,7 @@ export interface LineReasonLike {
   name: string | null;
 }
 
-/** #3284 — the locale key of a reason's type label (Benefit / Discount / Manual adjustment). */
+/** #3284 — the locale key of a reason's type label (Benefit / Promotion / Manual adjustment). */
 export const LINE_REASON_TYPE_KEYS: Record<LineReasonLike['type'], string> = {
   benefit: 'checkout_reason_type_benefit',
   discount: 'checkout_reason_type_discount',
@@ -248,34 +248,40 @@ export interface DiscountEntry {
   text?: string;
   key?: string;
   values?: Record<string, string | number>;
-  /** The locale key of its type, `null` for a line read without reasons (a legacy single treatment). */
+  /** The locale key of the bold label before the detail, `null` for a line read without reasons (a legacy single treatment). */
   typeKey: string | null;
+  /** What goes between the bold label and the detail (#3284: `Initial payment: waived`, `Benefit waive`). */
+  separator: ' ' | ': ';
 }
 
 /**
- * #3284 — every treatment of a line, each with its type, in the order the engine applied them. The
- * server classifies (`type`); this only words it. A line the server sent no reasons for falls back
- * to the single primary treatment (`discountText()`), untyped. `[]` when nothing explains the line.
+ * #3284 — every treatment of a line, each with its label, in the order the engine applied them. The
+ * server classifies (`type`); this only words it: a bold label followed by the detail in normal text
+ * (`**Manual adjustment** Direct discount 50%`, `**Initial payment**: waived`). A line the server sent
+ * no reasons for falls back to the single primary treatment (`discountText()`), unlabelled. `[]` when
+ * nothing explains the line.
  */
 export function discountEntries(l: InitialPaymentLike['lines'][number]): DiscountEntry[] {
   const reasons = l.reasons ?? [];
   if (reasons.length === 0) {
     const d = discountText(l);
-    return d ? [{ ...d, typeKey: null }] : [];
+    return d ? [{ ...d, typeKey: null, separator: ' ' }] : [];
   }
-  return reasons.map((r) => {
-    // #3284 stage 2 — the staff waive is worded whole ("Manual adjustment: Initial Payment waive").
-    if (r.code === INITIAL_PAYMENT_WAIVE_CODE) return { key: 'checkout_reason_initial_payment_waive', typeKey: null };
+  return reasons.map((r): DiscountEntry => {
+    // #3284 stage 2 — the staff waive has a label of its own: "Initial payment: waived".
+    if (r.code === INITIAL_PAYMENT_WAIVE_CODE) {
+      return { key: 'checkout_reason_initial_payment_waived', typeKey: 'checkout_reason_type_initial_payment', separator: ': ' };
+    }
     const typeKey = LINE_REASON_TYPE_KEYS[r.type] ?? null;
-    if (r.type === 'discount' && r.name) return { text: r.name, typeKey };
-    if (r.action === 'waive') return { key: 'checkout_discount_waived', typeKey };
+    if (r.type === 'discount' && r.name) return { text: r.name, typeKey, separator: ' ' };
+    if (r.action === 'waive') return { key: 'checkout_reason_detail_waive', typeKey, separator: ' ' };
     if (r.action === 'percentage_discount' && r.value != null) {
       return {
         key: r.code === 'direct_discount' ? 'checkout_discount_direct_percent' : 'checkout_discount_percent',
-        values: { percent: r.value }, typeKey,
+        values: { percent: r.value }, typeKey, separator: ' ',
       };
     }
-    return { key: 'checkout_discount_direct', typeKey };
+    return { key: 'checkout_discount_direct', typeKey, separator: ' ' };
   });
 }
 
