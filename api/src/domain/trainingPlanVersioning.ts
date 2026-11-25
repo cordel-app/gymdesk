@@ -30,3 +30,16 @@ export function nextDay(date: string): string {
 export function previousDay(date: string): string {
   return DateTime.fromISO(date, { zone: 'UTC' }).minus({ days: 1 }).toISODate() as string;
 }
+
+/**
+ * #3409: an Active plan whose start date is the gym's today is edited in place —
+ * no version draft, no confirmation, nothing ended or renamed. Compares calendar
+ * dates (YYYY-MM-DD) only, so a DATE column read as a string or as a UTC-midnight
+ * `Date` (the pool's `timezone: 'Z'`) gives the same answer; `today` is the gym's
+ * local day from `gymToday()`, never the database's or the server's.
+ */
+export function isSameDayEdit(startDate: string | Date | null | undefined, today: string): boolean {
+  if (startDate == null || startDate === '') return false;
+  const day = typeof startDate === 'string' ? startDate.slice(0, 10) : startDate.toISOString().slice(0, 10);
+  return day === today;
+}

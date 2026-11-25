@@ -1,7 +1,7 @@
 import { exerciseFactSql } from '../domain/exerciseFactSql';
 import { Router } from 'express';
 import { gymToday } from '../domain/workoutProgress';
-import { baseTrainingPlanName, previousDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
+import { baseTrainingPlanName, isSameDayEdit, previousDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
 import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { localizedDescriptionExpr, localizedShortDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { db, Tx } from '../infra/db';
@@ -930,6 +930,14 @@ trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), 
       "SELECT id FROM training_plans WHERE draft_of_plan_id = ? AND gym_id = ? AND status = 'draft'",
       [planId, gymId],
     );
+    // #3409: a plan that started on the gym's today is edited in place — the response is the plan
+    // itself (no draft_of_plan_id), so the client saves it with the ordinary PUT and asks no
+    // confirmation. A draft opened before this rule existed is still resumed rather than orphaned.
+    if (!existing[0]) {
+      const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+      const today = gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
+      if (isSameDayEdit(src.start_date, today)) return res.status(200).json(src);
+    }
     let draftId: number = existing[0]?.id;
     let created = false;
     if (!draftId) {

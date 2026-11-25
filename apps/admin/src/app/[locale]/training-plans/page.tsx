@@ -297,6 +297,8 @@ export default function TrainingPlansPage() {
   }
 
   // #1969: Edit on an active plan works on a Draft copy; the original is untouched until Save.
+  // #3409: a plan that started today comes back as itself (no draft_of_plan_id), so it is edited
+  // in place: Save is the ordinary PUT with no confirmation and Cancel deletes nothing.
   async function beginEdit(row: TrainingPlanRow) {
     if (row.status !== 'active') { startEdit(row); return; }
     try {
