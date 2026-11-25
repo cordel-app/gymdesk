@@ -520,6 +520,7 @@ export async function loadProductSetSimulationAssignment(
   const { rows: serviceRows } = await exec.query(
     `SELECT s.source_id AS id, s.line_ref, s.product_id, s.quantity, s.starts_at, s.ends_at,
             s.product_name AS item_name, s.billing_frequency AS item_billing_frequency, s.unit_price,
+            s.list_price, s.direct_discount_percent,
             sch.anchor_date AS schedule_anchor
        FROM product_set_periodical_snapshots lnk
        JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
@@ -535,6 +536,8 @@ export async function loadProductSetSimulationAssignment(
     name: s.item_name,
     billingFrequency: (s.item_billing_frequency ?? null) as ProductFrequency | null,
     unitPrice: s.unit_price != null ? Number(s.unit_price) : 0,
+    listUnitPrice: s.list_price != null ? Number(s.list_price) : null,
+    directDiscountPercent: s.direct_discount_percent != null ? Number(s.direct_discount_percent) : null,
     quantity: Math.max(1, Math.trunc(Number(s.quantity)) || 1),
     startsOn: toDateOnly(s.starts_at),
     endsOn: s.ends_at != null ? toDateOnly(s.ends_at) : null,

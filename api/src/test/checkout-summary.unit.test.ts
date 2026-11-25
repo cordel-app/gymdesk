@@ -65,6 +65,29 @@ describe('initialPaymentBreakdown', () => {
     expect(out.lines[1]).toEqual(expect.objectContaining({ prepaid_periods: null, prepaid_cadence: null }));
   });
 
+  // #3360 — proration is the stretch the charge covers, never a discount: a 7-of-30-days line of
+  // two €30 lockers, 50% Promotion and 10% direct discount, is €14.00 before discounts, −€7.70, €6.30.
+  it('measures a prorated line against its prorated regular price, so only real discounts are deducted', () => {
+    const out = initialPaymentBreakdown([
+      line({ item_name: 'Locker', quantity: 2, amount: 6.3, regular_unit_price: 60, prorated_days: 7, period_days: 30, treatment_action: 'percentage_discount', treatment_value: 50 }),
+      line({ item_name: 'Towel', quantity: 3, amount: 9, regular_unit_price: 9, prorated_days: 30, period_days: 30 }),
+    ], 15.3);
+    expect(out.lines[0]).toEqual(expect.objectContaining({ quantity: 2, unit_price: 30, line_total: 14, discount: 7.7, amount: 6.3 }));
+    expect(out.lines[0].proration).toEqual({ days: 7, period_days: 30 });
+    expect(out.lines[1]).toEqual(expect.objectContaining({ unit_price: 3, line_total: 9, discount: 0, amount: 9 }));
+    expect(out.total_before_discounts).toBe(23);
+    expect(out.discount_total).toBe(7.7);
+    expect(Math.round((out.total_before_discounts - out.discount_total) * 100) / 100).toBe(out.total);
+  });
+
+  it('a prorated line with no discount deducts nothing', () => {
+    const out = initialPaymentBreakdown([
+      line({ quantity: 2, amount: 12, regular_unit_price: 60, prorated_days: 6, period_days: 30 }),
+    ], 12);
+    expect(out.lines[0]).toEqual(expect.objectContaining({ unit_price: 30, line_total: 12, discount: 0, amount: 12 }));
+    expect(out.discount_total).toBe(0);
+  });
+
   it('reports the charge it was handed, null included, never a re-added figure', () => {
     expect(initialPaymentBreakdown([], null).total).toBeNull();
     expect(initialPaymentBreakdown([], 0).total).toBe(0);

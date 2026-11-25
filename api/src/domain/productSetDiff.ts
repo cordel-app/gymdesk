@@ -6,6 +6,8 @@
 // due is `initialCharge()`'s (the one function Save & Pay charges from).
 
 import type { SimulationAssignment } from './billingSimulation';
+import { lineRegularTotal } from './checkoutSummary';
+import type { FeeChargeSplit } from './billingSimulation';
 
 export interface RecurringLine {
   key: string;
@@ -326,6 +328,10 @@ export interface InitialLineLike {
   quantity: number;
   amount: number;
   regular_unit_price: number | null;
+  /** #3360 — a prorated first charge is compared with its prorated regular price (`lineRegularTotal()`). */
+  prorated_days?: number | null;
+  period_days?: number | null;
+  fee_split?: FeeChargeSplit | null;
 }
 
 export function financialSummary(
@@ -350,8 +356,10 @@ export function financialSummary(
   }));
   // #2890: `regular_unit_price` is the line's regular total (the engine's
   // `regular_price`), so it is compared with the charge as it stands.
-  const discounts = initialLines.reduce((n, l) =>
-    l.regular_unit_price == null ? n : n + Math.max(0, l.regular_unit_price - l.amount), 0);
+  const discounts = initialLines.reduce((n, l) => {
+    const regular = lineRegularTotal(l);
+    return regular == null ? n : n + Math.max(0, regular - l.amount);
+  }, 0);
   return {
     recurring,
     initial_discounts: round2(discounts),

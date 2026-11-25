@@ -221,6 +221,9 @@ export async function initialCharge(
             ...l,
             quantity: quantity - had,
             actual_charge: Math.round(Number(l.actual_charge) * ratio * 100) / 100,
+            // #3360: the regular price is the added units' too, so "before discounts" and the
+            // discount describe the units charged, not the whole line.
+            regular_price: Math.round(Number(l.regular_price) * ratio * 100) / 100,
           }];
         }),
       }))
