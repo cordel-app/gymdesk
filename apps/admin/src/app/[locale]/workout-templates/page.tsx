@@ -33,6 +33,7 @@ import { cardSectionTitleStyle } from '@/components/CardSectionHeader';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
 import { ImportWorkoutTemplatesModal, type ImportTemplatesResult } from './ImportWorkoutTemplatesModal';
+import { cascadeResultParts } from './cascadeImportPreview';
 import { WorkoutTemplateCard } from './WorkoutTemplateCard';
 import { canResyncWithSystem, templateSource, toNumBlocks } from './workoutTemplateList';
 import {
@@ -302,9 +303,7 @@ export default function WorkoutTemplatesPage() {
 
   function handleImported(result: ImportTemplatesResult) {
     setImportOpen(false);
-    const parts = [t('imported', { n: result.imported.length })];
-    if (result.skipped.length > 0) parts.push(t('imported_skipped', { n: result.skipped.length }));
-    toast(parts.join(' '), 'success');
+    toast(cascadeResultParts(result).map(([key, n]) => t(key, { n })).join(' '), 'success');
     load();
   }
 
