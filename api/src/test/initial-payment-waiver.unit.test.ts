@@ -30,11 +30,14 @@ describe('waiveRefusal()', () => {
   it('allows a positive line while something is left to pay', () => {
     expect(waiveRefusal(lines, 'b', new Set())).toBeNull();
   });
-  it('refuses an unknown, already waived, zero or last remaining line', () => {
+  it('refuses an unknown, already waived or zero line', () => {
     expect(waiveRefusal(lines, 'x', new Set())).toBe('line_not_found');
     expect(waiveRefusal(lines, 'b', new Set(['b']))).toBe('already_waived');
     expect(waiveRefusal(lines, 'c', new Set())).toBe('nothing_to_waive');
-    expect(waiveRefusal(lines, 'a', new Set(['b']))).toBe('would_leave_nothing_to_pay');
+  });
+  it('allows the last line left to pay: the Initial Payment may be waived to zero (stage 4)', () => {
+    expect(waiveRefusal(lines, 'a', new Set(['b']))).toBeNull();
+    expect(waiveRefusal([line('only', 25)], 'only', new Set())).toBeNull();
   });
   it('refuses a Membership Fee that collects a Pre-paid Duration', () => {
     const fee = line('f', 120, { kind: 'membership_fee', prepaid_periods: 3 });
@@ -57,9 +60,12 @@ describe('applyInitialPaymentWaivers()', () => {
     expect(out.map((l) => l.amount)).toEqual([40, 90]);
     expect(out.every((l) => l.waived === false)).toBe(true);
   });
-  it('does not offer Waive on the last line left to pay', () => {
+  it('still offers Waive on the last line left to pay (stage 4)', () => {
     const out = applyInitialPaymentWaivers([line('a', 40), line('b', 60)], new Set(['b']));
-    expect(out[0].waivable).toBe(false);
+    expect(out[0]).toMatchObject({ waivable: true, waive_refusal: null });
+    const all = applyInitialPaymentWaivers([line('a', 40), line('b', 60)], new Set(['a', 'b']));
+    expect(all.map((l) => l.amount)).toEqual([0, 0]);
+    expect(all.every((l) => l.waived)).toBe(true);
   });
 });
 
@@ -78,10 +84,5 @@ describe('a prorated Membership Fee (#3284 stage 3)', () => {
     const fee = line('f', 89.33, { kind: 'membership_fee', fee_split: split(true) });
     expect(waiveRefusal([fee, line('a', 17.5)], 'f', new Set())).toBe('prepaid_fee');
     expect(applyInitialPaymentWaivers([fee, line('a', 17.5)], new Set())[0]).toMatchObject({ waivable: false, waive_refusal: 'prepaid_fee' });
-  });
-  it('a disabled line states why: the last line left to pay', () => {
-    const shown = applyInitialPaymentWaivers([line('a', 40), line('b', 60)], new Set(['b']));
-    expect(shown[0]).toMatchObject({ waivable: false, waive_refusal: 'would_leave_nothing_to_pay' });
-    expect(shown[1]).toMatchObject({ waived: true, waive_refusal: null });
   });
 });

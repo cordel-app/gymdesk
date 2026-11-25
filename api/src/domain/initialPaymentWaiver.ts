@@ -18,7 +18,7 @@
  * Pure.
  */
 
-import { linesTotal, type BillingEventLineRow, type LineReason } from './billingEventLines';
+import type { BillingEventLineRow, LineReason } from './billingEventLines';
 
 export const INITIAL_PAYMENT_WAIVE_CODE = 'initial_payment_waive';
 
@@ -75,13 +75,14 @@ function collectsPrepaid(l: Pick<BillingEventLineRow, 'prepaid_periods' | 'fee_s
   return (l.prepaid_periods != null && Number(l.prepaid_periods) > 0) || l.fee_split?.prepaid != null;
 }
 
-export type WaiveRefusal = 'line_not_found' | 'already_waived' | 'nothing_to_waive' | 'prepaid_fee' | 'would_leave_nothing_to_pay';
+export type WaiveRefusal = 'line_not_found' | 'already_waived' | 'nothing_to_waive' | 'prepaid_fee';
 
 /**
  * Why `key` may not be waived on `lines` (the charge as priced, before any waiver), with the keys
- * already waived; `null` when it may. A waiver that would take the whole Initial Payment to zero is
- * refused: a zero Initial Payment writes no initial Billing Event, so the first period would then
- * be charged as a scheduled obligation, which is not what waiving it means.
+ * already waived; `null` when it may. Stage 4 (owner, 25 Nov): a waiver may take the whole Initial
+ * Payment to zero. Such a cart is committed by the free activation, which still writes the initial
+ * Billing Event with its (waived) lines and a `waive` attempt (`commitWaivedInitialPayment()`), so
+ * the waived first period is covered and never charged again as a scheduled obligation.
  */
 export function waiveRefusal(lines: readonly BillingEventLineRow[], key: string, waived: ReadonlySet<string>): WaiveRefusal | null {
   const line = lines.find((l) => l.line_key === key);
@@ -89,8 +90,6 @@ export function waiveRefusal(lines: readonly BillingEventLineRow[], key: string,
   if (waived.has(key)) return 'already_waived';
   if (!(Number(line.amount) > 0)) return 'nothing_to_waive';
   if (collectsPrepaid(line)) return 'prepaid_fee';
-  const remaining = linesTotal(lines.filter((l) => l.line_key !== key && !waived.has(l.line_key ?? '')));
-  if (!(remaining > 0)) return 'would_leave_nothing_to_pay';
   return null;
 }
 
@@ -116,7 +115,9 @@ function lineWaiveBlock(l: Pick<BillingEventLineRow, 'amount' | 'prepaid_periods
 export function applyInitialPaymentWaivers(
   lines: readonly BillingEventLineRow[], waived: ReadonlySet<string>,
 ): BillingEventLineRow[] {
-  const applied = lines.map((l) => {
+  // Each disabled Waive carries the reason it is disabled (`waive_refusal`), which the screen words
+  // beside the button: a disabled control with no visible reason reads as a button that does nothing.
+  return lines.map((l) => {
     const key = l.line_key ?? null;
     const isWaived = key != null && waived.has(key) && lineWaivable(l);
     if (!isWaived) {
@@ -133,10 +134,4 @@ export function applyInitialPaymentWaivers(
       waive_refusal: null,
     };
   });
-  // A line is offered Waive only while waiving it would leave something to pay (`waiveRefusal()`).
-  const total = linesTotal(applied);
-  // Each disabled Waive carries the reason it is disabled (`waive_refusal`), which the screen words
-  // beside the button: a disabled control with no visible reason reads as a button that does nothing.
-  return applied.map((l) => (l.waivable && !(linesTotal([{ amount: total - Number(l.amount) }]) > 0)
-    ? { ...l, waivable: false, waive_refusal: 'would_leave_nothing_to_pay' as const } : l));
 }

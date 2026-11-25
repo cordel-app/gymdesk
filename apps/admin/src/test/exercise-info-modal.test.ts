@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { buildExerciseInfo, exerciseInfoFields } from '../components/exercises/exerciseInfoView';
+import { buildExerciseInfo, exerciseInfoFields, showImagePlaceholder } from '../components/exercises/exerciseInfoView';
 
 // #2203 — the details modal opened from an Assigned Training Plan exercise.
 const SRC = join(__dirname, '..');
@@ -66,5 +66,19 @@ describe('shared Exercise Detail Viewer (#2379)', () => {
     expect(read('components', 'exercises', 'ExerciseListThumbnails.tsx')).toContain('ExerciseInfoModal');
     expect(read('components', 'ExerciseMediaThumbnails.tsx')).toContain('ExerciseInfoModal');
     expect(read('app', '[locale]', 'members', 'MemberProgress.tsx')).toContain('ExerciseInfoModal');
+  });
+});
+
+describe('detail modal image placeholder (#3407)', () => {
+  it('shows the placeholder when the clicked sex has no original once loaded', () => {
+    expect(showImagePlaceholder({ imageUrl: null, imageBroken: false, gender: 'female', loaded: true })).toBe(true);
+    expect(showImagePlaceholder({ imageUrl: null, imageBroken: false, gender: 'female', loaded: false })).toBe(false);
+  });
+  it('shows the placeholder when the original fails to load', () => {
+    expect(showImagePlaceholder({ imageUrl: 'https://x/f.webp', imageBroken: true, gender: 'female', loaded: true })).toBe(true);
+    expect(showImagePlaceholder({ imageUrl: 'https://x/f.webp', imageBroken: false, gender: 'female', loaded: true })).toBe(false);
+  });
+  it('keeps no image area for an exercise opened from its name with no image', () => {
+    expect(showImagePlaceholder({ imageUrl: null, imageBroken: false, gender: null, loaded: true })).toBe(false);
   });
 });

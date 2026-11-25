@@ -24,8 +24,8 @@ import rateLimit from 'express-rate-limit';
 import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
-import { gymToday, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
-import { calendarMonthRange, canCompleteOn, inWindow, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
+import { calendarMonthRange, gymToday, trainingProgress, ROLLING_WEEK_DAYS } from '../domain/workoutProgress';
+import { canCompleteOn, inWindow, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
 import { db } from '../infra/db';
 import type { Tx } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
@@ -1567,10 +1567,13 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
       if (r.block_id != null) w.blockIds.push(r.block_id);
       byWorkout.set(r.workout_id, w);
     }
+    // The rolling week ending on the selected date and its calendar month (#3401).
+    const [monthFrom, monthTo] = calendarMonthRange(selected, today);
+    const weekFrom = DateTime.fromISO(selected).minus({ days: ROLLING_WEEK_DAYS }).toISODate() as string;
     const { rows: logs } = await db.query(
       `SELECT workout_block_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM workout_block_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
-      [gymId, memberId, DateTime.fromISO(selected).minus({ days: ROLLING_MONTH_DAYS }).toISODate(), selected],
+      [gymId, memberId, monthFrom < weekFrom ? monthFrom : weekFrom, monthTo > selected ? monthTo : selected],
     );
     res.json({
       ...trainingProgress(

@@ -16,6 +16,7 @@ import {
   NUTRITION_FOLDER,
   sanitizeNutritionImageName,
   nutritionThumbnailKeyFor,
+  nutritionImageKeyIdentifier,
 } from '../domain/baseNutritionImages';
 import {
   PNG_COLOR_TYPE,
@@ -277,5 +278,18 @@ describe('Generated Base Nutrition Library artwork (#715 §2, §3)', () => {
 
   it('renders a food with no category or quality at all', () => {
     expect(isPng(renderNutritionImage({ name: 'Unclassified Food' }))).toBe(true);
+  });
+});
+
+describe('nutritionImageKeyIdentifier() (#3350)', () => {
+  it('names the persisted slug, never the display name', () => {
+    expect(nutritionImageKeyIdentifier({ slug: 'chicken-breast', name: 'Pechuga de pollo' })).toBe('chicken-breast');
+    expect(buildBaseNutritionImageKey(42, nutritionImageKeyIdentifier({ slug: 'chicken-breast', name: 'Renamed' })))
+      .toBe('cordel/nutrition/42-chicken-breast.webp');
+  });
+
+  it('falls back to the name for a row with no slug', () => {
+    expect(nutritionImageKeyIdentifier({ slug: null, name: 'Chicken Breast' })).toBe('Chicken Breast');
+    expect(nutritionImageKeyIdentifier({ slug: '  ', name: 'Apple' })).toBe('Apple');
   });
 });
