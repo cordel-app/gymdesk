@@ -837,7 +837,8 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
     const reasonsByLine = new Map<number, any[]>();
     if (lineRows.length > 0) {
       const { rows: reasonRows } = await db.query<any>(
-        `SELECT billing_event_line_id, reason_type, source, reason_code, action, value, name
+        `SELECT billing_event_line_id, reason_type, source, reason_code, action, value, name,
+                duration_count, duration_unit
            FROM billing_event_line_reasons
           WHERE gym_id = ? AND billing_event_line_id IN (${lineRows.map(() => '?').join(',')})
           ORDER BY billing_event_line_id, position`,

@@ -27,9 +27,11 @@ export async function writeEventLines(
       const r = reasons[i];
       await tx.query(
         `INSERT INTO billing_event_line_reasons
-           (gym_id, billing_event_line_id, position, reason_type, source, reason_code, action, value, name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, Number(insertId), i + 1, r.type, r.source, r.code, r.action, r.value, r.name],
+           (gym_id, billing_event_line_id, position, reason_type, source, reason_code, action, value, name,
+            duration_count, duration_unit)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, Number(insertId), i + 1, r.type, r.source, r.code, r.action, r.value, r.name,
+          r.duration?.count ?? null, r.duration?.unit ?? null],
       );
     }
   }

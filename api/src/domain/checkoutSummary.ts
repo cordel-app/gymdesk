@@ -11,6 +11,7 @@
 // with no money field cannot leak one.
 
 import type { FeeChargeSplit, LineSource } from './billingSimulation';
+import { benefitDuration, type BenefitDuration } from './billingSimulation';
 import { LINE_REASON_SOURCES, LINE_REASON_TYPES, type LineReason } from './billingEventLines';
 
 /** One line of the commit charge, as `GET /product-sets/:id/review` reports it. */
@@ -69,8 +70,17 @@ export function lineReasonsView(raw: unknown): LineReason[] {
       action: String(r.action),
       value: r.value != null ? Number(r.value) : null,
       name: r.name ?? null,
+      ...durationOfReason(r),
     }];
   });
+}
+
+/** #3282 — a reason's duration, from the engine's shape (`duration`) or the stored columns. */
+function durationOfReason(r: any): { duration?: BenefitDuration } {
+  const d = r.duration != null
+    ? benefitDuration(r.duration.count, r.duration.unit)
+    : benefitDuration(r.duration_count, r.duration_unit);
+  return d ? { duration: d } : {};
 }
 
 /**

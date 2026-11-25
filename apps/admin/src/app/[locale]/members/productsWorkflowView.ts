@@ -234,7 +234,17 @@ export interface LineReasonLike {
   action: string;
   value: number | null;
   name: string | null;
+  /** #3282 — how long the Promotion lasts (a count of one billing period); absent when it states none. */
+  duration?: { count: number; unit: string } | null;
 }
+
+/** #3282 — the locale key a Promotion's name is read with when its duration is known (`members` namespace). */
+export const PROMOTION_DURATION_KEYS: Record<string, string> = {
+  week: 'checkout_reason_promotion_duration_week',
+  four_weeks: 'checkout_reason_promotion_duration_four_weeks',
+  month: 'checkout_reason_promotion_duration_month',
+  year: 'checkout_reason_promotion_duration_year',
+};
 
 /** #3284 — the locale key of a reason's type label (Benefit / Promotion / Manual adjustment). */
 export const LINE_REASON_TYPE_KEYS: Record<LineReasonLike['type'], string> = {
@@ -273,7 +283,13 @@ export function discountEntries(l: InitialPaymentLike['lines'][number]): Discoun
       return { key: 'checkout_reason_initial_payment_waived', typeKey: 'checkout_reason_type_initial_payment', separator: ': ' };
     }
     const typeKey = LINE_REASON_TYPE_KEYS[r.type] ?? null;
-    if (r.type === 'discount' && r.name) return { text: r.name, typeKey, separator: ' ' };
+    if (r.type === 'discount' && r.name) {
+      // #3282 — `Todos los productos al 50% (3 months)`: the Promotion's duration beside its name.
+      const durationKey = r.duration && Number.isInteger(r.duration.count) && r.duration.count > 0
+        ? PROMOTION_DURATION_KEYS[r.duration.unit] : undefined;
+      if (durationKey) return { key: durationKey, values: { name: r.name, count: r.duration!.count }, typeKey, separator: ' ' };
+      return { text: r.name, typeKey, separator: ' ' };
+    }
     if (r.action === 'waive') return { key: 'checkout_reason_detail_waive', typeKey, separator: ' ' };
     if (r.action === 'percentage_discount' && r.value != null) {
       return {

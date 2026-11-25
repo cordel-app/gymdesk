@@ -11,7 +11,7 @@
  * Pure.
  */
 
-import type { FeeChargeSplit, LineSource, SimulationBenefit, SimulationLine } from './billingSimulation';
+import { type BenefitDuration, type FeeChargeSplit, type LineSource, type SimulationBenefit, type SimulationLine } from './billingSimulation';
 
 export interface BillingEventLineRow {
   kind: 'membership_fee' | 'product' | 'service' | 'adjustment';
@@ -84,6 +84,11 @@ export interface LineReason {
   value: number | null;
   /** A Promotion's name; `null` for a Plan benefit or a manual adjustment (the line names the item). */
   name: string | null;
+  /**
+   * #3282 — how long that Promotion lasts (`SimulationBenefit.duration`), read as `(3 months)` beside
+   * its name. Absent for every other reason and for a Promotion reason with no duration.
+   */
+  duration?: BenefitDuration | null;
 }
 
 export const roundCents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -124,6 +129,7 @@ export function lineReasons(benefits: readonly SimulationBenefit[]): LineReason[
       action: b.action === 'included' ? 'waive' : b.action,
       value: b.value != null ? Number(b.value) : null,
       name: b.source === 'promotion' ? b.name ?? null : null,
+      ...(b.source === 'promotion' && b.duration ? { duration: b.duration } : {}),
     });
   }
   return out;

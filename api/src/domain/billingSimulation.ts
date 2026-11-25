@@ -450,6 +450,42 @@ export interface SimulationBenefit {
    * benefit, the Plan's (`free_plan`, …) for a plan-sourced one.
    */
   period_status: PromotionTimelineStatus | PlanDurationStatus | null;
+  /**
+   * #3282 — how long the Promotion that applied this benefit lasts, so a reason can read
+   * `Promotion: Todos los productos al 50% (3 months)`. A periodical grant's Duration is its own
+   * count of the Product's billing periods (#1135); a Membership Fee benefit's is the Promotion's
+   * Free + Paid + Bonus months. Absent for a Plan benefit, a manual adjustment and a grant that
+   * counts units (a session or one-off grant), whose number is not a duration.
+   */
+  duration?: BenefitDuration | null;
+}
+
+/** #3282 — a Promotion's duration as a count of one billing period. */
+export const BENEFIT_DURATION_UNITS = ['week', 'four_weeks', 'month', 'year'] as const;
+export type BenefitDurationUnit = (typeof BENEFIT_DURATION_UNITS)[number];
+export interface BenefitDuration { count: number; unit: BenefitDurationUnit }
+
+/** #3282 — a valid duration, or `null` (a non-positive or fractional count, a unit that names no period). */
+export function benefitDuration(count: unknown, unit: unknown): BenefitDuration | null {
+  const n = Number(count);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return (BENEFIT_DURATION_UNITS as readonly unknown[]).includes(unit) ? { count: n, unit: unit as BenefitDurationUnit } : null;
+}
+
+/** #3282 — the `duration` field when there is one; absent otherwise, so a benefit with none is unchanged. */
+function durationField(d: BenefitDuration | null): { duration?: BenefitDuration } {
+  return d ? { duration: d } : {};
+}
+
+/** #3282 — a periodical grant's Duration: its quantity, in the granted Product's own frequency. */
+function grantDuration(grant: SimulationGrant): BenefitDuration | null {
+  return grant.category === 'periodical' ? benefitDuration(grant.quantity, grant.billingFrequency) : null;
+}
+
+/** #3282 — a Promotion's own Free + Paid + Bonus months, the span its Membership Fee benefit lives in. */
+function promotionDuration(promo: AppliedPromotionForBilling): BenefitDuration | null {
+  const clamp = (n: number) => Math.max(0, Math.trunc(Number(n)) || 0);
+  return benefitDuration(clamp(promo.freeMonths) + clamp(promo.paidMonths) + clamp(promo.bonusMonths), 'month');
 }
 
 export interface SimulationLine {
@@ -841,10 +877,10 @@ function resolvePromotionMembershipFee(regular: number, date: string, promotions
 
     if (status === 'free_promotion' || status === 'bonus_promotion') {
       amount = 0;
-      benefits.push({ source: 'promotion', name: promo.name ?? null, action: 'waive', value: null, period_status: status });
+      benefits.push({ source: 'promotion', name: promo.name ?? null, action: 'waive', value: null, period_status: status, ...durationField(promotionDuration(promo)) });
     } else if (billingAction != null && billingAction !== 'no_benefit') {
       amount = applyPeriodBenefit(amount, billingAction, billingValue);
-      benefits.push({ source: 'promotion', name: promo.name ?? null, action: billingAction, value: billingValue, period_status: status });
+      benefits.push({ source: 'promotion', name: promo.name ?? null, action: billingAction, value: billingValue, period_status: status, ...durationField(promotionDuration(promo)) });
     }
 
     // The Promotion's own Membership Fee Benefit is already part of its
@@ -856,7 +892,7 @@ function resolvePromotionMembershipFee(regular: number, date: string, promotions
     for (const b of promo.membershipFeeBenefits.slice(1)) {
       if (!b.enabled || b.action == null || b.action === 'no_benefit') continue;
       amount = applyPeriodBenefit(amount, b.action, b.value);
-      benefits.push({ source: 'promotion', name: promo.name ?? null, action: b.action, value: b.value, period_status: status });
+      benefits.push({ source: 'promotion', name: promo.name ?? null, action: b.action, value: b.value, period_status: status, ...durationField(promotionDuration(promo)) });
       promotional = true;
     }
   }
@@ -1326,7 +1362,7 @@ function resolveCoveredCharge(
     // charge differs from the regular one, and this one does not.
     if (action === 'no_benefit') continue;
     amount = applyPeriodBenefit(amount, action, value);
-    benefits.push({ source: 'promotion', name: c.promo.name, action, value, period_status: null });
+    benefits.push({ source: 'promotion', name: c.promo.name, action, value, period_status: null, ...durationField(grantDuration(c.grant)) });
     promotional = true;
   }
   if (promotional) return { amount, benefits, promotional, pending: false };

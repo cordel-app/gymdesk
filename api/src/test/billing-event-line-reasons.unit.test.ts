@@ -56,4 +56,25 @@ describe('lineReasons (#3284)', () => {
     });
     expect(view.reasons).toEqual([{ type: 'manual_adjustment', source: 'personal', code: 'direct_discount', action: 'percentage_discount', value: 10, name: null }]);
   });
+
+  it('#3282 — a Promotion reason carries its duration; no other reason does', () => {
+    const reasons = lineReasons([
+      b({ source: 'promotion', name: 'Half', action: 'percentage_discount', value: 50, duration: { count: 3, unit: 'month' } }),
+      b({ action: 'percentage_discount', value: 20, duration: { count: 2, unit: 'month' } }),
+    ]);
+    expect(reasons[0].duration).toEqual({ count: 3, unit: 'month' });
+    expect(reasons[1]).not.toHaveProperty('duration');
+  });
+
+  it('#3282 — a stored reason reads its duration columns, and an invalid one reads as none', () => {
+    const view = chargeLineView({
+      item_name: 'X', quantity: 1, amount: 1,
+      reasons: [
+        { reason_type: 'discount', source: 'promotion', action: 'percentage_discount', value: '50.00', name: 'Half', duration_count: 3, duration_unit: 'month' },
+        { reason_type: 'discount', source: 'promotion', action: 'waive', value: null, name: 'Old', duration_count: null, duration_unit: null },
+        { reason_type: 'discount', source: 'promotion', action: 'waive', value: null, name: 'Bad', duration_count: 2, duration_unit: 'once' },
+      ],
+    });
+    expect(view.reasons?.map((r) => r.duration ?? null)).toEqual([{ count: 3, unit: 'month' }, null, null]);
+  });
 });
