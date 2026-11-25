@@ -85,6 +85,15 @@ describe('Initial Payment of a recurring Product (#3360)', () => {
       quantity: 2, unit_price: 30, line_total: r2(60 * ratio), amount: r2(27 * ratio),
     }));
     expect(line.discount).toBeCloseTo(r2(r2(60 * ratio) - r2(27 * ratio)), 2);
+    // #3381 — the Unit price column: one unit's charge, and how a prorated one is made up.
+    expect(line.charged_unit_price).toBe(r2(line.amount / 2));
+    if (line.proration) {
+      expect(line.charged_unit_breakdown).toEqual({
+        quantity: 2, unit_price: 13.5, days: line.proration.days, period_days: line.proration.period_days,
+      });
+    } else {
+      expect(line.charged_unit_breakdown).toBeNull();
+    }
     expect(line.reasons.map((r: any) => [r.type, r.code, r.value, r.name])).toEqual([
       ['manual_adjustment', 'direct_discount', 10, null],
       ['discount', null, 50, promoName],

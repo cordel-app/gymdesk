@@ -153,7 +153,20 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                   {(() => { const key = lineSourceLabelKey(l.source); return key ? tLine(key) : '—'; })()}
                 </td>
                 <td style={tdNum}>{l.quantity}</td>
-                <td style={tdNum}>{money(l.unit_price)}</td>
+                <td style={tdNum} data-charged-unit-price>
+                  {/* #3381 — what one unit is charged, after discounts and the proration (the server's). */}
+                  {money(l.charged_unit_price ?? l.unit_price)}
+                  {l.charged_unit_breakdown && (
+                    <span data-charged-unit-breakdown style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
+                      {t('checkout_unit_price_breakdown', {
+                        quantity: l.charged_unit_breakdown.quantity,
+                        unit: money(l.charged_unit_breakdown.unit_price),
+                        days: l.charged_unit_breakdown.days,
+                        period: l.charged_unit_breakdown.period_days,
+                      })}
+                    </span>
+                  )}
+                </td>
                 <td style={tdNum} data-line-total>{money(l.line_total)}</td>
                 <td style={td}>
                   {l.discount > 0 ? `−${money(l.discount)}` : (entries.length === 0 ? '—' : null)}

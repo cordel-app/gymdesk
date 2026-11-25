@@ -88,6 +88,24 @@ describe('initialPaymentBreakdown', () => {
     expect(out.discount_total).toBe(0);
   });
 
+  // #3381 — the Unit price column states what one unit is charged (after discounts and the
+  // proration), with the full-period discounted unit price and the proration beside it.
+  it('reports the charged unit price and, for a prorated line, quantity × discounted unit × days/period', () => {
+    const out = initialPaymentBreakdown([
+      line({ item_name: 'Locker', quantity: 1, amount: 1.75, regular_unit_price: 15, prorated_days: 7, period_days: 30, treatment_action: 'percentage_discount', treatment_value: 50 }),
+      line({ item_name: 'Locker', quantity: 2, amount: 3.5, regular_unit_price: 30, prorated_days: 7, period_days: 30, treatment_action: 'percentage_discount', treatment_value: 50 }),
+      line({ item_name: 'Towel', quantity: 3, amount: 9, regular_unit_price: 12 }),
+    ], 14.25);
+    expect(out.lines[0]).toEqual(expect.objectContaining({ unit_price: 15, line_total: 3.5, discount: 1.75, amount: 1.75, charged_unit_price: 1.75 }));
+    expect(out.lines[0].charged_unit_breakdown).toEqual({ quantity: 1, unit_price: 7.5, days: 7, period_days: 30 });
+    expect(out.lines[1]).toEqual(expect.objectContaining({ line_total: 7, discount: 3.5, charged_unit_price: 1.75 }));
+    expect(out.lines[1].charged_unit_breakdown).toEqual({ quantity: 2, unit_price: 7.5, days: 7, period_days: 30 });
+    // A full-period line is charged its whole discounted price per unit, with no breakdown.
+    expect(out.lines[2]).toEqual(expect.objectContaining({ charged_unit_price: 3, charged_unit_breakdown: null }));
+    expect(out.total_before_discounts).toBe(22.5);
+    expect(out.discount_total).toBe(8.25);
+  });
+
   it('reports the charge it was handed, null included, never a re-added figure', () => {
     expect(initialPaymentBreakdown([], null).total).toBeNull();
     expect(initialPaymentBreakdown([], 0).total).toBe(0);
