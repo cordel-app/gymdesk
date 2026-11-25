@@ -13,6 +13,13 @@ import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createBaseExercise, createTestGym, createTestMembership, deleteBaseExercises, request } from './helpers';
 import { buildMp4 } from './mp4-fixtures';
 
+// The upload budget (default 30 per 15 minutes, one signed-in person) is read
+// once, when the router module is evaluated, so it is raised before the helpers
+// import the app: this file alone makes more uploads than one window allows.
+vi.hoisted(() => {
+  process.env.EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX = '1000';
+});
+
 const sendMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@aws-sdk/client-s3', () => ({
