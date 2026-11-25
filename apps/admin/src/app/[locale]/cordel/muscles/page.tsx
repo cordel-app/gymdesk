@@ -258,7 +258,7 @@ export default function CordelMusclesPage() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.name}>{row.name}</div>
                 <div style={{ fontSize: 12, color: '#888' }}>
-                  {t('slug')}: {row.slug} · {t('exercises')}: {row.exercise_count}
+                  {t('exercises')}: {row.exercise_count}
                 </div>
               </div>
               </div>
@@ -281,8 +281,6 @@ export default function CordelMusclesPage() {
               <div style={{ marginTop: 12 }}>
                 <label style={formFieldLabelStyle}>{t('name')}</label>
                 <div style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 4 }}>{row.name}{globe('view', row)}</div>
-                <label style={{ ...formFieldLabelStyle, marginTop: 8 }}>{t('slug')}</label>
-                <div style={{ fontSize: 14 }}>{row.slug}</div>
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 12 }}>
                   {(['male', 'female'] as const).map((sex) => {
                     const src = sex === 'male'
@@ -345,6 +343,7 @@ export default function CordelMusclesPage() {
             <p style={{ margin: '0 0 20px', color: '#666', fontSize: 14 }}>{details.name}</p>
             {([
               [t('name'), details.name],
+              // #3348: the slug is an internal identifier and is shown here only — never on the row or in Edit.
               [t('slug'), details.slug],
               [t('exercises'), String(details.exercise_count)],
               [t('col_created_at'), formatExerciseTimestamp(details.created_at, gymFmt)],
