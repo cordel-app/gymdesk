@@ -24,13 +24,25 @@ describe('food details modal', () => {
   });
 
   it('shows every library field with monochrome icons and survives missing data', () => {
-    for (const k of ['label_description', 'label_categories', 'nutritional_qualities_label', 'col_status', 'label_translations', 'no_image']) {
+    for (const k of ['label_description', 'label_categories', 'nutritional_qualities_label', 'col_status', 'no_image']) {
       expect(modal).toContain(k);
     }
     expect(modal).toContain('stroke="currentColor"');
     expect(modal).not.toMatch(/stroke="#|fill="#/);
     expect(modal).toContain('onError={() => setImageFailed(true)}');
     expect(modal).toContain('displayValue(');
+  });
+
+  it('shows no Translations section (#3376)', () => {
+    expect(modal).not.toContain('label_translations');
+    expect(modal).not.toContain('item.translations');
+  });
+
+  it('Base and Gym templates render the one tree, so the one modal', () => {
+    const cordel = readFileSync(join(SRC, 'app', '[locale]', 'cordel', 'nutrition-plan-templates', 'page.tsx'), 'utf-8');
+    const gym = readFileSync(join(SRC, 'app', '[locale]', 'nutrition', 'nutrition-plan-templates', 'page.tsx'), 'utf-8');
+    expect(cordel).toContain('<NutritionPlanTree');
+    expect(gym).toContain('<NutritionPlanTree');
   });
 
   it('has its title in every locale', () => {

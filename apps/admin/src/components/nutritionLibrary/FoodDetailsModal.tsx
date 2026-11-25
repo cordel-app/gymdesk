@@ -10,6 +10,8 @@ import { NutritionLibraryItemRow, displayValue } from './nutritionItemProfile';
  * Nutrition Plan and the standalone Assigned Nutrition Plans page share one tree).
  * Read-only: a large picture, then every field the Nutrition Library holds for the
  * food, each beside a monochrome icon (`currentColor`, never a hue of its own).
+ * #3376: the food's translated names are not shown here (they stay stored and
+ * editable in the Nutrition Library); one modal serves every template and plan.
  *
  * It renders a Nutrition Library row the tree already read; when the food is not in
  * that read (more than one page of foods, or a food since removed) the caller hands
@@ -23,7 +25,6 @@ export function FoodDetailsModal({ item, onClose }: { item: FoodDetailsRow; onCl
 
   const categories = (item.categories ?? []).map((c) => label(`category_${c.slug}`, c.slug));
   const qualities = (item.qualities ?? []).map((q) => label(`quality_${q.slug}`, q.slug));
-  const translations = Object.entries(item.translations ?? {}).filter(([, v]) => v && v.trim());
   const description = item.display_description ?? item.description;
 
   return (
@@ -65,15 +66,6 @@ export function FoodDetailsModal({ item, onClose }: { item: FoodDetailsRow; onCl
         {item.status && (
           <Row icon={<IconCheck />} label={t('col_status')}>
             {t(`status_${item.status}` as any)}
-          </Row>
-        )}
-        {translations.length > 0 && (
-          <Row icon={<IconGlobe />} label={t('label_translations')}>
-            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {translations.map(([locale, value]) => (
-                <span key={locale}>{label(`locale_${locale}`, locale.toUpperCase())}: {value}</span>
-              ))}
-            </span>
           </Row>
         )}
 
@@ -128,4 +120,3 @@ const IconText = () => <Svg><path d="M4 6h16M4 12h16M4 18h10" /></Svg>;
 const IconTag = () => <Svg><path d="M20 12l-8 8-9-9V3h8z" /><circle cx="7.5" cy="7.5" r="1" /></Svg>;
 const IconLeaf = () => <Svg><path d="M5 19c0-9 5-14 15-14 0 10-5 15-14 15" /><path d="M5 19l8-8" /></Svg>;
 const IconCheck = () => <Svg><circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" /></Svg>;
-const IconGlobe = () => <Svg><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></Svg>;
