@@ -549,3 +549,90 @@ describe('DELETE /centers/:id', () => {
     expect(res.status).toBe(204);
   });
 });
+
+// ─── #3342: translatable description ──────────────────────────────────────────
+
+describe('Center description and its translations (#3342)', () => {
+  let gymId: string;
+  let otherGymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Centers Description Gym');
+    await createTestMembership(gymId, 'admin');
+    otherGymId = await createTestGym('Centers Description Other Gym');
+    await createTestMembership(otherGymId, 'admin');
+  });
+
+  const post = (body: object) => request.post('/centers')
+    .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send(body);
+  const put = (id: number, body: object) => request.put(`/centers/${id}`)
+    .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send(body);
+  const get = (id: number, locale?: string) => {
+    const r = request.get(`/centers/${id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    return locale ? r.set('x-locale', locale) : r;
+  };
+
+  it('creates a center with a description and translations, read back in the request locale', async () => {
+    const res = await post({
+      name: 'Described', description: '  A calm gym  ',
+      description_translations: { es: 'Un gimnasio tranquilo', ca: '' },
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.description).toBe('A calm gym');
+    expect(res.body.description_translations).toEqual({ es: 'Un gimnasio tranquilo' });
+
+    expect((await get(res.body.id, 'es')).body.display_description).toBe('Un gimnasio tranquilo');
+    // No Catalan row: falls back to the base text.
+    expect((await get(res.body.id, 'ca')).body.display_description).toBe('A calm gym');
+    expect((await get(res.body.id, 'en')).body.display_description).toBe('A calm gym');
+
+    const list = await request.get('/centers').set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId).set('x-locale', 'es');
+    const row = list.body.find((c: any) => c.id === res.body.id);
+    expect(row.display_description).toBe('Un gimnasio tranquilo');
+    expect(row.description_translations).toEqual({ es: 'Un gimnasio tranquilo' });
+  });
+
+  it('keeps the description and translations when a PUT omits them, clears them with null / {}', async () => {
+    const created = await post({ name: 'Keep Me', description: 'Base', description_translations: { es: 'Base es' } });
+    const id = created.body.id;
+
+    const renamed = await put(id, { name: 'Kept' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.description).toBe('Base');
+    expect(renamed.body.description_translations).toEqual({ es: 'Base es' });
+
+    const replaced = await put(id, { description_translations: { ca: 'Base ca' } });
+    expect(replaced.body.description_translations).toEqual({ ca: 'Base ca' });
+
+    const cleared = await put(id, { description: null, description_translations: {} });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.description).toBeNull();
+    expect(cleared.body.description_translations).toEqual({});
+    const { rows } = await db.query('SELECT COUNT(*) AS n FROM center_description_translations WHERE center_id = ?', [id]);
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
+  it.each([
+    [{ description: 42 }],
+    [{ description_translations: 'es' }],
+    [{ description_translations: { fr: 'Bonjour' } }],
+    [{ description_translations: { en: 'Base locale' } }],
+    [{ description_translations: { es: 7 } }],
+    [{ description: 'x'.repeat(2001) }],
+  ])('refuses an invalid description payload %j with 400 and writes nothing', async (body) => {
+    const created = await post({ name: `Invalid ${Math.random().toString(36).slice(2, 8)}`, description: 'Stays' });
+    const res = await put(created.body.id, body);
+    expect(res.status).toBe(400);
+    expect((await get(created.body.id)).body.description).toBe('Stays');
+  });
+
+  it('does not write another gym’s center translations', async () => {
+    const created = await post({ name: 'Mine', description_translations: { es: 'Mío' } });
+    const res = await request.put(`/centers/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', otherGymId)
+      .send({ description_translations: { es: 'Ajeno' } });
+    expect(res.status).toBe(404);
+    expect((await get(created.body.id)).body.description_translations).toEqual({ es: 'Mío' });
+  });
+});

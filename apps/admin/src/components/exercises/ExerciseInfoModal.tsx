@@ -38,6 +38,24 @@ function FieldIcon({ id }: { id: ExerciseInfoFieldId }) {
   );
 }
 
+/**
+ * One icon + label + text row of this modal. #3342 reuses it for a Center's
+ * description so both read alike (same icon, same presentation).
+ */
+export function ExerciseInfoFieldRow({ id, label, children }: {
+  id: ExerciseInfoFieldId; label: string; children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+      <FieldIcon id={id} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.7 }}>{label}</div>
+        <div style={{ fontSize: 14, marginTop: 2, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, gender, onClose }: {
   exerciseId: number;
   fallbackName?: string;
@@ -79,13 +97,7 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
     : key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
 
   const field = (id: ExerciseInfoFieldId, label: string, body: React.ReactNode) => (
-    <div key={id} style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-      <FieldIcon id={id} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.7 }}>{label}</div>
-        <div style={{ fontSize: 14, marginTop: 2, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{body}</div>
-      </div>
-    </div>
+    <ExerciseInfoFieldRow key={id} id={id} label={label}>{body}</ExerciseInfoFieldRow>
   );
 
   return (

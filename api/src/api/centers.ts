@@ -4,7 +4,12 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
-import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
+import { handleDupEntry } from '../infra/db-helpers';
+import { getRequestLocale, type SupportedLocale } from '../infra/locale';
+import {
+  centerDescriptionTranslationsSql, centerDisplayDescriptionSql, parseCenterDescription,
+  parseCenterDescriptionTranslations, replaceCenterDescriptionTranslations, withCenterDescriptionTranslations,
+} from '../domain/centerDescriptions';
 
 import {
   gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
@@ -66,6 +71,8 @@ centersRouter.get('/', async (req, res) => {
   }
   const { rows } = await db.query(
     `SELECT c.*,
+            ${centerDisplayDescriptionSql('c', getRequestLocale(req))},
+            ${centerDescriptionTranslationsSql('c')},
             ct.name   AS theme_name,
             ct.tokens AS theme_tokens,
             gt.name  AS gym_theme_name,
@@ -83,7 +90,7 @@ centersRouter.get('/', async (req, res) => {
     params,
   );
   res.json(rows.map((r: any) => ({
-    ...r,
+    ...withCenterDescriptionTranslations(r),
     theme_tokens: typeof r.theme_tokens === 'string' ? JSON.parse(r.theme_tokens) : (r.theme_tokens ?? null),
   })));
 });
@@ -96,6 +103,8 @@ centersRouter.get('/:id', async (req, res) => {
   }
   const { rows } = await db.query(
     `SELECT c.*,
+            ${centerDisplayDescriptionSql('c', getRequestLocale(req))},
+            ${centerDescriptionTranslationsSql('c')},
             ct.name   AS theme_name,
             ct.tokens AS theme_tokens,
             gt.name   AS gym_theme_name,
@@ -112,8 +121,18 @@ centersRouter.get('/:id', async (req, res) => {
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Center not found' });
-  res.json(rows[0]);
+  res.json(withCenterDescriptionTranslations(rows[0]));
 });
+
+/** A write's answer: the row with its description (#3342) in the request locale and its translations. */
+async function readCenterRow(gymId: string, id: number | string, locale: SupportedLocale) {
+  const { rows } = await db.query(
+    `SELECT c.*, ${centerDisplayDescriptionSql('c', locale)}, ${centerDescriptionTranslationsSql('c')}
+       FROM centers c WHERE c.id = ? AND c.gym_id = ?`,
+    [id, gymId],
+  );
+  return rows[0] ? withCenterDescriptionTranslations(rows[0]) : undefined;
+}
 
 centersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const ctx = getTenantContext(req);
@@ -122,15 +141,23 @@ centersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { name, code, address, phone, email, status } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const description = parseCenterDescription(req.body);
+  if ('error' in description) return res.status(400).json({ error: description.error });
+  const translations = parseCenterDescriptionTranslations(req.body);
+  if ('error' in translations) return res.status(400).json({ error: translations.error });
   try {
-    const row = await insertAndFetch(
-      `INSERT INTO centers (name, code, address, phone, email, status, gym_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name.trim(), code ?? null, address ?? null, phone ?? null, email ?? null, status ?? 'active', gymId, actor],
-      'SELECT * FROM centers WHERE id = ?',
-      (id) => [id],
-    );
-    recordAudit(req, { action: 'create', entityType: 'center', entityId: row.id, next: row });
+    const id = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO centers (name, description, code, address, phone, email, status, gym_id, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name.trim(), 'value' in description ? description.value : null, code ?? null, address ?? null,
+          phone ?? null, email ?? null, status ?? 'active', gymId, actor],
+      );
+      if ('value' in translations) await replaceCenterDescriptionTranslations(tx, insertId, translations.value);
+      return insertId;
+    });
+    const row = await readCenterRow(gymId, id, getRequestLocale(req));
+    recordAudit(req, { action: 'create', entityType: 'center', entityId: id, next: row });
     res.status(201).json(row);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A center with this name already exists.');
@@ -143,6 +170,10 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const actor = resolveRequestActor(ctx);
   const { name, code, address, phone, email, status, theme_id } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const description = parseCenterDescription(req.body);
+  if ('error' in description) return res.status(400).json({ error: description.error });
+  const translations = parseCenterDescriptionTranslations(req.body);
+  if ('error' in translations) return res.status(400).json({ error: translations.error });
   try {
     // Validate theme_id if provided (null clears it; a UUID must reference an accessible theme).
     if (theme_id !== undefined && theme_id !== null) {
@@ -153,9 +184,11 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       if (themeRows.length === 0) return res.status(400).json({ error: 'theme_id must reference an active theme accessible to this gym' });
     }
 
-    const { rowCount } = await db.query(
+    const rowCount = await db.transaction(async (tx) => {
+      const result = await tx.query(
       `UPDATE centers SET
         name       = COALESCE(?, name),
+        description = IF(?, ?, description),
         code       = IF(?, ?, code),
         address    = IF(?, ?, address),
         phone      = IF(?, ?, phone),
@@ -167,6 +200,7 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         name?.trim() ?? null,
+        description.provided ? 1 : 0, 'value' in description ? description.value : null,
         'code' in req.body ? 1 : 0, code ?? null,
         'address' in req.body ? 1 : 0, address ?? null,
         'phone' in req.body ? 1 : 0, phone ?? null,
@@ -176,7 +210,12 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         actor,
         req.params.id, gymId,
       ],
-    );
+      );
+      if (result.rowCount > 0 && 'value' in translations) {
+        await replaceCenterDescriptionTranslations(tx, String(req.params.id), translations.value);
+      }
+      return result.rowCount;
+    });
     if (rowCount === 0) return res.status(404).json({ error: 'Center not found' });
     // #2261: the image key carries the Center's name, so a rename moves it.
     {
@@ -186,9 +225,9 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         await migrateCenterImageOnRename(gymId, await gymStorageFolderPrefix(gymId), imgRows[0]);
       }
     }
-    const { rows } = await db.query('SELECT * FROM centers WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-    recordAudit(req, { action: 'update', entityType: 'center', entityId: req.params.id, next: rows[0] });
-    res.json(rows[0]);
+    const row = await readCenterRow(gymId, String(req.params.id), getRequestLocale(req));
+    recordAudit(req, { action: 'update', entityType: 'center', entityId: req.params.id, next: row });
+    res.json(row);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A center with this name already exists.');
   }

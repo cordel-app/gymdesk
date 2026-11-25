@@ -3614,7 +3614,12 @@
     "image_error_unreadable": "No se pudo leer la imagen.",
     "image_error_too_large": "La imagen es demasiado grande.",
     "image_error_upload_failed": "No se pudo subir la imagen.",
-    "image_error_remove_failed": "No se pudo quitar la imagen."
+    "image_error_remove_failed": "No se pudo quitar la imagen.",
+    "translations_title": "Traducciones: {field}",
+    "translations_open": "Abrir las traducciones de {field}",
+    "translations_save": "Aplicar",
+    "translations_close": "Cerrar",
+    "image_open": "Abrir la imagen de {name}"
   },
   "gym_themes": {
     "title": "Temas",
