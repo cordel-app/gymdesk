@@ -333,6 +333,7 @@ export function ExpandedRow({
                               {e.key === 'checkout_reason_initial_payment_waive' ? (
                                 <>
                                   <strong>{t(`members.${e.key}`).split(':')[0]}</strong>:{t(`members.${e.key}`).split(':').slice(1).join(':')}
+                                </>
                               ) : (
                                 <>
                                   {e.typeKey && <strong>{t(`members.${e.typeKey}`)}{e.typeKey === 'checkout_reason_type_manual_adjustment' ? ' ' : ': '}</strong>}

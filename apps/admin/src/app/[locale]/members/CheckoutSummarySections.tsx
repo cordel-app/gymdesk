@@ -163,6 +163,7 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                       {e.key === 'checkout_reason_initial_payment_waive' ? (
                         <>
                           <strong>{t(e.key as any).split(':')[0]}</strong>:{t(e.key as any).split(':').slice(1).join(':')}
+                        </>
                       ) : (
                         <>
                           {e.typeKey && <strong>{t(e.typeKey as any)}{e.typeKey === 'checkout_reason_type_manual_adjustment' ? ' ' : ': '}</strong>}
