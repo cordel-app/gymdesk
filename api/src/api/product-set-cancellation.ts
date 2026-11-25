@@ -2,7 +2,7 @@ import { assignmentOfLegacyIdSql, productSetLegacyAssignmentIdSql } from '../dom
 import type { logger } from '../lib/logger';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { db, type Tx } from '../infra/db';
-import { PENDING_EXPIRY_HOURS, pendingCancellation, type PendingAttempt } from '../domain/productSet';
+import { PENDING_EXPIRY_HOURS, pendingCancellation, pendingClockSql, type PendingAttempt } from '../domain/productSet';
 import { getPaymentProvider } from '../payments';
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { settleFromProviderLookup } from './payment-settlement';
@@ -349,7 +349,7 @@ export async function expirePendingPayments(log?: Log): Promise<number> {
   const { rows } = await db.query<{ id: number; gym_id: string }>(
     `SELECT ps.id, ps.gym_id FROM product_sets ps
       WHERE ps.status = 'pending_payment'
-        AND COALESCE(ps.pending_at, ps.last_activity_at) < UTC_TIMESTAMP() - INTERVAL ${PENDING_EXPIRY_HOURS} HOUR
+        AND ${pendingClockSql('ps')} < UTC_TIMESTAMP() - INTERVAL ${PENDING_EXPIRY_HOURS} HOUR
       ORDER BY ps.id`);
   const lg = log ?? (await import('../lib/logger')).logger;
   let n = 0;

@@ -37,6 +37,18 @@ export type ProductSetStatus = (typeof PRODUCT_SET_STATUSES)[number];
  */
 export const PENDING_EXPIRY_HOURS = 24;
 
+/** #3307 stage 4 — the instant a Pending Payment set's 24 hours started (the expiry pass's clock). */
+export const pendingClockSql = (ps: string): string => `COALESCE(${ps}.pending_at, ${ps}.last_activity_at)`;
+
+/**
+ * #3307 stage 4 — seconds left before a Pending Payment set expires, by the database clock (the
+ * same instant `expirePendingPayments()` compares against); NULL for any other status. Shown in the
+ * Products Summary; a value at or below zero means the next pass expires it.
+ */
+export const pendingPaymentExpiresInSecondsSql = (ps: string): string =>
+  `(CASE WHEN ${ps}.status = 'pending_payment'
+         THEN TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ${pendingClockSql(ps)} + INTERVAL ${PENDING_EXPIRY_HOURS} HOUR) END)`;
+
 const TRANSITIONS: Readonly<Record<ProductSetStatus, readonly ProductSetStatus[]>> = {
   in_cart: ['pending_payment', 'active'],
   pending_payment: ['active', 'cancelled'],
