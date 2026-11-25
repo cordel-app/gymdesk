@@ -34,9 +34,19 @@ describe('purchase name (#3270)', () => {
     }
   });
 
-  it("the Initial Payment's Source column uses the Billing Event line-source rule", () => {
+  // #3381 stage 2 — the owner's column order replaced the Source column (#3270) and the Price column
+  // (#3282 stage 3): Product, Qty, Base Price, Benefit / Discount / Proration, VAT, VAT Amount, Amount.
+  it("the Initial Payment's columns are the owner's seven, in order, and the proration is a treatment line", () => {
     const src = read('CheckoutSummarySections.tsx');
-    expect(src).toContain('lineSourceLabelKey(l.source)');
-    expect(src).toContain("tLine('col_line_source')");
+    const full = src.slice(src.indexOf("<div data-initial-payment style"));
+    const order = ['checkout_col_product', 'checkout_col_quantity', 'checkout_col_base_price', 'checkout_col_discount',
+      'checkout_col_tax_rate', 'checkout_col_tax', 'checkout_col_amount'].map((k) => full.indexOf(`t('${k}')`));
+    for (const i of order) expect(i).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(src).not.toContain("tLine('col_line_source')");
+    expect(src).not.toContain("t('checkout_col_price')");
+    const treatments = src.slice(src.indexOf('data-line-treatments'));
+    expect(treatments.indexOf("t('checkout_line_proration_label')")).toBeGreaterThan(-1);
+    expect(src).toContain('basePriceFormula(l.base_price_breakdown, money)');
   });
 });

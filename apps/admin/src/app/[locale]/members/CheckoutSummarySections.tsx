@@ -2,10 +2,10 @@
 
 // #2860 — the Product Set Summary shown before Save & Pay, as two sections:
 //
-//   - Initial Payment: the commit charge line by line (source, quantity, the
-//     cart's final price with only the proration applied, the base price before
-//     discounts, what the benefit or discount is, VAT rate, VAT amount and the
-//     amount, 0 when waived — #3282 stage 3) with the subtotal, the discounts, the tax
+//   - Initial Payment: the commit charge line by line (#3381 stage 2: Product,
+//     quantity, the base price before discounts with its formula, the benefits,
+//     discounts and proration, VAT rate, VAT amount and the amount — the last two
+//     0 when waived) with the subtotal, the discounts, the tax
 //     breakdown by rate and the total. Every figure is the server's
 //     (`initial_payment` on `GET /product-sets/:id/review`, which restates
 //     `commitCharge()`): nothing here adds anything up.
@@ -23,10 +23,9 @@ import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/compon
 import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
-import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
 import { LineReasonText } from './LineReasonText';
-import { compactInitialPaymentLabel, contractedMembersText, discountEntries, initialPaymentLineAction, lineReducedToZero, splitContracted } from './productsWorkflowView';
+import { basePriceFormula, compactInitialPaymentLabel, contractedMembersText, discountEntries, initialPaymentLineAction, lineReducedToZero, splitContracted } from './productsWorkflowView';
 import { secondaryBtnSmall } from '@/components/formChrome';
 
 const money = (n: number) => `${n.toFixed(2)} €`;
@@ -53,9 +52,6 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
 }) {
   const t = useTranslations('members');
   const tFreq = useTranslations('billing_frequency');
-  // #3270 — the Source column reads the Billing Event Line's own `source` (#3254), worded as the
-  // Billing Event details already word it.
-  const tLine = useTranslations('billing_events_page');
   const fmt = useGymFormatSettings();
   if (!payment) return null;
   if (payment.total == null) return <p style={cardHintStyle}>{t('review_error_amount')}</p>;
@@ -99,10 +95,8 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
       <table style={table}>
         <thead>
           <tr>
-            <th style={th}>{t('checkout_col_item')}</th>
-            <th style={th}>{tLine('col_line_source')}</th>
+            <th style={th}>{t('checkout_col_product')}</th>
             <th style={thNum}>{t('checkout_col_quantity')}</th>
-            <th style={thNum}>{t('checkout_col_price')}</th>
             <th style={thNum}>{t('checkout_col_base_price')}</th>
             <th style={th}>{t('checkout_col_discount')}</th>
             <th style={thNum}>{t('checkout_col_tax_rate')}</th>
@@ -143,42 +137,36 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                       )}
                     </span>
                   )}
-                  {l.proration && (
-                    // #3165 stage 2 — the proration the first charge applied, by the Product's own calendar.
-                    <span data-line-proration style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
-                      {t('checkout_line_prorated', { days: l.proration.days, period: l.proration.period_days })}
-                    </span>
-                  )}
                   {prepaid && <span data-prepaid-periods style={{ ...cardHintStyle, margin: 0, display: 'block' }}>{prepaid}</span>}
                 </td>
-                <td style={td} data-line-source={l.source ?? ''}>
-                  {(() => { const key = lineSourceLabelKey(l.source); return key ? tLine(key) : '—'; })()}
-                </td>
                 <td style={tdNum}>{l.quantity}</td>
-                <td style={tdNum} data-line-price>
-                  {/* #3282 stage 3 — the cart's final price of the line, with only the proration applied (the server's). */}
-                  {money(l.price ?? l.amount)}
-                  {l.charged_unit_breakdown && (
-                    <span data-charged-unit-breakdown style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
-                      {t('checkout_unit_price_breakdown', {
-                        quantity: l.charged_unit_breakdown.quantity,
-                        unit: money(l.charged_unit_breakdown.unit_price),
-                        days: l.charged_unit_breakdown.days,
-                        period: l.charged_unit_breakdown.period_days,
-                      })}
+                <td style={tdNum} data-line-base-price>
+                  {money(l.base_price ?? l.line_total)}
+                  {l.base_price_breakdown && (
+                    // #3381 stage 2 — how the Base Price is made up: Qty × the Product's base price ×
+                    // the proration. The server's factors, shown only; nothing is computed here.
+                    <span data-base-price-breakdown style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
+                      {basePriceFormula(l.base_price_breakdown, money)}
                     </span>
                   )}
                 </td>
-                <td style={tdNum} data-line-base-price>{money(l.base_price ?? l.line_total)}</td>
-                <td style={td}>
+                <td style={td} data-line-treatments>
                   {/* #3282 stage 3 — explanatory text only; the column states no amount of its own. */}
-                  {entries.length === 0 ? '—' : null}
+                  {entries.length === 0 && !l.proration ? '—' : null}
                   {/* #3284 — every treatment: a bold label (Benefit / Promotion / Manual adjustment / Initial payment) and its detail. */}
                   {entries.map((e, k) => (
                     <span key={k} data-line-reason={e.typeKey ?? ''} style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
                       <LineReasonText entry={e} translate={(k, v) => t(k as any, v as any)} />
                     </span>
                   ))}
+                  {l.proration && (
+                    // #3381 stage 2 — the proration the first charge applied, by the Product's own
+                    // calendar, as its own line beside the treatments: **Proration**: 6 of 30 days.
+                    <span data-line-proration style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
+                      <strong>{t('checkout_line_proration_label')}</strong>
+                      {`: ${t('checkout_line_proration_detail', { days: l.proration.days, period: l.proration.period_days })}`}
+                    </span>
+                  )}
                 </td>
                 <td style={tdNum}>{l.tax_rate_percent != null ? `${l.tax_rate_percent}%` : '—'}</td>
                 <td style={tdNum}>{money(l.tax_amount)}</td>
