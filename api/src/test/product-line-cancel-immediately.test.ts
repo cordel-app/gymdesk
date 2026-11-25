@@ -111,6 +111,16 @@ async function memberWithLine(name: string): Promise<{ memberId: number; product
   return { memberId, productId };
 }
 
+/** Removes the line through the cart, as the Admin's Cancel does: open the Draft, delete its line. */
+async function removeInCart(memberId: number, productId: number) {
+  const d = await auth(request.post('/product-sets/draft')).send({ member_id: memberId });
+  expect(d.status, JSON.stringify(d.body)).toBeLessThan(300);
+  const carried = await line(memberId, productId);
+  expect(carried.draft_line_id).not.toBeNull();
+  const removed = await auth(request.delete(`${base(memberId)}/recurring/${carried.draft_line_id}`));
+  expect(removed.status, JSON.stringify(removed.body)).toBe(200);
+}
+
 /** Commits the member's open Draft; a removal or a cancellation owes nothing, so it is activated. */
 async function commitDraft(memberId: number) {
   const { rows } = await db.query<any>(
@@ -141,8 +151,7 @@ describe('#3358 stage 2 — a recurring Product line uses the Membership Plan ca
     expect(active).toMatchObject({ status: 'active', ends_at: null, can_cancel_immediately: false });
 
     // Removing it from the Draft only marks it: the Active version keeps billing it.
-    const removed = await auth(request.delete(`${base(memberId)}/recurring/${Math.abs(active.id)}`));
-    expect(removed.status).toBe(200);
+    await removeInCart(memberId, productId);
     const marked = await line(memberId, productId);
     expect(marked.status).toBe('to_be_canceled');
     expect(marked.ends_at).toBeNull();
@@ -159,7 +168,7 @@ describe('#3358 stage 2 — a recurring Product line uses the Membership Plan ca
   it('marks Cancel Immediately in the cart, lists it in the review and commits it as cancelled', async () => {
     const { memberId, productId } = await memberWithLine(`Locker 3358-b-${uniq()}`);
     const active = await line(memberId, productId);
-    expect((await auth(request.delete(`${base(memberId)}/recurring/${Math.abs(active.id)}`))).status).toBe(200);
+    await removeInCart(memberId, productId);
     await commitDraft(memberId);
     const cancelling = await line(memberId, productId);
     expect(cancelling.status).toBe('active_cancel_at_period_end');
@@ -191,7 +200,7 @@ describe('#3358 stage 2 — a recurring Product line uses the Membership Plan ca
   it('restores the committed End Date when the Draft is discarded', async () => {
     const { memberId, productId } = await memberWithLine(`Locker 3358-c-${uniq()}`);
     const active = await line(memberId, productId);
-    expect((await auth(request.delete(`${base(memberId)}/recurring/${Math.abs(active.id)}`))).status).toBe(200);
+    await removeInCart(memberId, productId);
     await commitDraft(memberId);
     const cancelling = await line(memberId, productId);
     const periodEnd = String(cancelling.ends_at);
