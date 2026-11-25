@@ -1,194 +1,277 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDate } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useToast } from '@/components/Toast';
-import { ContextMenu } from '@/components/ContextMenu';
+import { type ContextMenuItem } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
-import { StatusBadge } from '@/components/StatusBadge';
-import { primaryBtnStyle } from '@/components/ui';
-import { filterControlStyle } from '@/components/FilterBar';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
+import { CardGrid } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
+import { cardSurfaceStyle, primaryBtnStyle } from '@/components/ui';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS,
+  listScrollerClass,
+} from '@/components/listChrome';
+import { WorkoutTemplateCard } from '../../workout-templates/WorkoutTemplateCard';
+import {
+  CELL_CLASS, LIST_COLUMNS, LIST_COLUMN_GAP, LIST_GRID_COLUMNS, LIST_MIN_WIDTH, ROW_PADDING_X,
+  WorkoutTemplateRowCells,
+} from '../../workout-templates/WorkoutTemplateRowCells';
 
-interface WorkoutTemplate {
+const API_BASE = '/platform/workout-templates';
+
+type BaseStatus = 'active' | 'inactive';
+
+interface BaseTemplate {
   id: number;
+  gym_id: null;
   name: string;
   description: string | null;
-  status: 'active' | 'inactive' | 'deleted';
+  status: BaseStatus | 'deleted';
   blocks_count: number;
+  num_blocks?: number;
   created_at: string;
+  created_by: string | null;
 }
 
 interface PaginatedResponse {
-  items: WorkoutTemplate[];
+  items: BaseTemplate[];
   total: number;
 }
 
+interface BaseForm { name: string; description: string; status: BaseStatus }
+
+const EMPTY_FORM: BaseForm = { name: '', description: '', status: 'active' };
+
+/**
+ * #3335 stage 2: the Base list wears the Exercises listing — title + action, a
+ * search bar, the Cards/List toggle and the gym list's own column declaration
+ * (Blocks in place of Primary Muscles). Every row here is a System template, so
+ * the Source column always reads System sourced. Base rows have no block tree
+ * on this screen, so the chevron cell stays empty.
+ */
 export default function CordelWorkoutTemplatesPage() {
+  const t = useTranslations('workout_templates');
+  const tStatus = useTranslations('status');
+  const gymFmt = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
   const [data, setData] = useState<PaginatedResponse>({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [nameQuery, setNameQuery] = useState('');
+  const [viewMode, setViewMode] = useExerciseViewMode();
 
   const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [form, setForm] = useState<BaseForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const [editing, setEditing] = useState<WorkoutTemplate | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
+  const [editing, setEditing] = useState<BaseTemplate | null>(null);
+  const [editForm, setEditForm] = useState<BaseForm>(EMPTY_FORM);
 
-  const [deleting, setDeleting] = useState<WorkoutTemplate | null>(null);
+  const [deleting, setDeleting] = useState<BaseTemplate | null>(null);
+
+  useEffect(() => {
+    const id = setTimeout(() => setNameQuery(nameInput.trim()), 300);
+    return () => clearTimeout(id);
+  }, [nameInput]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = search ? `?name=${encodeURIComponent(search)}` : '';
-      setData(await apiFetch<PaginatedResponse>(`/platform/workout-templates${qs}`));
+      const qs = nameQuery ? `?name=${encodeURIComponent(nameQuery)}` : '';
+      setData(await apiFetch<PaginatedResponse>(`${API_BASE}${qs}`));
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, [apiFetch, search]);
+  }, [apiFetch, nameQuery]);
 
   useEffect(() => { load(); }, [load]);
 
+  function payload(f: BaseForm) {
+    return { name: f.name.trim(), description: f.description.trim() || null, status: f.status };
+  }
+
   async function handleCreate() {
-    if (!newName.trim()) return;
-    setSaving(true);
+    if (!form.name.trim()) { setFormError(t('error_required')); return; }
+    setSaving(true); setFormError(null);
     try {
-      await apiFetch('/platform/workout-templates', {
-        method: 'POST',
-        body: JSON.stringify({ name: newName.trim() }),
-      });
-      setCreating(false); setNewName('');
-      toast('Workout template created', 'success');
+      await apiFetch(API_BASE, { method: 'POST', body: JSON.stringify(payload(form)) });
+      setCreating(false); setForm(EMPTY_FORM);
+      toast(t('base_created'), 'success');
       load();
     } catch (e: any) {
-      toast(e.message ?? 'Error');
+      setFormError(e.message ?? t('error_generic'));
     } finally { setSaving(false); }
   }
 
   async function handleEdit() {
     if (!editing) return;
-    setSaving(true);
+    if (!editForm.name.trim()) { setFormError(t('error_required')); return; }
+    setSaving(true); setFormError(null);
     try {
-      await apiFetch(`/platform/workout-templates/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ name: editName.trim(), description: editDescription.trim() || null }),
-      });
+      await apiFetch(`${API_BASE}/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload(editForm)) });
       setEditing(null);
-      toast('Template updated', 'success');
+      toast(t('base_updated'), 'success');
       load();
     } catch (e: any) {
-      toast(e.message ?? 'Error');
+      setFormError(e.message ?? t('error_generic'));
     } finally { setSaving(false); }
   }
 
   async function handleDelete() {
     if (!deleting) return;
     try {
-      await apiFetch(`/platform/workout-templates/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`${API_BASE}/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
-      toast('Template deleted', 'success');
+      toast(t('base_deleted'), 'success');
       load();
     } catch (e: any) {
-      toast(e.message ?? 'Error');
+      toast(e.message ?? t('error_generic'));
     }
+  }
+
+  function menuItems(tpl: BaseTemplate): ContextMenuItem[] {
+    return [
+      {
+        kind: 'edit' as const,
+        label: t('edit'),
+        onClick: () => {
+          setEditing(tpl);
+          setEditForm({
+            name: tpl.name,
+            description: tpl.description ?? '',
+            status: tpl.status === 'inactive' ? 'inactive' : 'active',
+          });
+          setFormError(null);
+        },
+      },
+      { kind: 'delete' as const, label: t('delete'), danger: true, onClick: () => setDeleting(tpl) },
+    ];
+  }
+
+  function renderRow(tpl: BaseTemplate) {
+    return (
+      <div key={tpl.id} style={rowCardStyle}>
+        <div className={LIST_GRID_ROW_CLASS} style={rowStyle}>
+          <WorkoutTemplateRowCells template={tpl} expanded={null} menuItems={menuItems(tpl)} fmtDate={(iso) => formatGymDate(iso, gymFmt)} />
+        </div>
+      </div>
+    );
+  }
+
+  function formFields(value: BaseForm, onChange: (f: BaseForm) => void) {
+    return (
+      <>
+        <FormLabel>{t('label_name')} *</FormLabel>
+        <input className="form-input" value={value.name} onChange={e => onChange({ ...value, name: e.target.value })} placeholder={t('base_placeholder_name')} autoFocus />
+        <FormLabel>{t('label_description')}</FormLabel>
+        <textarea className="form-input" value={value.description} onChange={e => onChange({ ...value, description: e.target.value })} rows={2} />
+        <FormLabel>{t('label_status')}</FormLabel>
+        <select className="form-input" value={value.status} onChange={e => onChange({ ...value, status: e.target.value as BaseStatus })}>
+          <option value="active">{tStatus('active')}</option>
+          <option value="inactive">{tStatus('inactive')}</option>
+        </select>
+      </>
+    );
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1>Base Workout Templates</h1>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search…"
-            style={{ ...filterControlStyle, width: 200 }}
-          />
-          <button style={primaryBtnStyle()} onClick={() => { setNewName(''); setCreating(true); }}>+ New Template</button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
+        <h1 style={{ margin: 0 }}>{t('base_title')}</h1>
+        <button style={primaryBtnStyle()} onClick={() => { setForm(EMPTY_FORM); setFormError(null); setCreating(true); }}>{t('base_add')}</button>
       </div>
 
+      <FilterBar>
+        <FilterField label={t('filter_search')} htmlFor="base-wt-search">
+          <input
+            id="base-wt-search"
+            type="search"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            placeholder={t('filter_name')}
+            style={{ ...filterControlStyle }}
+          />
+        </FilterField>
+        <div style={{ marginLeft: 'auto' }}>
+          <ExerciseViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      </FilterBar>
+
       {loading ? (
-        <p>Loading…</p>
+        <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : data.items.length === 0 ? (
-        <p style={{ color: '#888' }}>No base workout templates yet.</p>
+        <p style={{ color: '#9ca3af' }}>{t('base_empty')}</p>
+      ) : viewMode === 'cards' ? (
+        <CardGrid>
+          {data.items.map((tpl) => (
+            <WorkoutTemplateCard key={tpl.id} template={tpl} menuItems={menuItems(tpl)} />
+          ))}
+        </CardGrid>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ color: '#999', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Name</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Description</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Blocks</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Status</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Created</th>
-              <th style={{ width: 40 }} />
-            </tr>
-          </thead>
-          <tbody>
-            {data.items.map(row => (
-              <tr key={row.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                <td style={{ padding: '10px 8px', fontWeight: 500 }}>{row.name}</td>
-                <td style={{ padding: '10px 8px', color: '#666' }}>{row.description ?? '—'}</td>
-                <td style={{ padding: '10px 8px', color: '#888' }}>{row.blocks_count}</td>
-                <td style={{ padding: '10px 8px' }}>
-                  <StatusBadge status={row.status} label={row.status} />
-                </td>
-                <td style={{ padding: '10px 8px', color: '#888' }}>{row.created_at?.slice(0, 10)}</td>
-                <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-                  <ContextMenu items={[
-                    {
-                      kind: 'edit' as const, label: 'Edit',
-                      onClick: () => { setEditing(row); setEditName(row.name); setEditDescription(row.description ?? ''); },
-                    },
-                    { kind: 'delete' as const, label: 'Delete', danger: true, onClick: () => setDeleting(row) },
-                  ]} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+          <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+            <div className={LIST_GRID_ROW_CLASS} style={headerBandStyle}>
+              {LIST_COLUMNS.map((col) => (
+                <span key={col.key} className={CELL_CLASS[col.key]}>{col.labelKey ? t(col.labelKey) : null}</span>
+              ))}
+            </div>
+            {data.items.map(renderRow)}
+          </div>
+        </div>
       )}
 
       <CrudModal
         open={creating}
-        title="New Base Workout Template"
+        title={t('base_modal_add')}
         onCancel={() => setCreating(false)}
         onSave={handleCreate}
         saving={saving}
-        cancelLabel="Cancel"
-        saveLabel="Create"
+        error={formError}
+        cancelLabel={t('cancel')}
+        saveLabel={t('base_create')}
       >
-        <FormLabel>Name *</FormLabel>
-        <input className="form-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Full Body Strength" autoFocus />
+        {formFields(form, setForm)}
       </CrudModal>
 
       <CrudModal
         open={editing !== null}
-        title="Edit Base Workout Template"
+        title={t('base_modal_edit')}
         onCancel={() => setEditing(null)}
         onSave={handleEdit}
         saving={saving}
-        cancelLabel="Cancel"
-        saveLabel="Save"
+        error={formError}
+        cancelLabel={t('cancel')}
+        saveLabel={t('save_changes')}
       >
-        <FormLabel>Name *</FormLabel>
-        <input className="form-input" value={editName} onChange={e => setEditName(e.target.value)} autoFocus />
-        <FormLabel>Description</FormLabel>
-        <input className="form-input" value={editDescription} onChange={e => setEditDescription(e.target.value)} />
+        {formFields(editForm, setEditForm)}
       </CrudModal>
 
       <ConfirmDialog
         open={deleting !== null}
-        message={`Delete base workout template "${deleting?.name}"?`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        message={t('base_confirm_delete', { name: deleting?.name ?? '' })}
+        confirmLabel={t('delete')}
+        cancelLabel={t('cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />
     </div>
   );
 }
+
+const rowCardStyle: React.CSSProperties = { ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' };
+const rowStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS, alignItems: 'center',
+  padding: `12px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP,
+};
+const headerBandStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS, alignItems: 'center',
+  padding: `6px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP, marginBottom: 4,
+  color: '#999', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+};

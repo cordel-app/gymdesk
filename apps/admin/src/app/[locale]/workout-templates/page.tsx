@@ -19,17 +19,26 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import { type ContextMenuItem } from '@/components/ContextMenu';
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import {
-  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
-  listCellClasses, listScrollerClass,
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS,
+  listScrollerClass,
 } from '@/components/listChrome';
-import { filterControlStyle } from '@/components/FilterBar';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
+import { CardGrid } from '@/components/CardGrid';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { CardSection } from '@/components/CardSection';
 import { cardSectionTitleStyle } from '@/components/CardSectionHeader';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
+import { ImportWorkoutTemplatesModal, type ImportTemplatesResult } from './ImportWorkoutTemplatesModal';
+import { WorkoutTemplateCard } from './WorkoutTemplateCard';
+import { canResyncWithSystem, templateSource, toNumBlocks } from './workoutTemplateList';
+import {
+  CELL_CLASS, LIST_COLUMNS, LIST_COLUMN_GAP, LIST_GRID_COLUMNS, LIST_MIN_WIDTH, ROW_PADDING_X,
+  WorkoutTemplateRowCells,
+} from './WorkoutTemplateRowCells';
 import {
   cardMutedTextStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, formValueStyle,
   inlineActionsRowStyle, secondaryBtnSmall,
@@ -44,6 +53,11 @@ export interface WorkoutTemplate {
   notes: string | null;
   status: 'active' | 'inactive';
   blocks_count: number;
+  /** #3335: the live block count, derived on read by the API. */
+  num_blocks?: number;
+  /** #3335: derived by the API — 'system' for a copy of a System template, else 'custom'. */
+  source?: 'system' | 'custom';
+  cloned_from_id?: number | null;
   gym_id: string | null;
   created_by: string | null;
   created_at: string;
@@ -79,58 +93,6 @@ type EditForm = {
 };
 
 const emptyEditForm: EditForm = { name: '', description: '', status: 'active', notes: '' };
-
-// ─── List columns ─────────────────────────────────────────────────────────────
-
-/**
- * #1011 stage 4 — the row and the header band are laid out from one declaration
- * rather than restating widths at each other (#637's shape, which stage 3's
- * eight card lists already adopted). The header folded the chevron and the `⋮`
- * into one 68px cell while the row rendered two.
- *
- * `mobile` says what each column is on a phone. The template's name is the row's
- * identity and its status is the one state worth seeing without tapping; the
- * description, its Base/Gym type, the block count, the author and the date are
- * read in the expanded card.
- */
-interface ListColumn extends ListGridColumn {
-  /** Header label, a key in the `workout_templates` namespace. Absent = no title. */
-  labelKey?: string;
-  /** Fixed track width in px — also the minimum for a flexible column. */
-  width: number;
-  /** Set on a flexible column: it becomes minmax(width, growfr). */
-  grow?: number;
-}
-
-const LIST_COLUMNS: ListColumn[] = [
-  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
-  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
-  { key: 'type', labelKey: 'col_type', width: 64, mobile: 'secondary' },
-  { key: 'workout_info', labelKey: 'col_workout_info', width: 90, mobile: 'secondary' },
-  { key: 'created', labelKey: 'col_created', width: 90, mobile: 'secondary' },
-  { key: 'created_by', labelKey: 'col_created_by', width: 100, mobile: 'secondary' },
-  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
-  // The chevron is the row's own affordance rather than a value, so it stays.
-  { key: 'expand', width: 14, mobile: 'keep' },
-  { key: 'actions', width: 44, mobile: 'actions' },
-];
-
-/** The mobile class a column's header cell and its row cells share (#1011). */
-const CELL_CLASS = listCellClasses(LIST_COLUMNS);
-
-const LIST_COLUMN_GAP = 10;
-/** This list's own horizontal inset — a card row. */
-const ROW_PADDING_X = 16;
-
-const LIST_GRID_COLUMNS = LIST_COLUMNS
-  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
-  .join(' ');
-
-/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
-const LIST_MIN_WIDTH =
-  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
-  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
-  + ROW_PADDING_X * 2;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -176,6 +138,10 @@ export default function WorkoutTemplatesPage() {
 
   // Delete confirm
   const [deleting, setDeleting] = useState<WorkoutTemplate | null>(null);
+
+  // #3335 stage 2: Cards by default, the saved choice afterwards (the Exercises toggle).
+  const [viewMode, setViewMode] = useExerciseViewMode();
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
@@ -252,6 +218,8 @@ export default function WorkoutTemplatesPage() {
   // ─── Inline new ──────────────────────────────────────────────────────────
 
   function openInlineNew() {
+    // The inline form and the block tree live in the List view.
+    if (viewMode !== 'list') setViewMode('list');
     setInlineNew({ name: '', description: '', saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
@@ -280,6 +248,7 @@ export default function WorkoutTemplatesPage() {
   // ─── Edit (General section) ───────────────────────────────────────────────
 
   function openEdit(wt: WorkoutTemplate) {
+    if (viewMode !== 'list') setViewMode('list');
     setEditingId(wt.id);
     setEditForm({
       name: wt.name,
@@ -316,16 +285,41 @@ export default function WorkoutTemplatesPage() {
     }
   }
 
-  // ─── Clone base template ─────────────────────────────────────────────────
+  // ─── Resync with System (#3335, the Exercises' #2302) ─────────────────────
 
-  async function handleClone(wt: WorkoutTemplate) {
+  async function handleResync(wt: WorkoutTemplate) {
     try {
-      await apiFetch(`/workout-templates/${wt.id}/clone`, { method: 'POST' });
-      toast(t('cloned'), 'success');
+      const res = await apiFetch<{ updated: string[] }>(`/workout-templates/${wt.id}/resync-with-system`, { method: 'POST' });
+      toast(res.updated.length > 0 ? t('resync_done') : t('resync_up_to_date'), res.updated.length > 0 ? 'success' : 'info');
       load();
     } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
+      const code = err?.body?.code;
+      toast(code === 'base_unavailable' ? t('resync_base_gone')
+        : code === 'name_taken' ? t('resync_name_taken')
+        : (err.message ?? t('error_generic')));
     }
+  }
+
+  function handleImported(result: ImportTemplatesResult) {
+    setImportOpen(false);
+    const parts = [t('imported', { n: result.imported.length })];
+    if (result.skipped.length > 0) parts.push(t('imported_skipped', { n: result.skipped.length }));
+    toast(parts.join(' '), 'success');
+    load();
+  }
+
+  /** The `⋮` actions of one template — shared by the list row and the card. */
+  function templateMenuItems(wt: WorkoutTemplate): ContextMenuItem[] {
+    const roTitle = canWrite ? undefined : readOnlyTitle;
+    return [
+      { kind: 'details' as const, label: t('details'), onClick: () => setDetails(wt) },
+      { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(wt), disabled: !canWrite, title: roTitle },
+      { label: t('duplicate'), onClick: () => handleDuplicate(wt), disabled: !canWrite, title: roTitle },
+      ...(canResyncWithSystem(wt)
+        ? [{ label: t('resync_with_system'), onClick: () => handleResync(wt), disabled: !canWrite, title: roTitle }]
+        : []),
+      { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(wt), danger: true, disabled: !canWrite, title: roTitle },
+    ];
   }
 
   // ─── Duplicate ────────────────────────────────────────────────────────────
@@ -513,58 +507,26 @@ export default function WorkoutTemplatesPage() {
   function renderRow(wt: WorkoutTemplate) {
     const isExpanded = expanded.has(wt.id);
     const isEditing = editingId === wt.id;
-    const isBase = wt.gym_id === null;
-
-    const descText = wt.description
-      ? wt.description.length > 60 ? wt.description.slice(0, 60) + '…' : wt.description
-      : '—';
-
-    const menuItems: ContextMenuItem[] = isBase
-      ? [
-          { kind: 'details' as const, label: t('details'), onClick: () => setDetails(wt) },
-          { label: t('clone'), onClick: () => handleClone(wt), disabled: !canWrite, title: readOnlyTitle },
-        ]
-      : [
-          { kind: 'details' as const, label: t('details'), onClick: () => setDetails(wt) },
-          { kind: 'edit' as const, label: t('edit'), onClick: () => openEdit(wt), disabled: !canWrite, title: readOnlyTitle },
-          { label: t('duplicate'), onClick: () => handleDuplicate(wt), disabled: !canWrite, title: readOnlyTitle },
-          { kind: 'delete' as const, label: t('delete'), onClick: () => setDeleting(wt), danger: true, disabled: !canWrite, title: readOnlyTitle },
-        ];
-
     const h = hierarchies[wt.id];
 
     return (
       <div key={wt.id} style={cardStyle}>
         {/* Collapsed header */}
-        <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(wt.id)}>
-          <div className={CELL_CLASS.name} title={wt.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <TemplateDropTarget templateId={wt.id}>{wt.name}</TemplateDropTarget>
-          </div>
-          <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {descText}
-          </div>
-          <div className={CELL_CLASS.type}>
-            {isBase
-              ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
-              : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
-            }
-          </div>
-          <div className={CELL_CLASS.workout_info} style={{ fontSize: 13, color: '#555' }}>
-            {t('blocks_count', { n: wt.blocks_count ?? 0 })}
-          </div>
-          <div className={CELL_CLASS.created} style={{ fontSize: 13, color: '#888' }}>
-            {fmtDate(wt.created_at)}
-          </div>
-          <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {wt.created_by ?? '—'}
-          </div>
-          <div className={CELL_CLASS.status}>
-            <StatusBadge status={wt.status} label={tStatus(wt.status)} />
-          </div>
-          <span className={CELL_CLASS.expand} style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
-            <ContextMenu items={menuItems} ariaLabel={`Actions for ${wt.name}`} />
-          </div>
+        <div
+          className={LIST_GRID_ROW_CLASS}
+          style={rowStyle}
+          onClick={() => toggleExpand(wt.id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleExpand(wt.id); }}
+        >
+          <WorkoutTemplateRowCells
+            template={wt}
+            expanded={isExpanded}
+            menuItems={templateMenuItems(wt)}
+            fmtDate={fmtDate}
+            nameSlot={(name) => <TemplateDropTarget templateId={wt.id}>{name}</TemplateDropTarget>}
+          />
         </div>
 
         {/* Inline edit form */}
@@ -672,43 +634,64 @@ export default function WorkoutTemplatesPage() {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+      {/* Header (#3335 stage 2: the Exercises page's title + actions) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={() => setImportOpen(true)} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite}>
+            {t('import_system_templates')}
+          </button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+        </div>
+      </div>
+
+      <FilterBar>
+        <FilterField label={t('filter_search')} htmlFor="wt-search">
           <input
+            id="wt-search"
+            type="search"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
             placeholder={t('filter_name')}
             style={filterControlStyle}
           />
-          <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
+        </FilterField>
+        <FilterField label={t('label_created_by')} htmlFor="wt-created-by">
+          <select id="wt-created-by" value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
             <option value="">{t('filter_created_by_all')}</option>
             {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
           </select>
+        </FilterField>
+        <FilterField label={t('label_status')} htmlFor="wt-status">
           <StatusFilter
+            id="wt-status"
             value={statusFilter}
             onChange={setStatusFilter}
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
+            style={filterControlStyle}
           />
-          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+        </FilterField>
+        <div style={{ marginLeft: 'auto' }}>
+          <ExerciseViewToggle value={viewMode} onChange={setViewMode} />
         </div>
-      </div>
+      </FilterBar>
 
-      {/* Template list */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        {loading ? (
-          <p style={{ color: '#888' }}>{t('loading')}</p>
-        ) : rows.length === 0 && !inlineNew ? (
-          <>
-            {renderInlineNewRow()}
-            <p style={{ color: '#888' }}>{t('empty')}</p>
-          </>
-        ) : (
-          /* The header band and the cards share LIST_GRID_COLUMNS and scroll
-             together, so they cannot fall out of line, and a narrow viewport
-             scrolls the list instead of the page (#1011). */
+      {loading ? (
+        <p style={{ color: '#888' }}>{t('loading')}</p>
+      ) : rows.length === 0 && !inlineNew ? (
+        <p style={{ color: '#888' }}>{t('empty')}</p>
+      ) : viewMode === 'cards' && inlineNew === null ? (
+        <CardGrid>
+          {rows.map((wt) => (
+            <WorkoutTemplateCard key={wt.id} template={wt} menuItems={templateMenuItems(wt)} />
+          ))}
+        </CardGrid>
+      ) : (
+        /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+           together, so they cannot fall out of line, and a narrow viewport
+           scrolls the list instead of the page (#1011). */
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
             <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
               {/* Column headers */}
@@ -728,8 +711,14 @@ export default function WorkoutTemplatesPage() {
               </div>
             </div>
           </div>
-        )}
-      </DndContext>
+        </DndContext>
+      )}
+
+      <ImportWorkoutTemplatesModal
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onImported={handleImported}
+      />
 
       {/* Details modal */}
       <CrudModal
@@ -761,6 +750,16 @@ export default function WorkoutTemplatesPage() {
               <span style={detailLabelStyle}>{t('details_status')}</span>
               <div style={{ marginTop: 4 }}>
                 <StatusBadge status={details.status} label={tStatus(details.status)} />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <span style={detailLabelStyle}>{t('col_blocks')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{toNumBlocks(details)}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('col_source')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{templateSource(details) === 'system' ? t('source_system') : t('source_custom')}</p>
               </div>
             </div>
             <div>
