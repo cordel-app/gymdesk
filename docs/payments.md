@@ -133,6 +133,20 @@ the proration a line applied beside its name (*Prorated: 9 of 30 days*, `linePro
 `domain/checkoutSummary.ts`, the engine's `prorated_days` / `period_days`), never on a full period
 nor on a Membership Fee whose split charge already states its prorated stretch.
 
+**How an Initial Payment line reads its discounts (#3360).** A line's *before discounts* is its
+regular price for the stretch it charges (`lineRegularTotal()`, `domain/checkoutSummary.ts`): the
+engine's `regular_price` (unit × quantity) scaled by the line's proration, so a 7-of-30-days line
+is measured against 7/30 of its price and the proration is never reported as a discount (the
+Summary's *Total discounts* and the review's `financial_summary.initial_discounts` both use it). A
+recurring Product line with a direct discount states its **list** price as its regular price and the
+direct discount as a reason of its own (`manual_adjustment`, `direct_discount`): the loaders hand
+the engine the line's `list_price` and `direct_discount_percent` beside the frozen `unit_price`
+(`SimulationService.listUnitPrice` / `directDiscountPercent`), and the charge is still computed from
+the frozen unit price exactly as before, so no amount moves. A replacement version that only grows a
+line's quantity scales that line's regular price with its charge, so both describe the added units.
+Example: two €30 lockers, a 50% Promotion and a 10% direct discount, 7 of 30 days: €14.00 before
+discounts, −€7.70, €6.30.
+
 **Waiving one Initial Payment line (#3284 stage 2, migration 474).** While the cart is In Cart,
 staff may waive one line of its Initial Payment (`POST /product-sets/:id/initial-payment/waive`,
 PAYMENTS write, body `{ line_key }`) and revert it (`…/revert-waive`). Each line carries a stable

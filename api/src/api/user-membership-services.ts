@@ -75,6 +75,8 @@ const DISPLAY_SELECT = `
          ums.product_name AS snapshot_item_name,
          ums.billing_frequency AS snapshot_billing_frequency,
          ums.unit_price AS snapshot_unit_price,
+         ums.list_price AS snapshot_list_price,
+         ums.direct_discount_percent AS snapshot_direct_discount_percent,
          ums.currency AS snapshot_currency,
          sch.anchor_date AS schedule_anchor,
          ${LIVE_PRODUCT_COLUMNS}
@@ -225,6 +227,10 @@ export async function loadServicesForSimulation(
       name: priced.item_name,
       billingFrequency: priced.billing_frequency,
       unitPrice: priced.unit_price,
+      // #3360 — the direct discount frozen on a snapshot's unit price, stated beside it.
+      listUnitPrice: shaped.snapshot && row.snapshot_list_price != null ? Number(row.snapshot_list_price) : null,
+      directDiscountPercent: shaped.snapshot && row.snapshot_direct_discount_percent != null
+        ? Number(row.snapshot_direct_discount_percent) : null,
       quantity: shaped.quantity,
       startsOn: shaped.starts_at,
       endsOn: shaped.ends_at,

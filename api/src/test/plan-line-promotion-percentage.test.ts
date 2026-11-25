@@ -77,9 +77,11 @@ describe('a 50% Promotion on a Plan-included Product (#3282)', () => {
 
   it('the Initial Payment charges the prorated stretch at 50%, named as the 50% Promotion', () => {
     const line = s.review.initial_payment.lines.find((l: any) => l.name === s.lockerName);
-    expect(line).toMatchObject({ quantity: 5, line_total: 75, treatment_action: 'percentage_discount', treatment_value: 50 });
+    expect(line).toMatchObject({ quantity: 5, unit_price: 15, treatment_action: 'percentage_discount', treatment_value: 50 });
     expect(line.promotion_name).toMatch(/^PLP-Promo-/);
     const { days, period_days } = line.proration;
+    // #3360: the line before discounts covers the prorated stretch too, so only the 50% is a discount.
+    expect(line.line_total).toBe(round2(75 * days / period_days));
     expect(line.amount).toBe(round2(37.5 * days / period_days));
     expect(line.amount).toBeGreaterThan(0);
   });
