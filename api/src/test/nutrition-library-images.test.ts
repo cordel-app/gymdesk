@@ -2,8 +2,8 @@
 // `POST /nutrition-library/:id/image`, the per-row route that replaced
 // `POST /storage/uploads/nutrition-image`.
 //
-// The route exists because the key carries the food's own id and name
-// (`<prefix>/nutrition/<food_id>-<name>.<ext>`), which a generic upload route
+// The route exists because the key carries the food's own id and slug
+// (`<prefix>/nutrition/<food_id>-<slug>.webp`, #3350), which a generic upload route
 // that never sees the row cannot build. Separate from nutrition-library.test.ts
 // for the reason base-nutrition-images.test.ts is separate from
 // platform-nutrition-library.test.ts: this file mocks @aws-sdk/client-s3 and
@@ -57,6 +57,9 @@ function sentKeys(type: 'put' | 'delete'): string[] {
 }
 
 const FOOD_NAME = 'Test Gym Image Chicken Breast';
+// The persisted slug the key is built from (#3350): deliberately not what the
+// name would sanitize to, so a key built from the name cannot pass.
+const FOOD_SLUG = 'gym-image-chicken';
 const SYSTEM_FOOD_NAME = 'Test Gym Image System Food';
 
 let gymId: string;
@@ -88,8 +91,8 @@ beforeAll(async () => {
   await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [prefix, gymId]);
 
   const own = await db.query(
-    "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, ?, 'active')",
-    [gymId, FOOD_NAME],
+    "INSERT INTO nutrition_library_items (gym_id, name, slug, status) VALUES (?, ?, ?, 'active')",
+    [gymId, FOOD_NAME, FOOD_SLUG],
   );
   foodId = own.insertId as number;
   const system = await db.query(
@@ -181,11 +184,11 @@ describe('POST /nutrition-library/:id/image — tenant isolation', () => {
 // ─── Happy path: the #1035 key shape ─────────────────────────────────────────
 
 describe('POST /nutrition-library/:id/image — the stored key', () => {
-  it('stores a 1080 WebP master and a 256 thumbnail at <prefix>/nutrition/<food_id>-<name>.webp and persists the master URL', async () => {
+  it('stores a 1080 WebP master and a 256 thumbnail at <prefix>/nutrition/<food_id>-<slug>.webp and persists the master URL', async () => {
     const res = await upload(gymId, foodId);
     expect(res.status).toBe(200);
 
-    const key = `${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`;
+    const key = `${prefix}/nutrition/${foodId}-${FOOD_SLUG}.webp`;
     expect(sentKeys('put')).toContain(key);
     expect(sentKeys('put')).toContain(key.replace(/\.webp$/, '-thumbnail.webp'));
     const bodyOf = (k: string) => sentCommands('put').find((c: any) => c.input.Key === k).input.Body;
@@ -221,7 +224,7 @@ describe('POST /nutrition-library/:id/image — the stored key', () => {
     const jpeg = await sharp({ create: { width: 40, height: 20, channels: 3, background: { r: 1, g: 2, b: 3 } } }).jpeg().toBuffer();
     const res = await upload(gymId, foodId, jpeg, 'image/jpeg');
     expect(res.status).toBe(200);
-    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`);
+    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-${FOOD_SLUG}.webp`);
   });
 
   it('returns the whole item, so the list row the page holds stays current', async () => {
@@ -245,15 +248,28 @@ describe('POST /nutrition-library/:id/image — replacing', () => {
     expect(sentCommands('delete')).toHaveLength(0);
   });
 
-  it('sweeps the old object when the food was renamed under it', async () => {
+  it('keeps the key and deletes nothing when the food is renamed (#3350)', async () => {
     await upload(gymId, foodId);
-    const staleKey = `${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`;
+    const stored = await imageUrlOf(foodId);
     await db.query('UPDATE nutrition_library_items SET name = ? WHERE id = ?', ['Test Gym Image Turkey Breast', foodId]);
     sendMock.mockClear();
 
     const res = await upload(gymId, foodId);
     expect(res.status).toBe(200);
-    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-Test-Gym-Image-Turkey-Breast.webp`);
+    expect(await imageUrlOf(foodId)).toBe(stored);
+    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-${FOOD_SLUG}.webp`);
+    for (const key of sentKeys('put')) expect(key).not.toContain('Turkey');
+    expect(sentCommands('delete')).toHaveLength(0);
+  });
+
+  it('moves an image stored under a pre-#3350 name key to the slug key and sweeps the old pair', async () => {
+    const staleKey = `${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`;
+    await db.query('UPDATE nutrition_library_items SET image_url = ? WHERE id = ?', [`${R2_ENDPOINT}/${R2_BUCKET}/${staleKey}`, foodId]);
+    sendMock.mockClear();
+
+    const res = await upload(gymId, foodId);
+    expect(res.status).toBe(200);
+    expect(res.body.image_url).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/${prefix}/nutrition/${foodId}-${FOOD_SLUG}.webp`);
     expect(sentKeys('delete').sort()).toEqual([staleKey, staleKey.replace(/\.webp$/, '-thumbnail.webp')].sort());
   });
 
@@ -296,8 +312,9 @@ describe('POST /nutrition-library/:id/image — refusals', () => {
 
   it('keeps the stored image and removes the new master when the thumbnail upload fails', async () => {
     await upload(gymId, foodId);
+    const legacyUrl = `${R2_ENDPOINT}/${R2_BUCKET}/${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`;
+    await db.query('UPDATE nutrition_library_items SET image_url = ? WHERE id = ?', [legacyUrl, foodId]);
     const stored = await imageUrlOf(foodId);
-    await db.query('UPDATE nutrition_library_items SET name = ? WHERE id = ?', ['Test Gym Image Turkey Breast', foodId]);
     sendMock.mockReset();
     sendMock.mockImplementation((command: any) => (
       command?.__type === 'put' && String(command.input.Key).endsWith('-thumbnail.webp')
@@ -308,7 +325,7 @@ describe('POST /nutrition-library/:id/image — refusals', () => {
     const res = await upload(gymId, foodId);
     expect(res.status).toBe(502);
     expect(await imageUrlOf(foodId)).toBe(stored);
-    expect(sentKeys('delete')).toEqual([`${prefix}/nutrition/${foodId}-Test-Gym-Image-Turkey-Breast.webp`]);
+    expect(sentKeys('delete')).toEqual([`${prefix}/nutrition/${foodId}-${FOOD_SLUG}.webp`]);
   });
 
   it('returns 400 for an empty body', async () => {
