@@ -19,7 +19,7 @@ import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
 import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
 import { plansOnDate } from '@/lib/trainingPlanDates';
 import {
-  EMPTY_PROGRESS, TrainingProgress, deviceToday, stepWeek, swipeWeekDelta, weekDates, weekStart, weekdayOf,
+  EMPTY_PROGRESS, TrainingProgress, deviceToday, monthCardLabel, stepWeek, swipeWeekDelta, weekDates, weekStart, weekdayOf,
 } from '@/lib/trainingWeek';
 import { resultUnitKey, resultValueForPayload } from '@/lib/blockResult';
 import {
@@ -100,7 +100,8 @@ export default function TrainingPage() {
   const [today, setToday] = useState<string>(deviceToday());
   const [selectedDate, setSelectedDate] = useState<string>(deviceToday());
   const [progress, setProgress] = useState<TrainingProgress>(EMPTY_PROGRESS);
-  // #1879: the day and week cards follow the selected date; only the month card stays today's.
+  // #1879: the day and week cards follow the selected date; #3401: so does the month card,
+  // reading today's month from `summary`.
   const [summary, setSummary] = useState<TrainingProgress>(EMPTY_PROGRESS);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const selectedWeekday = weekdayOf(selectedDate);
@@ -109,6 +110,11 @@ export default function TrainingPage() {
   const weekLabel = weekStart(selectedDate) === weekStart(today)
     ? t('training.progress_week')
     : t('training.progress_week_of', { date: ddmm(weekStart(selectedDate)) });
+  // #3401: the month card names the selected date's month — *This Month (MM/YYYY)*
+  // for today's month, *MM/YYYY* for another — and reports that month's figures.
+  const month = monthCardLabel(selectedDate, today);
+  const monthLabel = month.current ? t('training.progress_this_month', { month: month.mmyyyy }) : month.mmyyyy;
+  const monthCounts = month.current ? summary.month : progress.month;
   const [expandedExercise, setExpandedExercise] = useState<number | null>(null);
   const [detailsExercise, setDetailsExercise] = useState<BlockExercise | null>(null);
   const [videoExercise, setVideoExercise] = useState<BlockExercise | null>(null);
@@ -267,7 +273,7 @@ export default function TrainingPage() {
       <TrainingSummaryCards cards={[
         { label: dayLabel, percent: progress.day.percent, detail: `${progress.day.completed}/${progress.day.total}` },
         { label: weekLabel, percent: progress.week.percent, detail: `${progress.week.completed}/${progress.week.total}` },
-        { label: t('training.progress_month'), percent: summary.month.percent, detail: `${summary.month.completed}/${summary.month.total}` },
+        { label: monthLabel, percent: monthCounts.percent, detail: `${monthCounts.completed}/${monthCounts.total}` },
       ]} />
 
       <div style={styles.weekCard}>

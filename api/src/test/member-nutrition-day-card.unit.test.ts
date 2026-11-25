@@ -52,3 +52,15 @@ describe('My Nutrition month card (#3331)', () => {
     expect(page).toMatch(/label: monthLabel, percent: monthCounts\.percent/);
   });
 });
+
+// #3401 — My Training's month card follows the same rule.
+const trainingPage = readFileSync(join(__dirname, '../../../apps/member/src/app/[locale]/training/page.tsx'), 'utf8');
+describe('My Training month card (#3401)', () => {
+  it('labels the card from the selected date and reports that month', () => {
+    expect(trainingPage).toMatch(/monthCardLabel\(selectedDate, today\)/);
+    expect(trainingPage).toMatch(/t\('training\.progress_this_month', \{ month: month\.mmyyyy \}\) : month\.mmyyyy/);
+    expect(trainingPage).toMatch(/month\.current \? summary\.month : progress\.month/);
+    expect(trainingPage).toMatch(/label: monthLabel, percent: monthCounts\.percent/);
+    expect(trainingPage).not.toMatch(/training\.progress_month'/);
+  });
+});

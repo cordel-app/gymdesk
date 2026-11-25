@@ -122,9 +122,9 @@ export function dayCardLabel(selectedDate: string, today: string): DayCardLabel 
 }
 
 /**
- * #3331 — the month My Nutrition's third summary card reports: the selected
- * date's calendar month as `MM/YYYY`, and whether it is today's month (the page
- * then reads *This Month (MM/YYYY)*).
+ * #3331 / #3401 — the month My Nutrition's and My Training's third summary card
+ * reports: the selected date's calendar month as `MM/YYYY`, and whether it is
+ * today's month (the page then reads *This Month (MM/YYYY)*).
  */
 export function monthCardLabel(selectedDate: string, today: string): { current: boolean; mmyyyy: string } {
   return {
