@@ -10,7 +10,7 @@ import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
 import { gymToday } from '../domain/workoutProgress';
-import { baseNutritionPlanName, nextDay, versionedNutritionPlanName } from '../domain/nutritionPlanVersioning';
+import { baseNutritionPlanName, nextDay, nutritionPlanEditMode, versionedNutritionPlanName } from '../domain/nutritionPlanVersioning';
 import { MEMBER_PLAN_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const memberNutritionPlansRouter = Router();
@@ -37,15 +37,38 @@ const PLAN_SELECT = `
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
-/** Loads the plan and writes a 404/403 response itself when it can't be mutated; returns null in that case. */
+/** The gym's own date (YYYY-MM-DD), the day #3405's edit mode is decided against. */
+async function gymTodayFor(gymId: string): Promise<string> {
+  const { rows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+  return gymToday(new Date(), rows[0]?.time_zone ?? 'Europe/Madrid');
+}
+
+/** #3405: every plan row a read answers carries how it is edited, so the Admin asks no rule of its own. */
+function withEditMode<T extends { status: string; start_date: any }>(rows: T[], today: string): (T & { edit_mode: string })[] {
+  return rows.map((row) => ({ ...row, edit_mode: nutritionPlanEditMode(row, today) }));
+}
+
+/**
+ * Loads the plan and writes a 404/403/409 response itself when it can't be mutated; returns null in that case.
+ * #3405: an Active plan effective before today is an immutable snapshot — its content is changed only
+ * through `edit-draft` + `publish-version`, so a direct write answers `409 edit_as_version`.
+ */
 async function loadActivePlan(res: any, id: string, gymId: string) {
   const { rows } = await db.query(
     "SELECT * FROM member_nutrition_plans WHERE id = ? AND gym_id = ? AND status != 'deleted'",
     [id, gymId],
   );
   if (rows.length === 0) { res.status(404).json({ error: 'Member nutrition plan not found' }); return null; }
-  if (rows[0].status !== 'active' && rows[0].status !== 'draft') {
+  const mode = nutritionPlanEditMode(rows[0], await gymTodayFor(gymId));
+  if (mode === 'read_only') {
     res.status(403).json({ error: 'This nutrition plan is read-only and cannot be modified.' });
+    return null;
+  }
+  if (mode === 'versioned') {
+    res.status(409).json({
+      code: 'edit_as_version',
+      error: 'This nutrition plan is active and has been in effect before today: edit it as a new version.',
+    });
     return null;
   }
   return rows[0];
@@ -202,7 +225,7 @@ memberNutritionPlansRouter.get('/', async (req, res, next) => {
       `${PLAN_SELECT} WHERE ${where.join(' AND ')} ORDER BY mnp.created_at DESC`,
       params,
     );
-    res.json(rows);
+    res.json(withEditMode(rows, await gymTodayFor(gymId)));
   } catch (err) { next(err); }
 });
 
@@ -216,7 +239,7 @@ memberNutritionPlansRouter.get('/:id', async (req, res, next) => {
       [req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Member nutrition plan not found' });
-    res.json(rows[0]);
+    res.json(withEditMode(rows, await gymTodayFor(gymId))[0]);
   } catch (err) { next(err); }
 });
 
@@ -262,9 +285,13 @@ memberNutritionPlansRouter.post('/:id/complete', requireModuleWrite('NUTRITION')
   const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
-    const plan = await loadActivePlan(res, id, gymId);
-    if (!plan) return;
-    if (plan.status !== 'active') return res.status(409).json({ error: 'Only an active nutrition plan can be completed' });
+    const { rows: planRows } = await db.query(
+      "SELECT status FROM member_nutrition_plans WHERE id = ? AND gym_id = ? AND status != 'deleted'", [id, gymId]);
+    if (planRows.length === 0) return res.status(404).json({ error: 'Member nutrition plan not found' });
+    if (planRows[0].status !== 'active' && planRows[0].status !== 'draft') {
+      return res.status(403).json({ error: 'This nutrition plan is read-only and cannot be modified.' });
+    }
+    if (planRows[0].status !== 'active') return res.status(409).json({ error: 'Only an active nutrition plan can be completed' });
     await db.query(
       "UPDATE member_nutrition_plans SET status = 'completed', end_date = CURRENT_DATE(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?",
       [actor, id, gymId],
@@ -389,6 +416,10 @@ memberNutritionPlansRouter.post('/:id/edit-draft', requireModuleWrite('NUTRITION
     if (srcRows.length === 0) return res.status(404).json({ error: 'Member nutrition plan not found' });
     const src = srcRows[0];
     if (src.status !== 'active') return res.status(409).json({ error: 'Only an active nutrition plan can be edited as a new version' });
+    // #3405: a plan not yet effective before today is edited in place — no Draft copy.
+    if (nutritionPlanEditMode(src, await gymTodayFor(gymId)) === 'in_place') {
+      return res.status(409).json({ code: 'edit_in_place', error: 'This nutrition plan started today or later: edit it directly.' });
+    }
 
     let created = false;
     const draftId: number = await db.transaction(async (tx) => {

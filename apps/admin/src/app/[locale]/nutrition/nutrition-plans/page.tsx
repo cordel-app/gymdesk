@@ -36,6 +36,8 @@ interface MemberNutritionPlan {
   template_id: number | null;
   status: 'active' | 'completed' | 'deleted' | 'draft';
   draft_of_plan_id?: number | null;
+  /** #3405: the API's answer — `versioned` edits a Draft copy, `in_place` the plan itself. */
+  edit_mode?: 'in_place' | 'versioned' | 'read_only';
   start_date: string | null;
   end_date: string | null;
   day_count: number;
@@ -209,9 +211,11 @@ export default function NutritionPlansPage() {
     }
   }
 
-  // #1970: Edit on an active plan works on a Draft copy; the original is untouched until Save.
+  // #1970/#3405: Edit on an active plan effective before today works on a Draft copy (created or
+  // resumed); the original is untouched until Save Changes is confirmed. A Draft, or an active plan
+  // that started today or later, is edited in place.
   async function beginEdit(plan: MemberNutritionPlan) {
-    if (plan.status !== 'active') { startEdit(plan); return; }
+    if (plan.edit_mode !== 'versioned') { startEdit(plan); return; }
     try {
       const draft = await apiFetch<MemberNutritionPlan>(`/member-nutrition-plans/${plan.id}/edit-draft`, { method: 'POST' });
       await load();
@@ -233,13 +237,8 @@ export default function NutritionPlansPage() {
   }, [rows, loading, canWrite]);
 
   function cancelEdit() {
-    // #1970: Cancel on a version draft discards it; the original stays as it was.
-    const draftRow = rows.find((r) => r.id === editingId);
-    if (draftRow?.draft_of_plan_id) {
-      apiFetch(`/member-nutrition-plans/${draftRow.id}`, { method: 'DELETE' })
-        .then(() => { load(); })
-        .catch((err: any) => toast(err.message ?? t('nutrition_plans.error_generic')));
-    }
+    // #3405: Cancel leaves a version Draft as it is, so the next Edit resumes it (it may stay a
+    // Draft for days); ⋮ → Delete on the Draft discards it. The active plan is never touched.
     setEditingId(null);
     setEditForm(emptyEditForm);
     setEditError(null);
@@ -519,10 +518,12 @@ function PlanCard({
   const gymFmt = useGymFormatSettings();
   const dates = assignedPlanDateTexts(plan, gymFmt, t('nutrition_plans.open_ended'));
   const isActive = plan.status === 'active';
-  const canEditPlan = canWrite && (isActive || plan.status === 'draft');
+  // #3405: the plan's structure is read-only until Edit is pressed, and an active snapshot
+  // (`versioned`) is never edited itself — its Draft copy is.
+  const canEditPlan = canWrite && editing && plan.edit_mode === 'in_place';
   const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
-    ...(isActive ? [{ kind: 'edit' as const, label: t('nutrition_plans.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
+    ...(isActive || plan.status === 'draft' ? [{ kind: 'edit' as const, label: t('nutrition_plans.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
     { kind: 'details' as const, label: t('nutrition_plans.details'), onClick: onDetails },
     { label: t('nutrition_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
     ...(isActive ? [{ label: t('nutrition_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
