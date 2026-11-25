@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import { discountEntries, type LineReasonLike } from '../../members/productsWorkflowView';
+import { LineReasonText } from '../../members/LineReasonText';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -330,16 +331,7 @@ export function ExpandedRow({
                           // #3284 — the treatments Save & Pay persisted on the line, typed as the Initial Payment showed them.
                           .map((e, k) => (
                             <span key={k} data-line-reason={e.typeKey ?? ''} style={{ color: '#6b7280', display: 'block', fontSize: 12 }}>
-                              {e.key === 'checkout_reason_initial_payment_waive' ? (
-                                <>
-                                  <strong>{t(`members.${e.key}`).split(':')[0]}</strong>:{t(`members.${e.key}`).split(':').slice(1).join(':')}
-                                </>
-                              ) : (
-                                <>
-                                  {e.typeKey && <strong>{t(`members.${e.typeKey}`)}{e.typeKey === 'checkout_reason_type_manual_adjustment' ? ' ' : ': '}</strong>}
-                                  {e.key ? t(`members.${e.key}`, e.values as any) : e.text}
-                                </>
-                              )}
+                              <LineReasonText entry={e} translate={(k, v) => t(`members.${k}`, v as any)} />
                             </span>
                           ))}
                     </td>

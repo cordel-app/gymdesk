@@ -24,6 +24,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import { lineSourceLabelKey } from '@/lib/billingEventLineSource';
 import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
+import { LineReasonText } from './LineReasonText';
 import { compactInitialPaymentLabel, contractedMembersText, discountEntries, initialPaymentLineAction, lineReducedToZero, splitContracted } from './productsWorkflowView';
 import { secondaryBtnSmall } from '@/components/formChrome';
 
@@ -170,19 +171,10 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                 <td style={tdNum} data-line-total>{money(l.line_total)}</td>
                 <td style={td}>
                   {l.discount > 0 ? `−${money(l.discount)}` : (entries.length === 0 ? '—' : null)}
-                  {/* #3284 — every treatment, each with its type (Benefit / Discount / Manual adjustment). */}
+                  {/* #3284 — every treatment: a bold label (Benefit / Promotion / Manual adjustment / Initial payment) and its detail. */}
                   {entries.map((e, k) => (
                     <span key={k} data-line-reason={e.typeKey ?? ''} style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
-                      {e.key === 'checkout_reason_initial_payment_waive' ? (
-                        <>
-                          <strong>{t(e.key as any).split(':')[0]}</strong>:{t(e.key as any).split(':').slice(1).join(':')}
-                        </>
-                      ) : (
-                        <>
-                          {e.typeKey && <strong>{t(e.typeKey as any)}{e.typeKey === 'checkout_reason_type_manual_adjustment' ? ' ' : ': '}</strong>}
-                          {e.key ? t(e.key as any, e.values as any) : e.text}
-                        </>
-                      )}
+                      <LineReasonText entry={e} translate={(k, v) => t(k as any, v as any)} />
                     </span>
                   ))}
                 </td>
