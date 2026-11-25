@@ -25,12 +25,12 @@ describe('assigned training plan versions (#1969)', () => {
     const m = await db.query(`INSERT INTO members (gym_id, name, email) VALUES (?, 'V Member', ?)`, [gymId, `v-${Date.now()}@test.com`]);
     memberId = m.insertId;
     const ins = await db.query(
-      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Strength', 'active', CURRENT_DATE)`,
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Strength', 'active', CURRENT_DATE - INTERVAL 10 DAY)`,
       [gymId, memberId],
     );
     planId = ins.insertId;
     await db.query(
-      `INSERT INTO member_training_plans (gym_id, member_id, training_plan_id, name, status, valid_from) VALUES (?, ?, ?, 'Strength', 'active', CURRENT_DATE)`,
+      `INSERT INTO member_training_plans (gym_id, member_id, training_plan_id, name, status, valid_from) VALUES (?, ?, ?, 'Strength', 'active', CURRENT_DATE - INTERVAL 10 DAY)`,
       [gymId, memberId, planId],
     );
     const w = await auth(request.post(`${base()}/${planId}/workouts`)).send({ name: 'Day 1' });
@@ -91,5 +91,59 @@ describe('assigned training plan versions (#1969)', () => {
     expect(orig.body.name).toMatch(/^Strength \[\d{4}-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}\]$/);
     expect((await auth(request.post(`${base()}/${draftId}/publish-version`))).status).toBe(409);
     expect((await auth(request.post(`${base()}/${planId}/edit-draft`))).status).toBe(409);
+  });
+});
+
+describe('same-day edit of an assigned training plan (#3409)', () => {
+  let gymId: string;
+  let memberId: number;
+  const base = () => `/members/${memberId}/training-plans`;
+  const auth = (r: any) => r.set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Same Day Edit Gym');
+    await createTestMembership(gymId, 'admin');
+    const m = await db.query(`INSERT INTO members (gym_id, name, email) VALUES (?, 'S Member', ?)`, [gymId, `s-${Date.now()}@test.com`]);
+    memberId = m.insertId;
+  });
+
+  async function activePlan(startDate: string): Promise<number> {
+    const ins = await db.query(
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date) VALUES (?, ?, 'Today Plan', 'active', ?)`,
+      [gymId, memberId, startDate],
+    );
+    return ins.insertId;
+  }
+
+  it('edits a plan that started on the gym\'s today in place: no draft, nothing ended or renamed', async () => {
+    const { rows: g } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+    const today = gymToday(new Date(), g[0].time_zone ?? 'Europe/Madrid');
+    const planId = await activePlan(today);
+    const res = await auth(request.post(`${base()}/${planId}/edit-draft`));
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(planId);
+    expect(res.body.status).toBe('active');
+    expect(res.body.draft_of_plan_id ?? null).toBeNull();
+    const { rows: drafts } = await db.query('SELECT id FROM training_plans WHERE draft_of_plan_id = ?', [planId]);
+    expect(drafts).toHaveLength(0);
+
+    // Saving goes through the ordinary PUT and keeps the plan the same active version.
+    const put = await auth(request.put(`${base()}/${planId}`)).send({ name: 'Today Plan', description: 'tweaked', status: 'active' });
+    expect(put.status).toBe(200);
+    const { rows } = await db.query(
+      "SELECT status, name, description, end_date, DATE_FORMAT(start_date, '%Y-%m-%d') AS s FROM training_plans WHERE id = ?",
+      [planId],
+    );
+    expect(rows[0]).toMatchObject({ status: 'active', name: 'Today Plan', description: 'tweaked', end_date: null, s: today });
+  });
+
+  it('keeps the draft workflow for a plan that started yesterday in the gym\'s time zone', async () => {
+    const { rows: g } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+    const yesterday = previousDay(gymToday(new Date(), g[0].time_zone ?? 'Europe/Madrid'));
+    const planId = await activePlan(yesterday);
+    const res = await auth(request.post(`${base()}/${planId}/edit-draft`));
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('draft');
+    expect(res.body.draft_of_plan_id).toBe(planId);
   });
 });
