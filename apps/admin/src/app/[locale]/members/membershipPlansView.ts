@@ -14,6 +14,8 @@ const IN_FLIGHT = new Set(['in_cart', 'pending_payment']);
 const CANCELS_AT_PERIOD_END = 'active_cancel_at_period_end';
 /** #3114: the same plan, marked for reactivation in the open In Cart; it still runs to its end date. */
 const PENDING_REACTIVATION = 'to_be_reactivated';
+/** #3358: the same plan, marked in the open In Cart to be cancelled today; it still runs to today. */
+const PENDING_IMMEDIATE_CANCELLATION = 'to_be_canceled_immediately';
 
 export const isInFlightPlan = (p: Pick<MemberPlanRow, 'status'>): boolean => IN_FLIGHT.has(p.status);
 
@@ -32,7 +34,7 @@ export function visiblePlans(plans: readonly MemberPlanRow[]): VisiblePlans {
   // #2659 stage 3: a plan cancelling at its period end is carried by the Draft (for entitlement
   // only — never billed), so it stays listed beside the in-flight version until its end date.
   // An Active plan is still replaced in the view by the Draft, as #1538 decides.
-  const cancelling = plans.filter((p) => (p.status === CANCELS_AT_PERIOD_END || p.status === PENDING_REACTIVATION) && p.is_current && !isInFlightPlan(p));
+  const cancelling = plans.filter((p) => (p.status === CANCELS_AT_PERIOD_END || p.status === PENDING_REACTIVATION || p.status === PENDING_IMMEDIATE_CANCELLATION) && p.is_current && !isInFlightPlan(p));
   // #2742: a version awaiting its first payment is listed in the Active category (its own
   // `Pending Payment` badge tells it apart); only a Draft takes the view out of it.
   if (inFlight.length > 0) {
@@ -77,6 +79,21 @@ export function planReactivationAction(
   if (p.assignment_relationship === 'linked') return null;
   if (p.status === CANCELS_AT_PERIOD_END && p.is_current) return 'mark';
   if (p.status === PENDING_REACTIVATION) return 'unmark';
+  return null;
+}
+
+/**
+ * #3358 stage 1 — the Cancel Immediately item a plan row's `⋮` offers: `mark` on the Member's own
+ * plan cancelling at its period end and still current (it is put in the open In Cart as
+ * `to_be_canceled_immediately`, End Date today), `unmark` on one already marked, nothing otherwise.
+ * A Linked plan is read-only (#1191).
+ */
+export function planImmediateCancellationAction(
+  p: Pick<MemberPlanRow, 'status' | 'assignment_relationship'> & { is_current?: boolean },
+): 'mark' | 'unmark' | null {
+  if (p.assignment_relationship === 'linked') return null;
+  if (p.status === CANCELS_AT_PERIOD_END && p.is_current) return 'mark';
+  if (p.status === PENDING_IMMEDIATE_CANCELLATION) return 'unmark';
   return null;
 }
 

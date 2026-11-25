@@ -26,6 +26,7 @@ import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { markPlanForCancellation, unmarkPlanForCancellation } from './plan-pending-cancellation';
 import { markPlanForReactivation, unmarkPlanForReactivation } from './plan-pending-reactivation';
+import { markPlanForImmediateCancellation, unmarkPlanForImmediateCancellation } from './plan-pending-immediate-cancellation';
 import { handleDupEntry } from '../infra/db-helpers';
 import { resolveRequestActor } from '../domain/auditActor';
 import { cancelPendingProductSet, reconcileSetPayments } from './product-set-cancellation';
@@ -131,6 +132,7 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
   to_be_canceled: [],
   [CANCELS_AT_PERIOD_END_STATUS]: [],
   to_be_reactivated: [],
+  to_be_canceled_immediately: [],
   cancelled: [],
   superseded: [],
   expired: [],
@@ -236,6 +238,7 @@ export const LIFECYCLE_STATUS_SQL = `
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' AND um.ends_at IS NOT NULL AND um.ends_at >= UTC_DATE() THEN 'cancels_on_end_date'
     WHEN um.status = '${CANCELS_AT_PERIOD_END_STATUS}' THEN 'cancelled'
     WHEN um.status = 'to_be_reactivated' THEN 'to_be_reactivated'
+    WHEN um.status = 'to_be_canceled_immediately' THEN 'to_be_canceled_immediately'
     WHEN um.status = 'to_be_canceled' THEN 'to_be_canceled'
     WHEN um.status IN ('in_cart', 'pending_payment', 'paused', 'cancelled', 'expired', 'superseded') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
@@ -1796,6 +1799,43 @@ userMembershipsRouter.post('/:id/unmark-reactivate', requireRole('admin'), async
   if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Membership not found' });
   try {
     const n = await db.transaction((tx) => unmarkPlanForReactivation(tx, {
+      gymId, userMembershipId: id, actor: { name: resolveRequestActor(getTenantContext(req)) },
+    }));
+    if (n === 0) return res.status(409).json({ error: 'not_marked' });
+    return res.json({ status: 'active_cancel_at_period_end' });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #3358 stage 1: Cancel Immediately. Marks a plan cancelling at its period end to be cancelled today
+ * in the member's open In Cart (`to_be_canceled_immediately`, End Date today, opening an In Cart when
+ * there is none) and un-marks it again (the previous End Date back). Nothing is cancelled or audited
+ * until the cart is committed (the payment's confirmation, or a free activation); discarding the cart
+ * puts the plan back.
+ */
+userMembershipsRouter.post('/:id/mark-cancel-immediately', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Membership not found' });
+  try {
+    const out = await db.transaction((tx) => markPlanForImmediateCancellation(tx, {
+      gymId, userMembershipId: id, today: new Date().toISOString().slice(0, 10),
+      actor: { name: resolveRequestActor(getTenantContext(req)) },
+    }));
+    if (out.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (out.kind === 'not_cancelling') return res.status(409).json({ error: 'not_cancelling', status: out.status });
+    if (out.kind === 'in_flight') return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
+    if (out.kind === 'ok') return res.json({ status: 'to_be_canceled_immediately', product_set_id: out.productSetId });
+    return res.json({ status: 'to_be_canceled_immediately' });
+  } catch (err) { next(err); }
+});
+
+userMembershipsRouter.post('/:id/unmark-cancel-immediately', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Membership not found' });
+  try {
+    const n = await db.transaction((tx) => unmarkPlanForImmediateCancellation(tx, {
       gymId, userMembershipId: id, actor: { name: resolveRequestActor(getTenantContext(req)) },
     }));
     if (n === 0) return res.status(409).json({ error: 'not_marked' });

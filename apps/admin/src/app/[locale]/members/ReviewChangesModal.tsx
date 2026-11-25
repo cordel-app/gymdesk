@@ -30,6 +30,8 @@ interface Review extends ReviewLike {
   plans_to_cancel?: Array<{ user_membership_id: number; plan_name: string | null }>;
   /** #3114: plans marked for reactivation; the commit reactivates them (no extra initial charge). */
   plans_to_reactivate?: Array<{ user_membership_id: number; plan_name: string | null }>;
+  /** #3358: plans cancelled today instead of at their period end. */
+  plans_to_cancel_immediately?: Array<{ user_membership_id: number; plan_name: string | null }>;
   immediate_lines: Array<{
     item_name: string | null; quantity: number; amount: number;
     regular_unit_price?: number | null; promotion_name?: string | null;
@@ -172,6 +174,7 @@ export function ReviewChangesModal({
             const { contracted, cancelled } = splitChanges(review.changes);
             const planCancels = review.plans_to_cancel ?? [];
             const planReactivations = review.plans_to_reactivate ?? [];
+            const planCancelsNow = review.plans_to_cancel_immediately ?? [];
             const list = (items: ChangeLike[]) => (
               <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }}>
                 {items.map((c, i) => {
@@ -180,7 +183,7 @@ export function ReviewChangesModal({
                 })}
               </ul>
             );
-            if (review.changes.length === 0 && planCancels.length === 0 && planReactivations.length === 0) {
+            if (review.changes.length === 0 && planCancels.length === 0 && planReactivations.length === 0 && planCancelsNow.length === 0) {
               return (<><div style={cardSectionLabelStyle}>{t('review_changes')}</div><p style={cardHintStyle}>{t('review_no_changes')}</p></>);
             }
             return (
@@ -195,11 +198,18 @@ export function ReviewChangesModal({
                   </ul>
                 )}
                 <div style={cardSectionLabelStyle}>{t('review_cancelled')}</div>
-                {cancelled.length === 0 && planCancels.length === 0 ? <p style={cardHintStyle}>{t('review_cancelled_none')}</p> : list(cancelled)}
+                {cancelled.length === 0 && planCancels.length === 0 && planCancelsNow.length === 0 ? <p style={cardHintStyle}>{t('review_cancelled_none')}</p> : list(cancelled)}
                 {planCancels.length > 0 && (
                   <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }} data-review-plan-cancels>
                     {planCancels.map((p) => (
                       <li key={p.user_membership_id}>{t('review_plan_cancelled', { plan: p.plan_name ?? '—' })}</li>
+                    ))}
+                  </ul>
+                )}
+                {planCancelsNow.length > 0 && (
+                  <ul style={{ margin: '4px 0 12px', paddingLeft: 18, fontSize: 14 }} data-review-plan-cancels-now>
+                    {planCancelsNow.map((p) => (
+                      <li key={p.user_membership_id}>{t('review_plan_cancelled_immediately', { plan: p.plan_name ?? '—' })}</li>
                     ))}
                   </ul>
                 )}

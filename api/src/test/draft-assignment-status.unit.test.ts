@@ -75,7 +75,9 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(m435).toContain("move(knex, 'draft', 'in_cart')");
     // #3007 stage 2a: migration 442 adds `to_be_canceled`.
     expect(readFileSync(join(API_SRC, 'infra', 'migrations', '442_assignment_status_to_be_canceled.js'), 'utf8')).toContain("'to_be_canceled'");
-    const current = [...wideValues.map((v) => (v === 'draft' ? 'in_cart' : v)), 'to_be_canceled', 'to_be_reactivated'];
+    const current = [...wideValues.map((v) => (v === 'draft' ? 'in_cart' : v)), 'to_be_canceled', 'to_be_reactivated', 'to_be_canceled_immediately'];
+    // #3358: migration 485 adds `to_be_canceled_immediately` to both CHECKs.
+    expect(readFileSync(join(API_SRC, 'infra', 'migrations', '485_assignment_status_to_be_canceled_immediately.js'), 'utf8')).toContain("'to_be_canceled_immediately'");
 
     // …and the router's own list, now the domain declaration it aliases.
     expect(USER_MEMBERSHIPS).toContain('const STATUSES = ASSIGNMENT_STATUSES;');
@@ -200,7 +202,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
   it('is excluded from the Financials dashboard\'s assigned-plan count', () => {
     // #2125 M6b-8: the count reads the assignment's current plan snapshot (alias pa).
     expect(code(API_SRC, 'api', 'financials-dashboard.ts'))
-      .toContain("pa.status NOT IN ('in_cart', 'pending_payment', 'active_cancel_at_period_end', 'to_be_reactivated', 'cancelled', 'expired', 'superseded')");
+      .toContain("pa.status NOT IN ('in_cart', 'pending_payment', 'active_cancel_at_period_end', 'to_be_reactivated', 'to_be_canceled_immediately', 'cancelled', 'expired', 'superseded')");
   });
 });
 
@@ -226,7 +228,7 @@ describe('a Draft bills nothing and books nothing', () => {
     const loader = code(API_SRC, 'domain', 'memberProfessionalServices.ts');
     // #1196: the status filter is one constant — active, or cancelled but inside
     // its paid-through date — never a status a Draft or Pending Payment row has.
-    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(pa.status IN ('active', 'to_be_canceled') OR (pa.status IN ('active_cancel_at_period_end', 'to_be_reactivated', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))\"");
+    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(pa.status IN ('active', 'to_be_canceled') OR (pa.status IN ('active_cancel_at_period_end', 'to_be_reactivated', 'to_be_canceled_immediately', 'cancelled', 'superseded') AND pa.ends_at >= UTC_DATE()))\"");
     // #2125 M6b-4/M6b-19: every assignment leg reads the assignment's current plan snapshot. The
     // Additional Services leg keeps the wallet's paid-through predicate; the plan's own sessions and
     // a Promotion's take the access readers' one. A Draft or Pending Payment snapshot satisfies neither.
