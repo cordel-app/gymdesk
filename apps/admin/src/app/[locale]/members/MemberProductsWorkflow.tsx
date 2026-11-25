@@ -32,6 +32,7 @@ export function useDraftReview(current: ProductSetSummary | null, reloadKey: unk
         // #3114 stage 3 — a cart that only reactivates or cancels a plan is still a change.
         plans_to_reactivate: r.plans_to_reactivate ?? [], plans_to_cancel: r.plans_to_cancel ?? [],
         plans_to_cancel_immediately: r.plans_to_cancel_immediately ?? [],
+        lines_to_cancel_immediately: r.lines_to_cancel_immediately ?? [],
       }); })
       .catch(() => { if (!cancelled) setReview(null); });
     return () => { cancelled = true; };

@@ -774,7 +774,19 @@ async function reviewHandler(req: any, res: any, next: any) {
         WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_canceled_immediately' AND pa.anchor_plan_snapshot_id IS NOT NULL
         GROUP BY pa.anchor_plan_snapshot_id, mp.name`,
       [gymId, Number(set.owner_member_id)]);
+    // #3358 stage 2 — and the recurring Product lines this commit cancels today instead of at their
+    // End Date: the Draft's own copy of a line whose end date it brought forward (its source's is
+    // later). A plain removal is already a `removed` change of the diff.
+    const { rows: linesCancellingNow } = await db.query<any>(
+      `SELECT s.product_name AS product_name, s.source_id AS line_id
+         FROM product_set_periodical_snapshots lnk
+         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+         JOIN product_periodical_snapshots src ON src.id = s.copied_from_periodical_snapshot_id
+        WHERE lnk.product_set_id = ? AND s.gym_id = ?
+          AND s.ends_at IS NOT NULL AND src.ends_at IS NOT NULL AND s.ends_at < src.ends_at`,
+      [Number(set.id), gymId]);
     res.json({
+      lines_to_cancel_immediately: linesCancellingNow.map((r: any) => ({ line_id: Number(r.line_id), product_name: r.product_name ?? null })),
       plans_to_cancel_immediately: cancellingNow.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       plans_to_reactivate: reactivating.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       plans_to_cancel: cancelling.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),

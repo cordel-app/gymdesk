@@ -27,7 +27,7 @@ import { IN_CART_PURCHASE_STATUS, PENDING_PURCHASE_STATUS } from '../domain/memb
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
   addStaffPlanToDraft, namedPlanTarget, removeStaffPlanFromDraft,
-  removeCoveredMember, removeService, setBillingDuration, setServiceQuantity, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
+  removeCoveredMember, removeService, cancelServiceImmediately, setBillingDuration, setServiceQuantity, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
 } from './product-set-draft';
 
 /**
@@ -39,6 +39,7 @@ import {
  *   PUT    /fee                           a negotiated Membership Fee (reason required)
  *   PUT    /fee-benefit                   the Personal Membership Fee Benefit
  *   POST   /services, PUT /services/:serviceId (quantity), DELETE /services/:serviceId
+ *   POST   /services/:serviceId/cancel-immediately   end a line cancelling at period end today (#3358)
  *   POST   /promotions, DELETE /promotions/:applicationId
  *   POST   /members, DELETE /members/:memberId
  *   POST   /plans, DELETE /plans/:planSnapshotId        a further plan of the cart (#2966)
@@ -131,6 +132,11 @@ productSetDraftRouter.post('/services', requireModuleWrite('PAYMENTS'), (req, re
 productSetDraftRouter.delete('/services/:serviceId', requireModuleWrite('PAYMENTS'), (req, res, next) =>
   edit(req, res, 'update', (tx, d) => removeService(tx, d, Number(req.params.serviceId)), next,
     { remove_service: Number(req.params.serviceId) }));
+
+// #3358 stage 2 — Cancel Immediately: the Draft's copy of a line cancelling at its period end ends today.
+productSetDraftRouter.post('/services/:serviceId/cancel-immediately', requireModuleWrite('PAYMENTS'), (req, res, next) =>
+  edit(req, res, 'update', (tx, d) => cancelServiceImmediately(tx, d, Number(req.params.serviceId)), next,
+    { cancel_service_immediately: Number(req.params.serviceId) }));
 
 productSetDraftRouter.put('/services/:serviceId', requireModuleWrite('PAYMENTS'), (req, res, next) =>
   edit(req, res, 'update', (tx, d) => setServiceQuantity(tx, d, Number(req.params.serviceId), req.body?.quantity), next,

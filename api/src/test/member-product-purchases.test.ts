@@ -615,7 +615,7 @@ describe('#2479 — the Products list shows every line of the Draft being edited
     expect(towels).toHaveLength(1);
 
     // The inherited line keeps its status and its Promotion while the Draft is open.
-    expect(lockers[0]).toMatchObject({ status: 'active', amount: 10, list_price: 20, pending_termination: false });
+    expect(lockers[0]).toMatchObject({ status: 'active', amount: 10, list_price: 20, ends_at: null });
     expect(lockers[0].promotions.map((p: any) => p.promotion_id)).toEqual([lockerPromo]);
 
     // The line only the Draft carries is an In Cart row with its own Promotion.

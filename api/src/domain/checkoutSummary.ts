@@ -116,12 +116,31 @@ export function lineProration(l: Pick<ChargeLineLike, 'prorated_days' | 'period_
   return { days, period_days: period };
 }
 
+/**
+ * #3360 — the regular price a line's charge is measured against, VAT included: the engine's
+ * regular price of the line (`unit × quantity`, #2890), scaled to the stretch a prorated first
+ * charge covers (`lineProration()`). Proration is the period the charge is for, never a discount,
+ * so a 9-of-30-days line is compared with 9/30 of its regular price. `null` when unknown.
+ */
+export function lineRegularTotal(
+  l: Pick<ChargeLineLike, 'regular_unit_price' | 'prorated_days' | 'period_days' | 'fee_split'>,
+): number | null {
+  if (l.regular_unit_price == null) return null;
+  const regular = Number(l.regular_unit_price);
+  const p = lineProration(l);
+  return p ? round2(regular * p.days / p.period_days) : round2(regular);
+}
+
 export interface InitialPaymentLine {
   name: string | null;
   quantity: number;
-  /** The price of one unit, VAT included, before discounts. */
+  /** The price of one unit for a whole period, VAT included, before discounts (its list price). */
   unit_price: number;
-  /** #2890 — the line before discounts (unit price × quantity), VAT included. */
+  /**
+   * #2890 — the line before discounts (unit price × quantity), VAT included; #3360: for the
+   * stretch the charge covers, so a prorated line's total is prorated too and never reads the
+   * proration as a discount.
+   */
   line_total: number;
   /** The line total minus the charge; 0 when nothing was taken off. */
   discount: number;
@@ -219,7 +238,9 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
     const amount = round2(Number(l.amount));
     const net = l.amount_excl_tax != null ? round2(Number(l.amount_excl_tax)) : amount;
     const tax = round2(amount - net);
-    const { unit, lineTotal } = regularLinePrices(l.regular_unit_price, quantity, amount);
+    const { unit } = regularLinePrices(l.regular_unit_price, quantity, amount);
+    const regular = lineRegularTotal(l);
+    const lineTotal = regular != null ? regular : amount;
     const discount = Math.max(0, round2(lineTotal - amount));
     const rate = l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null;
     const key = rate == null ? '' : String(rate);
