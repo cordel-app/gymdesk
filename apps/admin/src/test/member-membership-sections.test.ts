@@ -97,6 +97,9 @@ describe('Member Membership sections (#634)', () => {
     // It shows the server's 24-hour countdown and opens the purchase's detail instead.
     expect(inFlightSrc).toContain('ps.payment_expires_in_seconds');
     expect(inFlightSrc).toContain('<SummaryPurchaseDetail ');
+    // #3307 stage 6 — the detail is always shown: no Show/Hide details toggle on this row.
+    expect(inFlightSrc).not.toContain('SummaryPurchaseDetailToggle');
+    expect(inFlightSrc).not.toContain('openId');
     // The screen never decides whether a payment is owed or what to confirm.
     expect(inFlightSrc).not.toContain('confirm');
   });
