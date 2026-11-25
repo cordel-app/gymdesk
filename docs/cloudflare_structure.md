@@ -21,16 +21,16 @@
 │   │   └── {food_id}-{food_slug}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── payment_method/
-│   │   ├── {payment_method_id}-{payment_method_name}.webp                              — 1080 × 1080 px
-│   │   └── {payment_method_id}-{payment_method_name}-thumbnail.webp                    — 256 × 256 px
+│   │   ├── {payment_method_id}-{payment_method_slug}.webp                              — 1080 × 1080 px
+│   │   └── {payment_method_id}-{payment_method_slug}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── products/
 │   │   ├── {product_id}-{product_name}.webp                              — 1080 × 1080 px
 │   │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── professional_services/
-│   │   ├── {professional_service_id}-{professional_service_name}.webp                              — 1080 × 1080 px
-│   │   └── {professional_service_id}-{professional_service_name}-thumbnail.webp                    — 256 × 256 px
+│   │   ├── {professional_service_id}-{professional_service_slug}.webp                              — 1080 × 1080 px
+│   │   └── {professional_service_id}-{professional_service_slug}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── spaces/
 │   │   ├── {space_id}-{space_name}.webp                              — 1080 × 1080 px
@@ -44,12 +44,12 @@
 │   │   └── {center_id}-{center_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── goals/
-│   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
-│   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
+│   │   ├── {goal_id}-{goal_slug}.webp                              — 1080 × 1080 px
+│   │   └── {goal_id}-{goal_slug}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── nutrition_goals/
-│   │   ├── {nutrition_goal_id}-{nutrition_goal_name}.webp                              — 1080 × 1080 px
-│   │   └── {nutrition_goal_id}-{nutrition_goal_name}-thumbnail.webp                    — 256 × 256 px
+│   │   ├── {nutrition_goal_id}-{nutrition_goal_slug}.webp                              — 1080 × 1080 px
+│   │   └── {nutrition_goal_id}-{nutrition_goal_slug}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── muscles/
 │   │   └── images/
@@ -111,16 +111,16 @@
         │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
         │
         ├── professional_services/
-        │   ├── {professional_service_id}-{professional_service_name}.webp                              — 1080 × 1080 px
-        │   └── {professional_service_id}-{professional_service_name}-thumbnail.webp                    — 256 × 256 px
+        │   ├── {professional_service_id}-{professional_service_slug}.webp                              — 1080 × 1080 px
+        │   └── {professional_service_id}-{professional_service_slug}-thumbnail.webp                    — 256 × 256 px
         │  
         ├── goals
-        │   ├── {goal_id}-{goal_name}-.webp                                   — 1080 × 1080 px
-        │   └── {goal_id}-{goal_name}-thumbnail.webp                          — 256 × 256 px
+        │   ├── {goal_id}-{goal_slug}.webp                                   — 1080 × 1080 px
+        │   └── {goal_id}-{goal_slug}-thumbnail.webp                          — 256 × 256 px
         │        
         ├── nutrition_goals
-        │   ├── {nutrition_goal_id}-{nutrition_goal_name}.webp               — 1080 × 1080 px
-        │   └── {nutrition_goal_id}-{nutrition_goal_name}-thumbnail.webp      — 256 × 256 px      
+        │   ├── {nutrition_goal_id}-{nutrition_goal_slug}.webp               — 1080 × 1080 px
+        │   └── {nutrition_goal_id}-{nutrition_goal_slug}-thumbnail.webp      — 256 × 256 px      
         │        
         ├── activities
         │   ├── {activity_id}-{activity_name}.webp                            — 1080 × 1080 px
@@ -206,7 +206,7 @@ own markers on first use.
 
 **`goals/` holds a Personal Goal's image**, the Nutrition Goal's pipeline (#1623)
 one folder over (#1722 replaced the PNG-only implementation):
-`{gym prefix}/goals/{personal_goal_id}-{personal_goal_name}.webp` (1080 × 1080)
+`{gym prefix}/goals/{personal_goal_id}-{personal_goal_slug}.webp` (1080 × 1080)
 plus `…-thumbnail.webp` (256 × 256), written by `POST /personal-goals/:id/image`,
 and `cordel/goals/…` written by `POST /platform/personal-goals/:id/image`
 (superadmin) for a System goal (`personal_goals.gym_id IS NULL`). The columns are

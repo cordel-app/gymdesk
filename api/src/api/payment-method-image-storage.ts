@@ -1,7 +1,7 @@
 // The one place a Base Payment Method's image is written to and cleared from
 // Cloudflare R2 (#1702). Request parsing, WebP processing and the upload limiter
 // are the Member photo's (`member-image-storage.ts`) and are imported, not
-// copied; this module is the method-shaped store / clear / rename-move around
+// copied; this module is the method-shaped store / clear around
 // them, as `nutrition-goal-image-storage.ts` is for a goal. Platform-owned: one
 // root (`cordel/payment_method/`), no gym, no 409 for an uninitialized bucket.
 
@@ -28,13 +28,23 @@ import {
   uploadStorageObject,
 } from '../infra/storage';
 import { logger } from '../lib/logger';
+import { imageKeyIdentifier } from '../domain/imageKeySlug';
 
 export interface PaymentMethodImageRow {
   id: number;
-  /** The name the key carries (see `paymentMethodImageName`). */
+  /** The fallback the key carries when the method has no slug (see `paymentMethodImageName`). */
   name: string;
+  /** The method's persisted slug (#3350): what the key carries. Read from the row when not passed. */
+  slug?: string | null;
   image_url: string | null;
   image_thumbnail_url: string | null;
+}
+
+/** What a method's image keys carry (#3350): its slug, never its (English) name. */
+async function methodKeyIdentifier(method: PaymentMethodImageRow): Promise<string> {
+  if (method.slug !== undefined) return imageKeyIdentifier(method);
+  const { rows } = await db.query<{ slug: string | null }>('SELECT slug FROM base_payment_methods WHERE id = ?', [method.id]);
+  return imageKeyIdentifier({ name: method.name, slug: rows[0]?.slug ?? null });
 }
 
 async function sweepReplacedImage(id: number, staleUrl: string | null, keepUrl: string | null): Promise<void> {
@@ -65,8 +75,9 @@ export async function storePaymentMethodImage(args: {
   modifiedBy: string | null;
 }): Promise<{ image_url: string; image_thumbnail_url: string } | MemberImageRefusal> {
   const { method, images, modifiedBy } = args;
-  const key = buildPaymentMethodImageKey(method.id, method.name);
-  const thumbnailKey = buildPaymentMethodImageThumbnailKey(method.id, method.name);
+  const keyId = await methodKeyIdentifier(method);
+  const key = buildPaymentMethodImageKey(method.id, keyId);
+  const thumbnailKey = buildPaymentMethodImageThumbnailKey(method.id, keyId);
   const url = buildStorageObjectUrl(key) as string;
   const thumbnailUrl = buildStorageObjectUrl(thumbnailKey) as string;
 
@@ -114,55 +125,3 @@ export async function clearPaymentMethodImage(args: {
   }
 }
 
-/**
- * After a rename: copy both objects to the keys the new name builds, re-point
- * the row in one `UPDATE`, then delete the old ones. Best-effort — a failed copy
- * leaves the row on the old pair, which still renders.
- */
-export async function migratePaymentMethodImageOnRename(
-  method: PaymentMethodImageRow,
-): Promise<{ image_url: string; image_thumbnail_url: string | null } | null> {
-  if (!method.image_url || !isStorageConfigured()) return null;
-  if (!isOwnedPaymentMethodImageUrl(method.image_url)) return null;
-
-  const oldKey = storageKeyFromObjectUrl(method.image_url);
-  const newKey = buildPaymentMethodImageKey(method.id, method.name);
-  const oldThumbKey = method.image_thumbnail_url && isOwnedPaymentMethodImageUrl(method.image_thumbnail_url)
-    ? storageKeyFromObjectUrl(method.image_thumbnail_url)
-    : null;
-  const newThumbKey = oldThumbKey ? buildPaymentMethodImageThumbnailKey(method.id, method.name) : null;
-
-  const moves: Array<[string, string]> = [];
-  if (oldKey && oldKey !== newKey) moves.push([oldKey, newKey]);
-  if (oldThumbKey && newThumbKey && oldThumbKey !== newThumbKey) moves.push([oldThumbKey, newThumbKey]);
-  if (moves.length === 0) return null;
-
-  const copied: string[] = [];
-  for (const [from, to] of moves) {
-    try {
-      await copyStorageObject(from, to);
-      copied.push(to);
-    } catch (err: any) {
-      const details = err instanceof StorageOperationError
-        ? err.details
-        : describeStorageError(err, { operation: 'copyStorageObject', key: to });
-      logger.warn({ err, details, paymentMethodId: method.id }, 'Renamed payment method kept its image on the previous keys: copy failed');
-      for (const key of copied) {
-        try { await deleteStorageObject(key); } catch { /* an orphan to sweep, never a failure */ }
-      }
-      return null;
-    }
-  }
-
-  const newUrl = oldKey && oldKey !== newKey ? (buildStorageObjectUrl(newKey) as string) : method.image_url;
-  const newThumbUrl = newThumbKey && oldThumbKey !== newThumbKey
-    ? (buildStorageObjectUrl(newThumbKey) as string)
-    : method.image_thumbnail_url;
-  await db.query(
-    'UPDATE base_payment_methods SET image_url = ?, image_thumbnail_url = ? WHERE id = ? AND deleted_at IS NULL',
-    [newUrl, newThumbUrl, method.id],
-  );
-  await sweepReplacedImage(method.id, method.image_url, newUrl);
-  await sweepReplacedImage(method.id, method.image_thumbnail_url, newThumbUrl);
-  return { image_url: newUrl, image_thumbnail_url: newThumbUrl };
-}

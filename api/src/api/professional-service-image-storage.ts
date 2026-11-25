@@ -6,6 +6,9 @@
 // imported, not copied; this module is the service-shaped store / clear /
 // rename-move around them, as `product-image-storage.ts` is for a Product.
 //
+// Since #3350 stage 3 the key carries the service's persisted slug, not its
+// name, so a rename never moves the image (there is no rename move any more).
+//
 // Like a Product, a Duplicate inherits the image *URLs* (one object, several
 // rows), so a key another row still points at is neither overwritten (the upload
 // takes a timestamped variant) nor deleted.
@@ -35,15 +38,29 @@ import {
   uploadStorageObject,
 } from '../infra/storage';
 import { logger } from '../lib/logger';
+import { imageKeyIdentifier } from '../domain/imageKeySlug';
 
 export interface ProfessionalServiceImageRow {
   id: number;
   name: string;
+  /** The service's persisted slug (#3350); read from the row when the caller has not. */
+  slug?: string | null;
   image_url: string | null;
   image_thumbnail_url: string | null;
 }
 
-export const PROFESSIONAL_SERVICE_IMAGE_COLUMNS = 'id, name, image_url, image_thumbnail_url';
+export const PROFESSIONAL_SERVICE_IMAGE_COLUMNS = 'id, name, slug, image_url, image_thumbnail_url';
+
+/**
+ * What a service's image keys carry (#3350): its persisted slug, never its name,
+ * so a rename never moves the image. Read from the row when the caller did not
+ * pass it.
+ */
+async function serviceKeyIdentifier(service: { id: number; name: string; slug?: string | null }): Promise<string> {
+  if (service.slug !== undefined) return imageKeyIdentifier(service);
+  const { rows } = await db.query<{ slug: string | null }>('SELECT slug FROM professional_services WHERE id = ?', [service.id]);
+  return imageKeyIdentifier({ name: service.name, slug: rows[0]?.slug ?? null });
+}
 
 /** Where the service lives: a gym's own (`gymId`) or the platform's (`null`), and the key prefix of its folder. */
 export interface ProfessionalServiceImageScope {
@@ -110,13 +127,14 @@ export async function storeProfessionalServiceImage(args: {
   modifiedBy: string | null;
 }): Promise<{ image_url: string; image_thumbnail_url: string } | MemberImageRefusal> {
   const { scope, service, images, modifiedBy } = args;
-  const plainKey = buildProfessionalServiceImageKey(scope.prefix, service.id, service.name);
-  const plainThumbKey = buildProfessionalServiceImageThumbnailKey(scope.prefix, service.id, service.name);
+  const keyId = await serviceKeyIdentifier(service);
+  const plainKey = buildProfessionalServiceImageKey(scope.prefix, service.id, keyId);
+  const plainThumbKey = buildProfessionalServiceImageThumbnailKey(scope.prefix, service.id, keyId);
   const shared = (await isProfessionalServiceImageKeyShared(service.id, plainKey))
     || (await isProfessionalServiceImageKeyShared(service.id, plainThumbKey));
   const variant = pickImageVariant(shared);
-  const key = buildProfessionalServiceImageKey(scope.prefix, service.id, service.name, variant);
-  const thumbnailKey = buildProfessionalServiceImageThumbnailKey(scope.prefix, service.id, service.name, variant);
+  const key = buildProfessionalServiceImageKey(scope.prefix, service.id, keyId, variant);
+  const thumbnailKey = buildProfessionalServiceImageThumbnailKey(scope.prefix, service.id, keyId, variant);
   const url = buildStorageObjectUrl(key) as string;
   const thumbnailUrl = buildStorageObjectUrl(thumbnailKey) as string;
 
@@ -168,63 +186,6 @@ export async function clearProfessionalServiceImage(args: {
 }
 
 /**
- * After a rename: copy both objects to the keys the new name builds, re-point
- * the row in one `UPDATE`, then delete the old objects. Best-effort — a failed
- * copy leaves the row on the old pair, which still renders. An object another
- * row shares is copied, never moved, so its other owners keep rendering.
- */
-export async function migrateProfessionalServiceImageOnRename(
-  scope: ProfessionalServiceImageScope,
-  service: ProfessionalServiceImageRow,
-): Promise<{ image_url: string; image_thumbnail_url: string | null } | null> {
-  const prefix = scope.prefix;
-  if (!service.image_url || !prefix || !isStorageConfigured()) return null;
-  if (!isOwnedProfessionalServiceImageUrl(service.image_url, prefix)) return null;
-
-  const oldKey = storageKeyFromObjectUrl(service.image_url);
-  const newKey = buildProfessionalServiceImageKey(prefix, service.id, service.name);
-  const oldThumbKey = service.image_thumbnail_url && isOwnedProfessionalServiceImageUrl(service.image_thumbnail_url, prefix)
-    ? storageKeyFromObjectUrl(service.image_thumbnail_url)
-    : null;
-  const newThumbKey = oldThumbKey ? buildProfessionalServiceImageThumbnailKey(prefix, service.id, service.name) : null;
-
-  const moves: Array<[string, string]> = [];
-  if (oldKey && oldKey !== newKey) moves.push([oldKey, newKey]);
-  if (oldThumbKey && newThumbKey && oldThumbKey !== newThumbKey) moves.push([oldThumbKey, newThumbKey]);
-  if (moves.length === 0) return null;
-
-  const copied: string[] = [];
-  for (const [from, to] of moves) {
-    try {
-      await copyStorageObject(from, to);
-      copied.push(to);
-    } catch (err: any) {
-      const details = err instanceof StorageOperationError
-        ? err.details
-        : describeStorageError(err, { operation: 'copyStorageObject', key: to });
-      logger.warn({ err, details, serviceId: service.id }, 'Renamed professional service kept its image on the previous keys: copy failed');
-      for (const key of copied) {
-        try { await deleteStorageObject(key); } catch { /* an orphan to sweep, never a failure */ }
-      }
-      return null;
-    }
-  }
-
-  const newUrl = oldKey && oldKey !== newKey ? (buildStorageObjectUrl(newKey) as string) : service.image_url;
-  const newThumbUrl = newThumbKey && oldThumbKey !== newThumbKey
-    ? (buildStorageObjectUrl(newThumbKey) as string)
-    : service.image_thumbnail_url;
-  const owner = ownerWhere(scope);
-  await db.query(
-    `UPDATE professional_services SET image_url = ?, image_thumbnail_url = ? WHERE id = ? AND ${owner.sql}`,
-    [newUrl, newThumbUrl, service.id, ...owner.params],
-  );
-  await sweepReplacedImage(scope, service.id, service.image_url, newUrl);
-  await sweepReplacedImage(scope, service.id, service.image_thumbnail_url, newThumbUrl);
-  return { image_url: newUrl, image_thumbnail_url: newThumbUrl };
-}
-
-/**
  * Import (#2010 stage 2): copies a Base service's master and thumbnail into the
  * gym's own folder under the *new* service's id, server-side, and points the
  * gym's row at the copies. The copy is independent of the Base objects. A failed
@@ -237,7 +198,7 @@ export async function copyBaseProfessionalServiceImage(args: {
   gymId: string;
   prefix: string | null;
   base: { image_url: string | null; image_thumbnail_url: string | null };
-  service: { id: number; name: string };
+  service: { id: number; name: string; slug?: string | null };
 }): Promise<boolean> {
   const { gymId, prefix, base, service } = args;
   if (!base.image_url || !prefix || !isStorageConfigured()) return false;
@@ -245,8 +206,9 @@ export async function copyBaseProfessionalServiceImage(args: {
   if (!sourceKey) return false;
   const sourceThumbKey = base.image_thumbnail_url ? storageKeyFromObjectUrl(base.image_thumbnail_url) : null;
 
-  const destKey = buildProfessionalServiceImageKey(prefix, service.id, service.name);
-  const destThumbKey = buildProfessionalServiceImageThumbnailKey(prefix, service.id, service.name);
+  const keyId = await serviceKeyIdentifier(service);
+  const destKey = buildProfessionalServiceImageKey(prefix, service.id, keyId);
+  const destThumbKey = buildProfessionalServiceImageThumbnailKey(prefix, service.id, keyId);
   const written: string[] = [];
   try {
     await ensureStorageFolders(professionalServiceImageFolderKeys(prefix));
