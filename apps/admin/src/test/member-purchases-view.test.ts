@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseChannelLabelKey, purchaseEventPath, purchaseIsEmpty,
+  beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseChannelLabelKey, purchaseDisplayName, purchaseEventPath, purchaseIsEmpty,
+  purchaseTotalValue,
 } from '@/app/[locale]/members/purchasesTabView';
 
 // #3273 — the Purchases tab's presentation decisions.
@@ -29,5 +30,18 @@ describe('purchasesTabView (#3273)', () => {
     expect(purchaseChannelLabelKey('members_app')).toBe('members.purchases_channel_members_app');
     expect(purchaseChannelLabelKey(null)).toBeNull();
     expect(purchaseChannelLabelKey('system')).toBeNull();
+  });
+});
+
+describe('purchases table (#3355 stage 2)', () => {
+  it('names a row by its stored name, else its creation instant', () => {
+    expect(purchaseDisplayName({ name: 'Gym - Purchase - 23/11/2026 11:56', created_at: '2026-11-23T10:56:00Z' }))
+      .toBe('Gym - Purchase - 23/11/2026 11:56');
+    expect(purchaseDisplayName({ name: null, created_at: '2026-11-23T10:56:00Z' })).toBe('2026-11-23T10:56:00Z');
+  });
+
+  it('reads the API total, and nothing as no total', () => {
+    expect(purchaseTotalValue({ total_amount: '45.50' })).toBe(45.5);
+    expect(purchaseTotalValue({ total_amount: null })).toBeNull();
   });
 });

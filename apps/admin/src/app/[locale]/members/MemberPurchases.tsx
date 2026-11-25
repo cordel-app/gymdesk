@@ -1,27 +1,34 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDateTime } from '@/lib/gymFormat';
-import { PurchaseHeading } from './PurchaseHeading';
 import {
-  cardDetailLabelStyle, cardDetailRowStyle, cardDetailValueStyle, cardExpandCaretStyle, cardExpandToggleStyle,
-  cardMutedTextStyle, cardSubLabelStyle, cardTextLinkStyle, formErrorStyle, innerCardStyle,
+  cardDetailLabelStyle, cardDetailRowStyle, cardDetailValueStyle,
+  cardMutedTextStyle, cardSubLabelStyle, cardTextLinkStyle, formErrorStyle,
 } from '@/components/formChrome';
+import { DataTable, type Column } from '@/components/DataTable';
+import { ContextMenu } from '@/components/ContextMenu';
+import { CrudModal } from '@/components/CrudModal';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import { StatusBadge } from '@/components/StatusBadge';
+import { purchaseStatusKey } from '@/lib/purchaseName';
 import { NormalizedPaymentStatusBadge, BillingEventStatusBadge } from '../payments/billing-events/BillingEventShared';
 import {
-  beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseChannelLabelKey, purchaseEventPath, purchaseIsEmpty,
-  type MemberPurchase, type PurchaseBillingEvent,
+  beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseChannelLabelKey, purchaseDisplayName,
+  purchaseEventPath, purchaseIsEmpty, purchaseTotalValue, type MemberPurchase, type PurchaseBillingEvent,
 } from './purchasesTabView';
 
 /**
- * #3273 — the Member card's **Purchases** tab. Read-only: one card per `purchases` row the Member
- * owns or benefits from (`GET /payments/purchases?member_id=`), newest first, each expanding into
- * the plans it contracted (with their included Products beneath them), its standalone Products, and
- * the payment of its own Billing Event. Every decision is the API's; this draws.
+ * #3273 — the Member card's **Purchases** tab: one row per `purchases` row the Member owns or
+ * benefits from (`GET /payments/purchases?member_id=`), newest first. #3355 stage 2 draws it as the
+ * standard list (`DataTable`, as the Products section is): Purchase · Created By · Created At ·
+ * Modified At · Total Amount · Status · `⋮`, each row expanding into the plans it contracted (with
+ * their included Products beneath them), its standalone Products and the payment of its own
+ * Billing Event; `⋮ → Details` opens the purchase record. Every value is the API's; this draws.
  */
 export function MemberPurchases({ memberId }: { memberId: number | string }) {
   const t = useTranslations();
@@ -30,7 +37,8 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
   const gym = useGymFormatSettings();
   const [items, setItems] = useState<MemberPurchase[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [open, setOpen] = useState<Set<number>>(new Set());
+  const [open, setOpen] = useState<Set<React.Key>>(new Set());
+  const [detail, setDetail] = useState<MemberPurchase | null>(null);
 
   const load = useCallback(() => {
     apiFetch<{ items: MemberPurchase[] }>(`/payments/purchases?member_id=${memberId}&limit=200`)
@@ -41,105 +49,150 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
   useEffect(() => { load(); }, [load]);
 
   if (failed) return <p style={formErrorStyle}>{t('members.purchases_error')}</p>;
-  if (items === null) return <p style={cardMutedTextStyle}>{t('members.purchases_loading')}</p>;
-  if (items.length === 0) return <p style={cardMutedTextStyle}>{t('members.purchases_empty')}</p>;
 
-  const toggle = (id: number) => setOpen((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggle = (p: MemberPurchase) => setOpen((prev) => {
+    const n = new Set(prev); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n;
+  });
+  const dash = '—';
+  const when = (v: string | null) => (v ? formatGymDateTime(v, gym) : dash);
+  const total = (p: MemberPurchase) => { const v = purchaseTotalValue(p); return v == null ? dash : formatGymAmount(v, gym); };
+  const status = (p: MemberPurchase) => {
+    const key = purchaseStatusKey(p.status);
+    return <StatusBadge status={p.status} label={key ? t(`members.${key}` as any) : p.status} />;
+  };
+
+  const columns: Column<MemberPurchase>[] = [
+    {
+      key: 'purchase', header: t('members.purchases_col_purchase'), mobile: 'name',
+      title: (p) => purchaseDisplayName(p),
+      render: (p) => <strong data-purchase-name>{purchaseDisplayName(p)}</strong>,
+    },
+    { key: 'created_by', mobile: 'secondary', header: t('members.purchases_col_created_by'), render: (p) => p.created_by ?? dash },
+    { key: 'created_at', mobile: 'secondary', header: t('members.purchases_col_created_at'), render: (p) => when(p.created_at) },
+    { key: 'modified_at', mobile: 'secondary', header: t('members.purchases_col_modified_at'), render: (p) => when(p.modified_at) },
+    { key: 'total', mobile: 'secondary', header: t('members.purchases_col_total'), render: (p) => <span style={{ whiteSpace: 'nowrap' }}>{total(p)}</span> },
+    { key: 'status', header: t('members.purchases_col_status'), mobile: 'keep', render: (p) => <span data-purchase-status={p.status}>{status(p)}</span> },
+    {
+      key: 'actions', header: '', width: 48, mobile: 'actions',
+      render: (p) => (
+        <ContextMenu
+          ariaLabel={t('members.purchases_actions_for', { purchase: purchaseDisplayName(p) })}
+          items={[{ kind: 'details' as const, label: t('members.action_details'), onClick: () => setDetail(p) }]}
+        />
+      ),
+    },
+  ];
+
   const typeLabel = (type: string | null) => { const k = productTypeLabelKey(type); return k ? t(k as any) : (type ?? ''); };
   const forName = (name: string | null) => (name ? ` · ${t('members.purchases_for', { name })}` : '');
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {items.map((p) => {
-        const expanded = open.has(p.id);
-        const event = p.billing_events[0];
-        const channelKey = purchaseChannelLabelKey(p.channel);
-        return (
-          <div key={p.id} style={innerCardStyle}>
-            <button
-              type="button"
-              aria-expanded={expanded}
-              onClick={() => toggle(p.id)}
-              style={{ ...cardExpandToggleStyle, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', width: '100%' }}
-            >
-              <span style={{ ...cardExpandCaretStyle, transform: expanded ? 'rotate(90deg)' : 'none' }}>▶</span>
-              {/* #3270's name: the translated label and the creation instant in the browser's locale. */}
-              <PurchaseHeading purchase={{ id: p.id, name: p.name ?? p.created_at, status: p.status }} />
-              <span style={cardMutedTextStyle}>#{p.id}</span>
-              {event && <span style={cardMutedTextStyle}>· {t('members.purchases_event_ref', { id: event.id })}</span>}
-            </button>
-
-            {expanded && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
-                {/* #3278: who initiated the purchase (its stored `created_by`) and through which app,
-                    two separate fields side by side, wrapping on a narrow screen. Never the owner. */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', columnGap: 24, rowGap: 4 }}>
-                  <div style={cardDetailRowStyle}>
-                    <span style={cardDetailLabelStyle}>{t('members.purchases_managed_by')}</span>
-                    <span style={cardDetailValueStyle}>{p.created_by ?? '—'}</span>
-                  </div>
-                  <div style={cardDetailRowStyle}>
-                    <span style={cardDetailLabelStyle}>{t('members.purchases_channel')}</span>
-                    <span style={cardDetailValueStyle}>{channelKey ? t(channelKey as any) : '—'}</span>
-                  </div>
-                </div>
-
-                {p.plans.length > 0 && (
-                  <div>
-                    <div style={cardSubLabelStyle}>{t('members.purchases_plans')}</div>
-                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                      {p.plans.map((plan) => {
-                        const others = otherBeneficiaryNames(plan, p.owner);
-                        return (
-                          <li key={plan.plan_snapshot_id}>
-                            {plan.name ?? `#${plan.membership_plan_id ?? plan.plan_snapshot_id}`}
-                            {others.length > 0 && <span style={cardMutedTextStyle}>{forName(others.join(', '))}</span>}
-                            {plan.products.length > 0 && (
-                              <ul style={{ margin: '2px 0', paddingLeft: 18 }}>
-                                {plan.products.map((line, i) => (
-                                  <li key={`${line.kind}-${line.product_id}-${i}`} style={cardMutedTextStyle}>
-                                    {line.name ?? '—'} · {typeLabel(line.product_type)} · ×{line.quantity}
-                                    {forName(beneficiaryNameIfOther(line.beneficiary, p.owner))}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
-
-                {p.products.length > 0 && (
-                  <div>
-                    <div style={cardSubLabelStyle}>{t('members.purchases_products')}</div>
-                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                      {p.products.map((line, i) => (
-                        <li key={`${line.kind}-${line.line_id}-${i}`}>
-                          {line.name ?? '—'} <span style={cardMutedTextStyle}>· {typeLabel(line.product_type)} · ×{line.quantity}
-                            {forName(beneficiaryNameIfOther(line.beneficiary, p.owner))}</span>
+  const expandedBody = (p: MemberPurchase) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '8px 16px 12px' }}>
+      {p.plans.length > 0 && (
+        <div>
+          <div style={cardSubLabelStyle}>{t('members.purchases_plans')}</div>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+            {p.plans.map((plan) => {
+              const others = otherBeneficiaryNames(plan, p.owner);
+              return (
+                <li key={plan.plan_snapshot_id}>
+                  {plan.name ?? `#${plan.membership_plan_id ?? plan.plan_snapshot_id}`}
+                  {others.length > 0 && <span style={cardMutedTextStyle}>{forName(others.join(', '))}</span>}
+                  {plan.products.length > 0 && (
+                    <ul style={{ margin: '2px 0', paddingLeft: 18 }}>
+                      {plan.products.map((line, i) => (
+                        <li key={`${line.kind}-${line.product_id}-${i}`} style={cardMutedTextStyle}>
+                          {line.name ?? dash} · {typeLabel(line.product_type)} · ×{line.quantity}
+                          {forName(beneficiaryNameIfOther(line.beneficiary, p.owner))}
                         </li>
                       ))}
                     </ul>
-                  </div>
-                )}
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
-                {purchaseIsEmpty(p) && <p style={cardMutedTextStyle}>{t('members.purchases_no_items')}</p>}
+      {p.products.length > 0 && (
+        <div>
+          <div style={cardSubLabelStyle}>{t('members.purchases_products')}</div>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+            {p.products.map((line, i) => (
+              <li key={`${line.kind}-${line.line_id}-${i}`}>
+                {line.name ?? dash} <span style={cardMutedTextStyle}>· {typeLabel(line.product_type)} · ×{line.quantity}
+                  {forName(beneficiaryNameIfOther(line.beneficiary, p.owner))}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-                <div>
-                  <div style={cardSubLabelStyle}>{t('members.purchases_payment')}</div>
-                  {p.billing_events.length === 0
-                    ? <p style={cardMutedTextStyle}>{t('members.purchases_not_paid')}</p>
-                    : p.billing_events.map((e) => (
-                      <PaymentDetails key={e.id} event={e} locale={locale} gym={gym} t={t} />
-                    ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {purchaseIsEmpty(p) && <p style={cardMutedTextStyle}>{t('members.purchases_no_items')}</p>}
+
+      <div>
+        <div style={cardSubLabelStyle}>{t('members.purchases_payment')}</div>
+        {p.billing_events.length === 0
+          ? <p style={cardMutedTextStyle}>{t('members.purchases_not_paid')}</p>
+          : p.billing_events.map((e) => (
+            <PaymentDetails key={e.id} event={e} locale={locale} gym={gym} t={t} />
+          ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <DataTable
+        columns={columns}
+        rows={items ?? []}
+        rowKey={(p) => p.id}
+        loading={items === null}
+        loadingText={t('members.purchases_loading')}
+        emptyText={t('members.purchases_empty')}
+        expandedRowKeys={open}
+        onToggleExpand={toggle}
+        clickRowToExpand
+        renderExpanded={expandedBody}
+      />
+      <CrudModal
+        open={detail !== null}
+        title={detail ? purchaseDisplayName(detail) : ''}
+        hideSave
+        cancelLabel={t('members.close')}
+        saveLabel=""
+        onCancel={() => setDetail(null)}
+        onSave={() => setDetail(null)}
+      >
+        {detail && <PurchaseRecord p={detail} t={t} when={when} total={total} status={status} />}
+      </CrudModal>
+    </div>
+  );
+}
+
+/**
+ * `⋮ → Details`: the purchase record itself (#3278's Managed by and Channel moved here from the
+ * expanded row, which keeps the purchase's contents and payment).
+ */
+function PurchaseRecord({ p, t, when, total, status }: {
+  p: MemberPurchase; t: ReturnType<typeof useTranslations>;
+  when: (v: string | null) => string; total: (p: MemberPurchase) => string; status: (p: MemberPurchase) => React.ReactNode;
+}) {
+  const channelKey = purchaseChannelLabelKey(p.channel);
+  const dash = '—';
+  return (
+    <div style={{ padding: '8px 0' }}>
+      <CardDetailRow label={t('members.purchases_col_purchase')} value={purchaseDisplayName(p)} />
+      <CardDetailRow label={t('members.purchases_details_id')} value={`#${p.id}`} />
+      <CardDetailRow label={t('members.purchases_col_status')} value={status(p)} />
+      <CardDetailRow label={t('members.purchases_details_owner')} value={p.owner.name ?? `#${p.owner.id}`} />
+      <CardDetailRow label={t('members.purchases_col_total')} value={total(p)} />
+      <CardDetailRow label={t('members.purchases_managed_by')} value={p.created_by ?? dash} />
+      <CardDetailRow label={t('members.purchases_channel')} value={channelKey ? t(channelKey as any) : dash} />
+      <CardDetailRow label={t('members.purchases_col_created_at')} value={when(p.created_at)} />
+      <CardDetailRow label={t('members.purchases_details_modified_by')} value={p.modified_by ?? dash} />
+      <CardDetailRow label={t('members.purchases_col_modified_at')} value={when(p.modified_at)} />
     </div>
   );
 }

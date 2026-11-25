@@ -1024,6 +1024,16 @@
     "purchases_payment_method": "Payment method",
     "purchases_payment_status": "Payment status",
     "purchases_payment_date": "Payment date",
+    "purchases_col_purchase": "Purchase",
+    "purchases_col_created_by": "Created By",
+    "purchases_col_created_at": "Created At",
+    "purchases_col_modified_at": "Modified At",
+    "purchases_col_total": "Total Amount",
+    "purchases_col_status": "Status",
+    "purchases_actions_for": "Actions for {purchase}",
+    "purchases_details_id": "Purchase ID",
+    "purchases_details_owner": "Owner",
+    "purchases_details_modified_by": "Modified By",
     "timeline_status_expired_24h": "24h expired"
   },
   "member_payments": {
