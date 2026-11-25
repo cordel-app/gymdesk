@@ -751,6 +751,39 @@ export async function removeService(
 }
 
 /**
+ * #3358 stage 2 — brings a recurring line's committed cancellation forward to today, in the Draft.
+ * Only a line the Draft carries whose end date is set and still ahead may be moved (its status
+ * reads `active_cancel_at_period_end`); the Draft's own copy of it (`ownRecurringLine()`) takes
+ * today as its end date, so it reads `to_be_canceled_immediately` until Save & Pay commits the
+ * version, a discarded or expired Draft takes the change with it, and the Active version keeps the
+ * original end date meanwhile. Nothing is charged or refunded.
+ */
+export async function cancelServiceImmediately(
+  tx: Tx, draft: LockedDraft, serviceId: number,
+): Promise<{ ok: true; ends_at: string } | DraftRefusal> {
+  const { rows: locked } = await tx.query<any>(
+    `SELECT id FROM product_periodical_snapshots
+      WHERE source_id = ? AND gym_id = ? FOR UPDATE`,
+    [serviceId, draft.gym_id]);
+  if (!locked[0]) return { kind: 'not_found' };
+  const { rows } = await tx.query<any>(
+    `SELECT s.ends_at FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+      WHERE s.source_id = ? AND s.gym_id = ? AND lnk.product_set_id = ?`,
+    [serviceId, draft.gym_id, draft.id]);
+  if (!rows[0]) return { kind: 'not_found' };
+  const today = new Date().toISOString().slice(0, 10);
+  if (rows[0].ends_at == null || dateOnly(rows[0].ends_at) <= today) {
+    const message = 'Only a Product cancelling at its period end can be cancelled immediately';
+    return { kind: 'conflict', error: 'not_cancelling_at_period_end', message };
+  }
+  const lineId = (await ownRecurringLine(tx, draft.gym_id, draft.id, serviceId)) ?? serviceId;
+  await updateRecurringLine(tx, draft.gym_id, lineId, { ends_at: today });
+  await touch(tx, draft);
+  return { ok: true, ends_at: today };
+}
+
+/**
  * #1537 — changes the quantity of a recurring line still running on a Draft.
  * Only the number moves: the line's frozen price, its discount and its start
  * stay what the Draft was agreed with, and its schedule is re-derived.

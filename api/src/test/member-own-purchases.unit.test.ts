@@ -7,6 +7,15 @@ const row = (over: Partial<{ status: string; valid_until: string | null; cancell
   status: 'active', valid_until: null, cancelled_on: null, ...over,
 });
 
+describe('#3358 stage 2 — a recurring line is the member\'s Product in every live cancellation state', () => {
+  it('reads as active while its status is any of them, and as pending payment when it awaits one', () => {
+    for (const status of ['active', 'to_be_canceled', 'to_be_canceled_immediately', 'active_cancel_at_period_end', 'cancelled']) {
+      expect(ownPurchaseState(row({ status }), TODAY, { recurring: true })).toBe('active');
+    }
+    expect(ownPurchaseState(row({ status: 'pending_payment' }), TODAY, { recurring: true })).toBe('pending_payment');
+  });
+});
+
 describe('ownPurchaseState', () => {
   it('shows an Active purchase whatever its end date', () => {
     expect(ownPurchaseState(row({ valid_until: '2020-01-01' }), TODAY)).toBe('active');

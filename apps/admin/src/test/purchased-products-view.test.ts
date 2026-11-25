@@ -86,11 +86,28 @@ describe('assigned family member (#2609)', () => {
 describe('editableDraftLineId (#2856)', () => {
   it('offers Edit/Delete only on a recurring row the open Draft carries', async () => {
     const { editableDraftLineId } = await import('@/app/[locale]/members/purchasedProductsView');
-    expect(editableDraftLineId({ source: 'recurring', draft_line_id: 12, pending_termination: false })).toBe(12);
-    // A committed line with no open Draft, a line the Draft removed, a one-time purchase: nothing.
-    expect(editableDraftLineId({ source: 'recurring', draft_line_id: null, pending_termination: false })).toBeNull();
-    expect(editableDraftLineId({ source: 'recurring', draft_line_id: 12, pending_termination: true })).toBeNull();
+    expect(editableDraftLineId({ source: 'recurring', draft_line_id: 12 })).toBe(12);
+    // A committed line with no open Draft, a line the Draft removed, a one-time purchase: nothing
+    // (#3358 stage 2: the API answers `draft_line_id: null` for a line the Draft removed or cancels).
+    expect(editableDraftLineId({ source: 'recurring', draft_line_id: null })).toBeNull();
     expect(editableDraftLineId({ source: 'one_off', draft_line_id: 12 })).toBeNull();
+  });
+
+  // #3358 stage 2 — the shared cancellation lifecycle: a Product the cart cancels, and one
+  // cancelling at its End Date, are still open work; only `cancelled` leaves the default filter.
+  it('keeps every live cancellation state in the default open filter', async () => {
+    const { filterPurchasesByStatus, PURCHASE_STATUS_FILTER_DEFAULT } =
+      await import('@/app/[locale]/members/purchasedProductsView');
+    const rows = [
+      { status: 'active' }, { status: 'in_cart' }, { status: 'pending_payment' },
+      { status: 'to_be_canceled' }, { status: 'to_be_canceled_immediately' },
+      { status: 'active_cancel_at_period_end' }, { status: 'cancelled' },
+    ];
+    expect(filterPurchasesByStatus(rows, PURCHASE_STATUS_FILTER_DEFAULT).map((r) => r.status)).toEqual([
+      'active', 'in_cart', 'pending_payment',
+      'to_be_canceled', 'to_be_canceled_immediately', 'active_cancel_at_period_end',
+    ]);
+    expect(filterPurchasesByStatus(rows, 'cancelled').map((r) => r.status)).toEqual(['cancelled']);
   });
 });
 
