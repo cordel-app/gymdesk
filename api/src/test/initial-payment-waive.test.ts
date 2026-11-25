@@ -133,9 +133,8 @@ describe('Initial Payment per-line waive (#3284 stage 2)', () => {
     expect(after.initial_payment.total).toBeCloseTo(after.amount_due, 2);
     expect(after.initial_payment.discount_total).toBeCloseTo(before.initial_payment.discount_total + kitBefore.amount, 2);
     expect(after.initial_payment.tax_total).toBeCloseTo(before.initial_payment.tax_total - kitBefore.tax_amount, 2);
-    // The last positive line cannot be waived: the Initial Payment must keep a charge.
-    expect(fee.waivable).toBe(false);
-    expect((await waive(setId, feeKey)).body.error).toBe('would_leave_nothing_to_pay');
+    // #3284 stage 4: the last positive line is still offered Waive (the total may reach zero).
+    expect(fee).toMatchObject({ waivable: true, waive_refusal: null });
     expect((await waive(setId, kitKey)).body.error).toBe('already_waived');
 
     // recordAudit is fire-and-forget: poll briefly for the row it writes.
@@ -230,9 +229,9 @@ describe('Initial Payment waive of a prorated Membership Fee (#3284 stage 3)', (
     const after = await review(setId);
     expect(after.initial_payment.lines.find((l: any) => l.line_key === fee.line_key)).toMatchObject({ amount: 0, waived: true });
     expect(after.amount_due).toBeCloseTo(before.amount_due - fee.amount, 2);
-    // The other line is now the last one to pay: disabled, with the reason it is.
+    // #3284 stage 4: the other line, now the last one to pay, is still offered Waive.
     const other = after.initial_payment.lines.find((l: any) => l.line_key !== fee.line_key);
-    expect(other).toMatchObject({ waivable: false, waive_refusal: 'would_leave_nothing_to_pay' });
+    expect(other).toMatchObject({ waivable: true, waive_refusal: null });
 
     const pay = await staff('post', `/product-sets/${setId}/save-and-pay`).send({});
     expect(pay.status).toBe(201);
@@ -240,5 +239,68 @@ describe('Initial Payment waive of a prorated Membership Fee (#3284 stage 3)', (
     const { rows: lines } = await db.query<any>(
       'SELECT amount, line_key FROM billing_event_lines WHERE billing_event_id = ? ORDER BY id', [pay.body.billing_event_id]);
     expect(lines.find((l: any) => l.line_key === fee.line_key).amount).toBe('0.00');
+  });
+});
+
+// #3284 stage 4 — reported on 25 Nov: Waive was refused (and the button disabled) whenever it would
+// leave the Initial Payment at zero. A waiver may now take the whole Initial Payment to €0.00; such a
+// cart is committed by the free activation, which still records the waived first period as the
+// initial Billing Event (a €0.00 `waive` attempt), so it is never charged as a scheduled obligation.
+describe('Initial Payment waived down to zero (#3284 stage 4)', () => {
+  const productName = `Kit0-${uniq()}`;
+  let setId: number;
+  let before: any;
+
+  beforeAll(async () => {
+    setId = await draftWithPlanAndProduct(productName);
+    before = await review(setId);
+  });
+
+  it('every line can be waived, the total reaches zero, and Revert restores it', async () => {
+    const keys: string[] = before.initial_payment.lines.map((l: any) => l.line_key);
+    for (const k of keys) expect((await waive(setId, k)).status).toBe(200);
+    const zero = await review(setId);
+    expect(zero.amount_due).toBe(0);
+    expect(zero.initial_payment.total).toBe(0);
+    expect(zero.payment_required).toBe(false);
+    for (const l of zero.initial_payment.lines) expect(l).toMatchObject({ amount: 0, waived: true });
+
+    expect((await revert(setId, keys[0])).status).toBe(200);
+    const partial = await review(setId);
+    expect(partial.amount_due).toBeCloseTo(before.initial_payment.lines[0].amount, 2);
+    expect((await waive(setId, keys[0])).status).toBe(200);
+  });
+
+  it('Save & Pay owes nothing; activation records the waived first period and charges it nowhere', async () => {
+    const shown = await review(setId);
+    expect((await staff('post', `/product-sets/${setId}/save-and-pay`).send({})).body.error).toBe('nothing_to_pay');
+
+    const act = await staff('post', `/product-sets/${setId}/activate`).send({});
+    expect(act.status).toBe(200);
+    expect(act.body.status).toBe('active');
+    const { rows: set } = await db.query<any>('SELECT status, starts_at FROM product_sets WHERE id = ?', [setId]);
+    expect(set[0].status).toBe('active');
+
+    const { rows: ev } = await db.query<any>(
+      `SELECT id, amount, billing_date FROM billing_events
+        WHERE product_set_id = ? AND event_type = 'payment_recorded' AND is_scheduled = 0`, [setId]);
+    expect(ev).toHaveLength(1);
+    expect(ev[0].id).toBe(act.body.billing_event_id);
+    expect(Number(ev[0].amount)).toBe(0);
+    const { rows: lines } = await db.query<any>(
+      'SELECT amount, line_key FROM billing_event_lines WHERE billing_event_id = ? ORDER BY id', [ev[0].id]);
+    expect(lines.map((l: any) => [l.line_key, Number(l.amount)]))
+      .toEqual(shown.initial_payment.lines.map((l: any) => [l.line_key, 0]));
+    const { rows: pr } = await db.query<any>(
+      'SELECT amount, method, status FROM payment_requests WHERE billing_event_id = ?', [ev[0].id]);
+    expect(pr.map((r: any) => [Number(r.amount), r.method, r.status])).toEqual([[0, 'waive', 'completed']]);
+
+    // The waived first period is not an obligation; later periods still are.
+    const firstPeriod = String(ev[0].billing_date instanceof Date ? ev[0].billing_date.toISOString() : ev[0].billing_date).slice(0, 10);
+    const { rows: sched } = await db.query<any>(
+      `SELECT billing_date FROM billing_events WHERE product_set_id = ? AND is_scheduled = 1`, [setId]);
+    const dates = sched.map((r: any) => String(r.billing_date instanceof Date ? r.billing_date.toISOString() : r.billing_date).slice(0, 10));
+    expect(dates).not.toContain(firstPeriod);
+    expect(dates.length).toBeGreaterThan(0);
   });
 });

@@ -3,6 +3,7 @@ import { centerAccessWarnings } from './plan-center-access';
 import { cartExpiresAtIso, setCartExpiredSql, setCartExpiresAtSql } from '../domain/cartExpiry';
 import { refreshSetCart } from './purchases';
 import { amountChangedBody, isStaleAmount, parseExpectedAmountInput, sameAmount } from '../domain/expectedCheckoutAmount';
+import { commitWaivedInitialPayment, isWaivedToZero } from './waived-initial-payment';
 import { initialPaymentWaiveHandler } from './initial-payment-waive';
 import { Router } from 'express';
 import { generatePaidRepresentations } from './billing-invoices';
@@ -370,6 +371,21 @@ async function activateHandler(req: any, res: any, opts: { member?: boolean } = 
   }
   const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
   if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
+
+  // #3284 stage 4: a cart staff waived down to €0.00 is not a free one — its waived first period is
+  // recorded as the initial event (with a `waive` attempt) before activation, so it is never charged.
+  if (isWaivedToZero(charge)) {
+    const waived = await db.transaction((tx) => commitWaivedInitialPayment(tx, { gymId, set, actor: actorOf(req).name }))
+      .catch((err: any) => (err?.kind ? { kind: String(err.kind) } : Promise.reject(err)));
+    if (waived.kind === 'amount_changed') return res.status(409).json(amountChangedBody((waived as any).amount));
+    if (waived.kind !== 'ok') return res.status(409).json({ error: waived.kind });
+    const done = waived as { billingEventId: number; eventsCreated: number };
+    recordAudit(req, {
+      action: 'activate', entityType: 'product_set', entityId: set.id,
+      next: { status: 'active', initial_payment: 'waived', ...(opts.member ? { source: 'members_app' } : {}) },
+    });
+    return res.json({ product_set_id: Number(set.id), status: 'active', events_created: done.eventsCreated, billing_event_id: done.billingEventId });
+  }
 
   const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: actorOf(req).name }));
   if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });

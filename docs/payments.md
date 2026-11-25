@@ -158,15 +158,21 @@ repeated identity takes `#2`, `#3`). The waiver is a row of `initial_payment_wai
 coded `initial_payment_waive`. So the review's `amount_due`, the payment request, the cash/card/
 Monei pay flows and the persisted `billing_event_lines` (which store the same `line_key`) are one
 figure; the engine, the plan, its Promotions and every recurring obligation are untouched, and the
-zero line still marks its date as paid up for the scheduled pass. Two waivers are refused rather
+zero line still marks its date as paid up for the scheduled pass. One waiver is refused rather
 than guessed: a Membership Fee that collects a Pre-paid Duration (`prepaid_fee`: the pre-paid
-periods would stay prepaid yet unpaid), and one that would take the whole Initial Payment to zero
-(`would_leave_nothing_to_pay`: a zero charge writes no initial Billing Event, so the first period
-would be charged as an obligation). A stored waiver whose line no longer exists applies to nothing.
+periods would stay prepaid yet unpaid). Since stage 4 (owner, 25 Nov) a waiver may take the whole
+Initial Payment to zero (`would_leave_nothing_to_pay` is gone). Save & Pay then answers
+`nothing_to_pay` and the Admin commits through `POST /product-sets/:id/activate`, which for a charge
+waived to zero (`isWaivedToZero()`) runs `commitWaivedInitialPayment()`
+(`api/src/api/waived-initial-payment.ts`) in one transaction under the set's lock: the charge is
+re-priced, the initial `payment_recorded` event is written with every line (waived ones at €0.00)
+by `ensureInitialEvent()`, a completed €0.00 `waive` attempt settles it (no provider call, nothing
+collected), and `activateWithEvents()` generates the obligations, which skip the period that event
+covers — so the waived first period is never charged by the nightly run. A stored waiver whose line no longer exists applies to nothing.
 Since stage 3 a prorated Membership Fee with no Pre-paid Duration may be waived (its `fee_split`
 carries a prorated stretch only, so `prepaid_fee` applies only when `fee_split.prepaid` or
 `prepaid_periods` is set), and each line whose Waive is disabled carries `waive_refusal`
-(`nothing_to_waive` · `prepaid_fee` · `would_leave_nothing_to_pay`), which the Admin words beside
+(`nothing_to_waive` · `prepaid_fee`), which the Admin words beside
 the disabled button.
 
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's

@@ -60,7 +60,7 @@ export interface BillingEventLineRow {
   /** #3284 stage 2 — the line may be waived (a positive amount, no Pre-paid Duration); carried. */
   waivable?: boolean;
   /** #3284 stage 3 — why Waive is disabled on this line (`waiveRefusal()`'s code), `null` when it is not; carried. */
-  waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | 'would_leave_nothing_to_pay' | null;
+  waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | null;
 }
 
 /**
