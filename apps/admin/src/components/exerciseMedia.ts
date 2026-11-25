@@ -14,6 +14,49 @@ export interface ExerciseMedia {
   exercise_image_thumbnail_url?: string | null;
   exercise_video_url?: string | null;
   exercise_video_thumbnail_url?: string | null;
+  /**
+   * #3407 — each sex position's full-size master and its thumbnail, as the API
+   * resolves them (the exercise's own image of that sex, else its primary
+   * muscle's). Absent on a payload that predates them.
+   */
+  exercise_image_male_url?: string | null;
+  exercise_image_female_url?: string | null;
+  exercise_image_male_thumbnail_url?: string | null;
+  exercise_image_female_thumbnail_url?: string | null;
+}
+
+export type ExerciseImageGender = 'male' | 'female';
+
+/** One image a row draws: the thumbnail it shows and the original the detail modal opens. */
+export interface ExerciseImageThumb {
+  /** The sex position, or null for a payload with no per-sex fields. */
+  gender: ExerciseImageGender | null;
+  thumbnail: string | null;
+  /** The full-size master — never a thumbnail (null when none exists). */
+  original: string | null;
+}
+
+const hasGenderFields = (ex: ExerciseMedia) =>
+  ['exercise_image_male_url', 'exercise_image_female_url', 'exercise_image_male_thumbnail_url', 'exercise_image_female_thumbnail_url']
+    .some((k) => k in ex);
+
+/**
+ * #3407 — the images an exercise row draws, male first: one per sex position
+ * that has an image, each carrying its own original for the modal. A payload
+ * without the per-sex fields keeps the single effective image it always drew.
+ */
+export function exerciseImageThumbs(ex: ExerciseMedia): ExerciseImageThumb[] {
+  if (!hasGenderFields(ex)) {
+    const thumbnail = exerciseImageSrc(ex);
+    return thumbnail ? [{ gender: null, thumbnail, original: ex.exercise_image_url || null }] : [];
+  }
+  const out: ExerciseImageThumb[] = [];
+  for (const gender of ['male', 'female'] as const) {
+    const original = (gender === 'male' ? ex.exercise_image_male_url : ex.exercise_image_female_url) || null;
+    const thumbnail = (gender === 'male' ? ex.exercise_image_male_thumbnail_url : ex.exercise_image_female_thumbnail_url) || original;
+    if (thumbnail) out.push({ gender, thumbnail, original });
+  }
+  return out;
 }
 
 /** The image to render in a row: the 512 × 512 thumbnail when it exists (#719). */
@@ -61,5 +104,5 @@ export function youtubeVideoId(url: string | null): string | null {
 
 /** Whether a row has anything to render at all — no media means no container (§4). */
 export function hasExerciseMedia(ex: ExerciseMedia): boolean {
-  return Boolean(exerciseImageSrc(ex) || ex.exercise_video_url);
+  return Boolean(exerciseImageThumbs(ex).length > 0 || ex.exercise_video_url);
 }

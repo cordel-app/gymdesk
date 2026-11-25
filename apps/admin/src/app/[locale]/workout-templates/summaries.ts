@@ -11,6 +11,9 @@ export interface HierExercise {
   exercise_image_url: string | null; exercise_image_thumbnail_url?: string | null;
   // #719 part 2 added the stored poster the row draws instead of the MP4.
   exercise_video_url: string | null; exercise_video_thumbnail_url?: string | null;
+  // #3407: each sex position's original and thumbnail (own image, else primary muscle's).
+  exercise_image_male_url?: string | null; exercise_image_female_url?: string | null;
+  exercise_image_male_thumbnail_url?: string | null; exercise_image_female_thumbnail_url?: string | null;
   min_reps: number | null; max_reps: number | null; sets: number | null;
   rest_seconds: number | null; tempo: string | null;
   result_type_id: number | null; result_type_slug: string | null; result_type_name: string | null;
