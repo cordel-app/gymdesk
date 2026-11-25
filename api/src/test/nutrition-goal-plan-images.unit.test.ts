@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { SupportedLocale } from '../infra/locale';
 import { goalRowsSql, NUTRITION_GOAL_IMAGE_JOIN_SQL } from '../api/nutrition-goal-illustration';
 
 // #1717: a plan goal's image is the System Nutrition Goal's, resolved on read.
@@ -6,7 +7,7 @@ describe('plan goal image resolution', () => {
   it.each(['nutrition_plan_template_goals', 'member_nutrition_plan_goals'] as const)(
     'reads the goal image through the catalogue slug for %s',
     (table) => {
-      const sql = goalRowsSql(table, 'g.id = ?');
+      const sql = goalRowsSql(table, 'g.id = ?', 'es' as SupportedLocale);
       expect(sql).toContain(NUTRITION_GOAL_IMAGE_JOIN_SQL);
       expect(sql).toContain('goal_image_url');
       expect(sql).toContain('goal_image_thumbnail_url');

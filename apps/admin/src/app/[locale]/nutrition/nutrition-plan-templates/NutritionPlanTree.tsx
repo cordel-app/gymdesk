@@ -21,6 +21,7 @@ import { createLatestWinsSaver, type LatestWinsSaver } from '@/lib/latestWinsSav
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { FoodDetailsModal, type FoodDetailsRow } from '@/components/nutritionLibrary/FoodDetailsModal';
 import { MealThumbnail, type MealImageTarget } from '@/components/meals/MealImage';
+import { NutritionGoalThumbnail, type NutritionGoalImageTarget } from '@/components/goalLibrary/NutritionGoalImage';
 
 /**
  * A Nutrition Library food as the food pickers need it. `categories` is a list
@@ -169,6 +170,22 @@ export interface HierGoal {
   /** #1717: the Nutrition Goal's own image, resolved by the API from the catalogue. */
   goal_image_url?: string | null;
   goal_image_thumbnail_url?: string | null;
+  /** #3377: the System Nutrition Goal's name and description in the request locale. */
+  goal_display_name?: string | null;
+  goal_display_description?: string | null;
+}
+
+/**
+ * #3377: what the shared goal image modal shows for a plan goal — the goal's own
+ * full image (else the illustrating food's, #932), its localized name and description.
+ */
+export function goalImageTarget(g: HierGoal, label: string): NutritionGoalImageTarget {
+  return {
+    name: g.goal_display_name || label,
+    description: g.goal_display_description ?? null,
+    image_url: g.goal_image_url ?? g.illustration_image_url ?? null,
+    image_thumbnail_url: g.goal_image_thumbnail_url ?? null,
+  };
 }
 export interface Hierarchy {
   id: number; name: string; status: string;
@@ -1455,7 +1472,10 @@ function GoalsSection({
       )}
       {goals.map((g) => (
         <div key={g.id} style={tagRowStyle}>
-          <FoodThumbnail imageUrl={g.goal_image_thumbnail_url ?? g.goal_image_url ?? g.illustration_image_url ?? null} size={TREE_AVATAR_SIZE} />
+          <NutritionGoalThumbnail
+            goal={goalImageTarget(g, t(`nutrition_plan_templates.tree_goal_name_${g.item_name}`, { defaultValue: g.item_name }))}
+            size={TREE_AVATAR_SIZE}
+          />
           <span style={{ fontSize: 13.5, fontWeight: 500, marginLeft: 8 }}>
             {t(`nutrition_plan_templates.tree_goal_name_${g.item_name}`, { defaultValue: g.item_name })}
           </span>
