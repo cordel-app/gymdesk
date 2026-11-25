@@ -4,7 +4,19 @@
 import { DateTime } from 'luxon';
 
 export const ROLLING_WEEK_DAYS = 7;
-export const ROLLING_MONTH_DAYS = 30;
+
+/**
+ * #3331 / #3401 — the month the third summary card of My Nutrition and My
+ * Training reports: the calendar month of the selected date, from its 1st to
+ * its last day, never past today. A month that has not started yet is an empty
+ * range (from > to), which reads 0 %.
+ */
+export function calendarMonthRange(selected: string, today: string): [string, string] {
+  const sel = DateTime.fromISO(selected, { zone: 'UTC' });
+  const from = sel.startOf('month').toISODate() as string;
+  const last = sel.endOf('month').toISODate() as string;
+  return [from, last > today ? today : last];
+}
 
 export function gymToday(now: Date, timeZone: string): string {
   const d = DateTime.fromJSDate(now, { zone: timeZone });
@@ -49,13 +61,13 @@ export function trainingProgress(
     }
     return counts(c, t);
   };
-  // #1524: week and month are rolling windows (7 and 30 days) ending on the
-  // selected date, and none of them counts a day after today.
+  // #1524: the week is a rolling 7 days ending on the selected date; #3401: the
+  // month is the selected date's calendar month. Neither counts a day after today.
   const t = DateTime.fromISO(selected, { zone: 'UTC' });
   const end = selected > today ? today : selected;
   return {
     day: range(selected, selected),
     week: range(t.minus({ days: ROLLING_WEEK_DAYS - 1 }).toISODate()!, end),
-    month: range(t.minus({ days: ROLLING_MONTH_DAYS - 1 }).toISODate()!, end),
+    month: range(...calendarMonthRange(selected, today)),
   };
 }

@@ -121,7 +121,7 @@
     "progress_day": "Avui",
     "progress_week_of": "Setmana {date}",
     "progress_week": "Aquesta setmana",
-    "progress_month": "Aquest mes",
+    "progress_this_month": "Aquest mes ({month})",
     "today_marker": "Avui",
     "week_nav_hint": "Llisca per canviar de setmana",
     "week_prev": "Setmana anterior",
