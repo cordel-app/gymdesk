@@ -16,7 +16,6 @@ import {
 } from '../domain/nutritionGoalTranslations';
 import {
   clearNutritionGoalImage,
-  migrateNutritionGoalImageOnRename,
   storeNutritionGoalImage,
 } from './nutrition-goal-image-storage';
 import {
@@ -188,13 +187,7 @@ export async function updateBaseNutritionGoal(
       }
     });
 
-    // The image key carries the goal's name, so a rename moves it .
-    if (name.value !== undefined && name.value !== existing[0].name && existing[0].image_url) {
-      await migrateNutritionGoalImageOnRename(
-        { gymId: null, prefix: PLATFORM_STORAGE_ROOT, kind: 'nutrition', table: TABLE },
-        { id: existing[0].id, name: name.value, image_url: existing[0].image_url, image_thumbnail_url: existing[0].image_thumbnail_url ?? null },
-      );
-    }
+    // #3350: the image key carries the goal's slug, so a rename moves nothing.
 
     const goal = await loadGoal(id, getRequestLocale(req));
     recordAudit(req, { action: 'update', entityType, entityId: id, previous: shapeGoal(existing[0]), next: goal });

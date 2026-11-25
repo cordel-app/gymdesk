@@ -6,7 +6,8 @@
 // *where a goal's image goes* and *what may be removed*. Pure: no database, no
 // bucket.
 //
-// One shape for both roots, one root apart: `<prefix>/nutrition_goals/<id>-<name>.webp`
+// One shape for both roots, one root apart: `<prefix>/nutrition_goals/<id>-<slug>.webp`
+// (the goal's persisted slug since #3350 stage 3, never its name)
 // with the gym's `storage_folder_prefix` for a gym goal and `cordel` for a
 // System one (`docs/cloudflare_structure.md`).
 
@@ -39,22 +40,22 @@ export function sanitizeNutritionGoalImageName(name: string): string {
 }
 
 /**
- * `<prefix>/nutrition_goals/<goal_id>-<sanitized name>.webp` — the 1080 × 1080
+ * `<prefix>/nutrition_goals/<goal_id>-<slug>.webp` — the 1080 × 1080
  * master. `prefix` is the gym's folder prefix, or {@link PLATFORM_STORAGE_ROOT}
  * for a System goal. Deterministic, so a replacement overwrites its own object
  * and the id keeps two goals with one name apart.
  */
 export function buildNutritionGoalImageKey(
-  prefix: string, goalId: number | string, name: string, folder: string = NUTRITION_GOALS_FOLDER,
+  prefix: string, goalId: number | string, slug: string, folder: string = NUTRITION_GOALS_FOLDER,
 ): string {
-  return `${prefix}/${folder}/${goalId}-${sanitizeNutritionGoalImageName(name)}.webp`;
+  return `${prefix}/${folder}/${goalId}-${sanitizeNutritionGoalImageName(slug)}.webp`;
 }
 
 /** The 256 × 256 sibling: the master's key with `-thumbnail` before the extension. */
 export function buildNutritionGoalImageThumbnailKey(
-  prefix: string, goalId: number | string, name: string, folder: string = NUTRITION_GOALS_FOLDER,
+  prefix: string, goalId: number | string, slug: string, folder: string = NUTRITION_GOALS_FOLDER,
 ): string {
-  return `${prefix}/${folder}/${goalId}-${sanitizeNutritionGoalImageName(name)}-thumbnail.webp`;
+  return `${prefix}/${folder}/${goalId}-${sanitizeNutritionGoalImageName(slug)}-thumbnail.webp`;
 }
 
 /** Folder markers between the bucket root and `nutrition_goals/`, outermost first. */
