@@ -104,12 +104,13 @@ platformBasePaymentMethodsRouter.get('/', requireSuperadmin, async (req, res) =>
     where += ' AND m.status = ?';
     params.push(status);
   }
+  // #3372: the search matches the code and any language's name or description.
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   if (q) {
     where += ` AND (m.code LIKE ? OR EXISTS (
       SELECT 1 FROM base_payment_method_translations t
-       WHERE t.base_payment_method_id = m.id AND t.name LIKE ?))`;
-    params.push(`%${q}%`, `%${q}%`);
+       WHERE t.base_payment_method_id = m.id AND (t.name LIKE ? OR t.description LIKE ?)))`;
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   const { rows } = await db.query<MethodRow>(`SELECT m.* FROM base_payment_methods m WHERE ${where} ORDER BY m.id ASC`, params);
   res.json(await shape(rows, locale));
