@@ -125,7 +125,9 @@ platformWorkoutTemplatesRouter.get('/', requireSuperadmin, async (req, res, next
        ORDER BY wt.name ASC LIMIT ${limit} OFFSET ${offset}`,
       params,
     );
-    res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+    // #3335: `num_blocks` is the live block count, derived on read (never stored).
+    const items = rows.map((r: any) => ({ ...r, blocks_count: Number(r.blocks_count), num_blocks: Number(r.blocks_count) }));
+    res.json({ items, total: Number(countRows[0].total), limit, offset });
   } catch (err) { next(err); }
 });
 

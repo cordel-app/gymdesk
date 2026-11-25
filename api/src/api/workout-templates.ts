@@ -9,6 +9,7 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
+import { templateSource, workoutTemplateResyncChanges } from '../domain/workoutTemplateSync';
 
 /**
  * #55: WorkoutTemplate -> WorkoutTemplateBlock -> WorkoutTemplateExercise.
@@ -126,6 +127,61 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
   }
 }
 
+/**
+ * #3335: copies one template's blocks and their exercises onto another — the
+ * one content copy Duplicate, Clone and Import share. A System template's
+ * exercises are Base Exercises (`base_exercise_id`) and the copy keeps naming
+ * them; the cascade that imports those exercises too is #3339's.
+ */
+async function copyTemplateBlocksTx(tx: Tx, gymId: string, sourceId: number | string, targetId: number | string) {
+  const { rows: blocks } = await tx.query(
+    'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+    [sourceId],
+  );
+  for (const block of blocks) {
+    const { insertId: newBlockId } = await tx.query(
+      `INSERT INTO workout_template_blocks
+        (gym_id, workout_template_id, position, name, description, type,
+         rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, targetId, block.position, block.name, block.description, block.type,
+       block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes, block.result_unit ?? null],
+    );
+    const { rows: exercises } = await tx.query(
+      'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+      [block.id],
+    );
+    for (const ex of exercises) {
+      await tx.query(
+        `INSERT INTO workout_template_exercises
+          (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+           result_type_id, target_value, min_value, max_value, unit)
+         VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, newBlockId, ex.exercise_id ?? null, ex.base_exercise_id ?? null, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+         ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null],
+      );
+    }
+  }
+}
+
+/** #3335: the number of live blocks, derived on read and never stored. */
+const NUM_BLOCKS_SQL = `(SELECT COUNT(*) FROM workout_template_blocks wtb
+               WHERE wtb.workout_template_id = wt.id AND wtb.deleted_at IS NULL)`;
+const LIST_COLUMNS = `wt.*, ${NUM_BLOCKS_SQL} AS num_blocks, ${NUM_BLOCKS_SQL} AS blocks_count`;
+
+/** #3335: every gym row reports a derived `source` (`system` | `custom`), never stored. */
+function withSource<T extends { cloned_from_id?: number | null; num_blocks?: unknown; blocks_count?: unknown }>(row: T) {
+  const out: any = { ...row, source: templateSource(row.cloned_from_id) };
+  if (row.num_blocks != null) out.num_blocks = Number(row.num_blocks);
+  if (row.blocks_count != null) out.blocks_count = Number(row.blocks_count);
+  return out;
+}
+
+async function readListRow(id: number | string) {
+  const { rows } = await db.query(`SELECT ${LIST_COLUMNS} FROM workout_templates wt WHERE wt.id = ?`, [id]);
+  return rows[0] ? withSource(rows[0]) : undefined;
+}
+
 /* ---- WorkoutTemplate ---- */
 
 /**
@@ -167,20 +223,23 @@ workoutTemplatesRouter.get('/', async (req, res, next) => {
       return res.json(rows);
     }
 
+    // #3335 §4: the Workout Templates section lists the gym's own templates
+    // only — custom and imported. System templates are read through GET /base
+    // and imported. The plain array above stays the Training Plan editor's
+    // selector, which still names System workouts until #3337's cascade.
+    const listWhere = whereSql.replace('(wt.gym_id = ? OR wt.gym_id IS NULL)', 'wt.gym_id = ?');
     const { rows: countRows } = await db.query(
-      `SELECT COUNT(*) AS total FROM workout_templates wt WHERE ${whereSql}`,
+      `SELECT COUNT(*) AS total FROM workout_templates wt WHERE ${listWhere}`,
       params,
     );
     const { rows } = await db.query(
-      `SELECT wt.*,
-              (SELECT COUNT(*) FROM workout_template_blocks wtb
-               WHERE wtb.workout_template_id = wt.id AND wtb.deleted_at IS NULL) AS blocks_count
+      `SELECT ${LIST_COLUMNS}
        FROM workout_templates wt
-       WHERE ${whereSql}
+       WHERE ${listWhere}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
       params,
     );
-    res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+    res.json({ items: rows.map(withSource), total: Number(countRows[0].total), limit, offset });
   } catch (err) {
     next(err);
   }
@@ -199,6 +258,107 @@ workoutTemplatesRouter.get('/created-by-options', async (req, res, next) => {
     );
     res.json(rows);
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * #3335: the System Workout Templates a gym may import, each with the gym's own
+ * copy (`imported_template_id`, matched by provenance, else by name — the
+ * Exercises import's rule), NULL when the gym has none. `?name=` narrows it for
+ * the Import modal's search. Gym-facing, like GET /exercises/base.
+ */
+workoutTemplatesRouter.get('/base', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+  try {
+    const params: (string | number)[] = [gymId];
+    let nameSql = '';
+    if (name) { nameSql = ' AND wt.name LIKE ?'; params.push(`%${name}%`); }
+    const { rows } = await db.query(
+      `SELECT ${LIST_COLUMNS},
+              (SELECT g.id FROM workout_templates g
+                WHERE g.gym_id = ? AND g.deleted_at IS NULL
+                  AND (g.cloned_from_id = wt.id OR g.name = wt.name)
+                ORDER BY (g.cloned_from_id = wt.id) DESC, g.id ASC LIMIT 1) AS imported_template_id
+         FROM workout_templates wt
+        WHERE wt.gym_id IS NULL AND wt.status = 'active' AND wt.deleted_at IS NULL${nameSql}
+        ORDER BY wt.name ASC`,
+      params,
+    );
+    res.json(rows.map((r: any) => {
+      const { source: _source, ...rest } = withSource(r);
+      return rest;
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const MAX_IMPORT_IDS = 100;
+
+/**
+ * #3335: imports System Workout Templates into the gym, as POST /exercises/import
+ * does. Each becomes an `active` gym template under the System name with
+ * `cloned_from_id` set and its blocks and exercises copied; one the gym already
+ * has (by provenance or by name) is reported under `skipped`. An id that is not
+ * an active System template refuses the whole batch.
+ */
+workoutTemplatesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  const raw = req.body?.baseTemplateIds;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return res.status(400).json({ error: 'baseTemplateIds must be a non-empty array' });
+  }
+  if (raw.length > MAX_IMPORT_IDS) {
+    return res.status(400).json({ error: `baseTemplateIds may hold at most ${MAX_IMPORT_IDS} ids` });
+  }
+  if (!raw.every((v: unknown) => typeof v === 'number' && Number.isInteger(v) && v > 0)) {
+    return res.status(400).json({ error: 'baseTemplateIds must hold positive integer ids' });
+  }
+  const ids = [...new Set(raw as number[])];
+  try {
+    const result = await db.transaction(async (tx) => {
+      const placeholders = ids.map(() => '?').join(', ');
+      const { rows: bases } = await tx.query(
+        `SELECT id, name, description, notes FROM workout_templates
+          WHERE id IN (${placeholders}) AND gym_id IS NULL AND status = 'active' AND deleted_at IS NULL`,
+        ids,
+      );
+      const found = new Set(bases.map((b: any) => Number(b.id)));
+      const invalid = ids.filter((id) => !found.has(id));
+      if (invalid.length > 0) {
+        throw Object.assign(new Error('Some ids are not active System workout templates'), { status: 400, invalid_ids: invalid });
+      }
+      const imported: number[] = [];
+      const skipped: number[] = [];
+      for (const id of ids) {
+        const base = bases.find((b: any) => Number(b.id) === id);
+        const { rows: existing } = await tx.query(
+          `SELECT id FROM workout_templates
+            WHERE gym_id = ? AND deleted_at IS NULL AND (cloned_from_id = ? OR name = ?) LIMIT 1`,
+          [gymId, id, base.name],
+        );
+        if (existing.length > 0) { skipped.push(id); continue; }
+        const { insertId } = await tx.query(
+          `INSERT INTO workout_templates
+             (gym_id, name, description, status, notes, created_by, modified_at, modified_by, cloned_from_id)
+           VALUES (?, ?, ?, 'active', ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+          [gymId, base.name, base.description ?? null, base.notes ?? null, actor, actor, id],
+        );
+        await copyTemplateBlocksTx(tx, gymId, id, insertId);
+        imported.push(Number(insertId));
+      }
+      return { imported, skipped };
+    });
+    for (const newId of result.imported) {
+      recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: newId });
+    }
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err.status === 400) return res.status(400).json({ error: err.message, invalid_ids: err.invalid_ids });
     next(err);
   }
 });
@@ -313,9 +473,9 @@ workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, r
        id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Workout template not found' });
-    const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ? AND gym_id = ?', [id, gymId]);
-    recordAudit(req, { action: 'update', entityType: 'workout_template', entityId: id, next: rows[0] });
-    res.json(rows[0]);
+    const row = await readListRow(id);
+    recordAudit(req, { action: 'update', entityType: 'workout_template', entityId: id, next: row });
+    res.json(row);
   } catch (err) {
     next(err);
   }
@@ -374,41 +534,11 @@ workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), as
          actor, actor],
       );
       createdId = newId;
-
-      const { rows: blocks } = await tx.query(
-        'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-        [id],
-      );
-      for (const block of blocks) {
-        const { insertId: newBlockId } = await tx.query(
-          `INSERT INTO workout_template_blocks
-            (gym_id, workout_template_id, position, name, description, type,
-             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, newId, block.position, block.name, block.description, block.type,
-           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes, block.result_unit ?? null],
-        );
-
-        const { rows: exercises } = await tx.query(
-          'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-          [block.id],
-        );
-        for (const ex of exercises) {
-          await tx.query(
-            `INSERT INTO workout_template_exercises
-              (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
-               result_type_id, target_value, min_value, max_value, unit)
-             VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, newBlockId, ex.exercise_id ?? null, ex.base_exercise_id ?? null, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
-             ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null],
-          );
-        }
-      }
-
+      await copyTemplateBlocksTx(tx, gymId, id, newId);
     });
-    const { rows: newRows } = await db.query('SELECT * FROM workout_templates WHERE id = ?', [createdId!]);
-    recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: createdId!, next: newRows[0] });
-    res.status(201).json(newRows[0]);
+    const created = await readListRow(createdId!);
+    recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: createdId!, next: created });
+    res.status(201).json(created);
   } catch (err) {
     next(err);
   }
@@ -439,40 +569,66 @@ workoutTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async 
          actor, actor, id],
       );
       createdId = newId;
-
-      const { rows: blocks } = await tx.query(
-        'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-        [id],
-      );
-      for (const block of blocks) {
-        const { insertId: newBlockId } = await tx.query(
-          `INSERT INTO workout_template_blocks
-            (gym_id, workout_template_id, position, name, description, type,
-             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, newId, block.position, block.name, block.description, block.type,
-           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes, block.result_unit ?? null],
-        );
-        const { rows: exercises } = await tx.query(
-          'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-          [block.id],
-        );
-        for (const ex of exercises) {
-          await tx.query(
-            `INSERT INTO workout_template_exercises
-              (gym_id, workout_template_block_id, exercise_id, base_exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
-               result_type_id, target_value, min_value, max_value, unit)
-             VALUES (?, ?, (SELECT id FROM exercises WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_exercises WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, newBlockId, ex.exercise_id ?? null, ex.base_exercise_id ?? null, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
-             ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null],
-          );
-        }
-      }
+      await copyTemplateBlocksTx(tx, gymId, id, newId);
     });
-    const { rows: newRows } = await db.query('SELECT * FROM workout_templates WHERE id = ?', [createdId!]);
-    recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: createdId!, next: newRows[0] });
-    res.status(201).json(newRows[0]);
+    const created = await readListRow(createdId!);
+    recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: createdId!, next: created });
+    res.status(201).json(created);
   } catch (err) { next(err); }
+});
+
+/**
+ * #3335: "Resync with System", as the Exercises resync (#2302) and the Training
+ * Plan Templates' (#3334): the System template's name, description and notes
+ * move onto the gym's copy. The copy's blocks and exercises are the gym's own
+ * once imported and are never replaced.
+ */
+workoutTemplatesRouter.post('/:id/resync-with-system', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: own } = await db.query(
+      'SELECT id, name, description, notes, cloned_from_id FROM workout_templates WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [id, gymId],
+    );
+    if (own.length === 0) return res.status(404).json({ error: 'Workout template not found' });
+    const copy = own[0];
+    if (copy.cloned_from_id == null) {
+      return res.status(400).json({ code: 'no_base_template', error: 'This template was not imported from the System catalogue.' });
+    }
+    const { rows: baseRows } = await db.query(
+      'SELECT id, name, description, notes FROM workout_templates WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
+      [copy.cloned_from_id],
+    );
+    if (baseRows.length === 0) {
+      return res.status(409).json({ code: 'base_unavailable', error: 'The originating System template no longer exists.' });
+    }
+    const base = baseRows[0];
+    const changed = workoutTemplateResyncChanges(copy, base);
+    if (changed.length === 0) return res.json({ updated: [], message: 'up_to_date' });
+    if (changed.includes('name')) {
+      const { rows: taken } = await db.query(
+        'SELECT id FROM workout_templates WHERE gym_id = ? AND deleted_at IS NULL AND name = ? AND id <> ? LIMIT 1',
+        [gymId, base.name, copy.id],
+      );
+      if (taken.length > 0) {
+        return res.status(409).json({ code: 'name_taken', error: 'Another template in this gym already uses the System name.' });
+      }
+    }
+    const actor = resolveRequestActor(ctx);
+    await db.query(
+      `UPDATE workout_templates SET name = ?, description = ?, notes = ?,
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ?`,
+      [base.name, base.description ?? null, base.notes ?? null, actor, copy.id, gymId],
+    );
+    const template = await readListRow(copy.id);
+    recordAudit(req, { action: 'update', entityType: 'workout_template', entityId: copy.id, previous: copy, next: template });
+    res.json({ updated: changed, template });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /* ---- WorkoutTemplateBlock ---- */
