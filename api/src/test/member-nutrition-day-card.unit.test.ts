@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { dayCardLabel } from '../../../apps/member/src/lib/trainingWeek';
+import { dayCardLabel, monthCardLabel } from '../../../apps/member/src/lib/trainingWeek';
 
 // #3331 — My Nutrition's first summary card follows the selected date within
 // the current week. CI runs `npm test` in api/ only, hence this file.
 const today = '2026-11-25'; // a Wednesday
+const page = readFileSync(join(__dirname, '../../../apps/member/src/app/[locale]/nutrition/page.tsx'), 'utf8');
 
 describe('My Nutrition day card (#3331)', () => {
   it('reads Today for today', () => {
@@ -23,9 +24,31 @@ describe('My Nutrition day card (#3331)', () => {
   });
 
   it('the page takes the selected day figures in the current week, and never resets a picked day', () => {
-    const page = readFileSync(join(__dirname, '../../../apps/member/src/app/[locale]/nutrition/page.tsx'), 'utf8');
     expect(page).toMatch(/dayCardLabel\(selectedDate, today\)/);
     expect(page).toMatch(/dayKind === 'weekday' \? \(progressDate === selectedDate \? progress\.day/);
     expect(page).not.toMatch(/if \(selectedDate === today\) setSelectedDate\(p\.today\)/);
+  });
+
+  it('labels any day but today with its DD/MM date, never a weekday name', () => {
+    expect(page).toMatch(/dayKind === 'today' \? t\('nutrition\.progress_day'\) : ddmm\(selectedDate\)/);
+    expect(page).not.toMatch(/weekday: 'long' \}\)\)\s*\n\s*: ddmm/);
+  });
+});
+
+describe('My Nutrition month card (#3331)', () => {
+  it('reads This Month with MM/YYYY for today\'s month', () => {
+    expect(monthCardLabel(today, today)).toEqual({ current: true, mmyyyy: '11/2026' });
+    expect(monthCardLabel('2026-11-01', today)).toEqual({ current: true, mmyyyy: '11/2026' });
+  });
+
+  it('reads MM/YYYY for another month, across a year boundary too', () => {
+    expect(monthCardLabel('2026-10-31', today)).toEqual({ current: false, mmyyyy: '10/2026' });
+    expect(monthCardLabel('2025-12-15', '2026-01-03')).toEqual({ current: false, mmyyyy: '12/2025' });
+  });
+
+  it('the page reports the selected month figures under that label', () => {
+    expect(page).toMatch(/monthCardLabel\(selectedDate, today\)/);
+    expect(page).toMatch(/month\.current \? summary\.month\s*\n?\s*: \(progressDate === selectedDate \? progress\.month/);
+    expect(page).toMatch(/label: monthLabel, percent: monthCounts\.percent/);
   });
 });

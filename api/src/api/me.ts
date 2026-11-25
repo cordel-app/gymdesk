@@ -25,7 +25,7 @@ import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
 import { gymToday, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
-import { canCompleteOn, inWindow, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
+import { calendarMonthRange, canCompleteOn, inWindow, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
 import { db } from '../infra/db';
 import type { Tx } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
@@ -1756,21 +1756,23 @@ meRouter.get('/nutrition-progress', requireRole('member'), requireFeatureEnabled
     const q = typeof req.query.date === 'string' ? req.query.date : '';
     if (q && !/^\d{4}-\d{2}-\d{2}$/.test(q)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     const selected = q || today;
+    // The Monday week around the selected date and its calendar month (#3331).
+    const [monthFrom, monthTo] = calendarMonthRange(selected, today);
+    const weekFrom = DateTime.fromISO(selected).minus({ days: 7 }).toISODate() as string;
+    const weekTo = DateTime.fromISO(selected).plus({ days: 7 }).toISODate() as string;
+    const logsFrom = monthFrom < weekFrom ? monthFrom : weekFrom;
+    const logsTo = monthTo > weekTo ? monthTo : weekTo;
     const meals = await planMeals(gymId, memberId);
     const { rows: logs } = await db.query(
       `SELECT meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM nutrition_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
-      [gymId, memberId,
-       DateTime.fromISO(selected).minus({ days: ROLLING_MONTH_DAYS + 7 }).toISODate(),
-       DateTime.fromISO(selected).plus({ days: 7 }).toISODate()],
+      [gymId, memberId, logsFrom, logsTo],
     );
     const requirements = await planRequirements(gymId, memberId);
     const { rows: reqLogs } = await db.query(
       `SELECT goal_id, restriction_id, level, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM nutrition_requirement_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
-      [gymId, memberId,
-       DateTime.fromISO(selected).minus({ days: ROLLING_MONTH_DAYS + 7 }).toISODate(),
-       DateTime.fromISO(selected).plus({ days: 7 }).toISODate()],
+      [gymId, memberId, logsFrom, logsTo],
     );
     res.json({
       ...nutritionProgress(meals, (logs as any[]).map((l) => ({ mealId: l.meal_id, date: l.d })), today, selected, requirements,

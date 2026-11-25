@@ -4,10 +4,23 @@
 // training/calendar 0=Sunday base (migration 105, member-nutrition-plans.ts) —
 // and 7 means "every day". A scheduled meal instance is (meal id, date); it is eligible for
 // completion when its date is today or earlier. Windows follow My Training's
-// (#1524): rolling 7 and 30 days ending on the selected date, never past today,
-// and a period with nothing eligible reads 0 %.
+// (#1524): a rolling 7 days ending on the selected date, never past today, and
+// a period with nothing eligible reads 0 %. The month is the selected date's
+// calendar month (#3331), never past today.
 import { DateTime } from 'luxon';
-import { ROLLING_MONTH_DAYS, ROLLING_WEEK_DAYS } from './workoutProgress';
+import { ROLLING_WEEK_DAYS } from './workoutProgress';
+
+/**
+ * #3331 — the month My Nutrition's third card reports: the calendar month of
+ * the selected date, from its 1st to its last day, never past today. A month
+ * that has not started yet is an empty range (from > to), which reads 0 %.
+ */
+export function calendarMonthRange(selected: string, today: string): [string, string] {
+  const sel = DateTime.fromISO(selected, { zone: 'UTC' });
+  const from = sel.startOf('month').toISODate() as string;
+  const last = sel.endOf('month').toISODate() as string;
+  return [from, last > today ? today : last];
+}
 
 export const ALL_DAYS_WEEKDAY = 7;
 
@@ -147,7 +160,7 @@ export function nutritionProgress(
   return {
     day: selected > today ? counts(0, 0) : { ...range(selected, selected), percent: dayScore(selected) ?? 0 },
     week: range(sel.minus({ days: ROLLING_WEEK_DAYS - 1 }).toISODate() as string, end),
-    month: range(sel.minus({ days: ROLLING_MONTH_DAYS - 1 }).toISODate() as string, end),
+    month: range(...calendarMonthRange(selected, today)),
     week_days: mondayWeek(selected).map((date) => ({ date, status: dayStatus(date), score: date > today ? null : dayScore(date) })),
   };
 }

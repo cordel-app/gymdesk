@@ -13,7 +13,7 @@ import { NutritionItemRow, nutritionItemGridStyle } from '@/components/Nutrition
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { NUTRITION_DAY_STATUSES, type NutritionDayStatus } from '@/lib/trainingDayStatus';
-import { ProgressCounts, dayCardLabel, deviceToday, mondayIndex, canShowNextWeek, shiftWeekWithin, swipeWeekDelta, weekDates, weekStart } from '@/lib/trainingWeek';
+import { ProgressCounts, dayCardLabel, deviceToday, mondayIndex, monthCardLabel, canShowNextWeek, shiftWeekWithin, swipeWeekDelta, weekDates, weekStart } from '@/lib/trainingWeek';
 import { memberTheme, primaryButtonStyle, sectionCardStyle, statusPillStyle, statusTone } from '@/lib/memberChrome';
 import {
   NutritionFoodItem,
@@ -27,11 +27,6 @@ import {
 // Weekday / date names are locale-driven, not a gym format setting (allowlisted in member-gym-format-allowlist).
 function dayText(locale: string, ymd: string, opts: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' }).format(new Date(`${ymd}T00:00:00Z`));
-}
-
-// `lunes` / `dilluns` read as a card title.
-function capitalize(text: string): string {
-  return text.charAt(0).toLocaleUpperCase() + text.slice(1);
 }
 
 interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[]; meal_name?: string | null }
@@ -225,15 +220,13 @@ export default function NutritionPage() {
   const restrictions = shown?.restrictions ?? [];
 
   // The plan's day numbering is Monday-based (0=Mon … 6=Sun), unlike training's.
-  // #1874: another week shows its own dates and results; the month card stays today's.
+  // #1874: another week shows its own dates and results.
   const otherWeek = weekStart(selectedDate) !== weekStart(today);
   const ddmm = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
-  // #3331: the day card follows the selected date in the current week too —
-  // *Today* for today, the weekday's name for another day, its own figures.
+  // #3331: the day card follows the selected date — *Today* for today, its
+  // DD/MM date for any other day, with that day's own figures.
   const dayKind = dayCardLabel(selectedDate, today);
-  const dayLabel = dayKind === 'today' ? t('nutrition.progress_day')
-    : dayKind === 'weekday' ? capitalize(dayText(locale, selectedDate, { weekday: 'long' }))
-    : ddmm(selectedDate);
+  const dayLabel = dayKind === 'today' ? t('nutrition.progress_day') : ddmm(selectedDate);
   const weekLabel = otherWeek ? t('nutrition.progress_week_of', { date: ddmm(weekStart(selectedDate)) }) : t('nutrition.progress_week');
   // `progress` is the selected date's read; only show it once it answers for that date.
   // Another week keeps its pre-#3331 reading of `progress` untouched.
@@ -241,6 +234,12 @@ export default function NutritionPage() {
     : dayKind === 'weekday' ? (progressDate === selectedDate ? progress.day : EMPTY_COUNTS)
     : progress.day;
   const weekCounts = otherWeek ? progress.week : summary.week;
+  // #3331: the month card names the selected date's month — *This Month (MM/YYYY)*
+  // for today's month, *MM/YYYY* for another — and reports that month's figures.
+  const month = monthCardLabel(selectedDate, today);
+  const monthLabel = month.current ? t('nutrition.progress_this_month', { month: month.mmyyyy }) : month.mmyyyy;
+  const monthCounts = month.current ? summary.month
+    : (progressDate === selectedDate ? progress.month : EMPTY_COUNTS);
   const selectedWeekday = mondayIndex(selectedDate);
   const mealsForDate: Meal[] = (shown?.days ?? [])
     .filter((d) => d.weekday === ALL_DAYS_WEEKDAY || d.weekday === selectedWeekday)
@@ -261,7 +260,7 @@ export default function NutritionPage() {
           <TrainingSummaryCards cards={[
             { label: dayLabel, percent: dayCounts.percent, detail: `${dayCounts.completed}/${dayCounts.total}` },
             { label: weekLabel, percent: weekCounts.percent, detail: `${weekCounts.completed}/${weekCounts.total}` },
-            { label: t('nutrition.progress_month'), percent: summary.month.percent, detail: `${summary.month.completed}/${summary.month.total}` },
+            { label: monthLabel, percent: monthCounts.percent, detail: `${monthCounts.completed}/${monthCounts.total}` },
           ]} />
 
           <div style={styles.weekCard}>
