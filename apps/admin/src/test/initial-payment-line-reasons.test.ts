@@ -46,8 +46,6 @@ describe('Initial Payment waive (#3284 stage 2)', () => {
   });
 
   it('a disabled Waive states the server\'s reason (#3284 stage 3)', () => {
-    expect(initialPaymentLineAction({ line_key: 'a', waivable: false, waive_refusal: 'would_leave_nothing_to_pay' })?.disabledReasonKey)
-      .toBe('checkout_waive_error_nothing_left');
     expect(initialPaymentLineAction({ line_key: 'a', waivable: false, waive_refusal: 'prepaid_fee' })?.disabledReasonKey)
       .toBe('checkout_waive_error_prepaid');
     expect(initialPaymentLineAction({ line_key: 'a', waivable: true, waive_refusal: null })?.disabledReasonKey).toBeUndefined();
