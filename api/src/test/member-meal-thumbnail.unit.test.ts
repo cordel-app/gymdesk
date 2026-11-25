@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { mealThumbnailView, MEAL_THUMBNAIL_SIZE } from '../../../apps/member/src/lib/mealThumbnail';
+
+// #3404 — every meal in Members App → My Nutrition carries a fixed-size circular
+// thumbnail of its Base Meal, opening the app's one enlarged-image dialog on the
+// full-size picture with the meal's name and description. In the API suite
+// because CI runs `npm test` in `api/` only (#1009).
+
+const MEMBER = join(__dirname, '..', '..', '..', 'apps', 'member', 'src');
+const PAGE = readFileSync(join(MEMBER, 'app', '[locale]', 'nutrition', 'page.tsx'), 'utf-8');
+const COMPONENT = readFileSync(join(MEMBER, 'components', 'MealThumbnail.tsx'), 'utf-8');
+
+describe('mealThumbnailView', () => {
+  const base = {
+    base_meal_id: 3,
+    meal_image_url: 'https://cdn.example/cordel/meals/3-breakfast.webp',
+    meal_image_thumbnail_url: 'https://cdn.example/cordel/meals/3-breakfast-thumbnail.webp',
+    meal_description: '  Start the day  ',
+    meal_modified_at: '2026-11-25T10:00:00.000Z',
+  };
+
+  it('uses the thumbnail for the circle and the master for the dialog, cache-busted', () => {
+    const v = mealThumbnailView(base);
+    expect(v.thumbnailSrc).toBe(`${base.meal_image_thumbnail_url}?v=${encodeURIComponent(base.meal_modified_at)}`);
+    expect(v.fullSrc).toBe(`${base.meal_image_url}?v=${encodeURIComponent(base.meal_modified_at)}`);
+    expect(v.description).toBe('Start the day');
+  });
+
+  it('falls back to whichever picture exists', () => {
+    expect(mealThumbnailView({ ...base, meal_image_thumbnail_url: null }).thumbnailSrc).toContain('3-breakfast.webp');
+    expect(mealThumbnailView({ ...base, meal_image_url: null }).fullSrc).toContain('3-breakfast-thumbnail.webp');
+  });
+
+  it('reports no picture and no description for a meal without them', () => {
+    expect(mealThumbnailView({ base_meal_id: 3 })).toEqual({ thumbnailSrc: null, fullSrc: null, description: null });
+    expect(mealThumbnailView({ meal_image_url: 'javascript:alert(1)', meal_description: '   ' }))
+      .toEqual({ thumbnailSrc: null, fullSrc: null, description: null });
+  });
+
+  it('is a fixed size', () => {
+    expect(MEAL_THUMBNAIL_SIZE).toBe(40);
+  });
+});
+
+describe('My Nutrition meal rows', () => {
+  it('draw the thumbnail in each meal header, before the name', () => {
+    const head = PAGE.indexOf('<div style={styles.mealHead}>');
+    expect(head).toBeGreaterThan(-1);
+    const thumb = PAGE.indexOf('<MealThumbnail meal={meal}', head);
+    const name = PAGE.indexOf('styles.mealName', head);
+    expect(thumb).toBeGreaterThan(head);
+    expect(thumb).toBeLessThan(name);
+  });
+
+  it('reuse the app avatar circle and the one image preview dialog', () => {
+    expect(COMPONENT).toContain('<MemberAvatar');
+    expect(COMPONENT).toContain('<ImagePreviewButton');
+    expect(COMPONENT).not.toMatch(/MemberDialog|<img/);
+    expect(COMPONENT).not.toMatch(/['"`]#[0-9a-fA-F]{3,8}['"`]/);
+  });
+});

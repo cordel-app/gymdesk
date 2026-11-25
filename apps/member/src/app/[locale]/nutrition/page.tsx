@@ -10,6 +10,8 @@ import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
 import { NutritionItemRow, nutritionItemGridStyle } from '@/components/NutritionItemRow';
+import { MealThumbnail } from '@/components/MealThumbnail';
+import type { MealImageFields } from '@/lib/mealThumbnail';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { NUTRITION_DAY_STATUSES, type NutritionDayStatus } from '@/lib/trainingDayStatus';
@@ -29,7 +31,7 @@ function dayText(locale: string, ymd: string, opts: Intl.DateTimeFormatOptions):
   return new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' }).format(new Date(`${ymd}T00:00:00Z`));
 }
 
-interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[]; meal_name?: string | null }
+interface Meal extends MealImageFields { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[]; meal_name?: string | null }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
 interface NutritionPlan {
   id: number;
@@ -357,7 +359,9 @@ export default function NutritionPage() {
                   return (
                     <div key={meal.id} style={styles.mealRow}>
                       <div style={styles.mealHead}>
-                        <p style={styles.mealName}>
+                        {/* #3404: the meal's Base Meal picture, a fixed circle left of its name. */}
+                        <MealThumbnail meal={meal} title={title.title} />
+                        <p style={{ ...styles.mealName, flex: 1, minWidth: 0 }}>
                           {title.title}
                           {title.suffix && <span style={styles.mealType}> · {title.suffix}</span>}
                         </p>
