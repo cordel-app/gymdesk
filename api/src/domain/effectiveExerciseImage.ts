@@ -151,3 +151,38 @@ export const effectiveVideoUrlSql = (alias = 'e', sex: ImageSex = 'male') =>
 /** That video's 256x256 preview thumbnail, derived from its URL: `<name>.mp4` → `<name>-thumbnail.webp`. */
 export const effectiveVideoPosterSql = (alias = 'e', sex: ImageSex = 'male') =>
   derivedCompanionSql(effectiveVideoUrlSql(alias, sex), 'mp4');
+
+/**
+ * #3407 — the image of one sex position, as `resolveEffectiveImage()` decides it
+ * for `effective_image_<sex>_url` / `_thumbnail_url` (#1704, #2306): the exercise's
+ * own image of that sex, else the alphabetically first primary muscle's image of
+ * that sex. Never the other sex's image, so a position with none reads NULL and
+ * the two thumbnails a tree row draws are always the two sexes.
+ */
+const sexMuscleImageSql = (alias: string, sex: ImageSex, thumbnail: boolean) =>
+  `(SELECT pm.image_${sex}_url${thumbnail ? '_thumbnail' : ''} FROM exercise_muscle_catalogue pem JOIN muscles pm ON pm.id = pem.muscle_id
+     WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND pm.image_${sex}_url IS NOT NULL
+     ORDER BY LOWER(pm.name), pm.id LIMIT 1)`;
+
+/** The full-size master shown for `sex` (never a thumbnail). */
+export const genderImageUrlSql = (alias: string, sex: ImageSex) =>
+  `COALESCE(${alias}.image_${sex}_url, ${sexMuscleImageSql(alias, sex, false)})`;
+
+/** The 256x256 thumbnail shown for `sex`. */
+export const genderImageThumbnailUrlSql = (alias: string, sex: ImageSex) =>
+  `IF(${alias}.image_${sex}_url IS NULL, ${sexMuscleImageSql(alias, sex, true)}, ${derivedCompanionSql(`${alias}.image_${sex}_url`, 'webp')})`;
+
+const GENDER_IMAGE_FIELDS = (alias: string): [string, string][] => [
+  ['exercise_image_male_url', genderImageUrlSql(alias, 'male')],
+  ['exercise_image_female_url', genderImageUrlSql(alias, 'female')],
+  ['exercise_image_male_thumbnail_url', genderImageThumbnailUrlSql(alias, 'male')],
+  ['exercise_image_female_thumbnail_url', genderImageThumbnailUrlSql(alias, 'female')],
+];
+
+/** The four per-sex fields as `JSON_OBJECT` key/value pairs, for a tree read (no trailing comma). */
+export const exerciseGenderImagePairsSql = (alias = 'e') =>
+  GENDER_IMAGE_FIELDS(alias).map(([k, v]) => `'${k}', ${v}`).join(', ');
+
+/** The four per-sex fields as select-list columns (no trailing comma). */
+export const exerciseGenderImageColumnsSql = (alias = 'e') =>
+  GENDER_IMAGE_FIELDS(alias).map(([k, v]) => `${v} AS ${k}`).join(', ');
