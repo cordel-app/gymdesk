@@ -17,7 +17,6 @@ import {
   PROFESSIONAL_SERVICE_IMAGE_COLUMNS,
   clearProfessionalServiceImage,
   copyBaseProfessionalServiceImage,
-  migrateProfessionalServiceImageOnRename,
   storeProfessionalServiceImage,
 } from './professional-service-image-storage';
 
@@ -321,16 +320,7 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
       }
     });
 
-    // #2010: the image key carries the service's name, so a rename moves it.
-    {
-      const { rows: imgRows } = await db.query(
-        `SELECT ${PROFESSIONAL_SERVICE_IMAGE_COLUMNS} FROM professional_services WHERE id = ? AND gym_id = ?`,
-        [req.params.id, gymId],
-      );
-      if (imgRows[0]?.image_url) {
-        await migrateProfessionalServiceImageOnRename({ gymId, prefix: await gymStorageFolderPrefix(gymId) }, imgRows[0]);
-      }
-    }
+    // #3350: the image key carries the service's slug, so a rename moves nothing.
 
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ? AND ps.gym_id = ?`, [gymId, req.params.id, gymId]);
     recordAudit(req, {

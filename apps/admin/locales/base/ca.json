@@ -739,7 +739,6 @@
     "checkout_action_revert_waive": "Revertir l'exempció",
     "checkout_waive_unavailable": "A aquesta línia no li queda import per eximir al pagament inicial.",
     "checkout_waive_error_prepaid": "No es pot eximir una quota de membresia que cobra una durada prepagada: els períodes prepagats quedarien sense pagar.",
-    "checkout_waive_error_nothing_left": "Eximir aquesta línia deixaria el pagament inicial sense import; ha de mantenir algun càrrec.",
     "checkout_line_no_charge": "Sense càrrec",
     "checkout_split_prorated": "Període prorratejat {start} – {end}: {days} de {period} dies · {amount}",
     "checkout_line_prorated": "Prorratejat: {days} de {period} dies",

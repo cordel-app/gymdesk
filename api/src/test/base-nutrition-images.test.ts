@@ -84,6 +84,7 @@ const GYM_FOOD_NAME = 'Test Base Image Gym Owned Food';
 let gymId: string;
 let foodId: number;
 let secondFoodId: number;
+let foodSlug: string;
 let gymFoodId: number;
 
 async function createBaseFood(name: string): Promise<number> {
@@ -114,6 +115,10 @@ beforeAll(async () => {
   await createTestMembership(gymId, 'admin');
 
   foodId = await createBaseFood(BASE_FOOD_NAME);
+  // The key is built from the persisted slug (#3350), deliberately not what the
+  // name sanitizes to. The second food keeps no slug: the name fallback.
+  foodSlug = `base-image-chicken-${foodId}`;
+  await db.query('UPDATE base_nutrition_library_items SET slug = ? WHERE id = ?', [foodSlug, foodId]);
   secondFoodId = await createBaseFood(SECOND_FOOD_NAME);
   const { insertId } = await db.query(
     "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, ?, 'active')",
@@ -172,7 +177,7 @@ describe('POST /platform/nutrition-library/:id/image — auth', () => {
 // ─── Happy path ───────────────────────────────────────────────────────────────
 
 /**
- * `cordel/nutrition/<food_id>-<name>.webp`, matched whole. #1035 §12 keys the
+ * `cordel/nutrition/<food_id>-<slug>.webp`, matched whole (#3350). #1035 §12 keys the
  * object by the **food** rather than by a per-upload UUID, so the pattern takes
  * the row's id: a replacement lands on this very key again, which is what the
  * two sweep cases below assert.
@@ -196,7 +201,7 @@ describe('POST /platform/nutrition-library/:id/image', () => {
     expect(res.status).toBe(200);
 
     const key = lastPutKey();
-    expect(key).toMatch(keyPattern(foodId, 'Test-Base-Image-Chicken-Breast'));
+    expect(key).toMatch(keyPattern(foodId, foodSlug));
     const puts = objectPuts();
     expect(puts.map((c: any) => c.input.Key)).toEqual([key, thumbOf(key)]);
     for (const put of puts) expect(put.input).toMatchObject({ Bucket: R2_BUCKET, ContentType: 'image/webp' });
@@ -212,7 +217,7 @@ describe('POST /platform/nutrition-library/:id/image', () => {
     expect(await imageUrlOf(foodId)).toBe(expectedUrl);
   });
 
-  it('sanitizes the food name in the key', async () => {
+  it('falls back to the sanitized food name for a food with no slug', async () => {
     const res = await upload(secondFoodId, validPng());
     expect(res.status).toBe(200);
     expect(lastPutKey()).toMatch(keyPattern(secondFoodId, 'Test-Base-Image-Salmon-Atlantic'));
@@ -238,23 +243,34 @@ describe('POST /platform/nutrition-library/:id/image', () => {
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
     const secondKey = lastPutKey();
-    expect(secondKey).toMatch(keyPattern(foodId, 'Test-Base-Image-Chicken-Breast'));
+    expect(secondKey).toMatch(keyPattern(foodId, foodSlug));
     expect(secondKey).toBe(firstKey);
     expect(await imageUrlOf(foodId)).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/${secondKey}`);
     expect(sentCommands('delete')).toHaveLength(0);
   });
 
-  it('names the new object after the food\'s current name and deletes the old one', async () => {
+  it('keeps the slug key on a rename and sweeps nothing (#3350)', async () => {
     await upload(foodId, validPng());
-    const staleKey = lastPutKey();
+    const firstKey = lastPutKey();
 
     await db.query('UPDATE base_nutrition_library_items SET name = ? WHERE id = ?', ['Test Base Image Renamed Food', foodId]);
     sendMock.mockClear();
 
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
+    expect(lastPutKey()).toBe(firstKey);
+    expect(firstKey).not.toContain('Renamed');
+    expect(sentCommands('delete')).toHaveLength(0);
+  });
+
+  it('moves an image stored under a pre-#3350 name key to the slug key and deletes the old pair', async () => {
+    const staleKey = `cordel/nutrition/${foodId}-Test-Base-Image-Chicken-Breast.webp`;
+    await db.query('UPDATE base_nutrition_library_items SET image_url = ? WHERE id = ?', [`${R2_ENDPOINT}/${R2_BUCKET}/${staleKey}`, foodId]);
+
+    const res = await upload(foodId, validPng());
+    expect(res.status).toBe(200);
     const newKey = lastPutKey();
-    expect(newKey).toMatch(keyPattern(foodId, 'Test-Base-Image-Renamed-Food'));
+    expect(newKey).toMatch(keyPattern(foodId, foodSlug));
     expect(sentCommands('delete').map((c: any) => c.input.Key).sort()).toEqual([staleKey, thumbOf(staleKey)].sort());
     expect(await imageUrlOf(foodId)).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/${newKey}`);
   });
@@ -265,13 +281,13 @@ describe('POST /platform/nutrition-library/:id/image', () => {
 
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
-    expect(lastPutKey()).toMatch(keyPattern(foodId, 'Test-Base-Image-Chicken-Breast'));
+    expect(lastPutKey()).toMatch(keyPattern(foodId, foodSlug));
     expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([legacyKey]);
   });
 
-  it('still saves the new image when sweeping the renamed food\'s old object fails', async () => {
-    await upload(foodId, validPng());
-    await db.query('UPDATE base_nutrition_library_items SET name = ? WHERE id = ?', ['Test Base Image Renamed Food', foodId]);
+  it('still saves the new image when sweeping the old name-keyed object fails', async () => {
+    const staleKey = `cordel/nutrition/${foodId}-Test-Base-Image-Chicken-Breast.webp`;
+    await db.query('UPDATE base_nutrition_library_items SET image_url = ? WHERE id = ?', [`${R2_ENDPOINT}/${R2_BUCKET}/${staleKey}`, foodId]);
     sendMock.mockReset();
     sendMock.mockImplementation((command: any) => (
       command?.__type === 'delete' ? Promise.reject(new Error('R2 down')) : Promise.resolve({})
@@ -279,7 +295,7 @@ describe('POST /platform/nutrition-library/:id/image', () => {
 
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
-    expect(await imageUrlOf(foodId)).toContain('Test-Base-Image-Renamed-Food.webp');
+    expect(await imageUrlOf(foodId)).toContain(`${foodSlug}.webp`);
   });
 });
 
@@ -403,7 +419,7 @@ describe('GET /platform/nutrition-library', () => {
 
     const withImage = res.body.items.find((i: any) => i.id === foodId);
     const withoutImage = res.body.items.find((i: any) => i.id === secondFoodId);
-    expect(withImage.image_url).toMatch(urlPattern(foodId, 'Test-Base-Image-Chicken-Breast'));
+    expect(withImage.image_url).toMatch(urlPattern(foodId, foodSlug));
     expect(withoutImage).toBeDefined();
     expect(withoutImage.image_url).toBeNull();
   });
@@ -439,7 +455,7 @@ describe('backfillBaseNutritionImages()', () => {
     expect(counters.discovered).toBe(2);
     expect(counters.generated).toBe(2);
     expect(counters.failed).toEqual([]);
-    expect(await imageUrlOf(foodId)).toMatch(urlPattern(foodId, 'Test-Base-Image-Chicken-Breast'));
+    expect(await imageUrlOf(foodId)).toMatch(urlPattern(foodId, foodSlug));
     expect(await imageUrlOf(secondFoodId)).toMatch(urlPattern(secondFoodId, 'Test-Base-Image-Salmon-Atlantic'));
   });
 
@@ -521,7 +537,7 @@ describe('backfillBaseNutritionImages()', () => {
       const counters = await run({ fromDir: dir });
       expect(counters.supplied).toBe(1);
 
-      const put = sentCommands('put').find((c: any) => String(c.input.Key).endsWith('-Test-Base-Image-Chicken-Breast.webp'));
+      const put = sentCommands('put').find((c: any) => String(c.input.Key).endsWith(`-${foodSlug}.webp`));
       expect(put.input.ContentType).toBe('image/webp');
       expect((await sharp(put.input.Body).metadata()).width).toBe(1080);
     } finally {

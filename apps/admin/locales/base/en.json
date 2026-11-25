@@ -738,7 +738,6 @@
     "checkout_action_revert_waive": "Revert waive",
     "checkout_waive_unavailable": "This line has nothing left to waive in the Initial Payment.",
     "checkout_waive_error_prepaid": "A Membership Fee that collects a pre-paid duration cannot be waived: the pre-paid periods would be left unpaid.",
-    "checkout_waive_error_nothing_left": "Waiving this line would leave nothing to pay; the Initial Payment must keep a charge.",
     "checkout_line_no_charge": "No charge",
     "checkout_split_prorated": "Prorated period {start} – {end}: {days} of {period} days · {amount}",
     "checkout_line_prorated": "Prorated: {days} of {period} days",

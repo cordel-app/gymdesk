@@ -5,9 +5,10 @@
 // `memberImages.ts`' and `memberImageProcessing.ts`'; this file owns only *where
 // a service's image goes* and *what may be removed*. Pure: no database, no bucket.
 //
-// One shape for both roots, one root apart: `<prefix>/professional_services/<id>-<name>.webp`
+// One shape for both roots, one root apart: `<prefix>/professional_services/<id>-<slug>.webp`
 // with the gym's `storage_folder_prefix` for a gym-owned service and `cordel`
-// (`PLATFORM_STORAGE_ROOT`) for a Base one.
+// (`PLATFORM_STORAGE_ROOT`) for a Base one. Since #3350 stage 3 the identifier
+// is the service's persisted slug (`imageKeyIdentifier()`), never its name.
 
 import { PROFESSIONAL_SERVICES_FOLDER, sanitizeStorageObjectName, storageKeyFromObjectUrl } from '../infra/storage';
 
@@ -21,18 +22,18 @@ export function sanitizeProfessionalServiceImageName(name: string): string {
   return sanitizeStorageObjectName(name, 'service').slice(0, MAX_KEY_NAME_CHARS).replace(/-$/, '');
 }
 
-/** `<prefix>/professional_services/<id>-<sanitized name>.webp` — the 1080 × 1080 master. */
+/** `<prefix>/professional_services/<id>-<slug>.webp` — the 1080 × 1080 master. */
 export function buildProfessionalServiceImageKey(
-  prefix: string, serviceId: number | string, name: string, variant?: string,
+  prefix: string, serviceId: number | string, slug: string, variant?: string,
 ): string {
-  return `${prefix}/${PROFESSIONAL_SERVICES_FOLDER}/${serviceId}-${sanitizeProfessionalServiceImageName(name)}${variant ? `-${variant}` : ''}.webp`;
+  return `${prefix}/${PROFESSIONAL_SERVICES_FOLDER}/${serviceId}-${sanitizeProfessionalServiceImageName(slug)}${variant ? `-${variant}` : ''}.webp`;
 }
 
 /** The 256 × 256 sibling: the master's key with `-thumbnail` before the extension. */
 export function buildProfessionalServiceImageThumbnailKey(
-  prefix: string, serviceId: number | string, name: string, variant?: string,
+  prefix: string, serviceId: number | string, slug: string, variant?: string,
 ): string {
-  return `${prefix}/${PROFESSIONAL_SERVICES_FOLDER}/${serviceId}-${sanitizeProfessionalServiceImageName(name)}${variant ? `-${variant}` : ''}-thumbnail.webp`;
+  return `${prefix}/${PROFESSIONAL_SERVICES_FOLDER}/${serviceId}-${sanitizeProfessionalServiceImageName(slug)}${variant ? `-${variant}` : ''}-thumbnail.webp`;
 }
 
 /** Folder markers between the bucket root and `professional_services/`, outermost first. */

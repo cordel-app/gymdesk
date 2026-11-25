@@ -10,7 +10,6 @@ import {
 import {
   PROFESSIONAL_SERVICE_IMAGE_COLUMNS,
   clearProfessionalServiceImage,
-  migrateProfessionalServiceImageOnRename,
   storeProfessionalServiceImage,
 } from './professional-service-image-storage';
 import { attachTranslations, deleteTranslations, writeTranslations } from './professional-service-translations';
@@ -238,13 +237,7 @@ export async function updateBaseProfessionalService(
     if (err?.code === 'ER_DUP_ENTRY') return refuse(409, DUPLICATE_NAME);
     throw err;
   }
-  // #2010: the image key carries the service's name, so a rename moves it.
-  if (name !== existing.name && existing.image_url) {
-    await migrateProfessionalServiceImageOnRename(
-      { gymId: null, prefix: PLATFORM_STORAGE_ROOT },
-      { id: existing.id, name, image_url: existing.image_url, image_thumbnail_url: existing.image_thumbnail_url },
-    );
-  }
+  // #3350: the image key carries the service's slug, so a rename moves nothing.
   const row = await loadOne(existing.id, resolveLocale(req));
   recordAudit(req, { action: 'update', entityType: 'professional_service', entityId: String(existing.id), entityName: name, previous: existing, next: row });
   return { ok: true, id: existing.id };

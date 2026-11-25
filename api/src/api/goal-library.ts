@@ -44,7 +44,7 @@ import {
 } from '../domain/nutritionGoalImages';
 import {
   clearNutritionGoalImage,
-  migrateNutritionGoalImageOnRename,
+  goalKeyIdentifier,
   storeNutritionGoalImage,
 } from './nutrition-goal-image-storage';
 import {
@@ -333,16 +333,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         if (goalTranslations.translations) await replaceGoalTranslations(tx, String(id), goalTranslations.translations, kind as TranslatedGoalKind);
       });
 
-      // #1623: the image key carries the goal's name, so a rename moves it.
-      if (hasWebpImage && name.value !== undefined && name.value !== existing[0].name && existing[0].image_url) {
-        await migrateNutritionGoalImageOnRename(
-          { gymId, prefix: await memberGymStorageFolderPrefix(gymId), kind },
-          {
-            id: existing[0].id, name: name.value,
-            image_url: existing[0].image_url, image_thumbnail_url: existing[0].image_thumbnail_url ?? null,
-          },
-        );
-      }
+      // #3350: the image key carries the goal's slug, so a rename moves nothing.
 
       const goal = await loadGoal(id, gymId, getRequestLocale(req));
       recordAudit(req, {
@@ -637,12 +628,14 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       const folderPrefix = await memberGymStorageFolderPrefix(gymId);
       if (!folderPrefix) return null;
       const folder = GOAL_IMAGE_FOLDERS[kind];
+      // #3350: the key carries the new goal's own `entity_slug`, never its name.
+      const keyId = await goalKeyIdentifier({ gymId, prefix: folderPrefix, kind }, { id: goalId, name: goalName });
       const isWebp = sourceKey.endsWith('.webp');
       const destKey = isWebp
-        ? buildNutritionGoalImageKey(folderPrefix, goalId, goalName, folder)
-        : buildNutritionGoalImageKey(folderPrefix, goalId, goalName, folder).replace(/\.webp$/, sourceKey.slice(sourceKey.lastIndexOf('.')));
+        ? buildNutritionGoalImageKey(folderPrefix, goalId, keyId, folder)
+        : buildNutritionGoalImageKey(folderPrefix, goalId, keyId, folder).replace(/\.webp$/, sourceKey.slice(sourceKey.lastIndexOf('.')));
       const thumbSourceKey = isWebp && source.image_thumbnail_url ? storageKeyFromObjectUrl(source.image_thumbnail_url) : null;
-      const destThumbKey = thumbSourceKey ? buildNutritionGoalImageThumbnailKey(folderPrefix, goalId, goalName, folder) : null;
+      const destThumbKey = thumbSourceKey ? buildNutritionGoalImageThumbnailKey(folderPrefix, goalId, keyId, folder) : null;
       try {
         await ensureStorageFolders(nutritionGoalImageFolderKeys(folderPrefix, folder));
         const imageUrl = await copyStorageObject(sourceKey, destKey);
