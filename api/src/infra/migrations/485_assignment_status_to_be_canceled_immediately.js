@@ -8,13 +8,12 @@
  *   plan_snapshots  chk_plan_snapshots_status             (status)
  *   plan_snapshots  chk_plan_snapshots_assignment_status  (assignment_status, NULL allowed)
  *
- * Each step is safe to re-run. The CHECKs rebuild `plan_snapshots` under ALGORITHM=COPY;
+ * Safe to re-run. Both CHECKs are replaced in one ALTER, which rebuilds `plan_snapshots` once under ALGORITHM=COPY;
  * `lock_wait_timeout` bounds the wait for the metadata lock. Merge outside the nightly runs and the
  * 15-minute booking-reminder pass. `down` restores the previous lists and refuses to run while a row
  * holds the value.
  */
 
-const ER_CHECK_CONSTRAINT_NOT_FOUND = 3940;
 const BASE = [
   'in_cart', 'pending_payment', 'active', 'to_be_canceled', 'paused',
   'active_cancel_at_period_end', 'to_be_reactivated', 'cancelled', 'expired', 'superseded',
@@ -23,21 +22,23 @@ const WIDENED = [
   'in_cart', 'pending_payment', 'active', 'to_be_canceled', 'paused',
   'active_cancel_at_period_end', 'to_be_reactivated', 'to_be_canceled_immediately', 'cancelled', 'expired', 'superseded',
 ];
+const CHECKS = ['chk_plan_snapshots_status', 'chk_plan_snapshots_assignment_status'];
 
 const list = (values) => values.map((v) => `'${v}'`).join(', ');
 
+/** Drops whichever of the two CHECKs exist and adds both back in one ALTER: one rebuild, no unchecked window. */
 async function setChecks(knex, values) {
+  const [existing] = await knex.raw(
+    `SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'plan_snapshots' AND CONSTRAINT_NAME IN (?, ?)`, CHECKS);
+  const drops = existing.map((r) => `DROP CHECK ${r.name}`);
   await knex.raw('SET SESSION lock_wait_timeout = 30');
   try {
-    for (const check of ['chk_plan_snapshots_status', 'chk_plan_snapshots_assignment_status']) {
-      await knex.raw(`ALTER TABLE plan_snapshots DROP CHECK ${check}`).catch((err) => {
-        if (err.errno !== ER_CHECK_CONSTRAINT_NOT_FOUND) throw err;
-      });
-    }
-    await knex.raw(`ALTER TABLE plan_snapshots ADD CONSTRAINT chk_plan_snapshots_status
-      CHECK (status IN (${list(values)}))`);
-    await knex.raw(`ALTER TABLE plan_snapshots ADD CONSTRAINT chk_plan_snapshots_assignment_status
-      CHECK (assignment_status IS NULL OR assignment_status IN (${list(values)}))`);
+    await knex.raw(`ALTER TABLE plan_snapshots ${[
+      ...drops,
+      `ADD CONSTRAINT chk_plan_snapshots_status CHECK (status IN (${list(values)}))`,
+      `ADD CONSTRAINT chk_plan_snapshots_assignment_status CHECK (assignment_status IS NULL OR assignment_status IN (${list(values)}))`,
+    ].join(', ')}`);
   } finally {
     await knex.raw('SET SESSION lock_wait_timeout = DEFAULT');
   }
