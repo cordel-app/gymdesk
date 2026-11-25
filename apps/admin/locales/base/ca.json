@@ -706,6 +706,8 @@
     "review_plan_cancelled": "El pla de membresia {plan} acaba (sense càrrec)",
     "review_plan_reactivated": "El pla de membresia {plan} es reactiva (sense càrrec inicial addicional)",
     "review_plan_cancelled_immediately": "El pla de membresia {plan} es cancel·la avui (sense càrrec)",
+    "review_center_access_warning_title": "Es retirarà l'accés a centres",
+    "review_center_access_warning_member": "{member} perdrà l'accés a: {centers}",
     "review_line_cancelled_immediately": "{product} es cancel·la avui (sense càrrec)",
     "review_initial_payment": "Pagament inicial",
     "checkout_initial_payment": "Pagament inicial",

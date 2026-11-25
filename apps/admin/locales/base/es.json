@@ -705,6 +705,8 @@
     "review_plan_cancelled": "El plan de membresía {plan} termina (sin cargo)",
     "review_plan_reactivated": "El plan de membresía {plan} se reactiva (sin cargo inicial adicional)",
     "review_plan_cancelled_immediately": "El plan de membresía {plan} se cancela hoy (sin cargo)",
+    "review_center_access_warning_title": "Se retirará el acceso a centros",
+    "review_center_access_warning_member": "{member} perderá el acceso a: {centers}",
     "review_line_cancelled_immediately": "{product} se cancela hoy (sin cargo)",
     "review_initial_payment": "Pago inicial",
     "checkout_initial_payment": "Pago inicial",
