@@ -11,7 +11,9 @@ import {
   cardMutedTextStyle, cardSubLabelStyle, cardTextLinkStyle, formErrorStyle,
 } from '@/components/formChrome';
 import { DataTable, type Column } from '@/components/DataTable';
-import { ContextMenu } from '@/components/ContextMenu';
+import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { CrudModal } from '@/components/CrudModal';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -19,7 +21,7 @@ import { purchaseStatusKey } from '@/lib/purchaseName';
 import { NormalizedPaymentStatusBadge, BillingEventStatusBadge } from '../payments/billing-events/BillingEventShared';
 import {
   beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseChannelLabelKey, purchaseDisplayName,
-  purchaseEventPath, purchaseIsEmpty, purchaseTotalValue, type MemberPurchase, type PurchaseBillingEvent,
+  purchaseCancelErrorKey, purchaseCanCancel, purchaseEventPath, purchaseIsEmpty, purchaseTotalValue, type MemberPurchase, type PurchaseBillingEvent,
 } from './purchasesTabView';
 
 /**
@@ -39,6 +41,11 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<Set<React.Key>>(new Set());
   const [detail, setDetail] = useState<MemberPurchase | null>(null);
+  // #3355 stage 3: `⋮ → Cancel` of a purchase awaiting payment, confirmed first.
+  const { canWrite, readOnlyTitle } = useModuleAccess('PAYMENTS');
+  const [cancelling, setCancelling] = useState<MemberPurchase | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     apiFetch<{ items: MemberPurchase[] }>(`/payments/purchases?member_id=${memberId}&limit=200`)
@@ -47,6 +54,23 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberId]);
   useEffect(() => { load(); }, [load]);
+
+  const confirmCancel = async () => {
+    if (!cancelling) return;
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      await apiFetch(`/payments/purchases/${cancelling.id}/cancel`, { method: 'POST' });
+      setCancelling(null);
+      load();
+    } catch (err: any) {
+      setCancelError(t(purchaseCancelErrorKey(err?.body?.error ?? err?.code) as any));
+      setCancelling(null);
+      load();
+    } finally {
+      setCancelBusy(false);
+    }
+  };
 
   if (failed) return <p style={formErrorStyle}>{t('members.purchases_error')}</p>;
 
@@ -77,7 +101,13 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
       render: (p) => (
         <ContextMenu
           ariaLabel={t('members.purchases_actions_for', { purchase: purchaseDisplayName(p) })}
-          items={[{ kind: 'details' as const, label: t('members.action_details'), onClick: () => setDetail(p) }]}
+          items={[
+            ...(purchaseCanCancel(p) ? [{
+              label: t('members.purchases_action_cancel'), danger: true, disabled: !canWrite, title: readOnlyTitle,
+              onClick: () => { setCancelError(null); setCancelling(p); },
+            } as ContextMenuItem] : []),
+            { kind: 'details' as const, label: t('members.action_details'), onClick: () => setDetail(p) },
+          ]}
         />
       ),
     },
@@ -144,6 +174,7 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
 
   return (
     <div>
+      {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
       <DataTable
         columns={columns}
         rows={items ?? []}
@@ -155,6 +186,16 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
         onToggleExpand={toggle}
         clickRowToExpand
         renderExpanded={expandedBody}
+      />
+      <ConfirmDialog
+        open={cancelling !== null}
+        title={t('members.purchases_cancel_title')}
+        message={t('members.purchases_cancel_message', { purchase: cancelling ? purchaseDisplayName(cancelling) : '' })}
+        busy={cancelBusy}
+        confirmLabel={t('members.purchases_cancel_confirm')}
+        cancelLabel={t('members.purchases_cancel_keep')}
+        onConfirm={confirmCancel}
+        onCancel={() => setCancelling(null)}
       />
       <CrudModal
         open={detail !== null}

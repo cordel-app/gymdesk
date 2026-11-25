@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   beneficiaryNameIfOther, otherBeneficiaryNames, productTypeLabelKey, purchaseChannelLabelKey, purchaseDisplayName, purchaseEventPath, purchaseIsEmpty,
-  purchaseTotalValue,
+  purchaseTotalValue, purchaseCanCancel, purchaseCancelErrorKey,
 } from '@/app/[locale]/members/purchasesTabView';
 
 // #3273 — the Purchases tab's presentation decisions.
@@ -43,5 +43,14 @@ describe('purchases table (#3355 stage 2)', () => {
   it('reads the API total, and nothing as no total', () => {
     expect(purchaseTotalValue({ total_amount: '45.50' })).toBe(45.5);
     expect(purchaseTotalValue({ total_amount: null })).toBeNull();
+  });
+
+  it('#3355 stage 3 — offers Cancel only on a purchase awaiting payment, and words a refusal by its code', () => {
+    expect(purchaseCanCancel({ status: 'pending_payment' })).toBe(true);
+    for (const status of ['in_cart', 'completed', 'cancelled']) expect(purchaseCanCancel({ status })).toBe(false);
+    expect(purchaseCancelErrorKey('payment_settled')).toBe('members.purchases_cancel_error_settled');
+    expect(purchaseCancelErrorKey('payment_unresolved')).toBe('members.purchases_cancel_error_unresolved');
+    expect(purchaseCancelErrorKey('not_pending_payment')).toBe('members.purchases_cancel_error_not_pending');
+    expect(purchaseCancelErrorKey(undefined)).toBe('members.purchases_cancel_error');
   });
 });
