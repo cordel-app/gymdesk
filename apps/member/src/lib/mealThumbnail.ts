@@ -34,5 +34,9 @@ export function mealThumbnailView(meal: MealImageFields): MealThumbnailView {
   return { thumbnailSrc, fullSrc: fullSrc ?? thumbnailSrc, description };
 }
 
-/** The fixed diameter of every meal thumbnail and placeholder, in px. */
-export const MEAL_THUMBNAIL_SIZE = 40;
+/**
+ * The fixed diameter of every meal thumbnail and placeholder, in px. #3428: the
+ * meal is a section heading on the page background, so its circle is heading-sized
+ * (the owner asked for 64–72 px) rather than a small avatar.
+ */
+export const MEAL_THUMBNAIL_SIZE = 68;
