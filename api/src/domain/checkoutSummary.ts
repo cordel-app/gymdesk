@@ -51,8 +51,8 @@ export interface ChargeLineLike {
 }
 
 /** #3284 stage 3 — the codes a disabled Waive states (`domain/initialPaymentWaiver.ts`). */
-export type WaiveRefusalCode = 'nothing_to_waive' | 'prepaid_fee' | 'would_leave_nothing_to_pay';
-const WAIVE_REFUSAL_CODES: readonly string[] = ['nothing_to_waive', 'prepaid_fee', 'would_leave_nothing_to_pay'];
+export type WaiveRefusalCode = 'nothing_to_waive' | 'prepaid_fee';
+const WAIVE_REFUSAL_CODES: readonly string[] = ['nothing_to_waive', 'prepaid_fee'];
 const waiveRefusalOf = (v: unknown): WaiveRefusalCode | null =>
   typeof v === 'string' && WAIVE_REFUSAL_CODES.includes(v) ? v as WaiveRefusalCode : null;
 

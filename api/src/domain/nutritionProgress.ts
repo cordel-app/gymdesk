@@ -8,19 +8,11 @@
 // a period with nothing eligible reads 0 %. The month is the selected date's
 // calendar month (#3331), never past today.
 import { DateTime } from 'luxon';
-import { ROLLING_WEEK_DAYS } from './workoutProgress';
+import { calendarMonthRange, ROLLING_WEEK_DAYS } from './workoutProgress';
 
-/**
- * #3331 — the month My Nutrition's third card reports: the calendar month of
- * the selected date, from its 1st to its last day, never past today. A month
- * that has not started yet is an empty range (from > to), which reads 0 %.
- */
-export function calendarMonthRange(selected: string, today: string): [string, string] {
-  const sel = DateTime.fromISO(selected, { zone: 'UTC' });
-  const from = sel.startOf('month').toISODate() as string;
-  const last = sel.endOf('month').toISODate() as string;
-  return [from, last > today ? today : last];
-}
+// #3401: the calendar-month rule lives beside My Training's, which shares it.
+export { calendarMonthRange };
+
 
 export const ALL_DAYS_WEEKDAY = 7;
 

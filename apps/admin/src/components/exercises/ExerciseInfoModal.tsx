@@ -7,7 +7,7 @@ import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
 import { equipmentLabel } from '@/lib/exerciseEquipment';
 import {
-  buildExerciseInfo, exerciseInfoFields, type ExerciseInfoFieldId, type ExerciseInfoRow,
+  buildExerciseInfo, showImagePlaceholder, exerciseInfoFields, type ExerciseInfoFieldId, type ExerciseInfoRow,
 } from './exerciseInfoView';
 
 /**
@@ -59,6 +59,7 @@ export function ExerciseInfoFieldRow({ id, label, children }: {
 export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, gender, onClose }: {
   exerciseId: number;
   fallbackName?: string;
+  /** The original (full-size) image to show while the details load — never a thumbnail (#3407). */
   fallbackImageUrl?: string | null;
   /** The thumbnail that was clicked (#2306): the modal shows that gender's full-size image. */
   gender?: 'male' | 'female' | null;
@@ -114,6 +115,14 @@ export function ExerciseInfoModal({ exerciseId, fallbackName, fallbackImageUrl, 
             src={imageUrl} alt={name} onError={() => setImageBroken(true)}
             style={{ display: 'block', width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain', borderRadius: 8, background: '#fafafa' }}
           />
+        ) : showImagePlaceholder({ imageUrl, imageBroken, gender, loaded: info != null }) ? (
+          // #3407: a missing or unloadable original reads as a placeholder, never an enlarged thumbnail.
+          <div
+            data-testid="exercise-info-no-image" role="img" aria-label={t('no_image')}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', aspectRatio: '1 / 1', maxHeight: '60vh', borderRadius: 8, background: '#fafafa', fontSize: 14, opacity: 0.7 }}
+          >
+            {t('no_image')}
+          </div>
         ) : null}
 
         {failed && <p style={{ fontSize: 14, marginTop: 16 }}>{t('load_error')}</p>}

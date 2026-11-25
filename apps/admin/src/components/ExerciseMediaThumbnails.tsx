@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
-  ExerciseMedia, exerciseImageSrc, exerciseVideoPosterUrl, hasExerciseMedia,
+  ExerciseMedia, type ExerciseImageGender, type ExerciseImageThumb, exerciseImageThumbs, exerciseVideoPosterUrl, hasExerciseMedia,
 } from './exerciseMedia';
 import { ExerciseVideoModal } from './ExerciseVideoModal';
 import { ExerciseInfoModal } from './exercises/ExerciseInfoModal';
@@ -21,10 +21,15 @@ import { ExerciseInfoModal } from './exercises/ExerciseInfoModal';
  * a row (§3, §10). A thumbnail that fails to load hides itself and leaves the
  * other one alone (§13).
  */
-export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all', exerciseId }: {
+export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all', exerciseId, onOpenImage }: {
   exercise: ExerciseMedia;
   /** When given, clicking the image opens the shared Exercise Detail Viewer (#2379). */
   exerciseId?: number;
+  /**
+   * #3407 — when given, a click on an image hands the caller its sex position
+   * instead of opening a modal here (the workout tree keeps its one modal).
+   */
+  onOpenImage?: (gender: ExerciseImageGender | null) => void;
   size?: number;
   /**
    * `image` renders only the exercise image as a circular avatar (the workout
@@ -33,14 +38,18 @@ export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all', exe
   part?: 'all' | 'image' | 'video';
 }) {
   const t = useTranslations();
-  const [imageBroken, setImageBroken] = useState(false);
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   const [posterBroken, setPosterBroken] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  // #3407: the clicked image, so the modal opens that sex's own original.
+  const [infoFor, setInfoFor] = useState<ExerciseImageThumb | null>(null);
 
   if (!hasExerciseMedia(exercise)) return null;
 
-  const imageSrc = part === 'video' ? null : exerciseImageSrc(exercise);
+  // #3407: one thumbnail per sex position that has an image (male, then female).
+  const images = part === 'video' ? [] : exerciseImageThumbs(exercise);
+  const clickable = onOpenImage != null || exerciseId != null;
+  const openImage = (img: ExerciseImageThumb) => (onOpenImage ? onOpenImage(img.gender) : setInfoFor(img));
   const videoUrl = part === 'image' ? null : (exercise.exercise_video_url ?? null);
   const posterSrc = exerciseVideoPosterUrl(exercise);
   const name = exercise.exercise_name ?? '';
@@ -55,19 +64,37 @@ export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all', exe
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-      {imageSrc && !imageBroken && (
-        <img
-          src={imageSrc}
-          alt={name ? t('exercise_media.image_alt', { name }) : t('exercise_media.image')}
-          title={name}
-          loading="lazy"
-          style={exerciseId != null ? { ...imageTile, cursor: 'zoom-in' } : imageTile}
-          onClick={exerciseId != null ? () => setInfoOpen(true) : undefined}
-          onError={() => setImageBroken(true)}
-        />
-      )}
-      {infoOpen && exerciseId != null && (
-        <ExerciseInfoModal exerciseId={exerciseId} fallbackName={name} fallbackImageUrl={imageSrc} onClose={() => setInfoOpen(false)} />
+      {images.map((img) => {
+        const key = img.gender ?? 'default';
+        if (!img.thumbnail || brokenImages[key]) return null;
+        const alt = name ? t('exercise_media.image_alt', { name }) : t('exercise_media.image');
+        const image = (
+          <img
+            src={img.thumbnail}
+            alt={alt}
+            title={name}
+            loading="lazy"
+            data-gender={img.gender ?? undefined}
+            style={clickable ? { ...imageTile, cursor: 'zoom-in' } : imageTile}
+            onError={() => setBrokenImages((b) => ({ ...b, [key]: true }))}
+          />
+        );
+        return clickable ? (
+          <button
+            key={key}
+            type="button"
+            data-gender={img.gender ?? undefined}
+            onClick={(e) => { e.stopPropagation(); openImage(img); }}
+            aria-label={alt}
+            style={{ display: 'inline-flex', lineHeight: 0, padding: 0, border: 0, background: 'none', cursor: 'zoom-in' }}
+          >
+            {image}
+          </button>
+        ) : <React.Fragment key={key}>{image}</React.Fragment>;
+      })}
+      {infoFor && exerciseId != null && (
+        // #3407: the modal shows the clicked sex's original, never the thumbnail.
+        <ExerciseInfoModal exerciseId={exerciseId} fallbackName={name} fallbackImageUrl={infoFor.original} gender={infoFor.gender} onClose={() => setInfoFor(null)} />
       )}
 
       {videoUrl && (

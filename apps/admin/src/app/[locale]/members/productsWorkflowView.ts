@@ -146,7 +146,7 @@ export interface InitialPaymentLike {
     waived?: boolean;
     waivable?: boolean;
     /** #3284 stage 3 — why the server disabled Waive on this line; `null` when it did not. */
-    waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | 'would_leave_nothing_to_pay' | null;
+    waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;
@@ -298,7 +298,6 @@ export function initialPaymentLineAction(
 /** #3284 — the locale key each waive refusal code is worded with (`members` namespace). */
 export const WAIVE_REFUSAL_KEYS: Record<string, string> = {
   prepaid_fee: 'checkout_waive_error_prepaid',
-  would_leave_nothing_to_pay: 'checkout_waive_error_nothing_left',
   nothing_to_waive: 'checkout_waive_unavailable',
 };
 
