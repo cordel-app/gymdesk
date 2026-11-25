@@ -513,7 +513,7 @@ memberNutritionPlansRouter.get('/:id/hierarchy', async (req, res, next) => {
       [id, gymId],
     );
     const { rows: goalRows } = await db.query(
-      goalRowsSql('member_nutrition_plan_goals', 'g.member_nutrition_plan_id = ? AND g.gym_id = ?'),
+      goalRowsSql('member_nutrition_plan_goals', 'g.member_nutrition_plan_id = ? AND g.gym_id = ?', getRequestLocale(req)),
       [id, gymId],
     );
 
@@ -945,7 +945,7 @@ memberNutritionPlansRouter.post('/:id/goals', requireModuleWrite('NUTRITION'), a
       'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id, base_nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), (SELECT id FROM base_nutrition_library_items WHERE id = ?))',
       [gymId, id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id, illustration.id],
     );
-    const { rows } = await db.query(goalRowsSql('member_nutrition_plan_goals', 'g.id = ?'), [insertId]);
+    const { rows } = await db.query(goalRowsSql('member_nutrition_plan_goals', 'g.id = ?', getRequestLocale(req)), [insertId]);
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
 });
@@ -976,7 +976,7 @@ memberNutritionPlansRouter.put('/:id/goals/:gid', requireModuleWrite('NUTRITION'
       'UPDATE member_nutrition_plan_goals SET nutrition_library_item_id = (SELECT id FROM nutrition_library_items WHERE id = ? AND gym_id IS NOT NULL), base_nutrition_library_item_id = (SELECT id FROM base_nutrition_library_items WHERE id = ?) WHERE id = ? AND member_nutrition_plan_id = ? AND gym_id = ?',
       [illustration.id, illustration.id, gid, id, gymId],
     );
-    const { rows } = await db.query(goalRowsSql('member_nutrition_plan_goals', 'g.id = ?'), [gid]);
+    const { rows } = await db.query(goalRowsSql('member_nutrition_plan_goals', 'g.id = ?', getRequestLocale(req)), [gid]);
     res.json(rows[0]);
   } catch (err) { next(err); }
 });

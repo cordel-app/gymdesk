@@ -332,7 +332,13 @@ describe('the flex-row lists stage 4 converted are on it', () => {
         + stripComments(readFileSync(join(APP_DIR, 'training-plan-templates', 'TemplateRowCells.tsx'), 'utf-8')),
       headerBand: true,
     },
-    { name: 'Workout Templates', src: readPage('workout-templates'), headerBand: true },
+    // #3335 stage 2: its declaration moved beside the page, shared with Cordel's Base list.
+    {
+      name: 'Workout Templates',
+      src: readPage('workout-templates')
+        + stripComments(readFileSync(join(APP_DIR, 'workout-templates', 'WorkoutTemplateRowCells.tsx'), 'utf-8')),
+      headerBand: true,
+    },
     { name: 'Gyms', src: readPage('system', 'gyms'), headerBand: true },
     { name: 'Taxes', src: readPage('financials', 'taxes'), headerBand: true },
     { name: 'Payment Providers', src: readPage('cordel', 'payment-providers'), headerBand: true },

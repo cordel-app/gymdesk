@@ -204,8 +204,9 @@ describe('The Workout Templates page\'s own form is formChrome (#1031)', () => {
     expect(pageSrc).not.toContain("border: '1px solid #ccc'");
   });
 
-  it('renders the two filters with the app\'s filter control', () => {
-    expect(pageSrc.match(/style=\{filterControlStyle\}/g) ?? []).toHaveLength(2);
+  it('renders the three filters with the app\'s filter control', () => {
+    // #3335 stage 2: search, author and status, the Exercises filter bar.
+    expect(pageSrc.match(/style=\{filterControlStyle\}/g) ?? []).toHaveLength(3);
     expect(String(filterControlStyle.border)).toContain('var(--gd-input-border,');
   });
 
