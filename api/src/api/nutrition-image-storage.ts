@@ -2,7 +2,7 @@
 // to Cloudflare R2 (#1562), shared by the gym route and the platform (Base) one.
 //
 // A food's image is a server-made pair of WebP files — the 1080 × 1080 master at
-// `<root>/nutrition/<food_id>-<name>.webp` and its 256 × 256 thumbnail beside it
+// `<root>/nutrition/<food_id>-<slug>.webp` (#3350) and its 256 × 256 thumbnail beside it
 // — made from the one picture the client sends, by the same function Base
 // Exercises use (`processExerciseImage()`: contained, never stretched or
 // cropped). Only the master's URL is stored in `nutrition_library_items.image_url`;
@@ -153,8 +153,9 @@ export async function storeNutritionImagePair(opts: {
 
 /**
  * Best-effort removal of the objects a replacement stopped pointing at, after
- * the row moved: the old master and its thumbnail when the key changed (a
- * rename, or an image from before #1562 under a `.png`/other-extension key).
+ * the row moved: the old master and its thumbnail when the key changed (an
+ * image stored under a pre-#3350 name key, or from before #1562 under a
+ * `.png`/other-extension key).
  * `owns` is the ownership test — only an object the gym (or the platform) owns
  * is ever deleted (#719 §19).
  */

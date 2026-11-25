@@ -39,6 +39,7 @@ import { processExerciseImage } from '../domain/exerciseImageProcessing';
 import { EXERCISE_GENDER_IMAGE_MIME, EXERCISE_IMAGE_REJECTION_MESSAGES } from '../domain/exerciseGenderMedia';
 import {
   buildBaseNutritionImageKey,
+  nutritionImageKeyIdentifier,
   baseNutritionFolderKeys,
   nutritionThumbnailKeyFor,
   sanitizeNutritionImageName,
@@ -57,6 +58,7 @@ import {
 interface BaseFood {
   id: number;
   name: string;
+  slug: string | null;
   image_url: string | null;
   categories: string[];
   qualities: string[];
@@ -115,8 +117,8 @@ export async function loadBaseFoods(limit: number | null, onlyIds: number[] | nu
   // `onlyIds` are validated integers (parseIds), and LIMIT cannot be a `?`
   // parameter in MySQL 8's prepared-statement protocol — hence the literals.
   const only = onlyIds && onlyIds.length > 0 ? `AND id IN (${onlyIds.join(', ')})` : '';
-  const { rows } = await db.query<{ id: number; name: string; image_url: string | null }>(
-    `SELECT id, name, image_url
+  const { rows } = await db.query<{ id: number; name: string; slug: string | null; image_url: string | null }>(
+    `SELECT id, name, slug, image_url
        FROM base_nutrition_library_items
       WHERE deleted_at IS NULL ${only}
       ORDER BY id ASC
@@ -219,7 +221,7 @@ export async function backfillBaseNutritionImages(
   }
 
   for (const food of pending) {
-    const key = buildBaseNutritionImageKey(food.id, food.name);
+    const key = buildBaseNutritionImageKey(food.id, nutritionImageKeyIdentifier(food));
     try {
       const supplied = options.fromDir ? findSuppliedImage(options.fromDir, food) : null;
       const png = supplied ?? renderNutritionImage({
