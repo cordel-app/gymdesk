@@ -192,6 +192,14 @@ export interface SimulationService {
   name: string;
   billingFrequency: ProductFrequency | null;
   unitPrice: number;
+  /**
+   * #3360 — the line's list unit price and the direct discount frozen on `unitPrice` (#1521), when
+   * the line carries one. They change no charge: they let the line state its regular price before
+   * the direct discount and the discount itself as a reason, so a summary never reads the direct
+   * discount as part of the price. Absent or `null` on a line with no direct discount.
+   */
+  listUnitPrice?: number | null;
+  directDiscountPercent?: number | null;
   quantity: number;
   startsOn: string;
   endsOn: string | null;
@@ -1477,7 +1485,19 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
   const cycleShift = scheduleCadence ? promotionCycleShift(scheduleCadence, start, proration != null) : 0;
   const quantity = Math.max(1, Math.trunc(service.quantity) || 1);
   const unit = round2(service.unitPrice);
-  const regular = round2(unit * quantity);
+  // What the line is charged from: the unit price the direct discount was frozen on (#1521).
+  const charged = round2(unit * quantity);
+  // #3360 — the line's regular price is its **list** price: a direct discount frozen on the unit
+  // price is stated as a reason of its own rather than hidden in the price before discounts. The
+  // charge is still computed from the frozen unit price, so no amount moves.
+  const direct = service.directDiscountPercent != null && service.directDiscountPercent > 0
+    && service.listUnitPrice != null && service.listUnitPrice > 0 ? Number(service.directDiscountPercent) : null;
+  const listUnit = direct != null ? round2(Number(service.listUnitPrice)) : unit;
+  const regular = round2(listUnit * quantity);
+  const directBenefits: SimulationBenefit[] = direct != null ? [{
+    source: 'personal', name: null, action: 'percentage_discount', value: direct, period_status: null,
+    code: 'direct_discount',
+  }] : [];
   // #1923 — a Product Promotion's periodical grant for this Product covers the
   // service's own periods, counted from the first one on or after the day the
   // Promotion was applied.
@@ -1490,7 +1510,7 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
     start,
     end,
     resolve: (date, occurrence) => {
-      const resolved = resolveCoveredCharge(coverage, regular, [], date, occurrence > 0 ? occurrence - cycleShift : occurrence);
+      const resolved = resolveCoveredCharge(coverage, charged, directBenefits, date, occurrence > 0 ? occurrence - cycleShift : occurrence);
       if (!proration || occurrence !== 0) return resolved;
       return { ...resolved, amount: round2(resolved.amount * proration.proratedDays / proration.periodDays) };
     },
@@ -1502,7 +1522,7 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
       plan_name: a.planName,
       product_id: service.productId,
       quantity,
-      unit_price: unit,
+      unit_price: listUnit,
       regular_price: regular,
       benefits: resolved.benefits,
       actual_charge: resolved.amount,

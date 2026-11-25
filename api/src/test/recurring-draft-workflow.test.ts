@@ -244,7 +244,9 @@ describe('Review your changes (#1537)', () => {
     // the line total minus its discount is its amount; the totals likewise.
     const r2 = (n: number) => Math.round(n * 100) / 100;
     for (const l of ip.lines) {
-      expect(Math.abs(r2(l.unit_price * l.quantity) - l.line_total)).toBeLessThanOrEqual(0.01 * l.quantity);
+      // #3360: a prorated line's total is for the stretch it charges.
+      const ratio = l.proration ? l.proration.days / l.proration.period_days : 1;
+      expect(Math.abs(r2(l.unit_price * l.quantity * ratio) - l.line_total)).toBeLessThanOrEqual(0.01 * l.quantity);
       expect(r2(l.line_total - l.discount)).toBe(l.amount);
     }
     expect(r2(ip.total_before_discounts - ip.discount_total)).toBe(review.body.amount_due);
