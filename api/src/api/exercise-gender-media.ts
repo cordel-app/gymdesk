@@ -21,7 +21,7 @@
 // the companions are derived from it (`domain/exerciseGenderMedia.ts`). A video's
 // preview objects live beside the video and never touch the image columns.
 //
-// The key comes from the row's id and name and the gender in the URL, never from
+// The key comes from the row's id and slug (#3350) and the gender in the URL, never from
 // anything else the request carries, so nothing a client sends can reach another
 // gym's folder or the platform's.
 
@@ -45,6 +45,7 @@ import {
   buildBaseExerciseGenderVideoKey,
   buildGymExerciseGenderImageKey,
   buildGymExerciseGenderVideoKey,
+  exerciseMediaKeyIdentifier,
   gymExerciseGenderFolderKeys,
   imageObjectUrls,
   isGymOwnedGenderMediaUrl,
@@ -111,6 +112,7 @@ function decodeBase64File(value: unknown): Buffer | null {
 interface MediaRow {
   id: number;
   name: string;
+  slug: string | null;
   image_male_url: string | null;
   image_female_url: string | null;
   video_male_url: string | null;
@@ -155,7 +157,7 @@ export function createExerciseGenderMedia(options: ExerciseGenderMediaOptions): 
       : resolveRequestActor(getTenantContext(req));
 
   async function load(req: Request, res: Response, requireStoragePrefix: boolean, label: 'images' | 'videos', id: number | string = String(req.params.id)): Promise<MediaContext | null> {
-    const columns = 'id, gym_id, name, status, image_male_url, image_female_url, video_male_url, video_female_url';
+    const columns = 'id, gym_id, name, slug, status, image_male_url, image_female_url, video_male_url, video_female_url';
     if (scope === 'platform') {
       const { rows } = await db.query<MediaRow & { status: string }>(
         `SELECT ${columns.replace('gym_id', 'NULL AS gym_id')} FROM base_exercises WHERE id = ?`,
@@ -370,8 +372,8 @@ export function createExerciseGenderMedia(options: ExerciseGenderMediaOptions): 
     const previous = (exercise as any)[col] as string | null;
 
     const imageKey = scope === 'platform'
-      ? buildBaseExerciseGenderImageKey(exercise.id, exercise.name, gender)
-      : buildGymExerciseGenderImageKey(ctx.folderPrefix as string, exercise.id, exercise.name, gender);
+      ? buildBaseExerciseGenderImageKey(exercise.id, exerciseMediaKeyIdentifier(exercise), gender)
+      : buildGymExerciseGenderImageKey(ctx.folderPrefix as string, exercise.id, exerciseMediaKeyIdentifier(exercise), gender);
     const imageUrl = buildStorageObjectUrl(imageKey);
 
     const failure = await uploadAll(
@@ -386,8 +388,9 @@ export function createExerciseGenderMedia(options: ExerciseGenderMediaOptions): 
     if (failure) { res.status(failure.status).json(failure.body); return; }
 
     await writeColumn(ctx, col, imageUrl, req);
-    // The key is deterministic, so a replacement normally overwrites its own
-    // objects; the sweep matters only for an exercise renamed since its last upload.
+    // The key is the id and the slug (#3350), so a replacement overwrites its own
+    // objects; the sweep matters only for an image stored under a pre-#3350
+    // name-based key, which a replacement moves this way.
     await sweep(previous, 'image', [imageUrl, ...othersOf(exercise, col)], ctx);
 
     recordAudit(req, {
@@ -459,8 +462,8 @@ export function createExerciseGenderMedia(options: ExerciseGenderMediaOptions): 
       const previous = (exercise as any)[col] as string | null;
 
       const videoKey = scope === 'platform'
-        ? buildBaseExerciseGenderVideoKey(exercise.id, exercise.name, gender)
-        : buildGymExerciseGenderVideoKey(ctx.folderPrefix as string, exercise.id, exercise.name, gender);
+        ? buildBaseExerciseGenderVideoKey(exercise.id, exerciseMediaKeyIdentifier(exercise), gender)
+        : buildGymExerciseGenderVideoKey(ctx.folderPrefix as string, exercise.id, exerciseMediaKeyIdentifier(exercise), gender);
       const previewKey = videoPreviewKeyFor(videoKey);
       const videoUrl = buildStorageObjectUrl(videoKey);
 
