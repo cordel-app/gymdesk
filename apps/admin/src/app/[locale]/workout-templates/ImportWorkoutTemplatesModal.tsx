@@ -1,11 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { primaryBtnStyle, btnStyle } from '@/components/ui';
 import { filterControlStyle } from '@/components/FilterBar';
 import { modalActionsRowStyle } from '@/components/formChrome';
+import {
+  cascadeExercises, needsCascadeConfirmation, type WorkoutImportPreview, type WorkoutImportResult,
+} from './cascadeImportPreview';
 
 /**
  * #3335 stage 2: Import System Workout Templates — pick System templates
@@ -14,6 +17,13 @@ import { modalActionsRowStyle } from '@/components/formChrome';
  * Products and Professional Services import modals: server-side filter, selection
  * keyed by id and kept across filter changes, already-imported rows shown and not
  * selectable (`imported_template_id`, the API's own answer).
+ *
+ * #3339: Import first asks the API for the cascade (`POST /import/preview`,
+ * which writes nothing). When the selection needs Exercises the gym does not
+ * have, the modal turns into *Confirm Workout Template Import* listing them,
+ * each once; Cancel closes with nothing written and Confirm runs `POST
+ * /import`, which executes that same plan in one transaction. When nothing is
+ * missing, the import runs straight away.
  */
 
 export interface BaseTemplateOption {
@@ -24,10 +34,7 @@ export interface BaseTemplateOption {
   imported_template_id: number | null;
 }
 
-export interface ImportTemplatesResult {
-  imported: unknown[];
-  skipped: unknown[];
-}
+export type ImportTemplatesResult = WorkoutImportResult;
 
 interface Props {
   open: boolean;
@@ -46,6 +53,9 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The cascade the API answered for the current selection; non-null = the confirmation step.
+  const [preview, setPreview] = useState<WorkoutImportPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   // A slow unfiltered response must not land after a faster filtered one.
   const loadSeq = useRef(0);
 
@@ -75,6 +85,7 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
     setQ('');
     setSelected(new Set());
     setError(null);
+    setPreview(null);
   }, [open]);
 
   useEffect(() => {
@@ -106,6 +117,27 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
     });
   }
 
+  /** Step 1 → 2: ask for the cascade; nothing is written. With no Exercise missing, import at once. */
+  async function handlePreview() {
+    if (previewing || importing || selected.size === 0) return;
+    setPreviewing(true);
+    setError(null);
+    let result: WorkoutImportPreview;
+    try {
+      result = await apiFetch<WorkoutImportPreview>('/workout-templates/import/preview', {
+        method: 'POST',
+        body: JSON.stringify({ baseTemplateIds: Array.from(selected) }),
+      });
+    } catch (err: any) {
+      setError(err.message ?? t('error_generic'));
+      setPreviewing(false);
+      return;
+    }
+    setPreviewing(false);
+    if (needsCascadeConfirmation(result)) setPreview(result);
+    else await handleImport();
+  }
+
   async function handleImport() {
     if (importing || selected.size === 0) return;
     setImporting(true);
@@ -124,9 +156,12 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
     }
   }
 
+  const busy = importing || previewing;
+  const exercises = preview ? cascadeExercises(preview) : null;
+
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget && !importing) onCancel(); }}
+      onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100,
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 60,
@@ -137,6 +172,38 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
         width: '100%', maxWidth: 640, maxHeight: '80vh',
         boxShadow: '0 8px 32px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column',
       }}>
+        {exercises ? (
+          <>
+            <div style={{ padding: '18px 22px 12px' }}>
+              <h2 style={{ margin: 0, fontSize: 18 }}>{t('cascade_title')}</h2>
+              <p style={{ margin: '8px 0 0', fontSize: 14, color: '#555' }}>{t('cascade_description')}</p>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '0 22px', flex: 1 }}>
+              <h3 style={cascadeHeadingStyle}>{t('cascade_exercises_heading')}</h3>
+              <ul style={cascadeListStyle}>
+                {exercises.map((e) => <li key={e.id}>{e.name}</li>)}
+              </ul>
+            </div>
+            {error && <p style={{ color: '#c0392b', margin: 0, padding: '10px 22px 0', fontSize: 14 }}>{error}</p>}
+            <div style={{ ...modalActionsRowStyle, padding: '16px 22px 20px' }}>
+              <button
+                onClick={onCancel}
+                disabled={importing}
+                style={{ ...btnStyle('#444'), opacity: importing ? 0.45 : 1, cursor: importing ? 'not-allowed' : 'pointer' }}
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                style={{ ...primaryBtnStyle(), opacity: importing ? 0.45 : 1 }}
+              >
+                {importing ? t('import_importing') : t('import_confirm')}
+              </button>
+            </div>
+          </>
+        ) : (
+        <>
         <div style={{ padding: '18px 22px 12px' }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>{t('import_modal_title')}</h2>
         </div>
@@ -157,7 +224,7 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
           <button
             type="button"
             onClick={toggleAllMatching}
-            disabled={importable.length === 0 || importing}
+            disabled={importable.length === 0 || busy}
             style={{
               background: 'none', border: 'none', padding: 0, cursor: importable.length === 0 ? 'not-allowed' : 'pointer',
               color: 'var(--gd-link, var(--brand, #6c63ff))', fontSize: 13, fontWeight: 600,
@@ -188,7 +255,7 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
               <input
                 type="checkbox"
                 checked={selected.has(row.id)}
-                disabled={imported || importing}
+                disabled={imported || busy}
                 onChange={() => toggle(row.id)}
               />
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -211,20 +278,27 @@ export function ImportWorkoutTemplatesModal({ open, onCancel, onImported }: Prop
         <div style={{ ...modalActionsRowStyle, padding: '16px 22px 20px' }}>
           <button
             onClick={onCancel}
-            disabled={importing}
-            style={{ ...btnStyle('#444'), opacity: importing ? 0.45 : 1, cursor: importing ? 'not-allowed' : 'pointer' }}
+            disabled={busy}
+            style={{ ...btnStyle('#444'), opacity: busy ? 0.45 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}
           >
             {t('cancel')}
           </button>
           <button
-            onClick={handleImport}
-            disabled={importing || selected.size === 0}
-            style={{ ...primaryBtnStyle(), opacity: importing || selected.size === 0 ? 0.45 : 1 }}
+            onClick={handlePreview}
+            disabled={busy || selected.size === 0}
+            style={{ ...primaryBtnStyle(), opacity: busy || selected.size === 0 ? 0.45 : 1 }}
           >
-            {importing ? t('import_importing') : t('import_confirm')}
+            {previewing ? t('cascade_analysing') : importing ? t('import_importing') : t('import_confirm')}
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
 }
+
+const cascadeHeadingStyle: CSSProperties = {
+  margin: '12px 0 6px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: '#666',
+};
+const cascadeListStyle: CSSProperties = { margin: '0 0 8px', paddingLeft: 20, fontSize: 14, lineHeight: 1.6 };
