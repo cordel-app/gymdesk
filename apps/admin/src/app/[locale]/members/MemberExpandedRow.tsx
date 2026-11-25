@@ -648,6 +648,7 @@ export function MemberExpandedRow({
                 <StandaloneCartSummary memberId={memberId} reloadKey={purchasedProducts} paymentLink={cartPaymentLink} cartExpiry={cartExpiry} />
               )}
               <ProductSetsInFlight
+                memberId={memberId}
                 productSets={configuration.product_sets}
                 canWrite={canWriteMembers && canManagePackages}
                 review={draftReview}
@@ -665,7 +666,7 @@ export function MemberExpandedRow({
                 </div>
               )}
               {submittedView === 'committed' && configuration.paid_cart && (
-                <SubmittedCartSummary paidCart={configuration.paid_cart} submitted={submittedCart} />
+                <SubmittedCartSummary memberId={memberId} paidCart={configuration.paid_cart} submitted={submittedCart} />
               )}
               {(inFlightSetsShown || saveAndPayTarget(workflow) != null || cartPaymentLink != null) && (
               <ProductsWorkflowActions

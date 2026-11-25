@@ -7,19 +7,25 @@
 // so the MEMBERSHIP PLANS section lists them here and acts on them only through
 // `/product-sets`; every transition is the server's. Nothing here prices, decides
 // whether something is owed or confirms a replacement.
+//
+// #3307 stage 4 — a version awaiting payment offers no payment action here (the
+// payment link and cash payment were removed by the owner's request): its row shows
+// the 24-hour expiry by the server's clock and opens the purchase's detail.
 
 import React, { useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { cardHintStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
-import { primaryBtnSmall } from '@/components/ui';
+import { cardHintStyle, formErrorStyle } from '@/components/formChrome';
 import type { ProductSetRow } from './membershipConfiguration';
 import { WAIVE_REFUSAL_KEYS, inFlightSetTitle, type ReviewSummary } from './productsWorkflowView';
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
 import { PurchaseHeading, type CartExpiry } from './PurchaseHeading';
 import { CartExpiryIndicator } from './CartExpiryIndicator';
+import { SummaryPurchaseDetail, SummaryPurchaseDetailToggle } from './SummaryPurchaseDetail';
 
 interface Props {
+  /** #3307 stage 4 — whose purchases the awaiting-payment row's detail reads. */
+  memberId: number | string;
   productSets: ProductSetRow[];
   canWrite: boolean;
   /**
@@ -34,29 +40,16 @@ interface Props {
   cartExpiry?: CartExpiry | null;
 }
 
-export function ProductSetsInFlight({ productSets, canWrite, review = null, onChanged, cartExpiry = null }: Props) {
+export function ProductSetsInFlight({ memberId, productSets, canWrite, review = null, onChanged, cartExpiry = null }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [link, setLink] = useState<{ id: number; url: string } | null>(null);
+  // #3307 stage 4 — which awaiting-payment row has its purchase detail open.
+  const [openId, setOpenId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [waiveBusy, setWaiveBusy] = useState<string | null>(null);
 
   const inFlight = productSets.filter((p) => p.status === 'in_cart' || p.status === 'pending_payment');
   if (inFlight.length === 0) return null;
-
-  async function run(id: number, action: () => Promise<void>) {
-    setBusyId(id);
-    setError(null);
-    try {
-      await action();
-      onChanged();
-    } catch (err: any) {
-      setError(apiErrorMessage(err) ?? t('error_generic'));
-    } finally {
-      setBusyId(null);
-    }
-  }
 
   // #3284 stage 2 — Waive / Revert waive one Initial Payment line; the server re-prices, and the
   // page re-reads the configuration (and with it the review) afterwards.
@@ -97,6 +90,9 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
                   expiry={ps.status === 'in_cart' ? cartExpiry : null}
                 />
                 {ps.amount_due != null && <span style={cardHintStyle}>{` · ${ps.amount_due.toFixed(2)} €`}</span>}
+                {ps.status === 'pending_payment' && !ps.expired && ps.payment_expires_in_seconds != null && (
+                  <>{' '}<CartExpiryIndicator seconds={ps.payment_expires_in_seconds} onExpire={onChanged} labelKey="payment_expires_in" /></>
+                )}
               </>
             ) : (
               <>
@@ -111,43 +107,25 @@ export function ProductSetsInFlight({ productSets, canWrite, review = null, onCh
                 {ps.status === 'in_cart' && !ps.expired && cartExpiry && (
                   <>{' '}<CartExpiryIndicator seconds={cartExpiry.seconds} onExpire={cartExpiry.onExpire} /></>
                 )}
+                {ps.status === 'pending_payment' && !ps.expired && ps.payment_expires_in_seconds != null && (
+                  <>{' '}<CartExpiryIndicator seconds={ps.payment_expires_in_seconds} onExpire={onChanged} labelKey="payment_expires_in" /></>
+                )}
               </>
             )}
             {ps.status === 'in_cart' && review && (
               <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} waive={waiveControl(ps.id)} />
             )}
-            {link?.id === ps.id && (
-              <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{link.url}</code></div>
-            )}
           </div>
-          {canWrite && (
-            ps.status === 'pending_payment' && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {ps.status === 'pending_payment' && (
-                <>
-                  <button
-                    disabled={busyId === ps.id}
-                    style={secondaryBtnSmall}
-                    onClick={() => run(ps.id, async () => {
-                      const pay = await apiFetch<{ checkout_url: string }>(`/product-sets/${ps.id}/save-and-pay`, {
-                        method: 'POST', body: JSON.stringify({}),
-                      });
-                      setLink({ id: ps.id, url: pay.checkout_url });
-                      try { await navigator.clipboard?.writeText(pay.checkout_url); } catch { /* shown on screen */ }
-                    })}
-                  >
-                    {t('product_set_action_payment_link')}
-                  </button>
-                  <button
-                    disabled={busyId === ps.id}
-                    style={primaryBtnSmall()}
-                    onClick={() => run(ps.id, async () => {
-                      await apiFetch(`/product-sets/${ps.id}/record-payment`, { method: 'POST', body: JSON.stringify({}) });
-                    })}
-                  >
-                    {t('product_set_action_record_cash')}
-                  </button>
-                </>
-              )}
+          {ps.status === 'pending_payment' && ps.purchase && (
+            <SummaryPurchaseDetailToggle
+              purchaseId={ps.purchase.id}
+              open={openId === ps.id}
+              onToggle={() => setOpenId((cur) => (cur === ps.id ? null : ps.id))}
+            />
+          )}
+          {ps.status === 'pending_payment' && ps.purchase && openId === ps.id && (
+            <div style={{ flexBasis: '100%' }}>
+              <SummaryPurchaseDetail memberId={memberId} purchaseId={ps.purchase.id} reloadKey={ps} />
             </div>
           )}
         </div>

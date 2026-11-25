@@ -87,16 +87,16 @@ describe('Member Membership sections (#634)', () => {
     expect(plansSrc).not.toContain('confirm: true');
   });
 
-  it('lists the in-flight versions and acts on them only through /product-sets (#1325 PR 3b)', () => {
-    expect(plansSrc).toContain('<ProductSetsInFlight');
-    expect(plansSrc).toContain('productSets={productSets}');
-    expect(inFlightSrc).toContain('`/product-sets/${ps.id}/record-payment`');
-    expect(inFlightSrc).toContain('`/product-sets/${ps.id}/save-and-pay`');
-    expect(inFlightSrc).toContain('`/product-sets/${ps.id}`, { method: \'DELETE\' }');
-    // The write actions follow the permission the page hands in, and nothing is
-    // offered for an expired Draft but discarding it.
-    expect(inFlightSrc).toContain('{canWrite && (');
-    expect(inFlightSrc).toContain("ps.status === 'draft' && !ps.expired");
+  it('lists the in-flight versions in the Summary, with no payment action on an awaiting-payment row (#3307 stage 4)', () => {
+    const rowSrc = read('MemberExpandedRow.tsx');
+    expect(rowSrc).toContain('<ProductSetsInFlight');
+    expect(rowSrc).toContain('productSets={configuration.product_sets}');
+    // The owner removed Get payment link and Record cash payment from this row.
+    expect(inFlightSrc).not.toContain('/record-payment');
+    expect(inFlightSrc).not.toContain('/save-and-pay');
+    // It shows the server's 24-hour countdown and opens the purchase's detail instead.
+    expect(inFlightSrc).toContain('ps.payment_expires_in_seconds');
+    expect(inFlightSrc).toContain('<SummaryPurchaseDetail ');
     // The screen never decides whether a payment is owed or what to confirm.
     expect(inFlightSrc).not.toContain('confirm');
   });

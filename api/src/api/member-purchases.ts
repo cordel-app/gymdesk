@@ -129,19 +129,23 @@ export async function memberExistsInGym(gymId: string, memberId: number): Promis
 
 export async function loadMemberPurchases(
   gymId: string, memberId: number, limit: number, offset: number,
+  /** #3307 stage 4 — narrow to one purchase (the Products Summary's detail), still the Member's. */
+  purchaseId?: number,
 ): Promise<{ items: MemberPurchase[]; total: number }> {
   // `limit` / `offset` are validated integers, written into the statement (no bound LIMIT).
   const lim = Math.max(1, Math.min(MEMBER_PURCHASES_MAX_LIMIT, Math.trunc(limit)));
   const off = Math.max(0, Math.trunc(offset));
-  const params = memberPurchaseParams(gymId, memberId);
+  const params: Array<string | number> = memberPurchaseParams(gymId, memberId);
+  const onePurchase = purchaseId != null ? ' AND p.id = ?' : '';
+  if (purchaseId != null) params.push(purchaseId);
 
   const { rows: countRows } = await db.query<{ total: number }>(
-    `SELECT COUNT(*) AS total FROM purchases p WHERE ${MEMBER_PURCHASE_PREDICATE}`, params);
+    `SELECT COUNT(*) AS total FROM purchases p WHERE ${MEMBER_PURCHASE_PREDICATE}${onePurchase}`, params);
   const { rows: purchaseRows } = await db.query<any>(
     `SELECT p.id, p.name, p.status, p.created_at, p.created_by, p.modified_at, p.modified_by, p.channel, p.owner_member_id, o.name AS owner_name
        FROM purchases p
        LEFT JOIN members o ON o.id = p.owner_member_id AND o.gym_id = p.gym_id
-      WHERE ${MEMBER_PURCHASE_PREDICATE}
+      WHERE ${MEMBER_PURCHASE_PREDICATE}${onePurchase}
       ORDER BY p.created_at DESC, p.id DESC
       LIMIT ${lim} OFFSET ${off}`,
     params,

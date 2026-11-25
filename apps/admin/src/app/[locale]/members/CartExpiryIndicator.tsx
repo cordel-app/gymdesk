@@ -14,8 +14,10 @@ import { formatDraftRemaining, isDraftWarning, remainingNow, showsDraftExactTime
  * Product Set header: the clock is the purchase's `expires_at`. Since #3378 it
  * sits in the Purchase header ("Expires in 1h 45m"), right after the status badge.
  */
-export function CartExpiryIndicator({ seconds, onExpire }: {
+export function CartExpiryIndicator({ seconds, onExpire, labelKey = 'cart_expires_in' }: {
   seconds: number | null | undefined; onExpire?: () => void;
+  /** #3307 stage 4 — `payment_expires_in` for a purchase awaiting payment (its 24 hours). */
+  labelKey?: 'cart_expires_in' | 'payment_expires_in';
 }) {
   const t = useTranslations('members');
   const receivedAt = useRef(Date.now());
@@ -39,7 +41,7 @@ export function CartExpiryIndicator({ seconds, onExpire }: {
   const exact = left != null && showsDraftExactTime(left) ? new Date(Date.now() + (left as number) * 1000).toLocaleTimeString() : null;
   return (
     <span data-cart-expiry style={{ fontSize: 12, opacity: 0.85, fontWeight: warn ? 600 : 400, color: warn ? 'var(--gd-warning, #b45309)' : undefined }}>
-      {t('cart_expires_in')} {text}{exact ? ` (${exact})` : ''}
+      {t(labelKey)} {text}{exact ? ` (${exact})` : ''}
     </span>
   );
 }

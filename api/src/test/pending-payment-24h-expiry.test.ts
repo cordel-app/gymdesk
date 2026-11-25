@@ -135,6 +135,26 @@ describe('a Pending Payment checkout expires after 24 hours', () => {
     expect((await one('SELECT expired_at FROM billing_events WHERE id = ?', [young.eventId])).expired_at).toBeNull();
   });
 
+  it('reports the time left on the 24 hours to the Products Summary, by the expiry pass\'s clock (#3307 stage 4)', async () => {
+    const c = await checkout(3);
+    const owner = Number((await one('SELECT owner_member_id FROM product_sets WHERE id = ?', [c.id])).owner_member_id);
+    const res = await auth(request.get(`/user-memberships/member/${owner}/configuration`));
+    expect(res.status).toBe(200);
+    const row = res.body.product_sets.find((p: any) => p.id === c.id);
+    expect(row.status).toBe('pending_payment');
+    // 21 hours left, within a minute of the read.
+    expect(row.payment_expires_in_seconds).toBeGreaterThan(21 * 3600 - 60);
+    expect(row.payment_expires_in_seconds).toBeLessThanOrEqual(21 * 3600);
+    // A Draft has no payment expiry.
+    expect(res.body.product_sets.filter((p: any) => p.status === 'in_cart').every((p: any) => p.payment_expires_in_seconds == null)).toBe(true);
+
+    // Past its 24 hours and not yet swept, it reads zero, never a negative count.
+    await db.query('UPDATE product_sets SET pending_at = UTC_TIMESTAMP() - INTERVAL 25 HOUR WHERE id = ?', [c.id]);
+    const late = (await auth(request.get(`/user-memberships/member/${owner}/configuration`))).body.product_sets
+      .find((p: any) => p.id === c.id);
+    expect(late.payment_expires_in_seconds).toBe(0);
+  });
+
   it('never expires a payment whose outcome is unknown, and activates one the provider reports paid', async () => {
     const unknown = await checkout(30);
     await db.query(`UPDATE payment_requests SET provider_ref = ?, status = 'pending', provider_status = NULL WHERE id = ?`,
