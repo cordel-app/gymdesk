@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
+import { effectiveImageUrlSql, effectiveImageThumbnailUrlSql, exerciseGenderImagePairsSql, exerciseGenderImageColumnsSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { db, Tx } from '../infra/db';
 import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -382,7 +382,7 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
                 SELECT JSON_OBJECT(
                     'id', wte.id, 'position', wte.position, 'exercise_id', COALESCE(wte.base_exercise_id, wte.exercise_id),
                     'exercise_name', ${localizedExerciseNameSql('e', getRequestLocale(req))},
-                    'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, 'exercise_video_url', ${effectiveVideoUrlSql('e')}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e')},
+                    'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, ${exerciseGenderImagePairsSql('e')}, 'exercise_video_url', ${effectiveVideoUrlSql('e')}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e')},
                     'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
                     'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo,
                     'result_type_id', wte.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,
@@ -854,7 +854,7 @@ workoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', async (req, res, ne
     if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
     const { rows } = await db.query(
       `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte
        JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id)
        WHERE wte.workout_template_block_id = ? AND wte.gym_id = ? AND wte.deleted_at IS NULL
@@ -904,7 +904,7 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireModuleWrite
        parsed.sets, parsed.rest_seconds, parsed.tempo,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
       `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       (exId) => [exId],
     );
@@ -955,7 +955,7 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireModule
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
       `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       [exId],
     );
@@ -1006,7 +1006,7 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises/:exId/duplicate', re
       [gymId, blockId, src.exercise_id ?? null, src.base_exercise_id ?? null, posRows[0].next_position, src.min_reps, src.max_reps, src.sets, src.rest_seconds, src.tempo,
        src.result_type_id ?? null, src.target_value ?? null, src.min_value ?? null, src.max_value ?? null, src.unit ?? null, gymMembershipId],
       `SELECT wte.*, COALESCE(wte.base_exercise_id, wte.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercise_catalogue e ON e.id = COALESCE(wte.base_exercise_id, wte.exercise_id) WHERE wte.id = ?`,
       (newId) => [newId],
     );

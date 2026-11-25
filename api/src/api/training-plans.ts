@@ -2,7 +2,7 @@ import { exerciseFactSql } from '../domain/exerciseFactSql';
 import { Router } from 'express';
 import { gymToday } from '../domain/workoutProgress';
 import { baseTrainingPlanName, previousDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
-import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
+import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, exerciseGenderImagePairsSql, exerciseGenderImageColumnsSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { localizedDescriptionExpr, localizedShortDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { db, Tx } from '../infra/db';
 import { parseBlockResultUnit } from '../domain/blockResultUnits';
@@ -151,7 +151,7 @@ export const planTreeSelect = (locale: SupportedLocale, sex: ImageSex = 'male') 
                 'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                   SELECT JSON_OBJECT(
                       'id', we.id, 'position', we.position, 'exercise_id', COALESCE(we.base_exercise_id, we.exercise_id), 'exercise_name', ${localizedExerciseNameSql('e', locale)},
-                      'exercise_image_url', ${effectiveImageUrlSql('e', sex)}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e', sex)}, 'exercise_video_url', ${effectiveVideoUrlSql('e', sex)}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e', sex)},
+                      'exercise_image_url', ${effectiveImageUrlSql('e', sex)}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e', sex)}, ${exerciseGenderImagePairsSql('e')}, 'exercise_video_url', ${effectiveVideoUrlSql('e', sex)}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e', sex)},
                       'exercise_description', ${localizedDescriptionExpr('e', locale)},
                       'exercise_short_description', ${localizedShortDescriptionExpr('e', locale)},
                       'exercise_category', ${exerciseFactSql('e', 'category')}, 'exercise_equipment', ${exerciseFactSql('e', 'equipment')},
@@ -505,7 +505,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
        parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
       `SELECT we.*, COALESCE(we.base_exercise_id, we.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       (id) => [id],
     );
@@ -556,7 +556,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
       `SELECT we.*, COALESCE(we.base_exercise_id, we.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       [exId],
     );
@@ -697,7 +697,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     });
     const { rows } = await db.query(
       `SELECT we.*, COALESCE(we.base_exercise_id, we.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       [exId],
     );
@@ -899,7 +899,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     if (!insertId) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
       `SELECT we.*, COALESCE(we.base_exercise_id, we.exercise_id) AS exercise_id, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, ${exerciseGenderImageColumnsSql('e')}, ${effectiveVideoUrlSql('e')} AS exercise_video_url, ${effectiveVideoPosterSql('e')} AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercise_catalogue e ON e.id = COALESCE(we.base_exercise_id, we.exercise_id) WHERE we.id = ?`,
       [insertId],
     );
