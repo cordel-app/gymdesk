@@ -130,7 +130,12 @@ describe('POST /workout-templates/import', () => {
     const tree = await request.get(`/workout-templates/${copyId}`).set(as(gymId));
     expect(tree.body.blocks.map((b: any) => b.type)).toEqual(['Standard', 'AMRAP']);
     expect(tree.body.blocks[0].exercises).toHaveLength(1);
-    expect(tree.body.blocks[0].exercises[0]).toMatchObject({ exercise_id: baseExerciseId, sets: 4, min_reps: 8, max_reps: 12 });
+    // #3339: the Base Exercise came along and the copy names the gym's own exercise.
+    expect(res.body.exercises.imported).toHaveLength(1);
+    const gymExerciseId = res.body.exercises.imported[0];
+    const { rows: ex } = await db.query<any>('SELECT gym_id, base_exercise_id FROM exercises WHERE id = ?', [gymExerciseId]);
+    expect(ex[0]).toMatchObject({ gym_id: gymId, base_exercise_id: baseExerciseId });
+    expect(tree.body.blocks[0].exercises[0]).toMatchObject({ exercise_id: gymExerciseId, sets: 4, min_reps: 8, max_reps: 12 });
     const { rows: blockGyms } = await db.query<any>('SELECT DISTINCT gym_id FROM workout_template_blocks WHERE workout_template_id = ?', [copyId]);
     expect(blockGyms).toEqual([{ gym_id: gymId }]);
   });
