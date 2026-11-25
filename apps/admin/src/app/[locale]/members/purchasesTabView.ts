@@ -61,6 +61,11 @@ export interface MemberPurchase {
   status: string;
   created_at: string;
   created_by: string | null;
+  /** #3355 stage 2: the purchase row's last change, and who made it. */
+  modified_at: string | null;
+  modified_by: string | null;
+  /** #3355 stage 2: the API's `purchaseTotalAmount()`; null (read `—`) with no Billing Event. */
+  total_amount: string | null;
   /** #3278: the application the purchase was initiated through; null when unknown. */
   channel: string | null;
   owner: PurchaseMemberRef;
@@ -111,4 +116,19 @@ export function purchaseChannelLabelKey(channel: string | null | undefined): str
   if (channel === 'admin_app') return 'members.purchases_channel_admin_app';
   if (channel === 'members_app') return 'members.purchases_channel_members_app';
   return null;
+}
+
+/**
+ * #3355 stage 2 — the name a purchase row is identified by: its stored canonical name verbatim
+ * (#3288), else its creation instant for a row written before the name existed.
+ */
+export function purchaseDisplayName(p: Pick<MemberPurchase, 'name' | 'created_at'>): string {
+  return p.name ?? p.created_at;
+}
+
+/** #3355 stage 2 — the Total Amount as a number to format, or null for `—`. */
+export function purchaseTotalValue(p: Pick<MemberPurchase, 'total_amount'>): number | null {
+  if (p.total_amount == null) return null;
+  const n = Number(p.total_amount);
+  return Number.isFinite(n) ? n : null;
 }

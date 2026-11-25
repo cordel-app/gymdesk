@@ -1026,6 +1026,16 @@
     "purchases_payment_method": "Mètode de pagament",
     "purchases_payment_status": "Estat del pagament",
     "purchases_payment_date": "Data de pagament",
+    "purchases_col_purchase": "Compra",
+    "purchases_col_created_by": "Creat per",
+    "purchases_col_created_at": "Creat el",
+    "purchases_col_modified_at": "Modificat el",
+    "purchases_col_total": "Import total",
+    "purchases_col_status": "Estat",
+    "purchases_actions_for": "Accions de {purchase}",
+    "purchases_details_id": "ID de la compra",
+    "purchases_details_owner": "Titular",
+    "purchases_details_modified_by": "Modificat per",
     "timeline_status_expired_24h": "Caducat (24 h)"
   },
   "member_payments": {

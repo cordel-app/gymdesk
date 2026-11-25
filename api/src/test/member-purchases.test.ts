@@ -235,6 +235,23 @@ describe('GET /payments/purchases (#3273)', () => {
     });
   });
 
+  it('reports the total of its Billing Events, the last change and who made it (#3355 stage 2)', async () => {
+    const own = await member(gymA, 'Total Owner');
+    const pid = await purchase(gymA, own, 'pending_payment', '2026-11-21 09:00:00');
+    // A cancelled checkout keeps its event; the next one is the purchase's money.
+    const old = await event(gymA, own, pid, 30);
+    await db.query('UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP() WHERE id = ?', [old]);
+    await event(gymA, own, pid, 45.5);
+    await db.query(
+      "UPDATE purchases SET modified_at = '2026-11-21 10:00:00', modified_by = 'Staff Person' WHERE id = ?", [pid]);
+    const p = (await list(own)).items.find((x) => x.id === pid);
+    expect(p).toMatchObject({
+      total_amount: '45.50', modified_at: '2026-11-21T10:00:00.000Z', modified_by: 'Staff Person',
+    });
+    // A cart not yet checked out has no total.
+    expect((await list(owner)).items.find((x) => x.id === pCart).total_amount).toBeNull();
+  });
+
   it('isolates gyms: another gym\'s member is a 404 and sees none of these purchases', async () => {
     expect((await get(gymB, `/payments/purchases?member_id=${owner}`)).status).toBe(404);
     const other = await member(gymB, 'Gym B member');

@@ -15,6 +15,7 @@
  * amount. Each event's payment details come from its own attempts (`domain/purchasePayment.ts`).
  */
 import { toPurchaseChannel, type PurchaseChannel } from '../domain/purchaseChannel';
+import { purchaseTotalAmount } from '../domain/purchaseTotal';
 import { db } from '../infra/db';
 import { loadRefundSummaries } from './billing-event-refunds';
 import { deriveBillingEventStatus, displayBillingEventStatus } from '../domain/billingEventStatus';
@@ -99,6 +100,11 @@ export interface MemberPurchase {
   status: string;
   created_at: string;
   created_by: string | null;
+  /** #3355 stage 2: the purchase row's last change (its status moves, a cart merge). */
+  modified_at: string | null;
+  modified_by: string | null;
+  /** #3355 stage 2: `purchaseTotalAmount()` over its Billing Events; null with none. */
+  total_amount: string | null;
   /** #3278: the application the purchase was initiated through; null when unknown. */
   channel: PurchaseChannel | null;
   owner: PurchaseMember;
@@ -132,7 +138,7 @@ export async function loadMemberPurchases(
   const { rows: countRows } = await db.query<{ total: number }>(
     `SELECT COUNT(*) AS total FROM purchases p WHERE ${MEMBER_PURCHASE_PREDICATE}`, params);
   const { rows: purchaseRows } = await db.query<any>(
-    `SELECT p.id, p.name, p.status, p.created_at, p.created_by, p.channel, p.owner_member_id, o.name AS owner_name
+    `SELECT p.id, p.name, p.status, p.created_at, p.created_by, p.modified_at, p.modified_by, p.channel, p.owner_member_id, o.name AS owner_name
        FROM purchases p
        LEFT JOIN members o ON o.id = p.owner_member_id AND o.gym_id = p.gym_id
       WHERE ${MEMBER_PURCHASE_PREDICATE}
@@ -150,6 +156,7 @@ export async function loadMemberPurchases(
     loadProducts(gymId, ids, inIds),
     loadEvents(gymId, ids, inIds),
   ]);
+  const eventCancelled = await cancelledEventIds(gymId, ids, inIds);
 
   const items: MemberPurchase[] = purchaseRows.map((r: any) => {
     const id = Number(r.id);
@@ -159,6 +166,11 @@ export async function loadMemberPurchases(
       status: r.status,
       created_at: iso(r.created_at) as string,
       created_by: r.created_by ?? null,
+      modified_at: iso(r.modified_at),
+      modified_by: r.modified_by ?? null,
+      total_amount: purchaseTotalAmount((events.get(id) ?? []).map((e) => ({
+        id: e.id, amount: e.amount, cancelled: eventCancelled.has(e.id),
+      }))),
       channel: toPurchaseChannel(r.channel),
       owner: member(r.owner_member_id, r.owner_name) as PurchaseMember,
       plans: plans.get(id) ?? [],
@@ -269,6 +281,13 @@ async function loadProducts(gymId: string, ids: number[], inIds: string): Promis
     out.set(Number(r.purchase_id), list);
   }
   return out;
+}
+
+async function cancelledEventIds(gymId: string, ids: number[], inIds: string): Promise<Set<number>> {
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM billing_events WHERE gym_id = ? AND purchase_id IN (${inIds}) AND cancelled_at IS NOT NULL`,
+    [gymId, ...ids]);
+  return new Set(rows.map((r) => Number(r.id)));
 }
 
 async function loadEvents(gymId: string, ids: number[], inIds: string): Promise<Map<number, PurchaseBillingEvent[]>> {
