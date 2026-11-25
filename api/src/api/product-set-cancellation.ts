@@ -207,6 +207,8 @@ export async function cancelPendingProductSet(
     const { restorePendingReactivations } = await import('./plan-pending-reactivation');
     await restorePendingCancellations(tx, gymId, Number(set.owner_member_id), actor);
     await restorePendingReactivations(tx, gymId, Number(set.owner_member_id), actor);
+    const { restorePendingImmediateCancellations } = await import('./plan-pending-immediate-cancellation');
+    await restorePendingImmediateCancellations(tx, gymId, Number(set.owner_member_id), actor);
   }
   await syncPlanSnapshot(tx, gymId, productSetId);
   return { kind: 'cancelled' };

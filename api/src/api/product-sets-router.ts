@@ -767,7 +767,15 @@ async function reviewHandler(req: any, res: any, next: any) {
         WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_reactivated' AND pa.anchor_plan_snapshot_id IS NOT NULL
         GROUP BY pa.anchor_plan_snapshot_id, mp.name`,
       [gymId, Number(set.owner_member_id)]);
+    // #3358: and the plans it cancels today instead of at their period end.
+    const { rows: cancellingNow } = await db.query<any>(
+      `SELECT pa.anchor_plan_snapshot_id AS user_membership_id, mp.name AS plan_name
+         FROM plan_snapshots pa LEFT JOIN membership_plans mp ON mp.id = pa.membership_plan_id
+        WHERE pa.gym_id = ? AND pa.member_id = ? AND pa.status = 'to_be_canceled_immediately' AND pa.anchor_plan_snapshot_id IS NOT NULL
+        GROUP BY pa.anchor_plan_snapshot_id, mp.name`,
+      [gymId, Number(set.owner_member_id)]);
     res.json({
+      plans_to_cancel_immediately: cancellingNow.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       plans_to_reactivate: reactivating.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       plans_to_cancel: cancelling.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       initial_payment: initialPaymentBreakdown(lines, amountDue),

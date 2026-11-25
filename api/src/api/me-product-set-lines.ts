@@ -363,7 +363,8 @@ export async function loadMemberProductSetView(
     // (`past_memberships`), not My Plans — the link itself is only re-derived for the next set.
     // #3114: a plan marked for reactivation is still running to its end date (and, in a cart, is
     // contracted again), so it stays too.
-    .filter((p) => !p.entitlement_only || p.status === 'cancels_on_end_date' || p.status === 'to_be_reactivated');
+    .filter((p) => !p.entitlement_only || p.status === 'cancels_on_end_date' || p.status === 'to_be_reactivated'
+      || p.status === 'to_be_canceled_immediately');
 
   return {
     expires_in_seconds: expiresIn,

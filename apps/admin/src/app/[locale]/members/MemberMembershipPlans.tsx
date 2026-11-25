@@ -62,7 +62,7 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { addedCartPlans, addedPlanEditTarget, addedPlanRemovePath, canEditLivePlan, pastPlans, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from './membershipPlansView';
+import { addedCartPlans, addedPlanEditTarget, addedPlanRemovePath, canEditLivePlan, pastPlans, pendingPaymentPlanSets, planImmediateCancellationAction, planReactivationAction, visiblePlans } from './membershipPlansView';
 import { PendingPaymentPlans } from './PendingPaymentPlans';
 import { AddedCartPlanEditor } from './AddedCartPlanEditor';
 
@@ -83,6 +83,8 @@ interface Props {
   onCancelPlan: (plan: MemberPlanRow) => void;
   /** #3114: mark a cancelling plan for reactivation in the open In Cart, or un-mark it. */
   onReactivatePlan: (plan: MemberPlanRow, action: 'mark' | 'unmark') => void;
+  /** #3358: Cancel Immediately (mark) on a plan cancelling at its period end, or its undo (unmark). */
+  onCancelImmediately: (plan: MemberPlanRow, action: 'mark' | 'unmark') => void;
   /** The inline "Assign New Plan" editor for a plan, rendered under the list (#628). */
   renderAssignEditor: (plan: MemberPlanRow) => React.ReactNode;
   assignBusy: boolean;
@@ -91,7 +93,7 @@ interface Props {
 }
 
 export function MemberMembershipPlans({
-  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, onReactivatePlan, renderAssignEditor, assignBusy, purchasePending = false,
+  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, onReactivatePlan, onCancelImmediately, renderAssignEditor, assignBusy, purchasePending = false,
 }: Props) {
   const t = useTranslations('members');
   const locale = useLocale();
@@ -242,9 +244,17 @@ export function MemberMembershipPlans({
       : reactivation === 'unmark'
         ? [{ label: t('action_undo_reactivate_plan'), onClick: () => onReactivatePlan(plan, 'unmark') }]
         : [];
+    // #3358: Cancel Immediately brings a scheduled cancellation forward to today, in the open In Cart.
+    const immediate = canWrite ? planImmediateCancellationAction(plan) : null;
+    const immediateItems: ContextMenuItem[] = immediate === 'mark'
+      ? [{ label: t('action_cancel_plan_immediately'), onClick: () => onCancelImmediately(plan, 'mark'), danger: true }]
+      : immediate === 'unmark'
+        ? [{ label: t('action_undo_cancel_plan_immediately'), onClick: () => onCancelImmediately(plan, 'unmark') }]
+        : [];
     return [
       ...lifecycleItems,
       ...reactivationItems,
+      ...immediateItems,
       { kind: 'details' as const, label: t('action_details'), onClick: () => setDetailsPlanId(plan.id) },
       // #2553: shared with the Assigned Plans page.
       {

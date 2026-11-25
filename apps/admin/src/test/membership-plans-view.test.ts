@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addedCartPlans, addedPlanPromotionNames, addedPlanEditTarget, addedPlanRemovePath, pendingPaymentPlanSets, planReactivationAction, visiblePlans } from '../app/[locale]/members/membershipPlansView';
+import { addedCartPlans, addedPlanPromotionNames, addedPlanEditTarget, addedPlanRemovePath, pendingPaymentPlanSets, planImmediateCancellationAction, planReactivationAction, visiblePlans } from '../app/[locale]/members/membershipPlansView';
 
 const plan = (id: number, status: string, is_live = true, membership_plan_id = id) => ({ id, status, is_live, membership_plan_id } as any);
 
@@ -165,5 +165,24 @@ describe('#2966 stage 10 addedPlanEditTarget', () => {
     expect(addedPlanEditTarget({ id: 12 * 1_000_000 + 345, status: 'pending_payment' })).toBeNull();
     expect(addedPlanEditTarget({ id: 345, status: 'in_cart' })).toBeNull();
     expect(addedPlanEditTarget({ id: 12 * 1_000_000, status: 'in_cart' })).toBeNull();
+  });
+});
+
+describe('#3358 planImmediateCancellationAction — Cancel Immediately on a plan cancelling at its period end', () => {
+  it('offers it only on a current Cancels at End Date plan, and the undo on a marked one', () => {
+    expect(planImmediateCancellationAction({ status: 'active_cancel_at_period_end', is_current: true, assignment_relationship: 'primary' } as any)).toBe('mark');
+    expect(planImmediateCancellationAction({ status: 'to_be_canceled_immediately', is_current: true, assignment_relationship: 'primary' } as any)).toBe('unmark');
+    expect(planImmediateCancellationAction({ status: 'active_cancel_at_period_end', is_current: false, assignment_relationship: 'primary' } as any)).toBeNull();
+    expect(planImmediateCancellationAction({ status: 'active_cancel_at_period_end', is_current: true, assignment_relationship: 'linked' } as any)).toBeNull();
+    for (const status of ['active', 'to_be_canceled', 'to_be_reactivated', 'cancelled', 'in_cart', 'paused']) {
+      expect(planImmediateCancellationAction({ status, is_current: true, assignment_relationship: 'primary' } as any)).toBeNull();
+    }
+  });
+  it('keeps a marked plan listed beside an in-flight version until it is committed', () => {
+    const v = visiblePlans([
+      { ...plan(1, 'to_be_canceled_immediately', false), is_current: true },
+      plan(2, 'in_cart'),
+    ]);
+    expect(v.rows.map((r) => r.id).sort()).toEqual([1, 2]);
   });
 });
