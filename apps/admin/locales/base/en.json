@@ -4575,7 +4575,10 @@
     "created": "Template created.",
     "updated": "Template updated.",
     "deleted": "Template deleted.",
-    "hierarchy_failed": "The plan could not be loaded."
+    "hierarchy_failed": "The plan could not be loaded.",
+    "tree_goal_image_close": "Close",
+    "tree_goal_image_none": "No image",
+    "tree_goal_no_description": "No description available."
   },
   "nutrition_library": {
     "details_slug": "Slug",

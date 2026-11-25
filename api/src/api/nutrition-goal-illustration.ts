@@ -1,5 +1,7 @@
 import { SYSTEM_GOALS } from '../domain/goalLibrary';
 import { db } from '../infra/db';
+import type { SupportedLocale } from '../infra/locale';
+import { localizedGoalColumn } from '../domain/nutritionGoalTranslations';
 
 /**
  * #932 — the food that illustrates a Nutrition Goal.
@@ -38,6 +40,16 @@ export const NUTRITION_GOAL_IMAGE_JOIN_SQL = `LEFT JOIN base_nutrition_goals ng
            AND ng.slug IN (${SEEDED_GOAL_SLUGS.map((s) => `'${s}'`).join(', ')})`;
 export const NUTRITION_GOAL_IMAGE_COLUMNS_SQL = `ng.image_url AS goal_image_url, ng.image_thumbnail_url AS goal_image_thumbnail_url`;
 
+/**
+ * #3377 — the System Nutrition Goal's own name and description for the request
+ * locale (base value as fallback), so a clicked goal thumbnail opens the shared
+ * image modal with the goal's text. `NULL` for a goal with no catalogue row.
+ */
+export function nutritionGoalTextColumnsSql(locale: SupportedLocale): string {
+  return `${localizedGoalColumn('name', 'ng', locale, 'base_nutrition')} AS goal_display_name,
+                 ${localizedGoalColumn('description', 'ng', locale, 'base_nutrition')} AS goal_display_description`;
+}
+
 export function parseGoalIllustrationInput(value: unknown): { id: number | null } | { error: string } {
   if (value === null || value === undefined || value === '') return { id: null };
   const id = typeof value === 'number' ? value : parseInt(String(value), 10);
@@ -69,11 +81,12 @@ export async function validateGoalIllustration(gymId: string | null, id: number 
  * both `null` for a goal that names none. `where` is appended after the
  * table alias `g`.
  */
-export function goalRowsSql(table: 'nutrition_plan_template_goals' | 'member_nutrition_plan_goals', where: string): string {
+export function goalRowsSql(table: 'nutrition_plan_template_goals' | 'member_nutrition_plan_goals', where: string, locale: SupportedLocale): string {
   // The effective id is reported under the column's own name, after `g.*` so it wins (#1849 F4).
   return `SELECT g.*, COALESCE(g.base_nutrition_library_item_id, g.nutrition_library_item_id) AS nutrition_library_item_id,
                  nli.name AS illustration_name, nli.image_url AS illustration_image_url,
-                 ${NUTRITION_GOAL_IMAGE_COLUMNS_SQL}
+                 ${NUTRITION_GOAL_IMAGE_COLUMNS_SQL},
+                 ${nutritionGoalTextColumnsSql(locale)}
           FROM ${table} g
           LEFT JOIN nutrition_library_item_catalogue nli ON nli.id = COALESCE(g.base_nutrition_library_item_id, g.nutrition_library_item_id)
           ${NUTRITION_GOAL_IMAGE_JOIN_SQL}

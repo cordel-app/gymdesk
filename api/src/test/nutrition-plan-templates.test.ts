@@ -776,6 +776,37 @@ describe('goals', () => {
     expect(res.body.frequency).toBe('daily');
   });
 
+  // #3377: a goal of the System Nutrition Goal catalogue carries its own name and
+  // description in the request locale, so a clicked thumbnail can show them; one
+  // with no Base Nutrition Goal row (weight_loss is a Personal Goal) carries none.
+  it('reports the System goal name and description in the request locale', async () => {
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplId}/goals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-locale', 'es')
+      .send({ item_name: 'protein', quantity: 150, unit: 'g', frequency: 'daily' });
+    expect(res.status).toBe(201);
+    const { rows } = await db.query<any>(
+      `SELECT COALESCE(NULLIF(t.name, ''), b.name) AS name, COALESCE(NULLIF(t.description, ''), b.description) AS description
+         FROM base_nutrition_goals b
+         LEFT JOIN base_nutrition_goal_translations t ON t.base_nutrition_goal_id = b.id AND t.locale = 'es'
+        WHERE b.slug = 'protein' AND b.deleted_at IS NULL`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(res.body.goal_display_name).toBe(rows[0].name);
+    expect(res.body.goal_display_description).toBe(rows[0].description);
+
+    const plain = await request
+      .post(`/nutrition-plan-templates/${tplId}/goals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ item_name: 'weight_loss', quantity: 2, unit: 'kg' });
+    expect(plain.status).toBe(201);
+    expect(plain.body.goal_display_name).toBeNull();
+    expect(plain.body.goal_display_description).toBeNull();
+  });
+
   it('deletes a goal', async () => {
     const createRes = await request
       .post(`/nutrition-plan-templates/${tplId}/goals`)
