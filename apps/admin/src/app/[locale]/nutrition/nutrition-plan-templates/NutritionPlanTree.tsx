@@ -113,8 +113,9 @@ function FoodLink({ id, name, imageUrl, nameStyle }: { id: number; name: string;
   return (
     <button
       type="button"
+      title={name}
       onClick={() => open({ id, name, imageUrl })}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', minWidth: 0 }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', minWidth: 0, maxWidth: '100%' }}
     >
       <FoodThumbnail imageUrl={imageUrl ?? null} size={TREE_AVATAR_SIZE} />
       <span style={nameStyle}>{name}</span>
@@ -1083,9 +1084,10 @@ function MealItemsEditor({
 
       {/* Add form */}
       {canWrite && (
-        <div style={{ marginTop: 10, background: '#f9fafb', border: '1px solid #ececf0', borderRadius: 5, padding: '8px 10px' }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div style={{ minWidth: 110 }}>
+        <div style={{ marginTop: 10, background: '#f9fafb', border: '1px solid #ececf0', borderRadius: 5, padding: '8px' }}>
+          <div style={ITEM_ROW_STYLE}>
+            <span aria-hidden="true" style={ITEM_IDENTITY_COL} />
+            <div style={ITEM_FOOD_TYPE_COL}>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food_type')}</span>
               <select
                 value={addFoodType}
@@ -1100,7 +1102,7 @@ function MealItemsEditor({
                 ))}
               </select>
             </div>
-            <div style={{ flex: 2, minWidth: 130 }}>
+            <div style={ITEM_FOOD_COL}>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food')}</span>
               <select
                 value={addItemId}
@@ -1114,7 +1116,7 @@ function MealItemsEditor({
                 ))}
               </select>
             </div>
-            <div style={{ width: 64 }}>
+            <div style={ITEM_QTY_COL}>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
               <input
                 type="number" min="0" step="0.1"
@@ -1123,7 +1125,7 @@ function MealItemsEditor({
                 style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
               />
             </div>
-            <div style={{ width: 52 }}>
+            <div style={ITEM_UNIT_COL}>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
               <input
                 value={addUnit}
@@ -1131,9 +1133,11 @@ function MealItemsEditor({
                 style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
               />
             </div>
-            <button onClick={addItem} disabled={adding} style={btnSmall()}>
-              {t('nutrition_plan_templates.tree_add_item')}
-            </button>
+            <span style={ITEM_TRAILING_COL}>
+              <button onClick={addItem} disabled={adding} style={btnSmall()}>
+                {t('nutrition_plan_templates.tree_add_item')}
+              </button>
+            </span>
           </div>
           {(selectedAddItem?.quality_slugs ?? []).length > 0 && (
             <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
@@ -1156,6 +1160,24 @@ function MealItemsEditor({
     </div>
   );
 }
+
+/* ---- Meal item columns (#3408) ---- */
+
+/**
+ * The columns every ingredient row of a meal shares, the add row included:
+ * the drag handle + picture + name area, Food Type, Food, Qty, Unit and the
+ * trailing status/action area each take a fixed basis, so a long food name
+ * (or a status message) never moves the controls after it. A name that does
+ * not fit is truncated and keeps its full text in the link's `title`.
+ */
+const ITEM_ROW_STYLE: React.CSSProperties = { display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, alignItems: 'flex-end' };
+const ITEM_IDENTITY_COL: React.CSSProperties = { flex: '0 0 200px', maxWidth: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'center' };
+const ITEM_FOOD_TYPE_COL: React.CSSProperties = { flex: '0 0 130px', minWidth: 0 };
+const ITEM_FOOD_COL: React.CSSProperties = { flex: '1 1 130px', minWidth: 130 };
+const ITEM_QTY_COL: React.CSSProperties = { flex: '0 0 64px' };
+const ITEM_UNIT_COL: React.CSSProperties = { flex: '0 0 52px' };
+const ITEM_TRAILING_COL: React.CSSProperties = { flex: '0 0 150px', alignSelf: 'center', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, textAlign: 'right' };
+const ITEM_NAME_STYLE: React.CSSProperties = { fontSize: 13, fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 
 /* ---- ItemEditRow (#2661) ---- */
 
@@ -1218,10 +1240,12 @@ function ItemEditRow({
 
   return (
     <div style={{ background: '#f8f8ff', border: '1px solid #e0e0f0', borderRadius: 4, padding: '8px', marginBottom: 4 }}>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, padding: '4px 0', alignItems: 'flex-end' }}>
-        <span style={{ alignSelf: 'center' }}><ItemDragHandle /></span>
-        <FoodLink id={item.nutrition_library_item_id} name={item.item_name} imageUrl={item.item_image_url} nameStyle={{ fontSize: 13, fontWeight: 500 }} />
-        <div style={{ minWidth: 110 }}>
+      <div style={{ ...ITEM_ROW_STYLE, padding: '4px 0' }}>
+        <span style={ITEM_IDENTITY_COL}>
+          <ItemDragHandle />
+          <FoodLink id={item.nutrition_library_item_id} name={item.item_name} imageUrl={item.item_image_url} nameStyle={ITEM_NAME_STYLE} />
+        </span>
+        <div style={ITEM_FOOD_TYPE_COL}>
           <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food_type')}</span>
           <select
             value={draft.foodType}
@@ -1234,7 +1258,7 @@ function ItemEditRow({
             ))}
           </select>
         </div>
-        <div style={{ flex: 2, minWidth: 130 }}>
+        <div style={ITEM_FOOD_COL}>
           <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food')}</span>
           <select
             value={draft.itemId}
@@ -1248,7 +1272,7 @@ function ItemEditRow({
             ))}
           </select>
         </div>
-        <div style={{ width: 64 }}>
+        <div style={ITEM_QTY_COL}>
           <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
           <input
             type="number" min="0" step="0.1"
@@ -1259,7 +1283,7 @@ function ItemEditRow({
             style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
           />
         </div>
-        <div style={{ width: 52 }}>
+        <div style={ITEM_UNIT_COL}>
           <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
           <input
             value={draft.unit}
@@ -1269,7 +1293,7 @@ function ItemEditRow({
             style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
           />
         </div>
-        <span style={{ alignSelf: 'center', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={ITEM_TRAILING_COL}>
           {incomplete
             ? <span style={{ fontSize: 11.5, color: '#9ca3af' }}>{t('nutrition_plan_templates.tree_item_choose_food')}</span>
             : <AutosaveStatus state={save.state} onRetry={save.retry} t={t} />}
