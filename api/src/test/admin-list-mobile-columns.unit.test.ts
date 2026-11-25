@@ -97,9 +97,10 @@ describe('#1011 — Admin list columns declare their mobile behaviour', () => {
     // went back to hand-sized cells would drop this count. A new list that adopts
     // the declaration raises it: the twentieth is Cordel → Mobile builds (#1077),
     // the twenty-first Cordel → Base Nutrition Plan Templates (#3333 stage 2),
-    // the twenty-second Cordel → Base Meals (#3328 stage 3).
+    // the twenty-second Cordel → Base Meals (#3328 stage 3), the twenty-third
+    // Cordel → Payment Methods (#3372).
     expect(declarations.flatMap((d) => d.arrays).filter((a) => a.shape === 'grid'))
-      .toHaveLength(22);
+      .toHaveLength(23);
   });
 
   it('gives every column a mobile behaviour', () => {
