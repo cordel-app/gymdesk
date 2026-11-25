@@ -362,17 +362,28 @@ describe('DELETE /personal-goals/:id/image', () => {
 });
 
 describe('PUT /personal-goals/:id — rename and legacy images', () => {
-  it('moves both WebP objects to the keys the new name builds', async () => {
+  it('moves nothing on a rename: the key does not carry the name (#3350)', async () => {
     await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
+    const before = await urlsOf(goalId);
     sendMock.mockClear();
     const res = await request.put(`/personal-goals/${goalId}`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ name: 'Test Goal Image Renamed' });
     expect(res.status).toBe(200);
-    const moved = await urlsOf(goalId);
-    expect(moved.image_url).toBe(url(`${gymPrefix}/goals/${goalId}-Test-Goal-Image-Renamed.webp`));
-    expect(moved.image_thumbnail_url).toBe(url(`${gymPrefix}/goals/${goalId}-Test-Goal-Image-Renamed-thumbnail.webp`));
-    expect(sentCommands('copy')).toHaveLength(2);
-    expect(deletedKeys()).toHaveLength(2);
+    expect(await urlsOf(goalId)).toEqual(before);
+    expect(sentCommands('copy')).toHaveLength(0);
+    expect(deletedKeys()).toHaveLength(0);
+  });
+
+  it("keys a goal's image by its entity_slug, never its name (#3350)", async () => {
+    await db.query('UPDATE personal_goals SET entity_slug = ? WHERE id = ?', [`slug-goal-${goalId}`, goalId]);
+    try {
+      sendMock.mockClear();
+      expect((await upload(`/personal-goals/${goalId}/image`, gymId, await photo())).status).toBe(200);
+      expect((await urlsOf(goalId)).image_url).toBe(url(`${gymPrefix}/goals/${goalId}-slug-goal-${goalId}.webp`));
+      expect((await urlsOf(goalId)).image_thumbnail_url).toBe(url(`${gymPrefix}/goals/${goalId}-slug-goal-${goalId}-thumbnail.webp`));
+    } finally {
+      await db.query('UPDATE personal_goals SET entity_slug = NULL WHERE id = ?', [goalId]);
+    }
   });
 
   it('keeps a legacy PNG master on its own key (it is not renamed to .webp)', async () => {

@@ -8,7 +8,6 @@ import { getRequestLocale as resolveLocale } from '../infra/locale';
 import { paymentMethodImageName } from '../domain/paymentMethodImages';
 import {
   clearPaymentMethodImage,
-  migratePaymentMethodImageOnRename,
   storePaymentMethodImage,
 } from './payment-method-image-storage';
 import {
@@ -226,17 +225,8 @@ export async function updateBasePaymentMethod(
     );
     if (translations) await writeTranslations(tx, existing.id, translations);
   });
-  let row = await loadBasePaymentMethod(existing.id, locale);
-  // #1702: the image key carries the (English) name, so a rename moves it.
-  if (row && row.image_url) {
-    const nextName = paymentMethodImageName(row.translations, row.code);
-    if (nextName !== paymentMethodImageName(existing.translations, existing.code)) {
-      const moved = await migratePaymentMethodImageOnRename({
-        id: row.id, name: nextName, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url,
-      });
-      if (moved) row = await loadBasePaymentMethod(existing.id, locale);
-    }
-  }
+  // #3350: the image key carries the method's slug, so a rename moves nothing.
+  const row = await loadBasePaymentMethod(existing.id, locale);
   recordAudit(req, { action: 'update', entityType: 'base_payment_method', entityId: existing.id, previous: existing, next: row });
   return { ok: true, id: existing.id };
 }
@@ -255,6 +245,7 @@ export async function storeBasePaymentMethodImage(
     method: {
       id: existing.id,
       name: paymentMethodImageName(existing.translations, existing.code),
+      slug: existing.slug,
       image_url: existing.image_url,
       image_thumbnail_url: existing.image_thumbnail_url,
     },
@@ -312,6 +303,7 @@ async function loadForImage(req: any, res: any) {
     method: {
       id: row.id,
       name: paymentMethodImageName(row.translations, row.code),
+      slug: row.slug,
       image_url: row.image_url,
       image_thumbnail_url: row.image_thumbnail_url,
     },

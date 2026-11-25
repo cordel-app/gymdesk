@@ -34,7 +34,6 @@ import {
  */
 export function MemberPurchases({ memberId }: { memberId: number | string }) {
   const t = useTranslations();
-  const locale = useLocale();
   const { apiFetch } = useApiClient();
   const gym = useGymFormatSettings();
   const [items, setItems] = useState<MemberPurchase[] | null>(null);
@@ -113,10 +112,59 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
     },
   ];
 
+  return (
+    <div>
+      {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
+      <DataTable
+        columns={columns}
+        rows={items ?? []}
+        rowKey={(p) => p.id}
+        loading={items === null}
+        loadingText={t('members.purchases_loading')}
+        emptyText={t('members.purchases_empty')}
+        expandedRowKeys={open}
+        onToggleExpand={toggle}
+        clickRowToExpand
+        renderExpanded={(p) => <PurchaseDetailBody p={p} />}
+      />
+      <ConfirmDialog
+        open={cancelling !== null}
+        title={t('members.purchases_cancel_title')}
+        message={t('members.purchases_cancel_message', { purchase: cancelling ? purchaseDisplayName(cancelling) : '' })}
+        busy={cancelBusy}
+        confirmLabel={t('members.purchases_cancel_confirm')}
+        cancelLabel={t('members.purchases_cancel_keep')}
+        onConfirm={confirmCancel}
+        onCancel={() => setCancelling(null)}
+      />
+      <CrudModal
+        open={detail !== null}
+        title={detail ? purchaseDisplayName(detail) : ''}
+        hideSave
+        cancelLabel={t('members.close')}
+        saveLabel=""
+        onCancel={() => setDetail(null)}
+        onSave={() => setDetail(null)}
+      >
+        {detail && <PurchaseRecord p={detail} t={t} when={when} total={total} status={status} />}
+      </CrudModal>
+    </div>
+  );
+}
+
+/**
+ * #3307 stage 4 — a purchase's contents and the payment of its own Billing Events: the Purchases
+ * tab's expanded row, and the Products Summary's detail of the cart Save & Pay submitted.
+ */
+export function PurchaseDetailBody({ p }: { p: MemberPurchase }) {
+  const t = useTranslations();
+  const locale = useLocale();
+  const gym = useGymFormatSettings();
+  const dash = '—';
   const typeLabel = (type: string | null) => { const k = productTypeLabelKey(type); return k ? t(k as any) : (type ?? ''); };
   const forName = (name: string | null) => (name ? ` · ${t('members.purchases_for', { name })}` : '');
 
-  const expandedBody = (p: MemberPurchase) => (
+  return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '8px 16px 12px' }}>
       {p.plans.length > 0 && (
         <div>
@@ -169,45 +217,6 @@ export function MemberPurchases({ memberId }: { memberId: number | string }) {
             <PaymentDetails key={e.id} event={e} locale={locale} gym={gym} t={t} />
           ))}
       </div>
-    </div>
-  );
-
-  return (
-    <div>
-      {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
-      <DataTable
-        columns={columns}
-        rows={items ?? []}
-        rowKey={(p) => p.id}
-        loading={items === null}
-        loadingText={t('members.purchases_loading')}
-        emptyText={t('members.purchases_empty')}
-        expandedRowKeys={open}
-        onToggleExpand={toggle}
-        clickRowToExpand
-        renderExpanded={expandedBody}
-      />
-      <ConfirmDialog
-        open={cancelling !== null}
-        title={t('members.purchases_cancel_title')}
-        message={t('members.purchases_cancel_message', { purchase: cancelling ? purchaseDisplayName(cancelling) : '' })}
-        busy={cancelBusy}
-        confirmLabel={t('members.purchases_cancel_confirm')}
-        cancelLabel={t('members.purchases_cancel_keep')}
-        onConfirm={confirmCancel}
-        onCancel={() => setCancelling(null)}
-      />
-      <CrudModal
-        open={detail !== null}
-        title={detail ? purchaseDisplayName(detail) : ''}
-        hideSave
-        cancelLabel={t('members.close')}
-        saveLabel=""
-        onCancel={() => setDetail(null)}
-        onSave={() => setDetail(null)}
-      >
-        {detail && <PurchaseRecord p={detail} t={t} when={when} total={total} status={status} />}
-      </CrudModal>
     </div>
   );
 }

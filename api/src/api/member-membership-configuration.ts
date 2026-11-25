@@ -1,5 +1,6 @@
 import { resolveCurrentProductSet } from '../domain/currentProductSet';
 import { cartExpiresInSeconds, setCartExpiredSql, setCartExpiresInSecondsSql } from '../domain/cartExpiry';
+import { pendingPaymentExpiresInSecondsSql } from '../domain/productSet';
 import { withDerivedBilling } from './derived-billing';
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -153,6 +154,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     `SELECT ps.id, ps.status, ps.starts_at, ps.created_by, ${productSetLegacyAssignmentIdSql()} AS user_membership_id, ps.membership_plan_id,
             ${setCartExpiredSql('ps')} AS expired,
             ${setCartExpiresInSecondsSql('ps')} AS expires_in_seconds,
+            ${pendingPaymentExpiresInSecondsSql('ps')} AS payment_expires_in_seconds,
             mp.name AS plan_name,
             pu.id AS purchase_id, pu.name AS purchase_name, pu.status AS purchase_status,
             (SELECT be.amount FROM billing_events be
@@ -330,6 +332,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       amount_due: r.amount_due != null ? Number(r.amount_due) : null,
       expired: Number(r.expired) === 1,
       expires_in_seconds: cartExpiresInSeconds(r.expires_in_seconds),
+      // #3307 stage 4 — a Pending Payment's 24-hour expiry (seconds, the server's clock), for the
+      // Summary row's countdown; null for a Draft.
+      payment_expires_in_seconds: cartExpiresInSeconds(r.payment_expires_in_seconds),
       created_by: r.created_by ?? null,
       // #2966 stage 4: the further plans this version holds as plan snapshots only.
       added_plans: addedBySet.get(Number(r.id)) ?? [],

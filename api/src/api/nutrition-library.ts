@@ -17,6 +17,7 @@ import {
 import { resolveRequestActor } from '../domain/auditActor';
 import {
   buildGymNutritionImageKey,
+  nutritionImageKeyIdentifier,
   gymNutritionFolderKeys,
 } from '../domain/baseNutritionImages';
 import { getRequestLocale, TRANSLATABLE_LOCALES } from '../infra/locale';
@@ -196,7 +197,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
 /* ── Image upload (#1035 §4/§5) ───────────────────────────────────────────── */
 //
 // A gym food's image is an object in the gym's own folder, at the key the row's
-// own id and name give it: `<storage_folder_prefix>/nutrition/<food_id>-<name>.<ext>`
+// own id and slug give it (#3350): `<storage_folder_prefix>/nutrition/<food_id>-<slug>.webp`
 // (`buildGymNutritionImageKey()`). It replaces `POST /storage/uploads/nutrition-image`,
 // whose `<prefix>/Nutrition/Images/<uuid>.<ext>` key could carry neither the food's
 // id nor its name — which is why this is a per-row route at all, and why the
@@ -207,7 +208,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
 // The route takes neither the folder nor the key from the request: the prefix is
 // the gym's own column, the food is looked up under this gym, and the name comes
 // from the row. A client cannot reach another gym's folder, or another food's
-// object, by changing anything it sends — and a System row (`gym_id IS NULL`) is
+// object, by changing anything it sends (and since #3350 a rename never moves it) — and a System row (`gym_id IS NULL`) is
 // 403 here exactly as it is on the `PUT`, because its image is Cordel's.
 //
 // The picture is converted on the server (#1562): whatever format the gym sends,
@@ -223,8 +224,8 @@ nutritionLibraryRouter.post(
     const { gymId } = ctx;
     const { id } = req.params;
     try {
-      const { rows: existing } = await db.query<{ id: number; gym_id: string | null; name: string; status: string; image_url: string | null }>(
-        'SELECT id, gym_id, name, status, image_url FROM nutrition_library_item_catalogue WHERE id = ?',
+      const { rows: existing } = await db.query<{ id: number; gym_id: string | null; name: string; slug: string | null; status: string; image_url: string | null }>(
+        'SELECT id, gym_id, name, slug, status, image_url FROM nutrition_library_item_catalogue WHERE id = ?',
         [id],
       );
       if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -245,7 +246,7 @@ nutritionLibraryRouter.post(
       }
 
       const food = existing[0];
-      const key = buildGymNutritionImageKey(folderPrefix, food.id, food.name);
+      const key = buildGymNutritionImageKey(folderPrefix, food.id, nutritionImageKeyIdentifier(food));
       const url = buildStorageObjectUrl(key);
 
       const refusal = await storeNutritionImagePair({

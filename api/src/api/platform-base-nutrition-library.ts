@@ -19,6 +19,7 @@ import {
   PLATFORM_NUTRITION_PREFIX,
   baseNutritionFolderKeys,
   buildBaseNutritionImageKey,
+  nutritionImageKeyIdentifier,
 } from '../domain/baseNutritionImages';
 import { buildStorageObjectUrl } from '../infra/storage';
 import { allocateBaseFoodSlug } from './entity-slugs';
@@ -311,8 +312,8 @@ export async function updateBaseFood(req: any, id: number, body: Record<string, 
  * current image untouched.
  */
 export async function storeBaseFoodImage(req: any, id: number): Promise<BaseFoodWriteResult> {
-  const { rows: existing } = await db.query<{ id: number; name: string; status: string; image_url: string | null }>(
-    "SELECT id, name, IF(deleted_at IS NULL, 'active', 'deleted') AS status, image_url FROM base_nutrition_library_items WHERE id = ?",
+  const { rows: existing } = await db.query<{ id: number; name: string; slug: string | null; status: string; image_url: string | null }>(
+    "SELECT id, name, slug, IF(deleted_at IS NULL, 'active', 'deleted') AS status, image_url FROM base_nutrition_library_items WHERE id = ?",
     [id],
   );
   if (existing.length === 0) return { ok: false, status: 404, body: { error: 'Item not found' } };
@@ -322,7 +323,7 @@ export async function storeBaseFoodImage(req: any, id: number): Promise<BaseFood
   if (isNutritionImageRefusal(processed)) return { ok: false, status: processed.status, body: processed.body };
 
   const food = existing[0];
-  const key = buildBaseNutritionImageKey(food.id, food.name);
+  const key = buildBaseNutritionImageKey(food.id, nutritionImageKeyIdentifier(food));
   const url = buildStorageObjectUrl(key);
 
   const refusal = await storeNutritionImagePair({

@@ -6,7 +6,8 @@
 // *what may be removed*. Pure: no database, no bucket.
 //
 // The catalogue is platform-owned, so there is one root: `cordel/payment_method/
-// <id>-<name>.webp` (and `-thumbnail.webp`).
+// <id>-<slug>.webp` (and `-thumbnail.webp`). Since #3350 stage 3 the identifier
+// is the method's persisted slug (`imageKeyIdentifier()`), never its name.
 
 import {
   PAYMENT_METHOD_FOLDER,
@@ -25,20 +26,20 @@ export function sanitizePaymentMethodImageName(name: string): string {
 }
 
 /**
- * The name the key carries: the English name (the catalogue's base language),
- * else the stable `code`. Never the locale on screen, or a language switch
+ * The fallback the key carries for a method with no slug (#3350): the English
+ * name (the catalogue's base language), else the stable `code`. Never the locale on screen, or a language switch
  * would move the object.
  */
 export function paymentMethodImageName(translations: Record<string, { name: string }> | undefined, code: string): string {
   return translations?.en?.name?.trim() || code;
 }
 
-export function buildPaymentMethodImageKey(id: number | string, name: string): string {
-  return `${PLATFORM_STORAGE_ROOT}/${PAYMENT_METHOD_FOLDER}/${id}-${sanitizePaymentMethodImageName(name)}.webp`;
+export function buildPaymentMethodImageKey(id: number | string, slug: string): string {
+  return `${PLATFORM_STORAGE_ROOT}/${PAYMENT_METHOD_FOLDER}/${id}-${sanitizePaymentMethodImageName(slug)}.webp`;
 }
 
-export function buildPaymentMethodImageThumbnailKey(id: number | string, name: string): string {
-  return `${PLATFORM_STORAGE_ROOT}/${PAYMENT_METHOD_FOLDER}/${id}-${sanitizePaymentMethodImageName(name)}-thumbnail.webp`;
+export function buildPaymentMethodImageThumbnailKey(id: number | string, slug: string): string {
+  return `${PLATFORM_STORAGE_ROOT}/${PAYMENT_METHOD_FOLDER}/${id}-${sanitizePaymentMethodImageName(slug)}-thumbnail.webp`;
 }
 
 /** Folder markers between the bucket root and `payment_method/`, outermost first. */

@@ -5,20 +5,25 @@
 // Stage 2: what is shown is the server's `paid_cart` (`GET /user-memberships/member/:id/configuration`),
 // which reports a paid cart for one hour after it was paid, or until a newer cart is opened — so the
 // row survives a reload and disappears on its own. Nothing here submits, charges or decides a status;
-// the only action opens the existing Billing Event details.
+// the only actions open the existing Billing Event details and (#3307 stage 4) the purchase's detail.
 
-import React, { type CSSProperties } from 'react';
+import React, { useState, type CSSProperties } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { cardHintStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { PurchaseHeading } from './PurchaseHeading';
+import { SummaryPurchaseDetail, SummaryPurchaseDetailToggle } from './SummaryPurchaseDetail';
 import type { PaidCart } from './membershipConfiguration';
 import { retainedCartNoteKey, type SubmittedCart } from './productsWorkflowView';
 
-export function SubmittedCartSummary({ paidCart, submitted }: { paidCart: PaidCart; submitted: SubmittedCart | null }) {
+export function SubmittedCartSummary({ memberId, paidCart, submitted }: {
+  memberId: number | string; paidCart: PaidCart; submitted: SubmittedCart | null;
+}) {
   const t = useTranslations('members');
   const locale = useLocale();
   const router = useRouter();
+  // #3307 stage 4 — the retained row opens the purchase's contents and Billing Event details.
+  const [open, setOpen] = useState(false);
   const noteKey = retainedCartNoteKey(submitted, paidCart);
   const ownSubmission = submitted != null && submitted.productSetId === paidCart.product_set_id;
   return (
@@ -40,6 +45,12 @@ export function SubmittedCartSummary({ paidCart, submitted }: { paidCart: PaidCa
         >
           {t('action_view_billing_event')}
         </button>
+      )}
+      <SummaryPurchaseDetailToggle purchaseId={paidCart.purchase.id} open={open} onToggle={() => setOpen((v) => !v)} />
+      {open && (
+        <div style={{ flexBasis: '100%' }}>
+          <SummaryPurchaseDetail memberId={memberId} purchaseId={paidCart.purchase.id} reloadKey={paidCart} />
+        </div>
       )}
     </div>
   );
