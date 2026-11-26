@@ -200,6 +200,7 @@ describe('#3435: cancelled attempts are left out, failed and pending are marked'
   let cancelledPaid: number;
   let failed: number;
   let pending: number;
+  let expired: number;
 
   beforeAll(async () => {
     cancelledPending = await insertEvent({ type: 'payment_recorded', amount: 11, billingDate: dayOffset(-20), productSetId: setId });
@@ -212,6 +213,8 @@ describe('#3435: cancelled attempts are left out, failed and pending are marked'
     await insertAttempt(failed, 'failed');
     pending = await insertEvent({ type: 'payment_recorded', amount: 14, billingDate: dayOffset(-17), productSetId: setId });
     await insertAttempt(pending, 'pending');
+    expired = await insertEvent({ type: 'payment_recorded', amount: 15, billingDate: dayOffset(-16), productSetId: setId });
+    await insertAttempt(expired, 'expired');
   });
 
   it('the chart leaves out the cancelled attempt and marks failed and pending points', async () => {
@@ -222,6 +225,8 @@ describe('#3435: cancelled attempts are left out, failed and pending are marked'
     expect(byId.get(cancelledPaid)).toMatchObject({ status: 'cancelled', alert: null });
     expect(byId.get(failed)).toMatchObject({ kind: 'payment', status: 'failed', alert: 'failed' });
     expect(byId.get(pending)).toMatchObject({ kind: 'payment', status: 'pending', alert: 'pending' });
+    // #3311 stage 3: an expired attempt that collected nothing is not a point either.
+    expect(byId.has(expired)).toBe(false);
   });
 
   it('the Payments tab list applies the same rule with exclude_cancelled, and the staff list is unchanged', async () => {
