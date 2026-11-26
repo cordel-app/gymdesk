@@ -18,7 +18,7 @@ import {
   SimulationService, computeBillingSimulation,
 } from '../domain/billingSimulation';
 import { ProductBenefitCategory, planBenefitTableForCategory } from '../domain/productClassification';
-import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation } from '../domain/billingEventLines';
+import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation, lineSource } from '../domain/billingEventLines';
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { findScheduleWithIdentity } from '../domain/scheduleConsolidation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
@@ -689,6 +689,76 @@ export async function planScheduledEvents(
 }
 
 /**
+ * #3046 — the events a version's first payment covers: those on its start date, plus, for a
+ * schedule with nothing on that date, its earliest event if it already fell due today. A line
+ * added to a Draft after it was created starts today, not on the Draft's own start date, and
+ * must still be charged (a yearly Product in a plan-less Draft was missing from the payment).
+ */
+export function firstCycleEvents<T extends { date: string; scheduleKey: string | null }>(
+  planned: T[], startsAt: string, today: string,
+): T[] {
+  const onStart = planned.filter((e) => e.date === startsAt);
+  const covered = new Set(onStart.map((e) => e.scheduleKey ?? '~'));
+  const late: T[] = [];
+  for (const e of planned) {
+    const key = e.scheduleKey ?? '~';
+    if (e.date <= startsAt || e.date > today || covered.has(key)) continue;
+    covered.add(key);
+    late.push(e);
+  }
+  return [...onStart, ...late];
+}
+
+/**
+ * #3441 — the first cycle of each plan a replacing version adds, from that plan's own start date:
+ * the events on its start date plus, for a schedule with nothing on that date, its earliest event
+ * already due today (`firstCycleEvents()`, a first version's rule). A plan that starts in the
+ * future owes that first cycle now, at Save & Pay, as a first version does; a back-dated one owes
+ * what it has run up to today. Only the added plans' own lines are kept.
+ */
+export async function addedPlansFirstCycle(gymId: string, productSetId: number, today: string, exec: Exec = db) {
+  const [assignments, inherited] = await Promise.all([
+    loadProductSetSimulationAssignments(gymId, productSetId, exec),
+    loadPlanSnapshotInheritance(gymId, productSetId, exec),
+  ]);
+  const startsByPlan = new Map<number, string>();
+  assignments.forEach((a, i) => { if (!inherited[i]) startsByPlan.set(a.userMembershipId, a.startsAt); });
+  const out: Array<Awaited<ReturnType<typeof planScheduledEvents>>[number]> = [];
+  for (const start of [...new Set(startsByPlan.values())].sort()) {
+    const planned = await planScheduledEvents(gymId, productSetId, start, 1, exec, { newPlansOnly: true });
+    for (const e of firstCycleEvents(planned, start, today < start ? start : today)) {
+      const lines = e.lines.filter((l) => lineSource(l) === 'plan' && startsByPlan.get(l.user_membership_id) === start);
+      if (lines.length > 0) out.push({ ...e, lines });
+    }
+  }
+  return { events: out, assignments: new Set(startsByPlan.keys()) };
+}
+
+/**
+ * #3441 — a version that adds a plan beside running ones charged that plan's first cycle in its
+ * initial payment (`addedPlansFirstCycle()`, the same answer `initialCharge()` took), and a first
+ * cycle that falls after today is also a future obligation the engine projects. Its lines are
+ * dropped here, so the period is never charged twice, but only once that initial payment exists
+ * (a payment recorded on the version, not cancelled), never on a version that paid nothing up front.
+ */
+async function dropPaidFirstCycle(
+  tx: Tx, gymId: string, productSetId: number, previousId: number | null, today: string, planned: PlannedEvent[],
+): Promise<PlannedEvent[]> {
+  if (previousId == null) return planned;
+  const { rows: paid } = await tx.query(
+    `SELECT 1 FROM billing_events
+      WHERE gym_id = ? AND product_set_id = ? AND event_type = 'payment_recorded' AND is_scheduled = 0 AND cancelled_at IS NULL
+      LIMIT 1`, [gymId, productSetId]);
+  if (paid.length === 0) return planned;
+  const { events } = await addedPlansFirstCycle(gymId, productSetId, today, tx);
+  const covered = new Set(events.flatMap((e) => e.lines.map((l) => `${e.date}|${l.user_membership_id}`)));
+  if (covered.size === 0) return planned;
+  return planned
+    .map((e) => ({ ...e, lines: e.lines.filter((l) => lineSource(l) !== 'plan' || !covered.has(`${e.date}|${l.user_membership_id}`)) }))
+    .filter((e) => e.lines.length > 0);
+}
+
+/**
  * Persists the version's future obligations as `is_scheduled` Billing Events with
  * their lines. Idempotent: an obligation that already exists for the same
  * `(schedule, period)` — or, for a one-off, the same date — is left alone, so a
@@ -701,12 +771,13 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
   actor?: string | null;
 }): Promise<{ created: number }> {
   const { gymId, productSetId, today } = input;
-  const { rows: setRows } = await tx.query<{ owner_member_id: number }>(
-    'SELECT owner_member_id FROM product_sets WHERE id = ? AND gym_id = ?',
+  const { rows: setRows } = await tx.query<{ owner_member_id: number; previous_product_set_id: number | null }>(
+    'SELECT owner_member_id, previous_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?',
     [productSetId, gymId]);
   if (!setRows[0]) return { created: 0 };
 
-  const planned = await planScheduledEvents(gymId, productSetId, today, input.cycles, tx);
+  const planned = await dropPaidFirstCycle(tx, gymId, productSetId, setRows[0].previous_product_set_id, today,
+    await planScheduledEvents(gymId, productSetId, today, input.cycles, tx));
   const scheduleIds = new Map<string, number>();
   const { rows: schedules } = await tx.query<{ id: number; schedule_key: string }>(
     `SELECT id, schedule_key FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()}`, [productSetId]);

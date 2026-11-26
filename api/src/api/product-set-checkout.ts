@@ -13,8 +13,11 @@ import { BlockingEvent, blockingEvents, LockEvent } from '../domain/billingEvent
 import { normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { setCartLiveSql } from '../domain/cartExpiry';
 import { staffProductDraftSql } from './editable-draft';
-import { BillingEventLineRow, lineFromSimulation, linesTotal } from '../domain/billingEventLines';
-import { planScheduledEvents } from './product-set-configuration';
+import { BillingEventLineRow, lineFromSimulation, lineSource, linesTotal } from '../domain/billingEventLines';
+import { addedPlansFirstCycle, firstCycleEvents, planScheduledEvents } from './product-set-configuration';
+
+// #3441: moved beside `planScheduledEvents()`, which activation also asks; kept exported here.
+export { firstCycleEvents };
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import type { SimulationLine } from '../domain/billingSimulation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
@@ -130,27 +133,6 @@ export interface InitialCharge {
   coveredDates?: string[];
 }
 
-/**
- * #3046 — the events a version's first payment covers: those on its start date, plus, for a
- * schedule with nothing on that date, its earliest event if it already fell due today. A line
- * added to a Draft after it was created starts today, not on the Draft's own start date, and
- * must still be charged (a yearly Product in a plan-less Draft was missing from the payment).
- */
-export function firstCycleEvents<T extends { date: string; scheduleKey: string | null }>(
-  planned: T[], startsAt: string, today: string,
-): T[] {
-  const onStart = planned.filter((e) => e.date === startsAt);
-  const covered = new Set(onStart.map((e) => e.scheduleKey ?? '~'));
-  const late: T[] = [];
-  for (const e of planned) {
-    const key = e.scheduleKey ?? '~';
-    if (e.date <= startsAt || e.date > today || covered.has(key)) continue;
-    covered.add(key);
-    late.push(e);
-  }
-  return [...onStart, ...late];
-}
-
 /** What the version's first obligation is: every line dated on its start date. */
 export async function initialCharge(
   gymId: string, productSetId: number, startsAt: string, exec: Exec = db,
@@ -185,16 +167,13 @@ export async function initialCharge(
   }
 
   if (opts.previousProductSetId != null) {
-    // #2899: the fee of a plan this version *adds* (one the previous version does not carry) is
-    // owed now, as it is for a first version; only an inherited plan's fee was already paid.
+    // #2899: the first cycle of a plan this version *adds* (one the previous version does not carry)
+    // is owed now, as it is for a first version; only an inherited plan was already paid.
     // `newPlansOnly` is the one answer to "which plans are new" (`planSnapshotInheritedSql()`).
-    const added = (await planScheduledEvents(gymId, productSetId, startsAt, 1, exec, { newPlansOnly: true }))
-      .filter((e) => e.date === startsAt);
-    const addedFees = new Map<string, SimulationLine[]>();
-    for (const e of added) {
-      const fees = e.lines.filter((l) => l.kind === 'membership_fee');
-      if (fees.length > 0) addedFees.set(`${e.scheduleKey ?? '~'}|${e.date}`, fees);
-    }
+    // #3441: that first cycle is the added plan's own, counted from its own start date exactly as a
+    // first version's is (`firstCycleEvents()`), never only what happens to fall on today: a plan
+    // added beside a running one that starts tomorrow, or started last week, owed nothing at all.
+    const { events: addedFirst, assignments: addedAssignments } = await addedPlansFirstCycle(gymId, productSetId, today, exec);
     const previous = await planScheduledEvents(gymId, opts.previousProductSetId, startsAt, 1, exec);
     // #3165: a recurring line is recognised across versions by its purchase (`line_ref`, #1865),
     // never by its Product: a second line of a Product the member already holds is a new
@@ -210,7 +189,9 @@ export async function initialCharge(
       .map((e) => ({
         ...e,
         lines: e.lines.flatMap((l) => {
-          // The plan's own fee is the previous version's, never this payment's.
+          // An added plan's lines are its own first cycle's (below); a running plan's fee was paid.
+          // (Recurring Product lines ride on the first plan's assignment, so the line's source decides.)
+          if (lineSource(l) === 'plan' && addedAssignments.has(l.user_membership_id)) return [];
           if (l.kind === 'membership_fee' || l.product_id == null) return [];
           const had = carried.get(carriedLineKey(l)!) ?? 0;
           const quantity = Number(l.quantity);
@@ -227,18 +208,9 @@ export async function initialCharge(
           }];
         }),
       }))
-      .map((e) => {
-        const key = `${e.scheduleKey ?? '~'}|${e.date}`;
-        const fees = addedFees.get(key);
-        addedFees.delete(key);
-        return fees ? { ...e, lines: [...fees, ...e.lines] } : e;
-      })
       .filter((e) => e.lines.length > 0);
-    // An added plan's fee on a schedule the rest of the version has nothing on that day.
-    for (const e of added) {
-      const fees = addedFees.get(`${e.scheduleKey ?? '~'}|${e.date}`);
-      if (fees) first.push({ ...e, lines: fees });
-    }
+    // The added plans' first cycle, its fee and its own included Products, beside what else is new.
+    first = mergeEvents(first, addedFirst);
   }
   // #2746: the one-time Products in the cart are paid by the same initial payment, at their frozen amount.
   const chargeable = await chargeableSetPurchases(exec, gymId, productSetId);
@@ -277,6 +249,17 @@ export async function initialCharge(
     ...(earliestDate(first) != null && earliestDate(first) !== startsAt ? { billingDate: earliestDate(first)! } : {}),
     coveredDates: [...new Set(first.map((e) => e.date))].sort(),
   };
+}
+
+/** Events of two lists, one per `(schedule, date)`, their lines concatenated. */
+function mergeEvents<T extends { date: string; scheduleKey: string | null; lines: unknown[] }>(a: T[], b: T[]): T[] {
+  const byKey = new Map<string, T>();
+  for (const e of [...a, ...b]) {
+    const key = `${e.scheduleKey ?? '~'}|${e.date}`;
+    const had = byKey.get(key);
+    byKey.set(key, had ? { ...had, lines: [...had.lines, ...e.lines] } : e);
+  }
+  return [...byKey.values()];
 }
 
 /** #3165 — what identifies a line across versions for the replacement delta. */
