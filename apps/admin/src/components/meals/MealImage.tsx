@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { MemberAvatar } from '@/components/MemberAvatar';
+import { ExerciseCombobox } from '@/components/ExerciseCombobox';
 import { ProfessionalServiceImageModal } from '@/components/professionalServices/ProfessionalServiceImageModal';
 
 /**
@@ -56,5 +57,46 @@ export function MealThumbnail({ meal, size = 36 }: { meal: MealImageTarget; size
       </button>
       <MealImageModal meal={open ? meal : null} onClose={() => setOpen(false)} />
     </>
+  );
+}
+
+/** A Base Meal a picker offers: its id beside the image target the API reported. */
+export interface MealPickerOption extends MealImageTarget { id: number }
+
+const MEAL_PICKER_AVATAR_SIZE = 24;
+
+/**
+ * #3328 stage 4 — the one meal picker of the three nutrition-plan surfaces:
+ * the app's searchable tree picker (`ExerciseCombobox`) with each Base Meal's
+ * circular thumbnail left of its name. The thumbnail here is the avatar only;
+ * a press on an option picks it, and the meal row's own {@link MealThumbnail}
+ * is what opens the shared modal. `current` keeps a meal whose Base Meal is no
+ * longer offered (inactive or deleted) readable in the trigger, as the stored
+ * value the API still accepts for that row.
+ */
+export function MealPicker({ value, meals, current, placeholder, onChange }: {
+  value: number | null;
+  meals: MealPickerOption[];
+  current?: MealPickerOption | null;
+  placeholder: string;
+  onChange: (id: number) => void;
+}) {
+  const offered = current && !meals.some((m) => m.id === current.id) ? [...meals, current] : meals;
+  const options = offered.map((m) => ({ ...m, name: m.display_name }));
+  return (
+    <ExerciseCombobox
+      value={value}
+      options={options}
+      placeholder={placeholder}
+      onChange={(opt) => onChange(opt.id)}
+      renderLeading={(opt) => (
+        <MemberAvatar
+          name={opt.display_name}
+          imageUrl={opt.image_thumbnail_url ?? opt.image_url}
+          stamp={opt.modified_at}
+          size={MEAL_PICKER_AVATAR_SIZE}
+        />
+      )}
+    />
   );
 }

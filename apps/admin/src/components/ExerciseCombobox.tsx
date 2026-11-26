@@ -19,6 +19,8 @@ const PANEL_MIN_WIDTH = 220;
 const PANEL_MAX_HEIGHT = 280; // search field + the list's 220px
 const GAP = 2;
 const EDGE = 8;
+const leadingRowStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 };
+const leadingNameStyle: React.CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 
 /**
  * The searchable exercise picker shared by Assigned Training Plans and Workout
@@ -27,11 +29,17 @@ const EDGE = 8;
  * follows its trigger on scroll/resize, opens upwards when there is no room
  * below and is kept inside the viewport horizontally.
  */
-export function ExerciseCombobox<T extends ExerciseComboOption>({ value, options, placeholder, onChange }: {
+export function ExerciseCombobox<T extends ExerciseComboOption>({ value, options, placeholder, onChange, renderLeading }: {
   value: number | null;
   options: T[];
   placeholder: string;
   onChange: (opt: T) => void;
+  /**
+   * #3328 stage 4: what an option carries left of its name (a Base Meal's
+   * thumbnail), in the trigger and in the list alike. Presentational only: it
+   * must not be interactive, since a press on an option is what picks it.
+   */
+  renderLeading?: (opt: T) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -102,7 +110,11 @@ export function ExerciseCombobox<T extends ExerciseComboOption>({ value, options
   return (
     <div ref={containerRef} style={{ position: 'relative', minWidth: 160 }}>
       <button type="button" onClick={handleOpen} style={treeComboTriggerStyle}>
-        {selected ? exerciseName(selected) : <span style={treeComboPlaceholderStyle}>{placeholder}</span>}
+        {selected
+          ? (renderLeading
+            ? <span style={leadingRowStyle}>{renderLeading(selected)}<span style={leadingNameStyle}>{exerciseName(selected)}</span></span>
+            : exerciseName(selected))
+          : <span style={treeComboPlaceholderStyle}>{placeholder}</span>}
         <span style={treeComboCaretStyle}>▾</span>
       </button>
       {open && pos && typeof document !== 'undefined' && createPortal(
@@ -126,7 +138,9 @@ export function ExerciseCombobox<T extends ExerciseComboOption>({ value, options
                 onMouseDown={() => pick(opt)}
                 style={{ ...treeComboItemStyle, background: opt.id === value ? TREE_COMBO_ITEM_SELECTED_BG : undefined }}
               >
-                {exerciseName(opt)}
+                {renderLeading
+                  ? <span style={leadingRowStyle}>{renderLeading(opt)}<span style={leadingNameStyle}>{exerciseName(opt)}</span></span>
+                  : exerciseName(opt)}
               </li>
             ))}
           </ul>
