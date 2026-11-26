@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { formActionsRowStyle } from '@/components/formChrome';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -626,7 +627,7 @@ function PlanCard({
       )}
 
       {editing && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 14px', borderTop: '1px solid #ececf0', marginTop: 12 }}>
+        <div style={editorActionsRowStyle}>
           <button onClick={onCancel} style={cancelBtnStyle}>{t('nutrition_plans.cancel')}</button>
           <button onClick={onSave} disabled={editSaving} style={btnStyle()}>
             {editSaving ? t('nutrition_plans.saving') : t('nutrition_plans.save_changes')}
@@ -732,4 +733,7 @@ const metaCellStyle: React.CSSProperties = {
 };
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
 const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
+// #3473: the editor's Cancel/Save pair is the app's card-level action row (Cancel, then Save,
+// left-aligned), padded to the card's own inset.
+const editorActionsRowStyle: React.CSSProperties = { ...formActionsRowStyle, alignItems: 'center', marginTop: 12, padding: '12px 16px 14px' };
 const cancelBtnStyle: React.CSSProperties = { background: '#f4f4f6', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
