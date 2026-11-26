@@ -28,6 +28,8 @@ describe('the allowlist', () => {
       '/recurring-bookings/run',
       // #1113: the 2-hour training reminder, the one run that is not nightly.
       '/booking-reminders/run',
+      // #3444: the daily rolling-window maintenance.
+      '/billing/maintain-window',
     ]);
   });
 
@@ -37,6 +39,7 @@ describe('the allowlist', () => {
     expect(internalRunApiPath(['promotion-lifecycle', 'run'])).toBe('/promotion-lifecycle/run');
     expect(internalRunApiPath(['recurring-bookings', 'run'])).toBe('/recurring-bookings/run');
     expect(internalRunApiPath(['booking-reminders', 'run'])).toBe('/booking-reminders/run');
+    expect(internalRunApiPath(['billing', 'maintain-window'])).toBe('/billing/maintain-window');
   });
 
   it('refuses anything else, including a prefix of an allowed path', () => {

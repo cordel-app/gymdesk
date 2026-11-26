@@ -36,7 +36,9 @@ const BOOKING_WORKFLOW = readFileSync(join(WORKFLOWS, 'recurring-booking-run.yml
 // nightly. It is read here because the allowlist is asserted to be exactly the
 // set the workflows call, in both directions.
 const REMINDER_WORKFLOW = readFileSync(join(WORKFLOWS, 'booking-reminder-run.yml'), 'utf8');
-const ALL_WORKFLOWS = `${BILLING_WORKFLOW}${BOOKING_WORKFLOW}${REMINDER_WORKFLOW}`;
+// #3444: the daily rolling-window maintenance has a workflow of its own.
+const WINDOW_WORKFLOW = readFileSync(join(WORKFLOWS, 'billing-window-maintenance.yml'), 'utf8');
+const ALL_WORKFLOWS = `${BILLING_WORKFLOW}${BOOKING_WORKFLOW}${REMINDER_WORKFLOW}${WINDOW_WORKFLOW}`;
 
 /** A source file's lines with its (long) comments dropped: a rule about what
  *  the code does must not be satisfied or broken by prose about it. */
@@ -108,6 +110,7 @@ describe('only the declared internal runs may be relayed', () => {
       '/plan-allowance-renewals/run',
       '/recurring-bookings/run',
       '/booking-reminders/run',
+      '/billing/maintain-window',
     ]);
   });
 

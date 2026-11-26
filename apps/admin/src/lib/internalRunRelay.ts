@@ -30,7 +30,8 @@ export const INTERNAL_RUN_RELAY_PATH = '/api/internal';
  * be a `404` from the relay rather than a request the API has to judge.
  *
  * These are exactly the `POST`s in `.github/workflows/billing-run.yml`,
- * `recurring-booking-run.yml` and `booking-reminder-run.yml`. A further internal
+ * `recurring-booking-run.yml`, `booking-reminder-run.yml` and
+ * `billing-window-maintenance.yml`. A further internal
  * run is added here and nowhere else.
  */
 export const INTERNAL_RUN_API_PATHS = [
@@ -46,6 +47,10 @@ export const INTERNAL_RUN_API_PATHS = [
   // nightly — it runs several times an hour — which changes nothing about the
   // relay: the allowlist is about which paths may be forwarded, never how often.
   '/booking-reminders/run',
+  // #3444: the daily top-up of the rolling window of future Scheduled Billing
+  // Events (#3445). Its own workflow, billing-window-maintenance.yml, so a
+  // failure there never stops the nightly charges and the other way round.
+  '/billing/maintain-window',
 ] as const;
 
 /**

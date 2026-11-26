@@ -1228,6 +1228,10 @@ period_start)` is the backstop for a concurrent call. It charges nothing and wri
 request. It answers `{ run_date, product_sets_examined, product_sets_updated, events_created,
 failures }`, and `500` when any set failed (the others are still done; a retry is safe). It claims
 no run-log slot (it is idempotent) and records a `job_run_log` row as `billing_window_maintenance`.
+It is fired daily at 05:23 UTC (and on demand, `workflow_dispatch`) by
+`.github/workflows/billing-window-maintenance.yml` through the admin relay (#3444), a workflow of
+its own so a maintenance failure never stops `billing-run.yml`'s charges or the reverse; a
+`concurrency` group keeps two runs from overlapping, and a red run is retried by re-running it.
 Its scheduled workflow is #3444.
 
 ## D. Product purchase (member, one-off)
