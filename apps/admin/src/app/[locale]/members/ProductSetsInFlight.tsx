@@ -25,7 +25,7 @@ import { WAIVE_REFUSAL_KEYS, inFlightSetTitle, type ReviewSummary } from './prod
 import { CheckoutSummaryPanel } from './CheckoutSummarySections';
 import { PurchaseHeading, type CartExpiry } from './PurchaseHeading';
 import { CartExpiryIndicator } from './CartExpiryIndicator';
-import { SummaryPurchaseDetail, SummaryPurchaseDetailToggle } from './SummaryPurchaseDetail';
+import { SummaryPurchaseDetail } from './SummaryPurchaseDetail';
 import { useSetReview } from './MemberProductsWorkflow';
 
 interface Props {
@@ -48,8 +48,6 @@ interface Props {
 export function ProductSetsInFlight({ memberId, productSets, canWrite, review = null, onChanged, cartExpiry = null }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
-  // #3307 stage 4 — which awaiting-payment row has its purchase detail open.
-  const [openId, setOpenId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [waiveBusy, setWaiveBusy] = useState<string | null>(null);
 
@@ -122,14 +120,8 @@ export function ProductSetsInFlight({ memberId, productSets, canWrite, review = 
             )}
             {ps.status === 'pending_payment' && !ps.expired && <PendingSetSummary setId={ps.id} reloadKey={ps} />}
           </div>
+          {/* #3307 stage 6 — the purchase detail of a cart awaiting payment is always shown: no Show/Hide details toggle. */}
           {ps.status === 'pending_payment' && ps.purchase && (
-            <SummaryPurchaseDetailToggle
-              purchaseId={ps.purchase.id}
-              open={openId === ps.id}
-              onToggle={() => setOpenId((cur) => (cur === ps.id ? null : ps.id))}
-            />
-          )}
-          {ps.status === 'pending_payment' && ps.purchase && openId === ps.id && (
             <div style={{ flexBasis: '100%' }}>
               <SummaryPurchaseDetail memberId={memberId} purchaseId={ps.purchase.id} reloadKey={ps} />
             </div>

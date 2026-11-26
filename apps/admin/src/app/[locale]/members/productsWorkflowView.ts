@@ -127,6 +127,8 @@ export interface InitialPaymentLike {
     /** #3381 — what one unit is charged (amount ÷ quantity), and how a prorated one is made up. */
     charged_unit_price?: number;
     charged_unit_breakdown?: { quantity: number; unit_price: number; days: number; period_days: number } | null;
+    /** #3381 stage 2 — the factors behind `base_price` (Qty × full-period unit price × proration). */
+    base_price_breakdown?: { quantity: number; unit_price: number; days: number | null; period_days: number | null } | null;
     promotion_name: string | null; treatment_action: string | null; treatment_value: number | null;
     tax_rate_percent: number | null; tax_amount: number; amount: number;
     /** #2883 — the Pre-paid periods a Membership Fee line covers, and their cadence; `null` elsewhere. */
@@ -338,6 +340,17 @@ export function lineReducedToZero(l: Pick<InitialPaymentLike['lines'][number], '
  * its quantity appended (`Locker Rental × 5`) only when more than one unit is charged. The
  * amount beside it is the server's VAT-inclusive `amount`; nothing here prices anything.
  */
+/**
+ * #3381 stage 2 — the formula under a line's Base Price, with the server's own factors:
+ * `2 × 7.50 € × 6/30`, or `2 × 7.50 €` on an unprorated line. Presentation only.
+ */
+export function basePriceFormula(
+  b: NonNullable<InitialPaymentLike['lines'][number]['base_price_breakdown']>, money: (n: number) => string,
+): string {
+  const head = `${b.quantity} × ${money(b.unit_price)}`;
+  return b.days != null && b.period_days != null ? `${head} × ${b.days}/${b.period_days}` : head;
+}
+
 export function compactInitialPaymentLabel(l: Pick<InitialPaymentLike['lines'][number], 'name' | 'quantity'>): string {
   const name = l.name ?? '—';
   return l.quantity > 1 ? `${name} × ${l.quantity}` : name;

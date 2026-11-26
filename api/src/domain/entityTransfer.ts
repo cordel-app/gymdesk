@@ -35,6 +35,7 @@ export function exerciseGenderFromSlot(slot: string): ExerciseGender | null {
 export const TRANSFER_ENTITY_TYPES = [
   'muscles', 'payment_providers', 'base_payment_methods', 'base_professional_services',
   'base_personal_goals', 'base_nutrition_goals', 'base_nutrition_library', 'base_exercises', 'gyms',
+  'base_meals',
 ] as const;
 export type TransferEntityType = (typeof TRANSFER_ENTITY_TYPES)[number];
 
@@ -49,6 +50,7 @@ export const TRANSFER_IMAGE_SLOTS: Record<TransferEntityType, readonly string[]>
   base_nutrition_library: ['image'],
   base_exercises: BASE_EXERCISE_IMAGE_SLOTS,
   gyms: [],
+  base_meals: ['image'],
 };
 
 export function parseTransferEntityType(value: unknown): TransferEntityType | null {
@@ -244,3 +246,13 @@ export const BASE_EXERCISE_TRANSFER_FIELDS = [
  * the gym, because the gym's updater does not write it.
  */
 export const GYM_TRANSFER_FIELDS = ['name', 'description', 'plan', 'status'] as const;
+
+/**
+ * The fields of a Base Meal an archive carries (#3433): its own content and its
+ * status. A Base Meal references no other entity (#3328: it is a name, a
+ * description, translations, a status and an image), so there is nothing to
+ * resolve on import; its `position` is the destination catalogue's own order and
+ * is not carried. A meal's slug is the goals' shape, since the seeded meals keep
+ * their snake_case `meal_type` handle (`recien_levantado`).
+ */
+export const BASE_MEAL_TRANSFER_FIELDS = ['name', 'description', 'status', 'translations'] as const;

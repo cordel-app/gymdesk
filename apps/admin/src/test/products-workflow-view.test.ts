@@ -208,3 +208,15 @@ describe('#3274 follow-up — the cart has one countdown, the purchase\'s', () =
     expect(cartExpirySeconds(null, [{ status: 'in_cart', cart_expires_at: '2026-11-24T11:00:00Z' }], now)).toBe(0);
   });
 });
+
+// #3381 stage 2 — the formula under a line's Base Price, from the server's own factors.
+import { basePriceFormula } from '@/app/[locale]/members/productsWorkflowView';
+describe('basePriceFormula', () => {
+  const money = (n: number) => `${n.toFixed(2)} €`;
+  it('states Qty × the base price × the proration of a prorated line', () => {
+    expect(basePriceFormula({ quantity: 2, unit_price: 7.5, days: 6, period_days: 30 }, money)).toBe('2 × 7.50 € × 6/30');
+  });
+  it('omits the proration on a line that was not prorated', () => {
+    expect(basePriceFormula({ quantity: 3, unit_price: 10, days: null, period_days: null }, money)).toBe('3 × 10.00 €');
+  });
+});

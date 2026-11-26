@@ -120,8 +120,8 @@ export async function cancelPendingProductSet(
 ): Promise<CancelPendingOutcome> {
   const { actor } = who;
   // #3307 stage 3: the 24-hour expiry is this same terminal close, told apart by
-  // `billing_events.expired_at` (the event reads *24h expired*) and by the purchases'
-  // `expired_24h` status (instead of `cancelled`).
+  // `billing_events.expired_at` (the event reads *24h expired*). Its pending purchases are
+  // `cancelled` like any cancelled checkout's (#3307 stage 7).
   const expire = opts.expire === true;
   const { rows: sets } = await tx.query<{ id: number; status: string; user_membership_id: number | null; owner_member_id: number | null }>(
     `SELECT ps.id, ps.status, ps.owner_member_id, ${productSetLegacyAssignmentIdSql()} AS user_membership_id
@@ -168,9 +168,9 @@ export async function cancelPendingProductSet(
       WHERE gym_id = ? AND status = 'pending' AND id = (SELECT payment_request_id FROM product_sets WHERE id = ?)`,
     [actor, gymId, productSetId]);
 
-  await moveSetPurchases(tx, gymId, productSetId, 'pending_payment', 'cancelled', { expired: expire });
-  // #2949 stage 5: the standalone cart purchases this checkout joined are cancelled (or expired) with it.
-  await releaseJoinedCartPurchases(tx, gymId, productSetId, expire ? 'expired_24h' : 'cancelled', actor ?? undefined);
+  await moveSetPurchases(tx, gymId, productSetId, 'pending_payment', 'cancelled');
+  // #2949 stage 5: the standalone cart purchases this checkout joined are cancelled with it.
+  await releaseJoinedCartPurchases(tx, gymId, productSetId, 'cancelled', actor ?? undefined);
   await tx.query(
     `UPDATE product_sets SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(), cancelled_by = ?
       WHERE id = ? AND status = 'pending_payment'`,
@@ -333,7 +333,7 @@ export function cancelPendingResponse(out: CancelPendingOutcome): { status: numb
  * the set's initial Billing Event reads **24h expired** (`expired_at` beside
  * `cancelled_at`), its open attempts close as `expired`, every one-time Product
  * of the checkout still `pending_payment` (linked or joined from the cart)
- * becomes `expired_24h`, and the set and its assignment are closed as a
+ * becomes `cancelled` (#3307 stage 7), and the set and its assignment are closed as a
  * cancellation is (`cancelPendingProductSet()`, the one terminal writer). Nothing
  * is deleted; a payment that settles later is recorded on its attempt and
  * activates nothing (#2533 stage 2).

@@ -233,7 +233,9 @@ steps 1 and 2 above and then step 3 with `{ expire: true }`, which differs only 
 the events also take `billing_events.expired_at` (so they are shown as **`expired_24h`**, *24h
 expired*, by `displayBillingEventStatus()`, while every reader of money, actions and queues sees
 the cancelled event it already handles), and the one-time purchases still `pending_payment` —
-linked to the set or joined from the cart — become **`expired_24h`** instead of `cancelled`. The
+linked to the set or joined from the cart — become **`cancelled`**, as with any cancelled checkout
+(#3307 stage 7, migration 489: `expired_24h` is the Billing Event's display status only; the set and
+its plan stay `cancelled` too, and products in any other status are untouched). The
 actor is `System`. A captured payment activates the set; an in-flight or unknown one leaves it
 pending for the next run; a second run finds no pending set and changes nothing. The response
 reports `pending_payments_expired`.

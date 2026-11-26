@@ -42,6 +42,7 @@ describe('entity transfer rules', () => {
   it('knows its types and its upload budget', () => {
     expect(parseTransferEntityType('muscles')).toBe('muscles');
     expect(parseTransferEntityType('gyms')).toBe('gyms');
+    expect(parseTransferEntityType('base_meals')).toBe('base_meals');
     expect(parseTransferEntityType('members')).toBeNull();
     expect(parseTransferEntityType(undefined)).toBeNull();
     expect(transferImageRateLimitMax({})).toBe(600);
