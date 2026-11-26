@@ -85,6 +85,30 @@ describe('buildPaymentsTimeline', () => {
     expect(t.points).toEqual([]);
   });
 
+  it('#3311 stage 3: an expired attempt that collected nothing is not a point, and its period is not forecast', () => {
+    const t = buildPaymentsTimeline({
+      today: TODAY,
+      events: [
+        event({ id: 1, billing_date: '2026-03-01', latest_tx_status: 'expired' }),
+        event({ id: 2, billing_date: '2026-07-01', period_start: '2026-07-01', is_scheduled: true, schedule_key: 'plan', latest_tx_status: 'expired' }),
+        event({ id: 3, billing_date: '2026-04-01', latest_tx_status: 'failed' }),
+      ],
+      forecast: [forecastDate('2026-07-01'), forecastDate('2026-08-01')],
+    });
+    expect(t.points.map((p) => [p.kind, p.date, p.billing_event_id])).toEqual([
+      ['payment', '2026-04-01', 3], ['forecast', '2026-08-01', null],
+    ]);
+  });
+
+  it('#3311 stage 3: an event that collected money stays a payment whatever a later attempt says', () => {
+    const t = buildPaymentsTimeline({
+      today: TODAY,
+      events: [event({ billing_date: '2026-03-01', latest_tx_status: 'expired', paid_at: '2026-03-01T10:00:00Z' })],
+      forecast: [],
+    });
+    expect(t.points).toHaveLength(1);
+  });
+
   it('#3435: a cancelled event that did collect money stays a payment', () => {
     const t = buildPaymentsTimeline({
       today: TODAY,
@@ -99,7 +123,6 @@ describe('buildPaymentsTimeline', () => {
       today: TODAY,
       events: [
         event({ id: 1, billing_date: '2026-03-01', latest_tx_status: 'failed' }),
-        event({ id: 2, billing_date: '2026-04-01', latest_tx_status: 'expired' }),
         event({ id: 3, billing_date: '2026-05-01', latest_tx_status: 'pending' }),
         event({ id: 4, billing_date: '2026-05-10', latest_tx_status: 'completed', paid_at: '2026-05-10' }),
         event({ id: 5, billing_date: '2026-07-01', is_scheduled: true, schedule_key: 'plan' }),
@@ -107,7 +130,7 @@ describe('buildPaymentsTimeline', () => {
       forecast: [forecastDate('2026-08-01')],
     });
     expect(t.points.map((p) => [p.billing_event_id, p.status, p.alert])).toEqual([
-      [1, 'failed', 'failed'], [2, 'failed', 'failed'], [3, 'pending', 'pending'],
+      [1, 'failed', 'failed'], [3, 'pending', 'pending'],
       [4, 'paid', null], [5, 'scheduled', null], [null, 'forecasted', null],
     ]);
   });
