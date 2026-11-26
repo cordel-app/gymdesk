@@ -37,17 +37,15 @@ describe('Initial Payment waive (#3284 stage 2)', () => {
     expect(entries.at(-1)).toEqual({ key: 'checkout_reason_initial_payment_waived', typeKey: 'checkout_reason_type_initial_payment', separator: ': ' });
   });
 
-  it('picks Revert waive on a waived line, Waive otherwise, nothing without a key', () => {
-    expect(initialPaymentLineAction({ line_key: 'a', waived: true, waivable: false })).toEqual({ kind: 'revert', lineKey: 'a', enabled: true });
-    expect(initialPaymentLineAction({ line_key: 'a', waived: false, waivable: true })).toEqual({ kind: 'waive', lineKey: 'a', enabled: true });
-    expect(initialPaymentLineAction({ line_key: 'a', waived: false, waivable: false }))
-      .toEqual({ kind: 'waive', lineKey: 'a', enabled: false, disabledReasonKey: 'checkout_waive_unavailable' });
+  it('picks Revert waive on a waived line, an enabled Waive on a waivable one, nothing otherwise (#3440)', () => {
+    expect(initialPaymentLineAction({ line_key: 'a', waived: true, waivable: false })).toEqual({ kind: 'revert', lineKey: 'a' });
+    expect(initialPaymentLineAction({ line_key: 'a', waived: false, waivable: true })).toEqual({ kind: 'waive', lineKey: 'a' });
     expect(initialPaymentLineAction({ line_key: null })).toBeNull();
   });
 
-  it('a disabled Waive states the server\'s reason (#3284 stage 3)', () => {
-    expect(initialPaymentLineAction({ line_key: 'a', waivable: false, waive_refusal: 'prepaid_fee' })?.disabledReasonKey)
-      .toBe('checkout_waive_error_prepaid');
-    expect(initialPaymentLineAction({ line_key: 'a', waivable: true, waive_refusal: null })?.disabledReasonKey).toBeUndefined();
+  it('renders no Waive and no refusal for a line the server says cannot be waived (#3440)', () => {
+    // A €0.00 line (`nothing_to_waive`) and a Pre-paid Membership Fee (`prepaid_fee`) alike.
+    expect(initialPaymentLineAction({ line_key: 'a', waived: false, waivable: false })).toBeNull();
+    expect(initialPaymentLineAction({ line_key: 'a', waivable: false })).toBeNull();
   });
 });
