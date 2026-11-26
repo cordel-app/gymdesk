@@ -24,19 +24,34 @@ const labels = {
 };
 
 describe('Payments History and Forecast chart input', () => {
-  it('#3446: draws Scheduled and Forecasted in one future-charge series, No charge apart and dashed', () => {
+  it('#3311 stage 4: draws every kind on one line, in date order, with no name and one colour', () => {
     const series = timelineSeries(timeline, labels);
-    expect(series.map((s) => [s.name, s.points.length, !!s.dashed])).toEqual([
-      ['PAYMENT', 2, false], ['FUTURE', 2, false], ['NO_CHARGE', 1, true],
+    expect(series).toHaveLength(1);
+    expect(series[0].name).toBeUndefined();
+    expect(series[0].colorIndex).toBe(0);
+    expect(series[0].dashed).toBeFalsy();
+    expect(series[0].points.map((p) => p.x)).toEqual(timeline.points.map((p) => dateToX(p.date)));
+  });
+
+  it('#3311 stage 4: tells the kinds apart by marker and by the tooltip, not by series', () => {
+    const [line] = timelineSeries(timeline, labels);
+    expect(line.points.map((p) => p.symbol)).toEqual(['circle', 'circle', 'diamond', 'emptyCircle', 'emptyDiamond']);
+    expect(line.points.map((p) => p.detailLines?.[0])).toEqual([
+      'PAYMENT · paid', 'PAYMENT · paid', 'SCHEDULED · scheduled', 'FORECAST · forecasted', 'NO_CHARGE · no_charge',
     ]);
-    expect(series[1].points.map((p) => p.detailLines?.[0])).toEqual(['scheduled', 'forecasted']);
+  });
+
+  it('sorts points the API handed out of date order', () => {
+    const shuffled = { ...timeline, points: [timeline.points[3], timeline.points[0], timeline.points[2]] };
+    const [line] = timelineSeries(shuffled, labels);
+    expect(line.points.map((p) => p.x)).toEqual(['2026-03-04', '2026-07-01', '2026-08-01'].map(dateToX));
   });
 
   it('places each point at its own date with the labels the page formatted', () => {
-    const [payments] = timelineSeries(timeline, labels);
-    expect(payments.points[0]).toMatchObject({
+    const [line] = timelineSeries(timeline, labels);
+    expect(line.points[0]).toMatchObject({
       x: dateToX('2026-03-04'), y: 70, label: 'D2026-03-04', valueLabel: '€70',
-      detailLines: ['paid', 'Fee × 1: €70'],
+      detailLines: ['PAYMENT · paid', 'Fee × 1: €70'],
     });
   });
 
@@ -45,9 +60,9 @@ describe('Payments History and Forecast chart input', () => {
     expect(all.filter((p) => p.x === dateToX('2026-05-02'))).toHaveLength(1);
   });
 
-  it('keeps an empty kind as an empty series, so the legend still names it', () => {
+  it('an empty timeline is one empty line', () => {
     const series = timelineSeries({ today: '2026-06-15', points: [] }, labels);
-    expect(series.map((s) => s.points.length)).toEqual([0, 0, 0]);
+    expect(series.map((s) => s.points.length)).toEqual([0]);
   });
 
   it('labels the axis by month in the gym date format', () => {

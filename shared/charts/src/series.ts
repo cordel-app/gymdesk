@@ -33,7 +33,16 @@ export interface ChartPoint {
    * meaning is the page's, carried by the tooltip; the layer only draws the mark.
    */
   alert?: boolean;
+  /**
+   * #3311 stage 4 — the point's own marker shape, so one line can carry points of
+   * different kinds (a payment, a scheduled charge, a forecast) told apart by the
+   * marker rather than by separate series. Defaults to the series' filled circle.
+   */
+  symbol?: ChartPointSymbol;
 }
+
+/** The ECharts marker shapes a point may take; `empty*` is drawn as an outline. */
+export type ChartPointSymbol = 'circle' | 'emptyCircle' | 'diamond' | 'emptyDiamond' | 'triangle' | 'rect';
 
 export interface ChartSeries {
   /** Stable across renders, so ECharts can diff rather than redraw. */

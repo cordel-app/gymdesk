@@ -28,5 +28,5 @@ export {
 export {
   type ChartOption, type LineChartInput, type ReferenceLine, lineChartOption, tooltipHtml,
 } from './lineChartOption';
-export { type ChartPoint, type ChartSeries, segmentPoints } from './series';
+export { type ChartPoint, type ChartPointSymbol, type ChartSeries, segmentPoints } from './series';
 export { type EChartsInstance, type EChartsModule, loadECharts } from './echartsRuntime';

@@ -378,3 +378,15 @@ describe('the Today label spacing and the legend (#3311 stage 2)', () => {
     expect(o.grid.top).toBe(34);
   });
 });
+
+describe('a point drawn with its own marker on one line (#3311 stage 4)', () => {
+  it('passes a point symbol through, and leaves a point without one on the series circle', () => {
+    const o = lineChartOption({
+      series: [{ id: 'one', points: [{ x: 1, y: 1, symbol: 'diamond' }, { x: 2, y: 2 }, { x: 3, y: 3, symbol: 'emptyCircle' }] }],
+    }, THEME) as any;
+    expect(o.series).toHaveLength(1);
+    expect(o.series[0].symbol).toBe('circle');
+    expect(o.series[0].data.map((d: any) => d.symbol)).toEqual(['diamond', undefined, 'emptyCircle']);
+    expect(o.legend).toBeUndefined();
+  });
+});
