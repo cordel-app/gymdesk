@@ -141,6 +141,29 @@ describe('initialPaymentBreakdown', () => {
   });
 });
 
+// #3381 stage 2 — the formula under Base Price: Qty × the Product's full-period base price × the
+// proration, read from the figures Base Price itself was taken from.
+describe('base_price_breakdown', () => {
+  it('states quantity, the full-period unit base price and the proration of a prorated line', () => {
+    const out = initialPaymentBreakdown([
+      line({ item_name: 'Locker', quantity: 2, amount: 1.5, regular_unit_price: 30, prorated_days: 6, period_days: 30, tax_rate_percent: 21 }),
+    ], 1.5);
+    expect(out.lines[0].base_price).toBe(6);
+    expect(out.lines[0].base_price_breakdown).toEqual({ quantity: 2, unit_price: 15, days: 6, period_days: 30 });
+  });
+
+  it('carries no proration on an unprorated line, and nothing for one unprorated unit or no regular price', () => {
+    const out = initialPaymentBreakdown([
+      line({ quantity: 3, amount: 30, regular_unit_price: 30 }),
+      line({ quantity: 1, amount: 15, regular_unit_price: 15 }),
+      line({ quantity: 2, amount: 10 }),
+    ], 55);
+    expect(out.lines[0].base_price_breakdown).toEqual({ quantity: 3, unit_price: 10, days: null, period_days: null });
+    expect(out.lines[1].base_price_breakdown).toBeNull();
+    expect(out.lines[2].base_price_breakdown).toBeNull();
+  });
+});
+
 describe('contractedItems', () => {
   const names = new Map<number, string | null>([[1, 'Ana'], [2, 'Bru']]);
 

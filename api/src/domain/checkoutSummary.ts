@@ -180,6 +180,14 @@ export interface InitialPaymentLine {
    * the engine's `amount` and proration, never re-priced; `null` on a line that was not prorated.
    */
   charged_unit_breakdown: { quantity: number; unit_price: number; days: number; period_days: number } | null;
+  /**
+   * #3381 stage 2 — how `base_price` is made up, shown under it: `quantity × unit_price` and, on a
+   * prorated line, `× days/period_days`, where `unit_price` is one unit's full-period price before
+   * any discount (the engine's regular price of the line over its quantity). Display only: derived
+   * from the figures `base_price` was taken from, never re-priced. `null` when the line has no
+   * regular price, or when it is one unprorated unit (the formula would only restate the price).
+   */
+  base_price_breakdown: { quantity: number; unit_price: number; days: number | null; period_days: number | null } | null;
   /** What the discount is: the Promotion's name, else the line's own treatment. */
   promotion_name: string | null;
   treatment_action: string | null;
@@ -287,6 +295,24 @@ export function chargedUnitPrice(
 }
 
 /**
+ * #3381 stage 2 — the factors behind a line's Base Price: its quantity, one unit's full-period
+ * regular price and the proration. Read back from the engine's regular price of the line
+ * (`regular_unit_price` = unit × quantity, #2890), so nothing is priced here.
+ */
+export function basePriceBreakdown(
+  regularLinePrice: number | string | null, quantity: number, proration: { days: number; period_days: number } | null,
+): InitialPaymentLine['base_price_breakdown'] {
+  if (regularLinePrice == null || !(quantity > 0)) return null;
+  if (!proration && quantity === 1) return null;
+  return {
+    quantity,
+    unit_price: round2(Number(regularLinePrice) / quantity),
+    days: proration ? proration.days : null,
+    period_days: proration ? proration.period_days : null,
+  };
+}
+
+/**
  * The Initial Payment breakdown of a commit charge. `total` is `amountDue`
  * itself — the engine's lines already sum to it (`billingEventLines.ts`), so the
  * screen's total and the charge cannot disagree.
@@ -317,6 +343,7 @@ export function initialPaymentBreakdown(lines: ChargeLineLike[], amountDue: numb
       name: l.item_name, quantity, unit_price: unit, line_total: lineTotal, discount,
       base_price: lineTotal, price,
       charged_unit_price: charged.unit, charged_unit_breakdown: charged.breakdown,
+      base_price_breakdown: basePriceBreakdown(l.regular_unit_price, quantity, proration),
       promotion_name: l.promotion_name, treatment_action: l.treatment_action, treatment_value: l.treatment_value,
       tax_rate_percent: rate, tax_amount: tax, amount,
       prepaid_periods: l.prepaid_periods != null && l.prepaid_periods > 0 ? Number(l.prepaid_periods) : null,
