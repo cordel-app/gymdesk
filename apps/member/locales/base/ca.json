@@ -84,6 +84,7 @@
     "add_set": "+ Afegeix sèrie",
     "save_log": "Desa el registre",
     "mark_done": "Marca fet",
+    "blocks_done_aria": "{done} de {total} blocs fets",
     "block_rounds": "{count, plural, one {# ronda} other {# rondes}}",
     "block_type_standard": "Estàndard",
     "block_type_superset": "Superserie",

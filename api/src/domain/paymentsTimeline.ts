@@ -22,6 +22,9 @@
 //
 // Since #3435 a cancelled attempt that collected nothing is not plotted, and a
 // failed or pending payment carries `alert` (`domain/memberPaymentsVisibility.ts`).
+// Since #3311 stage 3 an event whose latest attempt expired and that collected
+// nothing is not plotted either (`isExpiredUncollected()`); the obligation it
+// is still counts as persisted, so its period is not forecast again.
 //
 // Nothing is stored and nothing is written: a forecast point is never a Billing
 // Event, and a past payment keeps its own date whatever the configuration
@@ -116,6 +119,11 @@ export function commonForecastHorizon(obligations: { schedule_key: string | null
   return latest;
 }
 
+/** #3311 stage 3 — an event whose latest attempt expired and that collected nothing: not a point. */
+export function isExpiredUncollected(e: { latest_tx_status: string | null; paid_at: Date | string | null }): boolean {
+  return e.latest_tx_status === 'expired' && e.paid_at == null;
+}
+
 /** Events the member's ledger never shows as a payment: a card check, a retired status row. */
 function isPlotted(eventType: string): boolean {
   return eventType !== 'card_verification' && eventType !== 'status_changed';
@@ -140,6 +148,8 @@ export function buildPaymentsTimeline(input: {
     if (!e.cancelled && e.schedule_key != null) {
       persistedObligations.add(obligationKey(e.schedule_key, day(e.period_start ?? e.billing_date ?? e.created_at)));
     }
+    // #3311 stage 3: an expired attempt that collected nothing is not a point.
+    if (isExpiredUncollected(e)) continue;
     if (!e.cancelled && !e.is_scheduled && e.billing_date != null) {
       const set = productsPaidOn.get(billingDay) ?? new Set<number>();
       for (const id of e.product_ids ?? []) set.add(id);
