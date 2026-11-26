@@ -41,7 +41,7 @@ import {
   WorkoutTemplateRowCells,
 } from './WorkoutTemplateRowCells';
 import {
-  cardMutedTextStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, formValueStyle,
+  cardMutedTextStyle, formControlStyle, formErrorStyle, formFieldLabelStyle,
   inlineActionsRowStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 
@@ -553,6 +553,16 @@ export default function WorkoutTemplatesPage() {
                   </select>
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={formFieldLabelStyle}>{t('label_notes_for_member')}</label>
+                  <textarea
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                    rows={3}
+                    placeholder={t('notes_placeholder')}
+                    style={{ ...formControlStyle, resize: 'vertical' }}
+                  />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
                   <label style={formFieldLabelStyle}>{t('label_description')}</label>
                   <textarea
                     value={editForm.description}
@@ -577,16 +587,6 @@ export default function WorkoutTemplatesPage() {
               ) : null}
             </CardSection>
 
-            <CardSection label={t('section_notes')}>
-              <textarea
-                value={editForm.notes}
-                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-                rows={3}
-                placeholder={t('notes_placeholder')}
-                style={{ ...formControlStyle, resize: 'vertical' }}
-              />
-            </CardSection>
-
             {editError && <p style={formErrorStyle}>{editError}</p>}
             <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
               <button onClick={cancelEdit} style={secondaryBtnSmall}>{t('cancel')}</button>
@@ -603,6 +603,10 @@ export default function WorkoutTemplatesPage() {
             <CardSection label={t('section_general')} first>
               <CardDetailRow label={t('label_description')} value={wt.description ?? '—'} />
               <CardDetailRow label={t('label_status')} value={tStatus(wt.status)} />
+              <CardDetailRow
+                label={t('label_notes_for_member')}
+                value={<span style={{ whiteSpace: 'pre-wrap' }}>{wt.notes || '—'}</span>}
+              />
             </CardSection>
 
             <CardSection label={t('section_workout_structure')}>
@@ -616,12 +620,6 @@ export default function WorkoutTemplatesPage() {
                   onChanged={() => refetchBranch(wt.id)}
                 />
               ) : null}
-            </CardSection>
-
-            <CardSection label={t('section_notes')}>
-              <p style={{ ...formValueStyle, padding: 0, border: 'none', color: wt.notes ? '#333' : '#aaa' }}>
-                {wt.notes ?? '—'}
-              </p>
             </CardSection>
           </div>
         )}
@@ -762,7 +760,7 @@ export default function WorkoutTemplatesPage() {
               </div>
             </div>
             <div>
-              <span style={detailLabelStyle}>{t('details_notes')}</span>
+              <span style={detailLabelStyle}>{t('label_notes_for_member')}</span>
               <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap', color: details.notes ? '#333' : '#aaa' }}>
                 {details.notes ?? '—'}
               </p>

@@ -227,11 +227,13 @@ describe('The Workout Templates page\'s own form is formChrome (#1031)', () => {
     expect(pageSrc).not.toMatch(/function (SectionHeader|DetailRow)\(/);
     expect(pageSrc).toContain("import { CardSection } from '@/components/CardSection'");
     expect(pageSrc).toContain("import { CardDetailRow } from '@/components/CardDetailRow'");
-    // Both halves of the card render the same three sections in the same order,
-    // the first of them carrying no hairline above it (#929 §4).
-    for (const label of ['section_general', 'section_workout_structure', 'section_notes']) {
+    // Both halves of the card render the same two sections in the same order,
+    // the first of them carrying no hairline above it (#929 §4). Since #3467 the
+    // member-facing notes are a General field below Status, not a section of their own.
+    for (const label of ['section_general', 'section_workout_structure']) {
       expect(pageSrc.match(new RegExp(`CardSection label=\\{t\\('${label}'\\)\\}`, 'g')) ?? []).toHaveLength(2);
     }
+    expect(pageSrc).not.toContain("t('section_notes')");
     expect(pageSrc.match(/<CardSection label=\{t\('section_general'\)\} first>/g) ?? []).toHaveLength(2);
     expect(formFieldLabelStyle.fontWeight).toBe(600);
   });
