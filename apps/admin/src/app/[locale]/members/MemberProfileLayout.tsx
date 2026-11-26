@@ -135,39 +135,24 @@ export function NewMemberValue({
   isNewMember, label, announce,
 }: { isNewMember: boolean; label: string; announce: string }) {
   return (
-    <span style={newMemberChipStyle(isNewMember)} role="img" aria-label={announce}>{label}</span>
+    <span style={{ ...newMemberChipStyle(isNewMember), justifySelf: 'start' }} role="img" aria-label={announce}>{label}</span>
   );
 }
 
 /**
- * #2547 put New Member and Welcomed on one row; #3174 stacks them: Welcomed sits directly below the
- * New Member chip, in both halves of the Profile, so the two modes keep one layout (#882).
- */
-export const statusChipRowStyle: React.CSSProperties = {
-  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
-};
-
-/**
- * #2807 — the type a plain value takes on the calculated row: the Profile's own
- * value text, without the input-sized box a stacked value occupies.
- */
-export const profileInlineValueStyle: React.CSSProperties = {
-  fontSize: formValueStyle.fontSize,
-  lineHeight: formValueStyle.lineHeight,
-  color: formValueStyle.color,
-};
-
-/**
- * Read-only Welcomed value. #3174 (reversing #2807's plain text): `Welcomed:` then its value as a
- * chip in the New Member chip's own style (`newMemberChipStyle()`, accent for Yes, neutral for No),
- * under the New Member chip. `announce` is the full sentence a screen reader hears.
+ * Read-only Welcomed value. #3174 (reversing #2807's plain text): its value is a chip in the New
+ * Member chip's own style (`newMemberChipStyle()`, accent for Yes, neutral for No), under the New
+ * Member chip. `announce` is the full sentence a screen reader hears.
+ *
+ * #3462 — two cells of `profileInlineCellStyle`'s grid (the label in the label column, the chip in the
+ * value column), so the label carries no colon and the pair is a fragment rather than one span.
  */
 export function WelcomedValue({ label, value, welcomed, announce }: { label: string; value: string; welcomed: boolean; announce: string }) {
   return (
-    <span data-testid="member-welcomed" style={{ ...profileInlineValueStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      <span style={profileInlineFieldLabelStyle}>{label}:</span>
-      <span style={newMemberChipStyle(welcomed)} role="img" aria-label={announce}>{value}</span>
-    </span>
+    <>
+      <span style={profileInlineFieldLabelStyle}>{label}</span>
+      <span data-testid="member-welcomed" style={{ ...newMemberChipStyle(welcomed), justifySelf: 'start' }} role="img" aria-label={announce}>{value}</span>
+    </>
   );
 }
 
@@ -212,14 +197,23 @@ export const profileValueStyle = formValueStyle;
  * #960 — a calculated field's row: the label and its chip on one line, centred
  * on each other. The label keeps the Profile's own type and weight and loses
  * only the margin that separates a stacked label from the control under it.
+ *
+ * #2547 put New Member and Welcomed on one row; #3174 stacked them, Welcomed directly below the
+ * New Member chip, in both halves of the Profile (#882). #3462 — the rows are one label/value
+ * grid: the labels share the first column and the chips the second, so `Welcomed` lines up under
+ * `New Member` and its chip under the New Member chip, at any width. `renderCalculated` therefore
+ * returns the grid's cells as a fragment (the New Member chip, then the Welcomed label and its
+ * value), never a wrapper of its own.
  */
 export const profileInlineCellStyle: React.CSSProperties = {
-  display: 'flex',
+  display: 'grid',
+  gridTemplateColumns: 'max-content max-content',
+  justifyContent: 'start',
   alignItems: 'center',
-  gap: 10,
-  flexWrap: 'wrap',
+  columnGap: 10,
+  rowGap: 6,
   minHeight: 20,
-};
+}
 
 export const profileInlineFieldLabelStyle: React.CSSProperties = {
   ...formFieldLabelStyle,

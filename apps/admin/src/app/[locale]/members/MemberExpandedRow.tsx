@@ -57,7 +57,7 @@ import {
   type MemberProfile,
 } from './memberProfile';
 import { MemberCenterAccess } from './MemberCenterAccess';
-import { MemberProfileLayout, NewMemberValue, WelcomedValue, statusChipRowStyle, profileValueStyle } from './MemberProfileLayout';
+import { MemberProfileLayout, NewMemberValue, WelcomedValue, profileValueStyle } from './MemberProfileLayout';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
 import { MemberProfessionalServices } from './MemberProfessionalServices';
@@ -453,7 +453,7 @@ export function MemberExpandedRow({
                      so the Profile, the member header's badge and the Promotion
                      apply paths can never disagree about who is new. */
                   renderCalculated={() => (
-                    <span style={statusChipRowStyle}>
+                    <>
                       <NewMemberValue
                         isNewMember={member.is_new_member}
                         label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
@@ -465,7 +465,7 @@ export function MemberExpandedRow({
                         welcomed={!!member.welcomed_at}
                         announce={`${t('members.label_welcomed')}: ${member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}`}
                       />
-                    </span>
+                    </>
                   )}
                   centers={{
                     defaultLabel: t('members.default_center'),
