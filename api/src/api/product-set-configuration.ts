@@ -596,7 +596,7 @@ export const MAX_COVERED_CYCLES = 2;
  */
 export const MAX_WINDOW_SCAN_CYCLES = 64;
 
-interface PlannedEvent {
+export interface PlannedEvent {
   scheduleKey: string | null;
   date: string;
   periodEnd: string | null;
@@ -627,6 +627,11 @@ export async function planScheduledEvents(
      * `cycles` positive dates or its contract runs out (`MAX_WINDOW_SCAN_CYCLES` at most).
      */
     positiveOnly?: boolean;
+    /**
+     * #3446 — run every stream to this date (`YYYY-MM-DD`) instead of the engine's own
+     * per-stream horizon, so a chart can show every schedule across one common horizon.
+     */
+    horizonUntil?: string;
   } = {},
 ): Promise<PlannedEvent[]> {
   // #2125 stage 7: a version holds N Membership Plans. Each plan is run through the engine on its
@@ -645,6 +650,7 @@ export async function planScheduledEvents(
       result: computeBillingSimulation({
         assignments: [opts.newPlansOnly ? { ...assignment, services: [] } : assignment],
         horizonFrom: from, minimumCycles: engineCycles,
+        ...(opts.horizonUntil ? { horizonUntil: opts.horizonUntil } : {}),
       }),
     }))
     .filter((r) => r.result.available && !(opts.newPlansOnly && r.inherited));
@@ -728,7 +734,7 @@ export async function planScheduledEvents(
 }
 
 /** #3445: what a planned event would charge, from the engine's own lines (as persisted). */
-function plannedEventAmount(e: PlannedEvent): number {
+export function plannedEventAmount(e: PlannedEvent): number {
   return linesTotal(e.lines.map((l) => lineFromSimulation(l)));
 }
 

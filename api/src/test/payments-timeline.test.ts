@@ -7,6 +7,9 @@ import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, activateAssignment,
 } from './helpers';
+import { createDraft } from '../api/product-sets';
+import { activateWithEvents, addProductSetService, ensureSchedule } from '../api/product-set-configuration';
+import { allocateSchedule, cadenceForFrequency } from '../domain/scheduleAllocation';
 
 let gymId: string;
 let otherGymId: string;
@@ -49,12 +52,15 @@ async function createPlan(gid: string, price: number): Promise<number> {
 
 async function insertEvent(opts: {
   type: string; amount: number; billingDate: string | null; productSetId: number | null; isScheduled?: boolean;
+  scheduleId?: number | null;
 }): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO billing_events
-       (gym_id, member_id, product_set_id, event_type, charge_type_id, source, actor_user_id, amount, billing_date, is_scheduled)
-     VALUES (?, ?, ?, ?, ?, 'system', NULL, ?, ?, ?)`,
-    [gymId, memberId, opts.productSetId, opts.type, chargeTypeId, opts.amount, opts.billingDate, opts.isScheduled ? 1 : 0],
+       (gym_id, member_id, product_set_id, event_type, charge_type_id, source, actor_user_id, amount, billing_date, is_scheduled,
+        schedule_id, period_start)
+     VALUES (?, ?, ?, ?, ?, 'system', NULL, ?, ?, ?, ?, ?)`,
+    [gymId, memberId, opts.productSetId, opts.type, chargeTypeId, opts.amount, opts.billingDate, opts.isScheduled ? 1 : 0,
+      opts.scheduleId ?? null, opts.scheduleId != null ? opts.billingDate : null],
   );
   return insertId;
 }
@@ -150,12 +156,29 @@ describe('GET /payments/members/:memberId/timeline', () => {
     const forecastOnly = (await asAdmin(`/payments/members/${memberId}/timeline`)).body.points
       .filter((p: any) => p.kind === 'forecast');
     expect(forecastOnly.length).toBeGreaterThanOrEqual(2);
-    expect(forecastOnly.every((p: any) => p.billing_event_id === null && p.status === null && p.lines.length > 0)).toBe(true);
+    expect(forecastOnly.every((p: any) => p.billing_event_id === null && p.status === 'forecasted' && p.lines.length > 0)).toBe(true);
     expect(forecastOnly[forecastOnly.length - 1].date >= dayOffset(28)).toBe(true);
 
+    // #3446: an event on the same date that is not this obligation (no schedule) hides nothing.
     const first = forecastOnly[0];
+    const unrelated = await insertEvent({
+      type: 'payment_recorded', amount: 5, billingDate: first.date, productSetId: setId, isScheduled: true,
+    });
+    const withUnrelated = (await asAdmin(`/payments/members/${memberId}/timeline`)).body.points as any[];
+    expect(withUnrelated.filter((p) => p.date === first.date).map((p) => [p.kind, p.billing_event_id])).toEqual([
+      ['scheduled', unrelated], ['forecast', null],
+    ]);
+    await db.query('UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP(), is_scheduled = 0 WHERE id = ?', [unrelated]);
+
+    // The obligation itself — the plan schedule's period — replaces the forecast.
+    const { rows: sch } = await db.query<any>(
+      "SELECT id FROM product_set_schedules WHERE owner_member_id = ? AND schedule_key = 'plan'", [memberId]);
+    // The cancelled obligation still holds the period's unique key; free it for this fixture.
+    await db.query('UPDATE billing_events SET period_start = NULL WHERE schedule_id = ? AND period_start = ? AND cancelled_at IS NOT NULL',
+      [sch[0].id, first.date]);
     const scheduled = await insertEvent({
       type: 'payment_recorded', amount: first.amount, billingDate: first.date, productSetId: setId, isScheduled: true,
+      scheduleId: sch[0].id,
     });
     const res = await asAdmin(`/payments/members/${memberId}/timeline`);
     const onDate = (res.body.points as any[]).filter((p) => p.date === first.date && p.status !== 'cancelled');
@@ -215,5 +238,68 @@ describe('#3435: cancelled attempts are left out, failed and pending are marked'
   it('refuses an unknown exclude_cancelled value', async () => {
     const res = await asAdmin(`/payments/billing-events?member_id=${memberId}&exclude_cancelled=yes`);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('#3446: a yearly and a four-weekly line over one two-year horizon', () => {
+  let owner: number;
+  let insuranceName: string;
+  let lockerName: string;
+
+  beforeAll(async () => {
+    const today = dayOffset(0);
+    const product = async (name: string, amount: number, freq: string) => (await db.query(
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
+       VALUES (?, ?, 'fee', ?, 'EUR', ?, 'active', 'available', 0)`, [gymId, name, amount, freq])).insertId;
+    insuranceName = `Insurance-${uniq()}`;
+    lockerName = `Locker-${uniq()}`;
+    const insurance = await product(insuranceName, 30, 'year');
+    const locker = await product(lockerName, 12, 'four_weeks');
+    owner = (await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
+      [gymId, 'Two-year member', `ptl2-${uniq()}@test.com`])).insertId;
+    const actor = { name: 'Test', type: 'staff' };
+    const set = await db.transaction(async (tx) => {
+      const d = await createDraft(tx, { gymId, ownerMemberId: owner, membershipPlanId: null, startsAt: today, actor });
+      if (d.kind !== 'created') throw new Error('expected created');
+      const existing: any[] = [];
+      for (const [productId, freq] of [[insurance, 'year'], [locker, 'four_weeks']] as const) {
+        const cadence = cadenceForFrequency(freq)!;
+        const allocation: any = allocateSchedule({ cadence, purchaseDate: today, schedules: existing });
+        const scheduleId = await ensureSchedule(tx, {
+          gymId, productSetId: d.productSet.id, key: allocation.key, anchorDate: today,
+          cadenceInterval: cadence.interval, cadenceUnit: cadence.unit,
+        });
+        existing.push({ id: scheduleId, key: allocation.key, cadence, anchorDate: today });
+        await addProductSetService(tx, { gymId, productSetId: d.productSet.id, productId, quantity: 1, startsAt: today, scheduleId });
+      }
+      return d.productSet;
+    });
+    const act = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: set.id, today }));
+    expect(act.kind).toBe('ok');
+  });
+
+  it('plots the persisted cycles as Scheduled and the locker\'s later cycles as Forecasted through two years', async () => {
+    const before = await db.query<{ n: number }>('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
+    const res = await asAdmin(`/payments/members/${owner}/timeline`);
+    expect(res.status).toBe(200);
+    const after = await db.query<{ n: number }>('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
+    expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n));
+
+    const points = res.body.points as any[];
+    const carries = (p: any, name: string) => p.lines.some((l: any) => l.label === name);
+    const lockerForecast = points.filter((p) => p.kind === 'forecast' && carries(p, lockerName));
+    const insurancePoints = points.filter((p) => p.kind !== 'payment' && carries(p, insuranceName));
+    // The locker keeps its four-weekly cycles across the insurance's two-year horizon.
+    expect(lockerForecast.length).toBeGreaterThan(15);
+    expect(lockerForecast[lockerForecast.length - 1].date >= dayOffset(700)).toBe(true);
+    expect(lockerForecast.every((p) => p.status === 'forecasted' && p.billing_event_id === null)).toBe(true);
+    // Every persisted obligation reads as Scheduled, and no obligation is plotted twice.
+    const scheduled = points.filter((p) => p.kind === 'scheduled');
+    expect(scheduled.length).toBeGreaterThanOrEqual(2);
+    expect(scheduled.every((p) => p.status === 'scheduled' && p.billing_event_id != null)).toBe(true);
+    expect(insurancePoints.length).toBeGreaterThanOrEqual(2);
+    const projections = points.filter((p) => p.kind === 'forecast' || p.kind === 'no_charge');
+    const keys = projections.map((p) => `${p.date}|${p.lines.map((l: any) => l.label).join(',')}`);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

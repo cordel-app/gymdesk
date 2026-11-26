@@ -15,7 +15,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDateOnly } from '@/lib/gymFormat';
 import { cardMutedTextStyle, cardSectionLabelStyle, formErrorStyle, innerCardStyle } from '@/components/formChrome';
 import {
-  MONTH_TICK_MS, type PaymentsTimeline, type TimelinePoint, type TimelinePointKind,
+  MONTH_TICK_MS, type PaymentsTimeline, type TimelinePoint, type TimelinePointKind, type TimelineSeriesKind,
   dateToX, knownStatusKey, monthTickLabel, pointsAtX, timelineSeries,
 } from './paymentsTimelineView';
 
@@ -36,7 +36,7 @@ export function PaymentsTimelineChart({ memberId, reloadKey }: { memberId: numbe
 
   const kindLabel = (kind: TimelinePointKind) => t(`timeline_kind_${kind}`);
   // #3311 stage 2 — the legend names each series as a whole, so it says what the line is.
-  const legendLabel = (kind: TimelinePointKind) => t(`timeline_legend_${kind}`);
+  const legendLabel = (kind: TimelineSeriesKind) => t(`timeline_legend_${kind}`);
   const statusLabel = (p: TimelinePoint) => t(knownStatusKey(p));
   const money = (n: number) => formatGymAmount(n, gym);
   const date = (d: string) => formatGymDateOnly(d, gym);
@@ -77,7 +77,7 @@ export function PaymentsTimelineChart({ memberId, reloadKey }: { memberId: numbe
                       {t('timeline_detail', { date: date(p.date), amount: money(p.amount) })}
                     </p>
                     <p style={detailMeta}>
-                      {kindLabel(p.kind)} · {statusLabel(p)}{p.name ? ` · ${p.name}` : ''}
+                      {p.billing_event_id != null ? `${kindLabel(p.kind)} · ` : ''}{statusLabel(p)}{p.name ? ` · ${p.name}` : ''}
                       {p.billing_event_id != null ? ` · #${p.billing_event_id}` : ''}
                     </p>
                     {p.lines.length > 0 ? (

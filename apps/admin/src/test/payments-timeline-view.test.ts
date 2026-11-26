@@ -11,7 +11,8 @@ const timeline: PaymentsTimeline = {
     { kind: 'payment', date: '2026-03-04', amount: 70, status: 'paid', billing_event_id: 1, name: 'Gym - March', event_type: 'payment_recorded', lines: [{ label: 'Fee', quantity: 1, amount: 70 }] },
     { kind: 'payment', date: '2026-05-02', amount: 15, status: 'paid', billing_event_id: 2, name: null, event_type: 'product_purchase', lines: [] },
     { kind: 'scheduled', date: '2026-07-01', amount: 70, status: 'scheduled', billing_event_id: 3, name: null, event_type: 'payment_recorded', lines: [] },
-    { kind: 'forecast', date: '2026-08-01', amount: 70, status: null, billing_event_id: null, name: null, event_type: null, lines: [{ label: 'Fee', quantity: 1, amount: 70 }] },
+    { kind: 'forecast', date: '2026-08-01', amount: 70, status: 'forecasted', billing_event_id: null, name: null, event_type: null, lines: [{ label: 'Fee', quantity: 1, amount: 70 }] },
+    { kind: 'no_charge', date: '2026-09-01', amount: 0, status: 'no_charge', billing_event_id: null, name: null, event_type: null, lines: [{ label: 'Fee', quantity: 1, amount: 0 }] },
   ],
 };
 
@@ -23,11 +24,12 @@ const labels = {
 };
 
 describe('Payments History and Forecast chart input', () => {
-  it('draws one series per kind, in legend order, the forecast dashed', () => {
+  it('#3446: draws Scheduled and Forecasted in one future-charge series, No charge apart and dashed', () => {
     const series = timelineSeries(timeline, labels);
     expect(series.map((s) => [s.name, s.points.length, !!s.dashed])).toEqual([
-      ['PAYMENT', 2, false], ['SCHEDULED', 1, false], ['FORECAST', 1, true],
+      ['PAYMENT', 2, false], ['FUTURE', 2, false], ['NO_CHARGE', 1, true],
     ]);
+    expect(series[1].points.map((p) => p.detailLines?.[0])).toEqual(['scheduled', 'forecasted']);
   });
 
   it('places each point at its own date with the labels the page formatted', () => {
@@ -58,9 +60,11 @@ describe('Payments History and Forecast chart input', () => {
     expect(pointsAtX(timeline, null)).toEqual([]);
   });
 
-  it('reads a status under its own key, a forecast as a forecast, anything else as unknown', () => {
+  it('reads a status under its own key, a forecast as Forecasted, a zero cycle as No charge, anything else as unknown', () => {
     expect(knownStatusKey(timeline.points[0])).toBe('timeline_status_paid');
-    expect(knownStatusKey(timeline.points[3])).toBe('timeline_kind_forecast');
+    expect(knownStatusKey(timeline.points[2])).toBe('timeline_status_scheduled');
+    expect(knownStatusKey(timeline.points[3])).toBe('timeline_status_forecasted');
+    expect(knownStatusKey(timeline.points[4])).toBe('timeline_status_no_charge');
     expect(knownStatusKey({ ...timeline.points[0], status: 'weird' })).toBe('timeline_status_unknown');
   });
 });
