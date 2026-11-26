@@ -93,3 +93,18 @@ describe('Jobs table metrics (#3009)', () => {
     }
   });
 });
+
+describe('#3471 Jobs tab helpers', async () => {
+  const lib = await import('@/lib/jobRuns');
+  it('opens on Log history, with Jobs as the second tab', () => {
+    expect(lib.DEFAULT_JOBS_PAGE_TAB).toBe('log_history');
+    expect(lib.JOBS_PAGE_TABS.map((x) => x.id)).toEqual(['log_history', 'jobs']);
+  });
+  it('words every manual-start refusal, and anything else generically', () => {
+    expect(lib.manualRunErrorKey('job_already_running')).toBe('run_error_already_running');
+    expect(lib.manualRunErrorKey('manual_run_not_supported')).toBe('run_error_not_supported');
+    expect(lib.manualRunErrorKey('not_configured')).toBe('run_error_not_configured');
+    expect(lib.manualRunErrorKey('job_failed')).toBe('run_error_job_failed');
+    expect(lib.manualRunErrorKey(undefined)).toBe('run_error_generic');
+  });
+});
