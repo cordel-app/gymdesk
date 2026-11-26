@@ -6645,6 +6645,7 @@
     "type_base_nutrition_library": "Nutrition Library",
     "type_base_exercises": "Base Exercises",
     "type_gyms": "Gyms",
+    "type_base_meals": "Base Meals",
     "export": "Export",
     "import": "Import",
     "choose_file": "Choose ZIP file…",

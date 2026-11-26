@@ -6631,6 +6631,7 @@
     "type_base_nutrition_library": "Biblioteca nutricional",
     "type_base_exercises": "Ejercicios base",
     "type_gyms": "Gimnasios",
+    "type_base_meals": "Comidas base",
     "export": "Exportar",
     "import": "Importar",
     "choose_file": "Elegir archivo ZIP…",
