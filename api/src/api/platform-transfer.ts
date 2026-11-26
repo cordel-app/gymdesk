@@ -33,8 +33,16 @@ import {
   parseMuscleTransferRecord,
   transferImageRateLimitMax,
   GYM_TRANSFER_FIELDS,
+  BASE_MEAL_TRANSFER_FIELDS,
 } from '../domain/entityTransfer';
 import { createGym, loadPlatformGym, updateGym } from './gyms';
+import {
+  createBaseMeal,
+  loadBaseMeal,
+  loadBaseMealForImage,
+  storeBaseMealImageFromRequest,
+  updateBaseMeal,
+} from './platform-base-meals';
 import { muscleImageMaxBytes } from '../domain/muscleImages';
 import { muscleTranslationsExpr, withMuscleTranslations } from '../domain/muscleTranslations';
 import {
@@ -862,3 +870,78 @@ platformTransferRouter.post('/gyms', requireSuperadmin, async (req, res, next) =
     res.status(action === 'created' ? 201 : 200).json({ action, entity: await loadPlatformGym(result.id) });
   } catch (err) { next(err); }
 });
+
+// ── Base Meals (#3433) ──────────────────────────────────────────────────────
+
+platformTransferRouter.get('/base_meals', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const { rows } = await db.query<{ id: number }>(
+      'SELECT id FROM base_meals WHERE deleted_at IS NULL ORDER BY slug ASC',
+    );
+    const entities = [];
+    for (const { id } of rows) {
+      const m = await loadBaseMeal(id);
+      if (!m) continue;
+      entities.push({
+        slug: m.slug,
+        data: {
+          name: m.name,
+          description: m.description ?? null,
+          status: m.status,
+          translations: goalTranslationsForArchive(m.translations),
+        },
+        images: { image: m.image_url ?? null },
+      });
+    }
+    res.json({ type: 'base_meals', entities });
+  } catch (err) { next(err); }
+});
+
+/** A meal's slug is unique across `base_meals`, deleted rows included (#2951's global scope). */
+async function findBaseMealBySlug(slug: string) {
+  const { rows } = await db.query<{ id: number; deleted_at: string | null }>(
+    'SELECT id, deleted_at FROM base_meals WHERE slug = ?', [slug],
+  );
+  return rows[0] ?? null;
+}
+
+platformTransferRouter.post('/base_meals', requireSuperadmin, async (req, res, next) => {
+  try {
+    const parsed = parseSlugTransferRecord(req.body, BASE_MEAL_TRANSFER_FIELDS, { goalSlug: true });
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const { slug, input } = parsed.record;
+    const found = await findBaseMealBySlug(slug);
+    if (found?.deleted_at) return res.status(409).json(DELETED_REFUSAL);
+    let action: TransferAction;
+    let result;
+    if (found) {
+      action = 'updated';
+      result = await updateBaseMeal(req, found.id, input);
+    } else {
+      action = 'created';
+      result = await createBaseMeal(req, input, { slug });
+    }
+    if (!result.ok) return res.status(result.status).json(result.body);
+    res.status(action === 'created' ? 201 : 200).json({ action, entity: await loadBaseMeal(result.id) });
+  } catch (err) { next(err); }
+});
+
+platformTransferRouter.post(
+  '/base_meals/:slug/image/:slot',
+  requireSuperadmin,
+  transferImageLimiter,
+  memberImageBodyParser,
+  async (req, res, next) => {
+    try {
+      if (req.params.slot !== 'image') return res.status(400).json({ error: 'slot must be "image"' });
+      if (!isValidGoalSlug(req.params.slug)) return res.status(404).json({ error: 'Meal not found' });
+      const found = await findBaseMealBySlug(req.params.slug);
+      if (!found || found.deleted_at) return res.status(404).json({ error: 'Meal not found' });
+      const meal = await loadBaseMealForImage(String(found.id));
+      if (!meal) return res.status(404).json({ error: 'Meal not found' });
+      const result = await storeBaseMealImageFromRequest(req, meal);
+      if (!result.ok) return res.status(result.status).json(result.body);
+      res.json({ entity: await loadBaseMeal(found.id) });
+    } catch (err) { next(err); }
+  },
+);
