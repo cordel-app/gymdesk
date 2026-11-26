@@ -105,7 +105,7 @@ describe('Members: the chip borrows the list pill, declaring no colour (#960)', 
 describe('Members: label and chip share one row (#960)', () => {
   it('lays a calculated field out inline, in the shared layout', () => {
     expect(layoutSrc).toContain('profileInlineCellStyle');
-    expect(profileInlineCellStyle.display).toBe('flex');
+    expect(profileInlineCellStyle.display).toBe('grid');
     expect(profileInlineCellStyle.alignItems).toBe('center');
     // The stacked label-above-control shape is the editable field's, because
     // that is the box its `<input>` occupies in the other mode (#929).

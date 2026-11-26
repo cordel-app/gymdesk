@@ -230,23 +230,37 @@ export function utcToday(now: Date = new Date()): string {
  * carrying a line of its assignment. Its `total` is that payment's amount — the
  * whole Billing Event charged on that date, never one line's price. `null` when
  * the plan has no assignment yet or nothing further is scheduled for it.
+ * A date whose payment charges nothing is skipped (#3463).
  */
 export function planNextPayment(
   forecast: BillingEventForecast | null, userMembershipId: number | null | undefined,
 ): ForecastDate | null {
   if (!forecast?.available || userMembershipId == null) return null;
-  return forecast.dates.find((d) => d.lines.some((l) => l.user_membership_id === userMembershipId)) ?? null;
+  return forecast.dates.find((d) => isPayableDate(d)
+    && d.lines.some((l) => l.user_membership_id === userMembershipId)) ?? null;
 }
 
 /**
  * #3235 — the next scheduled payment a recurring Product line is part of: the
  * first forecast date carrying a Product line of that Product. `null` when none.
+ * A date whose payment charges nothing is skipped (#3463).
  */
 export function productNextPayment(
   forecast: BillingEventForecast | null, productId: number | null | undefined,
 ): ForecastDate | null {
   if (!forecast?.available || productId == null) return null;
-  return forecast.dates.find((d) => d.lines.some((l) => l.kind === 'product' && l.product_id === productId)) ?? null;
+  return forecast.dates.find((d) => isPayableDate(d)
+    && d.lines.some((l) => l.kind === 'product' && l.product_id === productId)) ?? null;
+}
+
+/**
+ * #3463 — a payment that charges nothing is not a *Next payment*: a free or
+ * fully discounted cycle is skipped and the next date that charges something
+ * is shown instead, its date and amount from that same Billing Event. The
+ * amount is the server's `total`; nothing here prices it.
+ */
+function isPayableDate(date: ForecastDate): boolean {
+  return Number(date.total) > 0;
 }
 
 /**
