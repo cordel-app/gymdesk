@@ -20,7 +20,7 @@ import { alertTextColor } from '@/components/formChrome';
 import { createLatestWinsSaver, type LatestWinsSaver } from '@/lib/latestWinsSave';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { FoodDetailsModal, type FoodDetailsRow } from '@/components/nutritionLibrary/FoodDetailsModal';
-import { MealThumbnail, type MealImageTarget } from '@/components/meals/MealImage';
+import { MealPicker, MealThumbnail, type MealImageTarget } from '@/components/meals/MealImage';
 import { NutritionGoalThumbnail, type NutritionGoalImageTarget } from '@/components/goalLibrary/NutritionGoalImage';
 
 /**
@@ -604,16 +604,14 @@ function DayRow({
 
         {canWrite && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
-            <select
-              value={addMealType}
-              onChange={(e) => setAddMealType(e.target.value)}
-              style={{ ...selectStyle, flex: 1 }}
-            >
-              <option value="">{t('nutrition_plan_templates.tree_select_meal_type')}</option>
-              {baseMeals.map((bm) => (
-                <option key={bm.id} value={String(bm.id)}>{bm.display_name}</option>
-              ))}
-            </select>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <MealPicker
+                value={addMealType ? Number(addMealType) : null}
+                meals={baseMeals}
+                placeholder={t('nutrition_plan_templates.tree_select_meal_type')}
+                onChange={(id) => setAddMealType(String(id))}
+              />
+            </div>
             <button onClick={addMeal} disabled={addingMeal} style={btnSmall()}>
               {t('nutrition_plan_templates.tree_add_meal')}
             </button>
@@ -762,20 +760,14 @@ function MealRow({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 10 }}>
             <div>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_label_meal_type')}</span>
-              <select
-                value={mealTypeVal}
-                onChange={(e) => changeMealType(e.target.value)}
-                style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const }}
-              >
-                <option value="">{t('nutrition_plan_templates.tree_select_meal_type')}</option>
-                {baseMeals.map((bm) => (
-                  <option key={bm.id} value={String(bm.id)}>{bm.display_name}</option>
-                ))}
-                {/* A meal whose Base Meal Cordel has since deleted still reads, never as a choice. */}
-                {meal.base_meal_id && !baseMeals.some((bm) => bm.id === meal.base_meal_id) && (
-                  <option value={String(meal.base_meal_id)} disabled>{mealLabel(meal, t)}</option>
-                )}
-              </select>
+              <MealPicker
+                value={mealTypeVal ? Number(mealTypeVal) : null}
+                meals={baseMeals}
+                // A meal whose Base Meal Cordel has since deactivated or deleted still reads.
+                current={meal.base_meal_id ? { id: meal.base_meal_id, ...mealImageTarget(meal, mealLabel(meal, t)) } : null}
+                placeholder={t('nutrition_plan_templates.tree_select_meal_type')}
+                onChange={(id) => changeMealType(String(id))}
+              />
             </div>
           </div>
           <div style={{ marginBottom: 12 }}>
