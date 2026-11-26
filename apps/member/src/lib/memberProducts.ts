@@ -725,6 +725,20 @@ export interface MemberSetReviewLine {
   prorated_days?: number | null;
   period_days?: number | null;
   fee_split?: unknown;
+  /** #3284 — every treatment of the line as the server classified it, in the order applied. */
+  reasons?: MemberLineReason[];
+}
+
+/** #3284 — one treatment of an Initial Payment line, as `lineReasons()` classified it on the server. */
+export interface MemberLineReason {
+  type: 'benefit' | 'discount' | 'manual_adjustment';
+  source: string;
+  code: string | null;
+  action: string;
+  value: number | null;
+  name: string | null;
+  /** #3282 — how long the Promotion lasts; absent when it states none. */
+  duration?: { count: number; unit: string } | null;
 }
 
 /** `GET /me/product-sets/:id/review`, as the Summary reads it. */
@@ -873,6 +887,83 @@ export function reviewLineDiscount(line: MemberSetReviewLine): number | null {
   if (line.regular_unit_price == null) return null;
   const off = Math.round((line.regular_unit_price - line.amount) * 100) / 100;
   return off > 0 ? off : null;
+}
+
+/** #3434 — the label a reason is read under, in the `membership` namespace. */
+export const SUMMARY_REASON_TYPE_KEYS: Record<MemberLineReason['type'], string> = {
+  benefit: 'membership.summary_reason_type_benefit',
+  discount: 'membership.summary_reason_type_discount',
+  manual_adjustment: 'membership.summary_reason_type_manual_adjustment',
+};
+
+/** #3282 — a Promotion's name read with its duration, by the duration's unit. */
+export const SUMMARY_PROMOTION_DURATION_KEYS: Record<string, string> = {
+  week: 'membership.summary_reason_duration_week',
+  four_weeks: 'membership.summary_reason_duration_four_weeks',
+  month: 'membership.summary_reason_duration_month',
+  year: 'membership.summary_reason_duration_year',
+};
+
+/** The reason code of the staff Initial Payment waive (#3284 stage 2, `initialPaymentWaiver.ts`). */
+const INITIAL_PAYMENT_WAIVE_CODE = 'initial_payment_waive';
+
+/**
+ * #3434 — one Benefit / Discount of a Summary line: the locale key of its label, what it is (a
+ * Promotion's name, or a locale key with its values) and the percentage it takes off, when it
+ * names one. Decided from the server's reasons; nothing here prices anything.
+ */
+export interface SummaryLineReason {
+  typeKey: string;
+  text?: string;
+  key?: string;
+  values?: Record<string, string | number>;
+  percent: number | null;
+}
+
+/**
+ * #3434 — the Benefits / Discounts of an Initial Payment line, each its own entry, in the order
+ * the engine applied them. A line the server sent no reasons for (a review read before #3284)
+ * falls back to its single primary treatment (`promotion_name`, `treatment_*`). `[]` when nothing
+ * was applied, so a no-discount line shows no Benefit / Discount row at all.
+ */
+export function reviewLineReasons(line: MemberSetReviewLine): SummaryLineReason[] {
+  const reasons = line.reasons ?? [];
+  if (reasons.length === 0) {
+    const percent = line.treatment_action === 'percentage_discount' && line.treatment_value != null
+      ? Number(line.treatment_value) : null;
+    if (line.promotion_name) {
+      return [{ typeKey: SUMMARY_REASON_TYPE_KEYS.discount, text: line.promotion_name, percent }];
+    }
+    if (line.treatment_action === 'waive') {
+      return [{ typeKey: SUMMARY_REASON_TYPE_KEYS.benefit, key: 'membership.summary_reason_waive', percent: null }];
+    }
+    if (percent != null) {
+      return [{ typeKey: SUMMARY_REASON_TYPE_KEYS.benefit, key: 'membership.summary_reason_percent', values: { percent }, percent: null }];
+    }
+    return [];
+  }
+  return reasons.map((r): SummaryLineReason => {
+    const percent = r.action === 'percentage_discount' && r.value != null ? Number(r.value) : null;
+    if (r.code === INITIAL_PAYMENT_WAIVE_CODE) {
+      return { typeKey: 'membership.summary_reason_type_initial_payment', key: 'membership.summary_reason_waive', percent: null };
+    }
+    const typeKey = SUMMARY_REASON_TYPE_KEYS[r.type] ?? SUMMARY_REASON_TYPE_KEYS.discount;
+    if (r.type === 'discount' && r.name) {
+      const d = r.duration;
+      const durationKey = d && Number.isInteger(d.count) && d.count > 0 ? SUMMARY_PROMOTION_DURATION_KEYS[d.unit] : undefined;
+      if (durationKey) return { typeKey, key: durationKey, values: { name: r.name, count: d!.count }, percent };
+      return { typeKey, text: r.name, percent };
+    }
+    if (r.action === 'waive') return { typeKey, key: 'membership.summary_reason_waive', percent: null };
+    if (percent != null) {
+      return {
+        typeKey,
+        key: r.code === 'direct_discount' ? 'membership.summary_reason_direct_percent' : 'membership.summary_reason_percent',
+        values: { percent }, percent: null,
+      };
+    }
+    return { typeKey, key: 'membership.summary_reason_discount', percent: null };
+  });
 }
 
 /**

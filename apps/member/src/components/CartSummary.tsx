@@ -15,6 +15,7 @@ import {
   reviewBeneficiary,
   reviewLineDiscount,
   reviewLineProration,
+  reviewLineReasons,
   reviewSections,
   reviewContractedGroups,
   reviewPendingDeletions,
@@ -117,34 +118,51 @@ export function CartSummary({ review, defaultOpen = false }: { review: MemberSet
       <p style={S.label}>{t('membership.summary_initial_payment')}</p>
       {review.immediate_lines.length === 0
         ? <p style={S.hint}>{t('membership.summary_nothing_due')}</p>
-        : (
-          <ul style={S.list}>
+        : (<>
+          {/* #3434 — one structured line per item: Product and Amount (incl. VAT) aligned, then its
+              Quantity, the pricing facts and each Benefit / Discount on a row of its own. */}
+          <div style={S.head} aria-hidden="true">
+            <span>{t('membership.summary_col_product')}</span>
+            <span>{t('membership.summary_col_amount')}</span>
+          </div>
+          <ul style={S.list} data-summary-initial-lines>
             {review.immediate_lines.map((l, n) => {
               const discount = reviewLineDiscount(l);
               const prepaidKey = prepaidPaymentKey(l.prepaid_periods, l.prepaid_cadence);
               const proration = reviewLineProration(l);
-              const sub = [
+              const reasons = reviewLineReasons(l);
+              const facts = [
+                l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price) }) : null,
                 // #3165 stage 2 — the partial first period, by the Product's own billing calendar.
                 proration ? t('membership.summary_line_prorated', { days: proration.days, period: proration.period }) : null,
                 // #2883 — a Membership Fee collecting a Pre-paid Duration says how many periods it covers.
                 prepaidKey ? t(`payments.${prepaidKey}` as any, { count: l.prepaid_periods as number }) : null,
-                l.regular_unit_price != null ? t('membership.summary_line_regular', { amount: money(l.regular_unit_price) }) : null,
-                l.promotion_name ? t('membership.summary_line_promotion', { name: l.promotion_name }) : null,
+              ].filter(Boolean) as string[];
+              const totals = [
                 discount != null ? t('membership.summary_line_discount', { amount: money(discount) }) : null,
                 l.tax_rate_percent != null ? t('membership.summary_line_tax', { rate: l.tax_rate_percent }) : null,
-              ].filter(Boolean).join(' · ');
+              ].filter(Boolean) as string[];
               return (
-                <li key={`l-${n}`} style={S.line}>
+                <li key={`l-${n}`} style={S.line} data-summary-line>
                   <div style={S.row}>
-                    <span style={S.text}>{l.item_name ?? '—'}{l.quantity > 1 ? ` × ${l.quantity}` : ''}</span>
-                    <span style={S.amount}>{money(l.amount)}</span>
+                    <span style={{ ...S.text, fontWeight: 600 }}>{l.item_name ?? '—'}</span>
+                    <span style={S.amount} data-summary-line-amount>{money(l.amount)}</span>
                   </div>
-                  {sub && <div style={S.sub}>{sub}</div>}
+                  <div style={S.sub}>{t('membership.summary_line_quantity', { quantity: l.quantity })}</div>
+                  {facts.length > 0 && <div style={S.sub}>{facts.join(' · ')}</div>}
+                  {reasons.map((r, m) => (
+                    <div key={`l-${n}-r-${m}`} style={S.reason} data-summary-reason>
+                      <span style={{ fontWeight: 600 }}>{t(r.typeKey as any)}:</span>{' '}
+                      <span>{r.text ?? t(r.key as any, r.values as any)}</span>
+                      {r.percent != null && <span>{' · '}{t('membership.summary_reason_off', { percent: r.percent })}</span>}
+                    </div>
+                  ))}
+                  {totals.length > 0 && <div style={S.sub}>{totals.join(' · ')}</div>}
                 </li>
               );
             })}
           </ul>
-        )}
+        </>)}
       <div style={S.total}>
         <span style={{ ...S.text, fontWeight: 700 }}>{t('membership.summary_total')}</span>
         <span style={{ ...S.amount, fontWeight: 700 }}>{money(review.amount_due)}</span>
@@ -159,13 +177,15 @@ const S: Record<string, CSSProperties> = {
   hint: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
   list: { listStyle: 'none', padding: 0, margin: 0 },
   item: { padding: '5px 0', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' },
-  line: { padding: '5px 0' },
+  line: { padding: '7px 0', borderBottom: `1px solid ${memberTheme.separator}` },
+  head: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, color: memberTheme.textMuted, paddingBottom: 2, borderBottom: `1px solid ${memberTheme.separator}` },
+  reason: { fontSize: 12, color: memberTheme.text, marginTop: 2 },
   group: { padding: '2px 0' },
   nested: { listStyle: 'none', margin: '0 0 4px', padding: '0 0 0 12px', borderLeft: `2px solid ${memberTheme.separator}` },
   text: { fontSize: 13, color: memberTheme.text },
   meta: { fontSize: 11.5, color: memberTheme.textMuted },
-  amount: { fontSize: 13, fontVariantNumeric: 'tabular-nums', color: memberTheme.text },
+  amount: { fontSize: 13, fontVariantNumeric: 'tabular-nums', color: memberTheme.text, whiteSpace: 'nowrap', flexShrink: 0 },
   sub: { fontSize: 11.5, color: memberTheme.textMuted, marginTop: 2 },
   total: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, paddingTop: 8 },
-  row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  row: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
 };
