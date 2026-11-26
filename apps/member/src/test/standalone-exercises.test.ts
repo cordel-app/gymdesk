@@ -24,6 +24,15 @@ describe('My Training — Add Exercise (#1916)', () => {
     expect(section).toContain('exercise_image_url');
     expect(section).toContain("calc(100% - 24px)");
   });
+  it('titles the section Other Exercises Trained and keeps a left-aligned, content-width Add Exercise button (#3475)', () => {
+    const en = JSON.parse(readFileSync(join(SRC, '..', 'locales', 'base', 'en.json'), 'utf8')).training;
+    expect(en.standalone_title).toBe('Other Exercises Trained');
+    expect(en.standalone_add).toBe('Add Exercise');
+    const btn = section.match(/addExerciseBtn: \{[^}]*\}/)?.[0] ?? '';
+    expect(btn).toContain("width: 'auto'");
+    expect(btn).toContain('marginTop: 16');
+    expect(btn).not.toContain("width: '100%'");
+  });
   it('has its locale keys in every language', () => {
     for (const code of ['en', 'es', 'ca']) {
       const training = JSON.parse(readFileSync(join(SRC, '..', 'locales', 'base', `${code}.json`), 'utf8')).training;

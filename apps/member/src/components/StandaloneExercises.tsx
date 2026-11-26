@@ -155,7 +155,7 @@ export function StandaloneExercises({ date }: { date: string }) {
       </button>
 
       {picking && (
-        <MemberDialog title={t('standalone_title')} onClose={() => setPicking(false)} labelledBy="standalone-picker-title"
+        <MemberDialog title={t('standalone_add')} onClose={() => setPicking(false)} labelledBy="standalone-picker-title"
           actions={<button type="button" onClick={() => setPicking(false)} style={styles.closeBtn}>{t('standalone_close')}</button>}>
           <input type="search" aria-label={t('standalone_search')} placeholder={t('standalone_search')} value={query}
                  onChange={(e) => setQuery(e.target.value)} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} />
@@ -195,7 +195,7 @@ const styles: Record<string, React.CSSProperties> = {
   entry: { display: 'flex', gap: 8, alignItems: 'center', margin: '0 12px 12px' },
   miniInput: { ...inputStyle, width: 80, minWidth: 0, boxSizing: 'border-box', padding: '6px 8px', borderRadius: 4, fontSize: 14 },
   addBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
-  addExerciseBtn: { ...primaryButtonStyle, display: 'block', width: '100%', boxSizing: 'border-box', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
+  addExerciseBtn: { ...primaryButtonStyle, display: 'inline-block', width: 'auto', marginTop: 16, boxSizing: 'border-box', padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   closeBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   pickRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 0', background: 'none', border: 'none', borderTop: `1px solid ${memberTheme.separator}`, cursor: 'pointer', color: memberTheme.text },
 };
