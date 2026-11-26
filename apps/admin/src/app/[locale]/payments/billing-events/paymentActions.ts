@@ -42,3 +42,18 @@ export function canAccept(kind: PaymentActionKind, reason: string, busy: boolean
   if (busy) return false;
   return kind === 'waive' ? reason.trim().length > 0 : true;
 }
+
+/** #3442: why Pay now refuses before any method is chosen (the API's `pay_now_block`). */
+export type PayNowBlock = 'cart_cancelled' | 'cart_expired';
+
+/** The locale key of the blocking explanation, or null for an event Pay now may proceed on. */
+export function payNowBlockKey(block: string | null | undefined): 'pay_now_block_cart_cancelled' | 'pay_now_block_cart_expired' | null {
+  if (block === 'cart_cancelled') return 'pay_now_block_cart_cancelled';
+  if (block === 'cart_expired') return 'pay_now_block_cart_expired';
+  return null;
+}
+
+/** The one request Pay now sends: the event and the chosen catalogue method, never an amount. */
+export function payNowRequest(billingEventId: number, methodCode: string): ActionRequest {
+  return { path: `/payments/billing-events/${billingEventId}/pay-now`, body: { method: methodCode } };
+}

@@ -11,6 +11,7 @@ import type { WebhookPayload } from '../payments/types';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { activateWithEvents } from './product-set-configuration';
+import { closeAsPaid } from './billing-event-pay-now';
 import { cancelProductPurchase, completeProductPurchase } from './me-products';
 
 /**
@@ -321,6 +322,10 @@ async function settleInTransaction(
       // ProductSet activates that version — the provider's confirmation, never
       // a status the browser sent. Idempotent: a repeat finds the set active.
       if (pr.billing_event_id != null) {
+        // #3442: a scheduled obligation or a failed charge paid through a hosted
+        // checkout (staff Pay now) leaves the schedule, so the nightly run finds
+        // nothing left to collect. A checkout's initial event is untouched.
+        await closeAsPaid(tx, pr.gym_id, pr.billing_event_id, SYSTEM_ACTOR);
         const { rows: owner } = await tx.query<{ product_set_id: number | null }>(
           'SELECT product_set_id FROM billing_events WHERE id = ? AND gym_id = ?',
           [pr.billing_event_id, pr.gym_id],

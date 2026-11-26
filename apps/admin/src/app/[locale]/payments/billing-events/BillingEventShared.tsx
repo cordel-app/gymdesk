@@ -15,6 +15,7 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { ExpandedRow, StatusBadge, fmtAmount, fmtDate, fmtDateTime } from './BillingEventExpandedRow';
 import type { GymFormatSettings } from '@/lib/gymFormat';
 import { PaymentActionModal } from './PaymentActionModal';
+import { PayNowModal } from './PayNowModal';
 import { PaymentActionKind, actionRequest } from './paymentActions';
 import { RefundModal } from './RefundModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -47,6 +48,9 @@ export interface BillingEventHeaderRow {
   can_pay_card?: boolean;
   can_waive?: boolean;
   first_payment?: boolean;
+  /** #3442: Pay now is offered, and why it refuses (a cancelled or expired cart). */
+  can_pay_now?: boolean;
+  pay_now_block?: string | null;
   /** #2480: the latest attempt's payment method snapshot and the event's own attempt counter. */
   payment_method_name?: string | null;
   attempt_count?: number;
@@ -335,6 +339,8 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
   const [cancelling, setCancelling] = useState<R | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [refunding, setRefunding] = useState<R | null>(null);
+  /** #3442: the event the Pay now modal is open for. */
+  const [payingNow, setPayingNow] = useState<R | null>(null);
   /** #3300: the event `⋮ → Details` shows in its modal. */
   const [detailsId, setDetailsId] = useState<number | null>(null);
 
@@ -424,6 +430,10 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
     // outstanding obligation (#1459 §2); cancelling the *event* is its own
     // backend action, offered only while it is pending (#2480).
     const busy = retryingId === id;
+    // #3442: collect a Failed, Pending payment or Scheduled event now, through the method chosen in its modal.
+    if (row.can_pay_now) {
+      items.push({ label: t('billing_events_page.action_pay_now'), onClick: () => setPayingNow(row), disabled: !canWrite, title: readOnlyTitle });
+    }
     if (row.can_pay_cash) {
       items.push({ label: t('billing_events_page.action_pay_cash'), onClick: () => openAction('cash', row), disabled: !canWrite, title: readOnlyTitle });
     }
@@ -488,6 +498,21 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
 
   const extraModals = (
     <>
+      {payingNow && (
+        <PayNowModal
+          billingEventId={payingNow.id!}
+          memberName={payingNow.member_name ?? '—'}
+          amountLabel={`${fmtAmount(payingNow.amount)} ${payingNow.currency ?? 'EUR'}`}
+          block={payingNow.pay_now_block ?? null}
+          onClose={() => setPayingNow(null)}
+          onDone={(outcome) => {
+            const id = payingNow.id!;
+            if (outcome === 'paid') toast(t('billing_events_page.manual_success'), 'success');
+            openDetails(id);
+            onChanged();
+          }}
+        />
+      )}
       {invoicing && (
         <CompleteInvoiceModal
           billingEventId={invoicing.id!}
