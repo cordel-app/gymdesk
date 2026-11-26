@@ -13,6 +13,8 @@ import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
 import { StandaloneExercises } from '@/components/StandaloneExercises';
+import { WorkoutThumbnail } from '@/components/WorkoutThumbnail';
+import { groupWorkoutsByPlan, workoutBlockCounter, workoutNotes } from '@/lib/trainingWorkoutHeading';
 import { ExerciseDetailsDialog } from '@/components/ExerciseDetailsDialog';
 import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
 import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
@@ -322,13 +324,29 @@ export default function TrainingPage() {
       ) : workoutsForWeekday.length === 0 ? (
         <p style={styles.hint}>{t('training.no_plan_today')}</p>
       ) : (
-        workoutsForWeekday.map(({ plan, workout }) => (
-          <section key={workout.id} style={styles.planCard}>
-            <h2 style={styles.planName}>{workout.name}</h2>
-            <p style={styles.planDesc}>{plan.name}{workout.description ? ` · ${workout.description}` : ''}</p>
-
-            {(workout.blocks ?? []).map((block) => (
-              <div key={block.id} style={styles.blockCard}>
+        // #3465: My Nutrition's hierarchy — the plan's name once, then per Workout a
+        // heading outside its panel (thumbnail, name, notes, done/total blocks).
+        groupWorkoutsByPlan(workoutsForWeekday).map(({ plan, workouts }) => (
+          <div key={plan.id} style={styles.planGroup}>
+          <h2 style={styles.planHeading}>{plan.name}</h2>
+          {workouts.map((workout) => {
+            const notes = workoutNotes(workout);
+            const counter = workoutBlockCounter(workout, doneBlocks);
+            return (
+          <div key={workout.id} style={styles.workoutBlock}>
+          <div style={styles.workoutHead}>
+            <WorkoutThumbnail workout={workout} title={workout.name} />
+            <div style={styles.workoutTitleBox}>
+              <h3 style={styles.workoutName}>{workout.name}</h3>
+              {notes && <p style={styles.workoutNotes}>{notes}</p>}
+            </div>
+            <span style={styles.workoutCounter} aria-label={t('training.blocks_done_aria', { done: counter.done, total: counter.total })}>
+              {counter.done}/{counter.total}
+            </span>
+          </div>
+          <section style={styles.planCard}>
+            {(workout.blocks ?? []).map((block, blockIndex) => (
+              <div key={block.id} style={blockIndex === 0 ? styles.firstBlockCard : styles.blockCard}>
                 <div style={styles.blockHead}>
                   <div style={{ flex: 1 }}>
                     <div style={styles.blockName}>
@@ -454,6 +472,10 @@ export default function TrainingPage() {
               </div>
             ))}
           </section>
+          </div>
+            );
+          })}
+          </div>
         ))
       )}
       <StandaloneExercises date={selectedDate} />
@@ -484,9 +506,16 @@ const styles: Record<string, React.CSSProperties> = {
   statusBtn: { background: 'none', border: 'none', padding: 6, cursor: 'pointer', display: 'flex' },
   statusDot: { width: 12, height: 12, borderRadius: '50%', display: 'block' },
   srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
-  planCard: { ...sectionCardStyle, padding: 16, marginBottom: 16 },
-  planName: { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
-  planDesc: { margin: '4px 0 12px', fontSize: 13, color: memberTheme.textMuted },
+  planCard: { ...sectionCardStyle, padding: 16, margin: 0 },
+  planGroup: { display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 16 },
+  planHeading: { margin: 0, fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em', overflowWrap: 'anywhere' },
+  workoutBlock: { display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 14 },
+  workoutHead: { display: 'flex', alignItems: 'center', gap: 14 },
+  workoutTitleBox: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 },
+  workoutName: { margin: 0, fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: memberTheme.title2, fontFamily: memberTheme.title2Font, overflowWrap: 'anywhere' },
+  workoutNotes: { margin: 0, fontSize: 13, color: memberTheme.textMuted, overflowWrap: 'anywhere', whiteSpace: 'pre-line' },
+  workoutCounter: { flexShrink: 0, fontSize: 16, fontWeight: 700, color: memberTheme.text, fontVariantNumeric: 'tabular-nums' },
+  firstBlockCard: {},
   blockCard: { borderTop: `1px solid ${memberTheme.separator}`, paddingTop: 10, marginTop: 10 },
   blockHead: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },
   blockName: { fontSize: 14, fontWeight: 700, color: memberTheme.text, display: 'flex', alignItems: 'center', gap: 8 },
