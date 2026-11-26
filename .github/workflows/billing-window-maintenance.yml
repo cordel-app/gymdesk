@@ -64,29 +64,50 @@ jobs:
 
           printf 'POST /billing/maintain-window -> %s\n' "$body"
 
-          # The API returns aggregate counters on both complete and incomplete
-          # runs. A failure count makes the workflow fail so the run can be retried.
+          # The API returns aggregate counters and a per-Product-Set target status
+          # (#3444) on both complete and incomplete runs. A failure or an incomplete
+          # set makes the workflow fail so the run can be retried; a shortfall
+          # (the contract owes fewer future obligations) is reported, not failed.
           counters="$(printf '%s' "$body" \
             | jq -er '[.product_sets_examined, .product_sets_updated, .events_created, .failures] | map(numbers) | select(length == 4) | @tsv' 2>/dev/null)" || counters=""
 
           if [ -n "$counters" ]; then
             IFS=$'\t' read -r examined updated created failures <<<"$counters"
             run_date="$(printf '%s' "$body" | jq -r '.run_date // "unknown"')"
-            echo "run_date=$run_date examined=$examined updated=$updated events_created=$created failures=$failures"
+            # #3444: per-Product-Set target status, reported by the endpoint (this job computes nothing).
+            at_target="$(printf '%s' "$body" | jq -r '.product_sets_at_target // 0')"
+            shortfall="$(printf '%s' "$body" | jq -r '.product_sets_shortfall // 0')"
+            incomplete="$(printf '%s' "$body" | jq -r '.product_sets_incomplete // 0')"
+            consolidated="$(printf '%s' "$body" | jq -r '.lines_consolidated // 0')"
+            zero_skipped="$(printf '%s' "$body" | jq -r '.zero_value_skipped // 0')"
+            target="$(printf '%s' "$body" | jq -r '.target_events // 2')"
+            echo "run_date=$run_date examined=$examined at_target=$at_target replenished=$updated events_created=$created consolidated=$consolidated zero_value_skipped=$zero_skipped shortfall=$shortfall incomplete=$incomplete failures=$failures"
             {
               echo "### Billing window maintenance ($run_date)"
               echo ""
-              echo "Target: two future positive-value Scheduled Billing Events in total per eligible Product Set, across all schedules."
+              echo "Target: $target future positive-value Scheduled Billing Events in total per eligible Product Set, across all schedules."
               echo ""
-              echo "| Product Sets examined | Product Sets updated | Billing Events created | Failures |"
-              echo "|---|---|---|---|"
-              echo "| $examined | $updated | $created | $failures |"
+              echo "| Examined | At target | Replenished | Events created | Lines consolidated | Zero-value skipped | Shortfall | Incomplete | Failures |"
+              echo "|---|---|---|---|---|---|---|---|---|"
+              echo "| $examined | $at_target | $updated | $created | $consolidated | $zero_skipped | $shortfall | $incomplete | $failures |"
+              below="$(printf '%s' "$body" | jq -r '(.product_sets // [])[] | select(.status != "at_target" and .status != "replenished") | "| \(.product_set_id) | \(.gym_id) | \(.status) | \(.future_events) | \(.planned_events) | \(.events_created) | \(.reason // "") |"')"
+              if [ -n "$below" ]; then
+                echo ""
+                echo "Product Sets below target (a shortfall is legitimate: the contract owes fewer future obligations):"
+                echo ""
+                echo "| Product Set | Gym | Status | Events held | Obligations planned | Events created | Reason |"
+                echo "|---|---|---|---|---|---|---|"
+                echo "$below"
+              else
+                echo ""
+                echo "Every eligible Product Set holds its target."
+              fi
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ "$rc" -ne 0 ]; then
-            if [ -n "$counters" ] && [ "${failures:-0}" -gt 0 ]; then
-              echo "::error title=$failures Product Set(s) not maintained::The rolling-window maintenance could not maintain $failures Product Set(s); the rest were processed. Nothing was charged. Re-run this workflow to retry."
+            if [ -n "$counters" ] && { [ "${failures:-0}" -gt 0 ] || [ "${incomplete:-0}" -gt 0 ]; }; then
+              echo "::error title=Billing window maintenance incomplete::$failures Product Set(s) failed and $incomplete were left below their planned window; the rest were processed. Nothing was charged. Re-run this workflow to retry."
             else
               echo "::error title=Billing window maintenance did not execute::POST /billing/maintain-window failed (curl exit $rc). Check the admin relay, API and X-Internal-Secret configuration. Re-run this workflow to retry."
             fi
@@ -103,4 +124,4 @@ jobs:
             exit 1
           fi
 
-          echo "Billing window maintenance completed: $created Billing Event(s) created across $updated Product Set(s)."
+          echo "Billing window maintenance completed: $created Billing Event(s) created across $updated Product Set(s); $shortfall legitimate shortfall(s)."

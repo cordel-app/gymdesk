@@ -318,7 +318,9 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
  * No run-log slot: every set is idempotent (an obligation already persisted for its
  * `(schedule, period)` is left alone), so a repeated or overlapping call creates nothing twice.
  * A set that failed is counted in `failures` and answers `500` once the rest are done, so the
- * caller sees an incomplete run and can retry it.
+ * caller sees an incomplete run and can retry it. #3444: `product_sets` reports each set's target
+ * status (`at_target`, `replenished`, `shortfall`, `incomplete`, `failed`), and an `incomplete`
+ * set answers `500` too.
  */
 billingRouter.post('/maintain-window', async (req: Request, res: Response) => {
   if (!checkInternalSecret(req, res)) return;
@@ -329,11 +331,17 @@ billingRouter.post('/maintain-window', async (req: Request, res: Response) => {
     const result = await maintainBillingWindow(today, req.log);
     const body = { run_date: today, ...result };
     const metrics = buildJobMetrics(result.product_sets_updated, result.product_sets_examined - result.product_sets_updated);
-    const failed = result.failures > 0;
+    // #3444: a set left below its planned window is an incomplete run too; a legitimate
+    // shortfall (the contract owes fewer future obligations) is not.
+    const failed = result.failures > 0 || result.product_sets_incomplete > 0;
+    // The full per-set list is the response's; the run log and the log line keep the sets that
+    // did not reach the target, so a large gym does not write one row per healthy set.
+    const { product_sets: sets, ...counters } = body;
+    const belowTarget = sets.filter((s) => s.status !== 'at_target' && s.status !== 'replenished');
     await finishJobRun(jobRunId, failed ? 'failed' : 'completed', {
-      httpStatus: failed ? 500 : 200, details: { ...body, metrics },
+      httpStatus: failed ? 500 : 200, details: { ...counters, product_sets_below_target: belowTarget, metrics },
     });
-    req.log.info(body, 'billing/maintain-window: done');
+    req.log.info({ ...counters, product_sets_below_target: belowTarget }, 'billing/maintain-window: done');
     res.status(failed ? 500 : 200).json(body);
   } catch (err) {
     await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
