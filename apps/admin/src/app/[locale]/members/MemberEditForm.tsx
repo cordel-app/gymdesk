@@ -23,7 +23,7 @@ import {
   type MemberEditableFieldSpec,
   type MemberEditFormValues,
 } from './memberProfile';
-import { MemberProfileLayout, NewMemberValue, statusChipRowStyle, newMemberChipStyle } from './MemberProfileLayout';
+import { MemberProfileLayout, NewMemberValue, newMemberChipStyle, profileInlineFieldLabelStyle } from './MemberProfileLayout';
 import { MemberImageField } from '@/components/MemberImageField';
 
 // #797: the field set itself lives in memberProfile.ts, shared with the
@@ -84,6 +84,7 @@ export function MemberEditForm({
   onCancel: () => void;
 }) {
   const t = useTranslations('members');
+  const welcomedInputId = React.useId();
   const docCheck = validateDocumentId(form.nif_nie_passport);
   const showDocError = form.nif_nie_passport !== '' && !docCheck.valid;
 
@@ -156,22 +157,26 @@ export function MemberEditForm({
           fieldLabel={(field) => t(field.editLabelKey)}
           renderField={renderField}
           renderCalculated={() => (
-            <span style={statusChipRowStyle}>
+            <>
               <NewMemberValue
                 isNewMember={isNewMember}
                 label={t(newMemberValueKey(isNewMember))}
                 announce={t(newMemberAnnounceKey(isNewMember))}
               />
-              <label style={{ ...newMemberChipStyle(welcomed.checked), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {/* #3462 — the label in the grid's label column, the checkbox chip in the value
+                  column, so Welcomed lines up with New Member exactly as in the read-only half. */}
+              <label htmlFor={welcomedInputId} style={profileInlineFieldLabelStyle}>{t('label_welcomed')}</label>
+              <label style={{ ...newMemberChipStyle(welcomed.checked), display: 'inline-flex', alignItems: 'center', gap: 6, justifySelf: 'start' }}>
                 <input
+                  id={welcomedInputId}
                   type="checkbox"
                   checked={welcomed.checked}
                   disabled={welcomed.busy || saving}
                   onChange={(e) => welcomed.onChange(e.target.checked)}
                 />
-                {t('label_welcomed')}
+                {welcomed.checked ? t('welcomed_yes') : t('welcomed_no')}
               </label>
-            </span>
+            </>
           )}
           centers={
             showCenters
