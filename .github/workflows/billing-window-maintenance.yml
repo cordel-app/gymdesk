@@ -1,0 +1,119 @@
+name: Billing Window Maintenance
+
+# #3444: keeps the rolling window of future Scheduled Billing Events full.
+# `POST /billing/maintain-window` (#3445, `maintainBillingWindow()`) tops up, for
+# every Active Product Set, each recurring schedule's next two positive
+# obligations through the same writer activation uses
+# (`materialiseScheduledEvents()`). It is a preparation job only: it executes no
+# charge, creates no payment request or attempt, and leaves every event that
+# already exists for its (schedule, period) untouched.
+#
+# A workflow of its own rather than a step of billing-run.yml, on purpose: a
+# maintenance failure must never stop the nightly charges, and a red charge run
+# must never stop a separately triggered maintenance run. Nothing in
+# billing-run.yml changed.
+#
+# Safe to retry and to repeat: every Product Set is maintained in its own
+# transaction under its row lock and `UNIQUE (schedule_id, period_start)` is the
+# backstop, so a second or overlapping call creates nothing twice. That is why
+# the endpoint claims no run-log slot (#780's one-completed-run-per-day guard
+# would refuse the retry of a run that failed half way). The `concurrency` group
+# below additionally keeps two runs of this workflow from overlapping in one
+# environment.
+on:
+  schedule:
+    # 05:23 UTC daily: before the 06:00 billing run, so the obligations the run
+    # charges are already persisted — though the two do not depend on each other
+    # (the window holds two cycles, so a missed day loses nothing).
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+    # #784's rule: a manual run picks its GitHub environment and defaults to
+    # `dev`.
+    inputs:
+      environment:
+        description: GitHub environment to run against
+        type: choice
+        options: [dev, pro]
+        default: dev
+
+concurrency:
+  group: billing-window-maintenance-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  maintain-window:
+    name: Rolling window maintenance
+    runs-on: ubuntu-latest
+    # Same environment selection as billing-run.yml (#784).
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      # #1086: the admin app's relay prefix (`https://admin.<host>/api/internal`),
+      # which forwards the call to the API and hands back its status and body.
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+
+    steps:
+      - name: Check environment configuration
+        run: |
+          set -euo pipefail
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the rolling-window maintenance cannot know which host to call — no Billing Event was generated. It is the admin app's relay prefix (https://admin.<host>/api/internal). Add it under Settings -> Environments -> <this job's environment> -> Environment variables."
+            exit 1
+          fi
+          echo "Calling $API_BASE_URL"
+
+      - name: POST /billing/maintain-window
+        env:
+          # The endpoint authenticates with the billing secret, like every
+          # billing internal run. Passed as an env value, never interpolated
+          # into the script, so it is masked and never printed.
+          BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
+        run: |
+          set -euo pipefail
+
+          rc=0
+          body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/billing/maintain-window" \
+            -H "X-Internal-Secret: $BILLING_INTERNAL_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 300)" || rc=$?
+
+          printf 'POST /billing/maintain-window -> %s\n' "$body"
+
+          # The counters are read whether or not the call succeeded: an
+          # incomplete run answers 500 *with* them (`failures` > 0).
+          counters="$(printf '%s' "$body" \
+            | jq -er '[.product_sets_examined, .product_sets_updated, .events_created, .failures] | map(numbers) | select(length == 4) | @tsv' 2>/dev/null)" || counters=""
+
+          if [ -n "$counters" ]; then
+            IFS=$'\t' read -r examined updated created failures <<<"$counters"
+            run_date="$(printf '%s' "$body" | jq -r '.run_date // "unknown"')"
+            echo "run_date=$run_date examined=$examined updated=$updated events_created=$created failures=$failures"
+            {
+              echo "### Billing window maintenance ($run_date)"
+              echo ""
+              echo "| Product Sets examined | Product Sets updated | Billing Events created | Failures |"
+              echo "|---|---|---|---|"
+              echo "| $examined | $updated | $created | $failures |"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$rc" -ne 0 ]; then
+            if [ -n "$counters" ] && [ "${failures:-0}" -gt 0 ]; then
+              echo "::error title=$failures Product Set(s) not maintained::The rolling-window maintenance could not top up $failures of $examined Active Product Set(s); the rest were maintained. Nothing was charged. Re-run this workflow to retry: it only creates what is still missing. The API log ('billing window maintenance: set failed') names each set."
+            else
+              echo "::error title=Billing window maintenance did not execute::POST /billing/maintain-window failed (curl exit $rc) — no Billing Event was generated and nothing was charged. Check the admin app that relays the call (#1086: a 502/504 is the relay failing to reach the API, a 404 a path outside its allowlist), the API and the X-Internal-Secret pair. Re-run this workflow to retry."
+            fi
+            exit 1
+          fi
+
+          # A 2xx with no counters is a run whose outcome cannot be read.
+          if [ -z "$counters" ]; then
+            echo "::error title=Billing window maintenance answered an unreadable body::POST /billing/maintain-window returned 2xx but carried no product_sets_examined/product_sets_updated/events_created/failures counters. The body is in the step log."
+            exit 1
+          fi
+
+          if [ "$failures" -gt 0 ]; then
+            echo "::error title=$failures Product Set(s) not maintained::The run reported failures. Re-run this workflow to retry."
+            exit 1
+          fi
+
+          echo "Billing window maintenance completed: $created Billing Event(s) created across $updated Product Set(s)."
