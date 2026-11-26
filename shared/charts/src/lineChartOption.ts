@@ -107,6 +107,32 @@ const SELECTED_SYMBOL_SIZE = 14;
 const MARKER_LABEL_SPACE = 22;
 const LEGEND_SPACE = 26;
 
+const ALERT_SIZE = 14;
+
+/**
+ * #3435 — a point's alert mark: a small solid disc in the series' own colour with
+ * a `!` in the surface colour, sitting just above the point so it never covers it.
+ * Silent text, so a tap still reaches the point and its tooltip.
+ */
+export function alertLabel(color: string, theme: ChartTheme): Record<string, unknown> {
+  return {
+    show: true,
+    position: 'top',
+    distance: 4,
+    formatter: '!',
+    color: theme.surface,
+    backgroundColor: color,
+    fontSize: 10,
+    fontWeight: 'bold',
+    width: ALERT_SIZE,
+    height: ALERT_SIZE,
+    lineHeight: ALERT_SIZE,
+    align: 'center',
+    verticalAlign: 'middle',
+    borderRadius: ALERT_SIZE / 2,
+  };
+}
+
 /** The option object, loose on purpose: ECharts' own types are the canvas's. */
 export type ChartOption = Record<string, unknown>;
 
@@ -160,6 +186,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
           : (input.selectedX != null && point.x === input.selectedX ? SELECTED_SYMBOL_SIZE : SYMBOL_SIZE),
         x: point.x,
         // #2224 — the selected day's informative flag: its date and value, drawn on the point.
+        // #3435 — otherwise an alerting point carries its `!` disc above it.
         label: input.selectedX != null && point.x === input.selectedX && pointIndex >= bridges
           ? {
               show: true,
@@ -173,6 +200,8 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
               borderRadius: 4,
               padding: [3, 6],
             }
+          : point.alert && pointIndex >= bridges
+          ? alertLabel(color, theme)
           : undefined,
       })),
       markLine: index === 0 && input.xMarker

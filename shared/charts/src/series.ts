@@ -27,6 +27,12 @@ export interface ChartPoint {
   detailLines?: string[];
   /** Lines of the selected day's flag drawn on the chart (#2223) — already formatted. Defaults to label + value. */
   flagLines?: string[];
+  /**
+   * #3435 — draws a small solid `!` disc over the point, in the point's own series
+   * colour, for a point a page wants noticed (a failed or pending payment). The
+   * meaning is the page's, carried by the tooltip; the layer only draws the mark.
+   */
+  alert?: boolean;
 }
 
 export interface ChartSeries {

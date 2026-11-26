@@ -163,6 +163,21 @@ describe('the line chart option', () => {
     expect(second.data.map((d: any) => d.symbolSize)).toEqual([0, 8]);
   });
 
+  it('#3435: draws a solid `!` disc over an alerting point, in its series colour, and nothing elsewhere', () => {
+    const o = lineChartOption({
+      series: [{ id: 'p', colorIndex: 0, points: [{ x: 1, y: 10, alert: true }, { x: 2, y: 20 }] }],
+    }, THEME) as any;
+    const [alerting, plain] = o.series[0].data;
+    expect(alerting.label).toMatchObject({ show: true, formatter: '!', backgroundColor: THEME.series[0], color: THEME.surface });
+    expect(alerting.symbolSize).toBe(8);
+    expect(plain.label).toBeUndefined();
+    // A selected point shows its flag instead; the tooltip still carries the status.
+    const selected = lineChartOption({
+      series: [{ id: 'p', points: [{ x: 1, y: 10, alert: true, label: 'd', valueLabel: 'v' }] }], selectedX: 1,
+    }, THEME) as any;
+    expect(selected.series[0].data[0].label.formatter).toBe('d\nv');
+  });
+
   it('takes every colour from the theme and spells none of its own', () => {
     const hexes = JSON.stringify(option(), (_key, value) => (typeof value === 'function' ? undefined : value))
       .match(/#[0-9a-fA-F]{3,8}/g) ?? [];

@@ -162,3 +162,58 @@ describe('GET /payments/members/:memberId/timeline', () => {
     expect(onDate).toEqual([expect.objectContaining({ kind: 'scheduled', billing_event_id: scheduled, status: 'scheduled' })]);
   });
 });
+
+async function insertAttempt(eventId: number, status: string): Promise<void> {
+  await db.query(
+    `INSERT INTO payment_requests
+       (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider, provider_order, source)
+     VALUES (?, ?, 10, 'EUR', ?, ?, ?, 'monei', UUID(), 'billing_run')`,
+    [gymId, memberId, chargeTypeId, eventId, status],
+  );
+}
+
+describe('#3435: cancelled attempts are left out, failed and pending are marked', () => {
+  let cancelledPending: number;
+  let cancelledPaid: number;
+  let failed: number;
+  let pending: number;
+
+  beforeAll(async () => {
+    cancelledPending = await insertEvent({ type: 'payment_recorded', amount: 11, billingDate: dayOffset(-20), productSetId: setId });
+    await insertAttempt(cancelledPending, 'pending');
+    await db.query('UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP() WHERE id = ?', [cancelledPending]);
+    cancelledPaid = await insertEvent({ type: 'payment_recorded', amount: 12, billingDate: dayOffset(-19), productSetId: setId });
+    await insertCompletedPayment(cancelledPaid, 12, `${dayOffset(-19)} 10:00:00`);
+    await db.query('UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP() WHERE id = ?', [cancelledPaid]);
+    failed = await insertEvent({ type: 'payment_recorded', amount: 13, billingDate: dayOffset(-18), productSetId: setId });
+    await insertAttempt(failed, 'failed');
+    pending = await insertEvent({ type: 'payment_recorded', amount: 14, billingDate: dayOffset(-17), productSetId: setId });
+    await insertAttempt(pending, 'pending');
+  });
+
+  it('the chart leaves out the cancelled attempt and marks failed and pending points', async () => {
+    const res = await asAdmin(`/payments/members/${memberId}/timeline`);
+    expect(res.status).toBe(200);
+    const byId = new Map((res.body.points as any[]).map((p) => [p.billing_event_id, p]));
+    expect(byId.has(cancelledPending)).toBe(false);
+    expect(byId.get(cancelledPaid)).toMatchObject({ status: 'cancelled', alert: null });
+    expect(byId.get(failed)).toMatchObject({ kind: 'payment', status: 'failed', alert: 'failed' });
+    expect(byId.get(pending)).toMatchObject({ kind: 'payment', status: 'pending', alert: 'pending' });
+  });
+
+  it('the Payments tab list applies the same rule with exclude_cancelled, and the staff list is unchanged', async () => {
+    const filtered = await asAdmin(`/payments/billing-events?member_id=${memberId}&limit=200&exclude_cancelled=true`);
+    expect(filtered.status).toBe(200);
+    const ids = (filtered.body.items as any[]).map((r) => r.id);
+    expect(ids).not.toContain(cancelledPending);
+    expect(ids).toEqual(expect.arrayContaining([cancelledPaid, failed, pending]));
+
+    const all = await asAdmin(`/payments/billing-events?member_id=${memberId}&limit=200`);
+    expect((all.body.items as any[]).map((r) => r.id)).toContain(cancelledPending);
+  });
+
+  it('refuses an unknown exclude_cancelled value', async () => {
+    const res = await asAdmin(`/payments/billing-events?member_id=${memberId}&exclude_cancelled=yes`);
+    expect(res.status).toBe(400);
+  });
+});
