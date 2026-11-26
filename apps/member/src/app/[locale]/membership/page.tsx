@@ -7,7 +7,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
-import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, FAMILY_OWNER_ONLY_KEY, MEMBERSHIP_PATH, canAddPlansAndProducts, canViewPayments, membershipPageMode, membershipTabs } from '@/lib/membershipPages';
+import { ADD_PLAN_PATH, ADD_PRODUCT_PATH, FAMILY_OWNER_ONLY_KEY, MEMBERSHIP_PATH, canAddPlansAndProducts, canViewPayments, membershipPageMode, membershipTabs, type MembershipTab } from '@/lib/membershipPages';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
@@ -39,6 +39,7 @@ import {
   PaymentDocumentList,
 } from '@/components/MemberPaymentsCard';
 import { PastPaymentsList } from '@/components/PastPaymentsList';
+import { PurchaseHistoryList } from '@/components/PurchaseHistoryList';
 import {
   MemberProductsSection,
   type MemberProductCardItem,
@@ -419,7 +420,7 @@ export default function MembershipPage() {
   const [reloadKey, setReloadKey] = useState(0);
   // #1779 — the Professional Services tab. `null` = the read failed.
   const [serviceBalances, setServiceBalances] = useState<MemberServiceBalanceItem[] | null>([]);
-  const [tab, setTab] = useState<'products' | 'services' | 'payments'>('products');
+  const [tab, setTab] = useState<MembershipTab>('products');
   // #3235 — the forecast payment *View payment* opened on the Payments tab (its date).
   const [focusedPayment, setFocusedPayment] = useState<string | null>(null);
   useEffect(() => {
@@ -470,7 +471,7 @@ export default function MembershipPage() {
         setCanAdd(canAddPlansAndProducts(mship.can_add_plans_and_products));
         const showPayments = canViewPayments(mship.can_view_payments);
         setPaymentsVisible(showPayments);
-        if (!showPayments) setTab((current) => (current === 'payments' ? 'products' : current));
+        if (!showPayments) setTab((current) => (current === 'payments' || current === 'purchases' ? 'products' : current));
         setEvents(ledger.items);
         setPackages(pkgs);
         setPromotions(promos);
@@ -1288,7 +1289,25 @@ export default function MembershipPage() {
             {t('membership.tab_payments')}
           </button>
         )}
+        {membershipTabs(paymentsVisible).includes('purchases') && (
+          <button type="button" role="tab" aria-selected={tab === 'purchases'} style={tabStyle(tab === 'purchases')} onClick={() => setTab('purchases')}>
+            {t('membership.tab_purchases')}
+          </button>
+        )}
       </div>
+    );
+  }
+
+  /** #3443 — the member's purchases, read a page at a time; Payments' sibling. */
+  function renderPurchasesTab() {
+    return (
+      <PurchaseHistoryList
+        load={apiFetch}
+        text={(key, values) => t(key as any, values as any)}
+        formatDate={(iso) => formatPaymentDate(iso, gymFmt)}
+        formatMoney={(amount) => formatPaymentAmount(amount, forecast.currency, gymFmt)}
+        onOpenPayments={paymentsVisible ? () => setTab('payments') : undefined}
+      />
     );
   }
 
@@ -2419,7 +2438,7 @@ export default function MembershipPage() {
     return (
       <main style={styles.container}>
         {renderTabs()}
-        {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
+        {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : tab === 'purchases' && paymentsVisible ? renderPurchasesTab() : (<>
         {renderCart()}
         {renderSetSummary()}
         {renderPlansHeader()}
@@ -2435,7 +2454,7 @@ export default function MembershipPage() {
   return (
     <main style={styles.container}>
       {renderTabs()}
-      {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : (<>
+      {tab === 'services' ? renderServicesTab() : tab === 'payments' && paymentsVisible ? renderPaymentsTab() : tab === 'purchases' && paymentsVisible ? renderPurchasesTab() : (<>
       {/* #2746 stage 2 — the cart, at the top of My Products. */}
       {renderCart()}
       {/* #2894 — the Summary, collapsible, before My Plans and My Products. */}

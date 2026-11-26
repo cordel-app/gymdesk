@@ -391,6 +391,7 @@
     "tab_products": "Plans i productes",
     "tab_services": "Serveis professionals",
     "tab_payments": "Pagaments",
+    "tab_purchases": "Compres",
     "services_empty": "El teu gimnàs encara no té serveis professionals disponibles.",
     "services_error": "No s'han pogut carregar els teus serveis professionals.",
     "services_balance": "{total, plural, one {# sessió} other {# sessions}} ({available} disponibles + {booked} reservades)",
@@ -729,6 +730,55 @@
     "prepaid_payment_year": "Prepagament de {count, plural, one {# any} other {# anys}}",
     "prepaid_payment_four_weeks": "Prepagament de {count} × 4 setmanes",
     "prepaid_payment_periods": "Prepagament de {count, plural, one {# període} other {# períodes}}"
+  },
+  "purchases": {
+    "date": "Comprat el {date}",
+    "total": "Total",
+    "no_total": "Encara sense pagament",
+    "items_heading": "Articles",
+    "no_items": "Sense articles",
+    "plan": "Pla",
+    "product": "Producte",
+    "recurring_product": "Producte recurrent",
+    "covers": "Per a: {names}",
+    "for": "per a {name}",
+    "quantity": "× {quantity}",
+    "payments_heading": "Pagaments",
+    "no_payment": "Encara no s'ha fet cap pagament per aquesta compra.",
+    "event_status_label": "Facturació: {status}",
+    "payment_status_label": "Pagament: {status}",
+    "paid_on": "pagat el {date}",
+    "view_payments": "Veure a Pagaments",
+    "empty": "Encara no tens compres.",
+    "loading": "Carregant…",
+    "load_failed": "No s'han pogut carregar les teves compres.",
+    "retry": "Torna-ho a provar",
+    "status": {
+      "in_cart": "A la cistella",
+      "pending_payment": "Pendent de pagament",
+      "completed": "Pagada",
+      "cancelled": "Cancel·lada"
+    },
+    "event_status": {
+      "paid": "Pagat",
+      "failed": "Fallit",
+      "pending": "Pendent",
+      "scheduled": "Programat",
+      "waived": "Condonat",
+      "cancelled": "Cancel·lat",
+      "expired_24h": "Caducat (24 h)",
+      "refunded": "Reemborsat",
+      "partially_refunded": "Reemborsat parcialment"
+    },
+    "payment_status": {
+      "completed": "Completat",
+      "pending": "Pendent",
+      "failed": "Fallit",
+      "expired": "Caducat",
+      "canceled": "Cancel·lat",
+      "refunded": "Reemborsat",
+      "partially_refunded": "Reemborsat parcialment"
+    }
   },
   "payment_banner": {
     "pending_heading": "Tens un pagament pendent",

@@ -391,6 +391,7 @@
     "tab_products": "Planes y productos",
     "tab_services": "Servicios profesionales",
     "tab_payments": "Pagos",
+    "tab_purchases": "Compras",
     "services_empty": "Tu gimnasio todavía no tiene servicios profesionales disponibles.",
     "services_error": "No se pudieron cargar tus servicios profesionales.",
     "services_balance": "{total, plural, one {# sesión} other {# sesiones}} ({available} disponibles + {booked} reservadas)",
@@ -729,6 +730,55 @@
     "prepaid_payment_year": "Prepago de {count, plural, one {# año} other {# años}}",
     "prepaid_payment_four_weeks": "Prepago de {count} × 4 semanas",
     "prepaid_payment_periods": "Prepago de {count, plural, one {# periodo} other {# periodos}}"
+  },
+  "purchases": {
+    "date": "Comprado el {date}",
+    "total": "Total",
+    "no_total": "Sin pago todavía",
+    "items_heading": "Artículos",
+    "no_items": "Sin artículos",
+    "plan": "Plan",
+    "product": "Producto",
+    "recurring_product": "Producto recurrente",
+    "covers": "Para: {names}",
+    "for": "para {name}",
+    "quantity": "× {quantity}",
+    "payments_heading": "Pagos",
+    "no_payment": "Todavía no se ha realizado ningún pago para esta compra.",
+    "event_status_label": "Facturación: {status}",
+    "payment_status_label": "Pago: {status}",
+    "paid_on": "pagado el {date}",
+    "view_payments": "Ver en Pagos",
+    "empty": "Todavía no tienes compras.",
+    "loading": "Cargando…",
+    "load_failed": "No se han podido cargar tus compras.",
+    "retry": "Reintentar",
+    "status": {
+      "in_cart": "En el carrito",
+      "pending_payment": "Pendiente de pago",
+      "completed": "Pagada",
+      "cancelled": "Cancelada"
+    },
+    "event_status": {
+      "paid": "Pagado",
+      "failed": "Fallido",
+      "pending": "Pendiente",
+      "scheduled": "Programado",
+      "waived": "Condonado",
+      "cancelled": "Cancelado",
+      "expired_24h": "Caducado (24 h)",
+      "refunded": "Reembolsado",
+      "partially_refunded": "Reembolsado parcialmente"
+    },
+    "payment_status": {
+      "completed": "Completado",
+      "pending": "Pendiente",
+      "failed": "Fallido",
+      "expired": "Caducado",
+      "canceled": "Cancelado",
+      "refunded": "Reembolsado",
+      "partially_refunded": "Reembolsado parcialmente"
+    }
   },
   "payment_banner": {
     "pending_heading": "Tienes un pago pendiente",

@@ -54,10 +54,15 @@ export function canViewPayments(flag: boolean | null | undefined): boolean {
   return flag !== false;
 }
 
-/** The tabs of My Products, in order; Payments only for who may view it (#2776). */
-export type MembershipTab = 'products' | 'services' | 'payments';
+/**
+ * The tabs of My Products, in order; Payments only for who may view it (#2776).
+ * #3443: Purchases sits beside Payments and follows the same rule, since a
+ * purchase carries its total and its payments (`GET /me/purchase-history`
+ * refuses a family member who is not the owner on its own).
+ */
+export type MembershipTab = 'products' | 'services' | 'payments' | 'purchases';
 export function membershipTabs(paymentsVisible: boolean): MembershipTab[] {
-  return paymentsVisible ? ['products', 'services', 'payments'] : ['products', 'services'];
+  return paymentsVisible ? ['products', 'services', 'payments', 'purchases'] : ['products', 'services'];
 }
 
 /** The refusal code every add route answers a family member who is not the owner. */

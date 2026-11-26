@@ -391,6 +391,7 @@
     "tab_products": "Plans & Products",
     "tab_services": "Professional Services",
     "tab_payments": "Payments",
+    "tab_purchases": "Purchases",
     "services_empty": "Your gym has no professional services available yet.",
     "services_error": "Could not load your professional services.",
     "services_balance": "{total, plural, one {# session} other {# sessions}} ({available} available + {booked} booked)",
@@ -729,6 +730,55 @@
     "prepaid_payment_year": "{count, plural, one {# year} other {# years}} pre-payment",
     "prepaid_payment_four_weeks": "{count} × 4 weeks pre-payment",
     "prepaid_payment_periods": "{count, plural, one {# period} other {# periods}} pre-payment"
+  },
+  "purchases": {
+    "date": "Purchased on {date}",
+    "total": "Total",
+    "no_total": "No payment yet",
+    "items_heading": "Items",
+    "no_items": "No items",
+    "plan": "Plan",
+    "product": "Product",
+    "recurring_product": "Recurring product",
+    "covers": "For: {names}",
+    "for": "for {name}",
+    "quantity": "× {quantity}",
+    "payments_heading": "Payments",
+    "no_payment": "No payment has been made for this purchase yet.",
+    "event_status_label": "Billing: {status}",
+    "payment_status_label": "Payment: {status}",
+    "paid_on": "paid on {date}",
+    "view_payments": "View in Payments",
+    "empty": "You have no purchases yet.",
+    "loading": "Loading…",
+    "load_failed": "Your purchases could not be loaded.",
+    "retry": "Retry",
+    "status": {
+      "in_cart": "In cart",
+      "pending_payment": "Pending payment",
+      "completed": "Paid",
+      "cancelled": "Cancelled"
+    },
+    "event_status": {
+      "paid": "Paid",
+      "failed": "Failed",
+      "pending": "Pending",
+      "scheduled": "Scheduled",
+      "waived": "Waived",
+      "cancelled": "Cancelled",
+      "expired_24h": "24h expired",
+      "refunded": "Refunded",
+      "partially_refunded": "Partially refunded"
+    },
+    "payment_status": {
+      "completed": "Completed",
+      "pending": "Pending",
+      "failed": "Failed",
+      "expired": "Expired",
+      "canceled": "Cancelled",
+      "refunded": "Refunded",
+      "partially_refunded": "Partially refunded"
+    }
   },
   "payment_banner": {
     "pending_heading": "You have a pending payment",
