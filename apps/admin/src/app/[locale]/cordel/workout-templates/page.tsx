@@ -33,6 +33,7 @@ interface BaseTemplate {
   name: string;
   description: string | null;
   status: BaseStatus | 'deleted';
+  notes?: string | null;
   blocks_count: number;
   num_blocks?: number;
   created_at: string;
@@ -44,9 +45,9 @@ interface PaginatedResponse {
   total: number;
 }
 
-interface BaseForm { name: string; description: string; status: BaseStatus }
+interface BaseForm { name: string; description: string; status: BaseStatus; notes: string }
 
-const EMPTY_FORM: BaseForm = { name: '', description: '', status: 'active' };
+const EMPTY_FORM: BaseForm = { name: '', description: '', status: 'active', notes: '' };
 
 /**
  * #3335 stage 2: the Base list wears the Exercises listing — title + action, a
@@ -94,7 +95,7 @@ export default function CordelWorkoutTemplatesPage() {
   useEffect(() => { load(); }, [load]);
 
   function payload(f: BaseForm) {
-    return { name: f.name.trim(), description: f.description.trim() || null, status: f.status };
+    return { name: f.name.trim(), description: f.description.trim() || null, status: f.status, notes: f.notes.trim() || null };
   }
 
   async function handleCreate() {
@@ -147,6 +148,7 @@ export default function CordelWorkoutTemplatesPage() {
             name: tpl.name,
             description: tpl.description ?? '',
             status: tpl.status === 'inactive' ? 'inactive' : 'active',
+            notes: tpl.notes ?? '',
           });
           setFormError(null);
         },
@@ -177,6 +179,9 @@ export default function CordelWorkoutTemplatesPage() {
           <option value="active">{tStatus('active')}</option>
           <option value="inactive">{tStatus('inactive')}</option>
         </select>
+        {/* #3467: the member-facing notes sit right below Status, as on the gym's own Workout Templates. */}
+        <FormLabel>{t('label_notes_for_member')}</FormLabel>
+        <textarea className="form-input" value={value.notes} onChange={e => onChange({ ...value, notes: e.target.value })} rows={3} placeholder={t('notes_placeholder')} />
       </>
     );
   }
