@@ -116,7 +116,7 @@ export function ProductSetsInFlight({ memberId, productSets, canWrite, review = 
               </>
             )}
             {ps.status === 'in_cart' && review && (
-              <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} waive={waiveControl(ps.id)} />
+              <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} immediateCancellations={review.immediate_cancellations} waive={waiveControl(ps.id)} />
             )}
             {ps.status === 'pending_payment' && !ps.expired && <PendingSetSummary setId={ps.id} reloadKey={ps} />}
           </div>
@@ -137,7 +137,7 @@ export function ProductSetsInFlight({ memberId, productSets, canWrite, review = 
 function PendingSetSummary({ setId, reloadKey }: { setId: number; reloadKey: unknown }) {
   const review = useSetReview(setId, reloadKey);
   if (!review) return null;
-  return <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} waive={null} />;
+  return <CheckoutSummaryPanel payment={review.initial_payment} contracted={review.contracted_items} immediateCancellations={review.immediate_cancellations} waive={null} />;
 }
 
 /** #3284 stage 2 — the waive refusals the screen words itself (one map, `productsWorkflowView.ts`); anything else is the server's message. */

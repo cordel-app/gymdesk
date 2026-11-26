@@ -1,6 +1,6 @@
 // #2860 — the Product Set Summary's two sections, as pure decisions.
 import { describe, expect, it } from 'vitest';
-import { contractedItems, initialPaymentBreakdown, type ChargeLineLike } from '../domain/checkoutSummary';
+import { contractedItems, immediateCancellationItems, initialPaymentBreakdown, type ChargeLineLike } from '../domain/checkoutSummary';
 
 const line = (o: Partial<ChargeLineLike>): ChargeLineLike => ({
   item_name: 'Item', quantity: 1, amount: 0, regular_unit_price: null, promotion_name: null,
@@ -215,5 +215,33 @@ describe('contractedItems — pending deletion (#3007 stage 4)', () => {
     expect(items.map((i) => i.pending_deletion)).toEqual([
       { ends_on: '2026-12-31' }, null, { ends_on: '2026-12-31' }, null,
     ]);
+  });
+});
+
+describe('immediateCancellationItems (#3439)', () => {
+  const planLike = (over: Record<string, unknown>) => ({
+    plan_name: 'Standard (Duo)', billing_interval: 1, billing_unit: 'month', entitlement_only: true,
+    beneficiaries: [{ member_id: 1, name: 'Ana' }, { member_id: 2, name: 'Ben' }],
+    benefits: [{ name: 'Locker Rental', quantity: 2, billing_frequency: 'month', assigned_member_id: null, member_name: null }],
+    ends_at: '2026-11-26', ...over,
+  });
+
+  it('lists only the plans marked to be cancelled immediately, each with its included Products nested under it', () => {
+    const items = immediateCancellationItems([
+      planLike({ status: 'to_be_canceled_immediately' }),
+      planLike({ plan_name: 'Gold', status: 'cancels_on_end_date' }),
+      planLike({ plan_name: 'Silver', status: 'to_be_canceled', pending_deletion: true }),
+    ]);
+    expect(items).toEqual([{
+      kind: 'plan', name: 'Standard (Duo)', ends_on: '2026-11-26',
+      members: [{ member_id: 1, name: 'Ana' }, { member_id: 2, name: 'Ben' }],
+      included: [{ name: 'Locker Rental', billing_frequency: 'month', quantity: 2, members: [] }],
+    }]);
+  });
+
+  it('is not contracted: the same plan never appears in contractedItems', () => {
+    const plans = [planLike({ status: 'to_be_canceled_immediately' })];
+    expect(contractedItems({ plans, lines: [], purchases: [] }, new Map())).toEqual([]);
+    expect(immediateCancellationItems(plans)).toHaveLength(1);
   });
 });

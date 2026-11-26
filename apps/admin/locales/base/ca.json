@@ -755,6 +755,7 @@
     "checkout_members_family": "Tota la família",
     "checkout_deleted": "Eliminat",
     "checkout_to_be_canceled": "Pendent de cancel·lar",
+    "checkout_immediate_cancellation": "Cancel·lació immediata",
     "checkout_reactivated": "Reactivat",
     "checkout_ends_on": "Acaba el {date}",
     "checkout_contracted_none": "No es contracta res.",

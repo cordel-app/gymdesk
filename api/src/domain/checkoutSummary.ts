@@ -407,6 +407,8 @@ export interface ContractPlanLike {
   /** #3114 stage 3 — the cart reactivates this (entitlement-only) plan, so it is contracted again. */
   pending_reactivation?: boolean;
   ends_at?: string | null;
+  /** #3439 — the plan's lifecycle as the Product Set view reads it (`to_be_canceled_immediately`, …). */
+  status?: string | null;
 }
 
 export interface ContractLineLike {
@@ -477,4 +479,37 @@ export function contractedItems(
     });
   }
   return out;
+}
+
+/** #3439 — a plan this commit cancels today, with the Products it includes, for the Summary. */
+export interface ImmediateCancellationItem {
+  kind: 'plan';
+  name: string;
+  /** The plan's End Date once committed (today). */
+  ends_on: string | null;
+  /** Who the plan covers. */
+  members: ContractedMember[];
+  /** The plan's included Products, from its own frozen lines, nested under it. */
+  included: ContractedItem['included'];
+}
+
+/**
+ * #3439 — the plans marked `to_be_canceled_immediately` that the commit cancels, each with the
+ * Products it includes. A separate list from `contractedItems()`: an immediate cancellation is not
+ * something the Draft contracts, and its Products are the plan's, never standalone cancellations.
+ * Derived from the same Product Set view; nothing is stored or priced.
+ */
+export function immediateCancellationItems(plans: ContractPlanLike[]): ImmediateCancellationItem[] {
+  return plans
+    .filter((p) => p.status === 'to_be_canceled_immediately')
+    .map((p) => ({
+      kind: 'plan' as const,
+      name: p.plan_name ?? '',
+      ends_on: p.ends_at ?? null,
+      members: p.beneficiaries.map((b) => ({ member_id: b.member_id, name: b.name })),
+      included: p.benefits.map((b) => ({
+        name: b.name, billing_frequency: b.billing_frequency, quantity: b.quantity,
+        members: b.assigned_member_id == null ? [] : [{ member_id: b.assigned_member_id, name: b.member_name }],
+      })),
+    }));
 }

@@ -52,7 +52,7 @@ import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-pu
 import { cartPurchasesForCharge } from './cart-checkout';
 import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartCounts } from '../domain/shoppingCart';
 import { refuseIfStaffPreparesCart } from './staff-cart';
-import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
+import { chargeLineView, contractedItems, immediateCancellationItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { isDraftAddable, parsePurchaseQuantity, purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { PricingRefused, PromotionRefused, PurchaseRefused, resolveDraftPurchase, writeDraftPurchase } from './me-products';
@@ -822,6 +822,8 @@ async function reviewHandler(req: any, res: any, next: any) {
       plans_to_cancel: cancelling.map((r: any) => ({ user_membership_id: Number(r.user_membership_id), plan_name: r.plan_name ?? null })),
       initial_payment: initialPaymentBreakdown(lines, amountDue),
       contracted_items: contractedItems({ plans: contractView.plans, lines: contractView.lines, purchases: contractPurchases }, memberNames),
+      // #3439 — the plans this commit cancels today, each with its included Products nested under it.
+      immediate_cancellations: immediateCancellationItems(contractView.plans),
       payment_methods: paymentMethods,
       net_total: Math.round(netTotal * 100) / 100,
       tax_total: amountDue != null ? Math.round((amountDue - netTotal) * 100) / 100 : null,

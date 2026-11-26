@@ -754,6 +754,7 @@
     "checkout_members_family": "Whole family",
     "checkout_deleted": "Deleted",
     "checkout_to_be_canceled": "To Be Canceled",
+    "checkout_immediate_cancellation": "Immediate cancellation",
     "checkout_reactivated": "Reactivated",
     "checkout_ends_on": "Ends on {date}",
     "checkout_contracted_none": "Nothing is contracted.",
