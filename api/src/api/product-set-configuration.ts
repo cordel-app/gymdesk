@@ -828,6 +828,12 @@ export interface MaterialiseResult {
   zero_value_skipped: number;
   /** Obligations already persisted, or already paid by the version's initial payment. */
   already_covered: number;
+  /**
+   * #3444 — the distinct positive scheduled dates the window planned (persisted now, already
+   * persisted or paid up front), ascending. Fewer than the target means the contract owes fewer
+   * future obligations within the horizon: a legitimate shortfall.
+   */
+  window_dates: string[];
 }
 
 /**
@@ -851,7 +857,9 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
   const { gymId, productSetId, today } = input;
   const result: MaterialiseResult = {
     created: 0, obligations_examined: 0, lines_consolidated: 0, zero_value_skipped: 0, already_covered: 0,
+    window_dates: [],
   };
+  const windowDates = new Set<string>();
   const { rows: setRows } = await tx.query<{ owner_member_id: number; previous_product_set_id: number | null }>(
     'SELECT owner_member_id, previous_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?',
     [productSetId, gymId]);
@@ -898,6 +906,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
     // discounted cycle) is never persisted. The simulations keep their €0 rows:
     // they do not come through here.
     if (amount <= 0) { result.zero_value_skipped += 1; continue; }
+    if (scheduleId != null) windowDates.add(event.date);
 
     const existing: unknown[] = scheduleId != null
       ? (await tx.query(
@@ -944,6 +953,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
     result.lines_consolidated += groups.length - 1;
     await insertEvent(primary.scheduleId, date, primary.periodEnd, lines);
   }
+  result.window_dates = [...windowDates].sort();
   return result;
 }
 

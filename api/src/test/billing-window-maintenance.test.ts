@@ -211,6 +211,47 @@ describe('POST /billing/maintain-window (#3445)', () => {
     expect(reqs.length).toBe(1);
   });
 
+  it('reports each set\'s target status: replenished, then at target on the next run (#3444)', async () => {
+    const set = await planVersion(await plan(35, 0), 35);
+    await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: set.id, today: TODAY }));
+    const full = await scheduledEvents(set.id, { regular: true });
+    await db.query('DELETE FROM billing_events WHERE id = ?', [full[1].id]);
+
+    const first = await maintain();
+    expect(first.status).toBe(200);
+    expect(first.body.target_events).toBe(2);
+    const mine = first.body.product_sets.find((p: any) => p.product_set_id === set.id);
+    expect(mine).toMatchObject({ status: 'replenished', events_created: 1 });
+    expect(mine.future_events).toBeGreaterThanOrEqual(2);
+
+    const second = await maintain();
+    expect(second.status).toBe(200);
+    expect(second.body.product_sets.find((p: any) => p.product_set_id === set.id))
+      .toMatchObject({ status: 'at_target', events_created: 0 });
+    expect(second.body.product_sets_at_target).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reports a contract owing fewer than two future obligations as a legitimate shortfall (#3444)', async () => {
+    const locker = await product('ShortLocker', 18, 'month');
+    const set = await servicesVersion([{ productId: locker, frequency: 'month' }]);
+    // The line ends ten days from now: one obligation is left within its contract.
+    const ends = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    await db.query(
+      `UPDATE product_periodical_snapshots SET ends_at = ?
+        WHERE id IN (SELECT product_periodical_snapshot_id FROM product_set_periodical_snapshots WHERE product_set_id = ?)`,
+      [ends, set.id]);
+    await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: set.id, today: TODAY }));
+
+    const res = await maintain();
+    expect(res.status).toBe(200);
+    const mine = res.body.product_sets.find((p: any) => p.product_set_id === set.id);
+    expect(mine.status).toBe('shortfall');
+    expect(mine.reason).toBe('fewer_future_obligations');
+    expect(mine.future_events).toBe(mine.planned_events);
+    expect(mine.future_events).toBeLessThan(2);
+    expect(res.body.product_sets_shortfall).toBeGreaterThanOrEqual(1);
+  });
+
   it('leaves a superseded set alone', async () => {
     const set = await planVersion(await plan(25, 0), 25);
     await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: set.id, today: TODAY }));
