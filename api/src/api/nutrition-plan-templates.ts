@@ -8,6 +8,7 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { copyTemplateContentTx } from './nutrition-plan-template-copy';
 import { parseNumDaysInput, templateResyncChanges } from '../domain/nutritionPlanTemplateDays';
+import { memberNotesSetParams, parseMemberNotesInput } from '../domain/nutritionPlanMemberNotes';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -277,9 +278,9 @@ nutritionPlanTemplatesRouter.post('/import', requireModuleWrite('NUTRITION'), as
         }
         const { insertId } = await tx.query(
           `INSERT INTO nutrition_plan_templates
-             (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id)
-           VALUES (?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?, ?)`,
-          [gymId, src.name, src.description ?? null, src.num_days ?? 0, actor, actor, id],
+             (gym_id, name, description, member_notes, num_days, status, created_by, modified_at, modified_by, cloned_from_id)
+           VALUES (?, ?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?, ?)`,
+          [gymId, src.name, src.description ?? null, src.member_notes ?? null, src.num_days ?? 0, actor, actor, id],
         );
         await copyTemplateContentTx(tx, id, insertId, gymId);
         insertedIds.push(insertId);
@@ -461,10 +462,12 @@ nutritionPlanTemplatesRouter.post('/', requireModuleWrite('NUTRITION'), async (r
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   const numDays = parseNumDaysInput(req.body);
   if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
+  const memberNotes = parseMemberNotesInput(req.body);
+  if (memberNotes.kind === 'error') return res.status(400).json({ error: memberNotes.error });
   try {
     const row = await insertAndFetch(
-      'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-      [gymId, name.trim(), description ?? null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'active', actor, actor],
+      'INSERT INTO nutrition_plan_templates (gym_id, name, description, member_notes, num_days, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [gymId, name.trim(), description ?? null, memberNotes.kind === 'value' ? memberNotes.value : null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'active', actor, actor],
       'SELECT * FROM nutrition_plan_templates WHERE id = ?',
       (id) => [id],
     );
@@ -484,14 +487,18 @@ nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async 
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   const numDays = parseNumDaysInput(req.body);
   if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
+  const memberNotes = parseMemberNotesInput(req.body);
+  if (memberNotes.kind === 'error') return res.status(400).json({ error: memberNotes.error });
   try {
     const { rowCount } = await db.query(
       `UPDATE nutrition_plan_templates SET
-        name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
+        name = COALESCE(?, name), description = IF(?, ?, description), member_notes = IF(?, ?, member_notes),
+        status = COALESCE(?, status),
         num_days = IF(?, ?, num_days),
         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null,
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, ...memberNotesSetParams(memberNotes),
+       status ?? null,
        numDays.kind === 'value' ? 1 : 0, numDays.kind === 'value' ? numDays.value : 0, actor, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
@@ -546,8 +553,8 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-        [gymId, copyName, src.description ?? null, src.num_days ?? 0, 'draft', actor, actor],
+        'INSERT INTO nutrition_plan_templates (gym_id, name, description, member_notes, num_days, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+        [gymId, copyName, src.description ?? null, src.member_notes ?? null, src.num_days ?? 0, 'draft', actor, actor],
       );
 
       await copyTemplateContentTx(tx, id, insertId, gymId);
@@ -593,8 +600,8 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
-        [gymId, baseName, src.description ?? null, src.num_days ?? 0, 'draft', actor, actor, src.id],
+        'INSERT INTO nutrition_plan_templates (gym_id, name, description, member_notes, num_days, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
+        [gymId, baseName, src.description ?? null, src.member_notes ?? null, src.num_days ?? 0, 'draft', actor, actor, src.id],
       );
 
       await copyTemplateContentTx(tx, id, insertId, gymId);

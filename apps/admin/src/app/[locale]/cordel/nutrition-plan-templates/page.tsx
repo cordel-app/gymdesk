@@ -34,6 +34,7 @@ interface BaseTemplate {
   gym_id: null;
   name: string;
   description: string | null;
+  member_notes?: string | null;
   num_days: number;
   status: 'active' | 'inactive' | 'draft' | 'deleted';
   day_count: number;
@@ -234,6 +235,8 @@ export default function CordelNutritionPlanTemplatesPage() {
         <input className="form-input" value={value.name} onChange={e => onChange({ ...value, name: e.target.value })} autoFocus />
         <FormLabel>{t('label_description')}</FormLabel>
         <textarea className="form-input" value={value.description} onChange={e => onChange({ ...value, description: e.target.value })} rows={2} />
+        <FormLabel>{t('label_member_notes')}</FormLabel>
+        <textarea className="form-input" value={value.member_notes} onChange={e => onChange({ ...value, member_notes: e.target.value })} rows={2} />
         <FormLabel>{t('label_num_days')}</FormLabel>
         <select className="form-input" value={value.num_days} onChange={e => onChange({ ...value, num_days: Number(e.target.value) })}>
           {NUM_DAYS_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}

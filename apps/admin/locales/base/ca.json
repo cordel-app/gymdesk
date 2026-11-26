@@ -4657,7 +4657,8 @@
     "hierarchy_failed": "No s'ha pogut carregar el pla.",
     "tree_goal_image_close": "Tanca",
     "tree_goal_image_none": "Sense imatge",
-    "tree_goal_no_description": "No hi ha cap descripció disponible."
+    "tree_goal_no_description": "No hi ha cap descripció disponible.",
+    "label_member_notes": "Notes per al membre"
   },
   "nutrition_library": {
     "details_slug": "Slug",
@@ -5907,8 +5908,6 @@
     "col_created_at": "Creat el",
     "col_created_by": "Creat per",
     "col_status": "Estat",
-    "version_confirm": "En desar, la versió actual d'aquest pla acaba avui i es crea una versió nova, amb els teus canvis, que comença demà. La versió anterior es conserva com a històric.",
-    "version_confirm_btn": "Desar nova versió",
     "title": "Plans de nutrició assignats",
     "replace_confirm_title": "Ja hi ha un pla de nutrició actiu",
     "replace_confirm": "Aquest membre ja té un pla de nutrició actiu («{name}»). Si continues, se substituirà: el pla anterior es marca com a Completat i acaba el dia abans que comenci el nou, i el nou passa a ser el pla actiu del membre. El pla anterior es conserva com a historial.",
@@ -5945,8 +5944,6 @@
     "error_generic": "S'ha produït un error. Torna-ho a intentar.",
     "edit": "Editar",
     "details": "Detalls",
-    "duplicate": "Duplicar",
-    "duplicated": "Pla de nutrició duplicat.",
     "complete": "Marcar com a completat",
     "confirm_complete": "Marcar aquest pla de nutrició com a completat? Passarà a ser de només lectura.",
     "save_changes": "Desar els canvis",
@@ -5962,7 +5959,14 @@
     "unsaved_discard": "Descartar els canvis",
     "col_end_date": "Data de fi",
     "label_end_date": "Data de fi",
-    "open_ended": "Sense data de fi"
+    "open_ended": "Sense data de fi",
+    "label_member_notes": "Notes per al membre",
+    "activate": "Activar",
+    "activate_title": "Activar pla de nutrició",
+    "activate_confirm_replace": "El pla \"{name}\" es completarà i aquest pla passarà a ser el pla de nutrició actiu del membre.",
+    "activate_confirm_none": "Aquest pla passarà a ser el pla de nutrició actiu del membre.",
+    "keep_as_draft": "Mantenir com a esborrany",
+    "activated": "Pla de nutrició activat."
   },
   "operating_hours": {
     "title": "Horari i Festius",
