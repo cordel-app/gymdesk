@@ -86,3 +86,14 @@ describe('a prorated Membership Fee (#3284 stage 3)', () => {
     expect(applyInitialPaymentWaivers([fee, line('a', 17.5)], new Set())[0]).toMatchObject({ waivable: false, waive_refusal: 'prepaid_fee' });
   });
 });
+
+describe('which lines are offered Waive (#3440)', () => {
+  it('offers it on every positive line a Membership Plan adds and on none at €0.00', () => {
+    const fee = line('fee', 49.9, { kind: 'membership_fee' });
+    const included = line('included', 12);
+    const free = line('free', 0, { treatment_action: 'waive' });
+    const shown = applyInitialPaymentWaivers([fee, included, free], new Set());
+    expect(shown.map((l) => l.waivable)).toEqual([true, true, false]);
+    expect(waiveRefusal([fee, included, free], 'fee', new Set())).toBeNull();
+  });
+});

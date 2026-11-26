@@ -321,21 +321,21 @@ export const INITIAL_PAYMENT_WAIVE_CODE = 'initial_payment_waive';
 
 /**
  * #3284 stage 2 — the per-line action of the Initial Payment table: Revert waive on a waived line,
- * Waive otherwise (disabled when the server says the line cannot be waived), none on a line the
- * read gave no identity. The server re-judges every request; this only picks the button.
+ * an enabled Waive on a line the server says may be waived, and nothing at all otherwise (#3440):
+ * a line with nothing to waive (€0.00) or one the domain rule excludes (a Pre-paid Membership Fee)
+ * gets no button and no explanatory text, and a line the read gave no identity gets none either.
+ * The server re-judges every request; this only picks the button.
  */
 export function initialPaymentLineAction(
-  l: Pick<InitialPaymentLike['lines'][number], 'line_key' | 'waived' | 'waivable' | 'waive_refusal'>,
-): { kind: 'waive' | 'revert'; lineKey: string; enabled: boolean; disabledReasonKey?: string } | null {
+  l: Pick<InitialPaymentLike['lines'][number], 'line_key' | 'waived' | 'waivable'>,
+): { kind: 'waive' | 'revert'; lineKey: string } | null {
   if (!l.line_key) return null;
-  if (l.waived) return { kind: 'revert', lineKey: l.line_key, enabled: true };
-  if (l.waivable === true) return { kind: 'waive', lineKey: l.line_key, enabled: true };
-  // #3284 stage 3 — a disabled Waive says why, beside the button (a tooltip alone reads as a button
-  // that does nothing). The reason is the server's code; this only picks its locale key.
-  return { kind: 'waive', lineKey: l.line_key, enabled: false, disabledReasonKey: WAIVE_REFUSAL_KEYS[l.waive_refusal ?? ''] ?? 'checkout_waive_unavailable' };
+  if (l.waived) return { kind: 'revert', lineKey: l.line_key };
+  if (l.waivable === true) return { kind: 'waive', lineKey: l.line_key };
+  return null;
 }
 
-/** #3284 — the locale key each waive refusal code is worded with (`members` namespace). */
+/** #3284 — the locale key a refused waive request is worded with (`members` namespace, the error line). */
 export const WAIVE_REFUSAL_KEYS: Record<string, string> = {
   prepaid_fee: 'checkout_waive_error_prepaid',
   nothing_to_waive: 'checkout_waive_unavailable',
