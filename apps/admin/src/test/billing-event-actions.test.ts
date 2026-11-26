@@ -176,3 +176,18 @@ describe('Billing Events payment actions (#640)', () => {
     }
   });
 });
+
+describe('#3442 Pay now', () => {
+  it('names the cart block, and nothing for an event that may be paid', async () => {
+    const { payNowBlockKey } = await import('../app/[locale]/payments/billing-events/paymentActions');
+    expect(payNowBlockKey('cart_cancelled')).toBe('pay_now_block_cart_cancelled');
+    expect(payNowBlockKey('cart_expired')).toBe('pay_now_block_cart_expired');
+    expect(payNowBlockKey(null)).toBeNull();
+    expect(payNowBlockKey('already_paid')).toBeNull();
+  });
+
+  it('sends the event and the method, never an amount', async () => {
+    const { payNowRequest } = await import('../app/[locale]/payments/billing-events/paymentActions');
+    expect(payNowRequest(7, 'members_app')).toEqual({ path: '/payments/billing-events/7/pay-now', body: { method: 'members_app' } });
+  });
+});

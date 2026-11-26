@@ -1342,7 +1342,19 @@
     "doc_link_rectified_in": "Rectificada a {number}",
     "doc_link_rectified_by": "Rectificada per {number}",
     "doc_link_replaces": "Substitueix {number}",
-    "status_expired_24h": "Caducat (24 h)"
+    "status_expired_24h": "Caducat (24 h)",
+    "action_pay_now": "Pagar ara",
+    "pay_now_title": "Pagar ara",
+    "pay_now_confirm": "Pagar {amount}",
+    "pay_now_method": "Mètode de pagament",
+    "pay_now_method_choose": "Tria un mètode de pagament",
+    "pay_now_method_unavailable": "no disponible aquí",
+    "pay_now_loading": "Carregant…",
+    "pay_now_hint": "Members App envia un enllaç de pagament per a aquest mateix esdeveniment de facturació; Efectiu i Targeta (terminal extern) registren el pagament ara. Tancar aquesta finestra no canvia res.",
+    "pay_now_link_ready": "L'enllaç de pagament d'aquest esdeveniment de facturació està a punt. Quedarà pagat quan el membre completi el pagament.",
+    "pay_now_link": "Enllaç de pagament",
+    "pay_now_block_cart_cancelled": "Aquest pagament no es pot completar: el carretó al qual pertany es va cancel·lar. Resol el carretó abans de cobrar-lo.",
+    "pay_now_block_cart_expired": "Aquest pagament no es pot completar: el carretó al qual pertany ha caducat. Resol el carretó abans de cobrar-lo."
   },
   "payment_providers": {
     "title": "Proveïdors de pagament",

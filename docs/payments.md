@@ -1917,6 +1917,22 @@ event. A membership's *first* payment (Pending Payment) settles through
 `waived_billing`: no receipt, no money received, and it can no longer be paid or retried (409).
 Submitting a settlement twice (or concurrently) leaves exactly one completed attempt.
 
+**12b. Pay now (#3442).** The `⋮` of a **Failed**, **Pending payment** or **Scheduled** event that
+nothing has paid offers **Pay now** (`can_pay_now`). Its modal reads `GET
+/payments/billing-events/:id/pay-now` (the active catalogue methods; Members App, Cash and Card
+usable, the stored-card Monei charge stays **Retry Payment**) and writes nothing until **Pay**
+sends `POST …/pay-now` `{ method }`. *Members App* raises a hosted checkout as an attempt on the
+**same** event — a still-valid link nobody opened is reused, a lapsed unopened one is expired —
+and the webhook settles it; a scheduled obligation or failed charge paid this way leaves the
+schedule (`is_scheduled = 0`, `recurring_payment`). *Cash* / *Card* record a completed
+`cash` / `card_terminal` attempt with no provider call: an unopened link is expired first, a
+scheduled obligation leaves the schedule (the nightly run finds nothing to collect on its date),
+and the initial event of a Pending Payment Product Set activates it in the same transaction, as
+the webhook does. Refused under the event's row lock, with `chargeGuard()`, for a paid event
+(`409 already_paid`), one whose provider charge is unresolved (`409 payment_unresolved`) and a
+Pending payment event whose cart was cancelled or expired (`409 cart_cancelled` / `cart_expired`,
+shown in the modal before any method). Never a new Billing Event.
+
 **13. Receipts.** `POST /payments/:id/receipt` on the settled event issues a number if the
 run did not; calling it twice must return the **same** number. `GET /me/receipts/:id` serves
 it to the member. A `waived_billing` event must be refused with a reason.
