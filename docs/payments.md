@@ -121,6 +121,18 @@ first stretch is owed in full (matched by Product, it read as already paid and t
 review, Save & Pay, the free activation and the Draft's initial-payment forecast group all read
 this one figure, and reading it writes nothing.
 
+**An added plan owes its own first cycle, whatever day it starts on (#3441).** The added plan's
+lines are taken from its own start date with a first version's rule (`addedPlansFirstCycle()` in
+`product-set-configuration.ts`, over `firstCycleEvents()`): the events on its start date and, for a
+schedule with nothing on that date, its earliest event already due today. Before #3441 only what
+fell on today was kept, so a plan added beside a running one that started tomorrow or last week
+reviewed as *Nothing is due today* in the Summary and the Save & Pay modal and was charged later by
+the nightly run instead. The added plan's included Products are its own first cycle too, never
+matched against the previous version's lines. A first cycle after today is also a future period
+the engine projects, so once the version has a recorded initial payment (`payment_recorded`, not
+scheduled, not cancelled) `materialiseScheduledEvents()` drops exactly those `(date, assignment)`
+lines (`dropPaidFirstCycle()`), and the period is charged once.
+
 **A recurring Product follows its own frequency calendar** (#3165 stage 2). When a recurring
 Product line is given a schedule (`allocateItemSchedules()`), it joins an existing schedule — the
 plan's included — only when that schedule bills on the Product's own calendar

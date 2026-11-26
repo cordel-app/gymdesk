@@ -49,9 +49,11 @@ async function member(): Promise<number> {
 const staff = (method: 'get' | 'post', path: string) =>
   (request as any)[method](path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
 
-async function assign(planId: number, owner: number, beneficiaries: number[]): Promise<number> {
+const dayFromToday = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+
+async function assign(planId: number, owner: number, beneficiaries: number[], startsAt = today()): Promise<number> {
   const res = await staff('post', `/membership-plans/${planId}/assign`)
-    .send({ starts_at: today(), owner_member_id: owner, beneficiary_member_ids: beneficiaries });
+    .send({ starts_at: startsAt, owner_member_id: owner, beneficiary_member_ids: beneficiaries });
   expect(res.status).toBe(201);
   return Number(res.body.id);
 }
@@ -129,4 +131,36 @@ describe('Draft initial payment and simulation (#2899)', () => {
     const labels = sim.body.dates.flatMap((d: any) => d.lines.map((l: any) => l.label));
     expect(labels).not.toContain('Stale Locker 3031');
   });
+
+  // #3441 — the plan the Draft adds owes its first cycle at Save & Pay whatever day it starts on, as
+  // a first version does: a plan starting next week, or back-dated last week, used to read "Nothing
+  // is due today" in the Summary and the Save & Pay modal alike. Its paid first cycle is then not
+  // persisted as an obligation too.
+  for (const [label, offset] of [['starts in the future', 10], ['started in the past', -5]] as const) {
+    it(`charges the added plan's first cycle when it ${label}, and never again as an obligation`, async () => {
+      const { owner, kid } = await familyWithRunningPlan();
+      const added = await plan(70, 0);
+      const set = await setOf(await assign(added, owner, [owner, kid], dayFromToday(offset)));
+      expect(set.previous_product_set_id).not.toBeNull();
+
+      const review = await staff('get', `/product-sets/${set.id}/review`);
+      expect(review.status).toBe(200);
+      expect(review.body.amount_due).toBeGreaterThan(0);
+      expect(review.body.initial_payment.total).toBe(review.body.amount_due);
+      expect(review.body.initial_payment.lines.map((l: any) => l.name)).toEqual([await planName(added)]);
+
+      const sim = await staff('get', `/product-sets/${set.id}/billing-event-simulation`);
+      const initial = sim.body.dates.find((d: any) => d.kind === 'initial_payment');
+      expect(initial?.total).toBe(review.body.amount_due);
+
+      const pay = await staff('post', `/product-sets/${set.id}/pay`).send({ method: 'cash' });
+      expect(pay.status).toBe(201);
+      expect(pay.body.amount).toBe(review.body.amount_due);
+      const { rows } = await db.query<any>(
+        `SELECT be.billing_date FROM billing_events be
+          WHERE be.product_set_id = ? AND be.event_type = 'charge_created' AND be.billing_date <= ?`,
+        [set.id, dayFromToday(Math.max(offset, 0))]);
+      expect(rows).toEqual([]);
+    });
+  }
 });
