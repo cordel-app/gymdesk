@@ -10,7 +10,7 @@
  */
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Express } from 'express';
+import type { Application } from 'express';
 import type { SystemJob } from '../domain/systemJobs';
 
 export interface JobRouteAnswer {
@@ -27,7 +27,7 @@ export function isManualRunInFlight(job: string): boolean {
 
 const MANUAL_RUN_TIMEOUT_MS = 660_000;
 
-export async function callJobRoute(app: Express, job: SystemJob, secret: string): Promise<JobRouteAnswer> {
+export async function callJobRoute(app: Application, job: SystemJob, secret: string): Promise<JobRouteAnswer> {
   inFlight.add(job.job);
   const server = http.createServer(app);
   try {

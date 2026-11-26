@@ -140,9 +140,10 @@ platformJobRunsRouter.post(
   requireSuperadmin,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entry = systemJobOf(req.params.job);
+      const jobName = String(req.params.job);
+      const entry = systemJobOf(jobName);
       const secret = entry ? process.env[entry.secretEnv] : undefined;
-      const refusal = manualRunRefusal(req.params.job, !!secret);
+      const refusal = manualRunRefusal(jobName, !!secret);
       if (refusal === 'unknown_job') return res.status(404).json({ error: refusal });
       if (refusal === 'manual_run_not_supported') return res.status(409).json({ error: refusal });
       if (refusal === 'not_configured') return res.status(503).json({ error: refusal });
