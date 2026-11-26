@@ -185,6 +185,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
           ? 0
           : (input.selectedX != null && point.x === input.selectedX ? SELECTED_SYMBOL_SIZE : SYMBOL_SIZE),
         x: point.x,
+        ...(point.symbol ? { symbol: point.symbol } : {}),
         // #2224 — the selected day's informative flag: its date and value, drawn on the point.
         // #3435 — otherwise an alerting point carries its `!` disc above it.
         label: input.selectedX != null && point.x === input.selectedX && pointIndex >= bridges
