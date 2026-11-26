@@ -23,8 +23,6 @@ const LINE_STATUS: Record<string, CartItemStatus> = {
   pending_payment: 'pending_payment',
   active: 'completed',
   cancelled: 'cancelled',
-  // #3307 stage 3: a line that expired with its 24-hour checkout is a cancelled cart item.
-  expired_24h: 'cancelled',
 };
 
 export const CART_ITEM_STATUS = {

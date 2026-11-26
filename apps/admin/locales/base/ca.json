@@ -401,7 +401,6 @@
     "purchase_status_pending_payment": "Pagament pendent",
     "purchase_status_active": "Actiu",
     "purchase_status_cancelled": "Cancel·lada",
-    "purchase_status_expired_24h": "Caducat (24 h)",
     "purchase_status_in_cart": "A la cistella",
     "purchase_cart_expires_in": "Caduca en {time}",
     "purchase_cart_expired": "Caducat",

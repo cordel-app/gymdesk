@@ -400,7 +400,6 @@
     "purchase_status_pending_payment": "Pago pendiente",
     "purchase_status_active": "Activo",
     "purchase_status_cancelled": "Cancelada",
-    "purchase_status_expired_24h": "Caducado (24 h)",
     "purchase_status_in_cart": "En el carrito",
     "purchase_cart_expires_in": "Caduca en {time}",
     "purchase_cart_expired": "Caducado",
