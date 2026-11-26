@@ -7,17 +7,18 @@
  * month ticks, the Today marker and the points a selected date shows. It computes
  * no amount, status or date of its own.
  *
- * #3446 — Scheduled and Forecasted are one future-charge series (same colour and
- * line): what tells them apart is the point's own status in the detail card.
+ * #3311 stage 4 — the chart is **one continuous line** in one theme colour: every
+ * payment, scheduled Billing Event, forecast and no-charge cycle is a point on it,
+ * in date order. What tells the kinds apart is the point's own marker and its
+ * status in the tooltip and the detail card — never a separate series, a colour of
+ * its own or a legend. (This supersedes #3311 stage 2's legend and #3446's three
+ * series.)
  */
 
-import type { ChartSeries } from '@gymdesk/charts';
+import type { ChartPointSymbol, ChartSeries } from '@gymdesk/charts';
 import type { GymFormatSettings } from '@/lib/gymFormat';
 
 export type TimelinePointKind = 'payment' | 'scheduled' | 'forecast' | 'no_charge';
-
-/** #3446 — the three series the chart draws (legend order). */
-export type TimelineSeriesKind = 'payment' | 'future' | 'no_charge';
 
 export interface TimelineLine { label: string; quantity: number; amount: number }
 
@@ -36,13 +37,16 @@ export interface TimelinePoint {
 
 export interface PaymentsTimeline { today: string; points: TimelinePoint[] }
 
-/** The three series, in legend order. No charge is dashed: a projection that charges nothing. */
-export const TIMELINE_SERIES: readonly TimelineSeriesKind[] = ['payment', 'future', 'no_charge'];
-
-/** Which series a point is drawn in: a scheduled and a forecast charge share one. */
-export function seriesOf(kind: TimelinePointKind): TimelineSeriesKind {
-  return kind === 'payment' ? 'payment' : kind === 'no_charge' ? 'no_charge' : 'future';
-}
+/**
+ * #3311 stage 4 — the marker a kind is drawn with on the one line: a record is a
+ * filled circle, a scheduled charge a filled diamond, a projection an outline.
+ */
+export const TIMELINE_POINT_SYMBOLS: Record<TimelinePointKind, ChartPointSymbol> = {
+  payment: 'circle',
+  scheduled: 'diamond',
+  forecast: 'emptyCircle',
+  no_charge: 'emptyDiamond',
+};
 
 /** About a month: the smallest gap between two x ticks, so the axis reads by month. */
 export const MONTH_TICK_MS = 28 * 24 * 60 * 60 * 1000;
@@ -61,33 +65,39 @@ export function monthTickLabel(x: number, s: Pick<GymFormatSettings, 'date_forma
 }
 
 /**
- * One series per kind, each point carrying its already formatted labels. A kind
- * with no points is still a series (empty), so the legend always names all three
- * and a reader can tell "nothing scheduled" from "not shown".
+ * #3311 stage 4 — the one series the chart draws: every point, in date order (the
+ * API's order breaks a tie), each with its kind's marker and its already formatted
+ * labels. The series has no name, so no legend is drawn.
  */
 export function timelineSeries(
   timeline: PaymentsTimeline,
   labels: {
-    kind: (kind: TimelineSeriesKind) => string;
+    kind: (kind: TimelinePointKind) => string;
     date: (date: string) => string;
     money: (amount: number) => string;
     status: (point: TimelinePoint) => string;
   },
 ): ChartSeries[] {
-  return TIMELINE_SERIES.map((kind, index) => ({
-    id: `payments-timeline-${kind}`,
-    name: labels.kind(kind),
-    colorIndex: index,
-    dashed: kind === 'no_charge',
-    points: timeline.points.filter((p) => seriesOf(p.kind) === kind).map((p) => ({
+  const ordered = timeline.points
+    .map((p, index) => ({ p, index }))
+    .sort((a, b) => dateToX(a.p.date) - dateToX(b.p.date) || a.index - b.index)
+    .map(({ p }) => p);
+  return [{
+    id: 'payments-timeline',
+    colorIndex: 0,
+    points: ordered.map((p) => ({
       x: dateToX(p.date),
       y: p.amount,
       label: labels.date(p.date),
       valueLabel: labels.money(p.amount),
       alert: p.alert != null,
-      detailLines: [labels.status(p), ...p.lines.map((l) => `${l.label} × ${l.quantity}: ${labels.money(l.amount)}`)],
+      symbol: TIMELINE_POINT_SYMBOLS[p.kind],
+      detailLines: [
+        `${labels.kind(p.kind)} · ${labels.status(p)}`,
+        ...p.lines.map((l) => `${l.label} × ${l.quantity}: ${labels.money(l.amount)}`),
+      ],
     })),
-  }));
+  }];
 }
 
 /** The points drawn at one x — what the detail card under the chart lists. */

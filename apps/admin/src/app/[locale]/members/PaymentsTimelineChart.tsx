@@ -5,7 +5,8 @@
 // engine's forecast on one month-labelled timeline, with a Today marker. It reads
 // `GET /payments/members/:id/timeline` (which decides every point) and writes
 // nothing; selecting a point lists what stands on that date, as the Billing
-// Event Simulation chart does (#1808).
+// Event Simulation chart does (#1808). Since #3311 stage 4 it is one continuous
+// line in one theme colour; each point's marker and status say what it is.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -15,7 +16,7 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDateOnly } from '@/lib/gymFormat';
 import { cardMutedTextStyle, cardSectionLabelStyle, formErrorStyle, innerCardStyle } from '@/components/formChrome';
 import {
-  MONTH_TICK_MS, type PaymentsTimeline, type TimelinePoint, type TimelinePointKind, type TimelineSeriesKind,
+  MONTH_TICK_MS, type PaymentsTimeline, type TimelinePoint, type TimelinePointKind,
   dateToX, knownStatusKey, monthTickLabel, pointsAtX, timelineSeries,
 } from './paymentsTimelineView';
 
@@ -35,14 +36,12 @@ export function PaymentsTimelineChart({ memberId, reloadKey }: { memberId: numbe
   }, [memberId, reloadKey]);
 
   const kindLabel = (kind: TimelinePointKind) => t(`timeline_kind_${kind}`);
-  // #3311 stage 2 — the legend names each series as a whole, so it says what the line is.
-  const legendLabel = (kind: TimelineSeriesKind) => t(`timeline_legend_${kind}`);
   const statusLabel = (p: TimelinePoint) => t(knownStatusKey(p));
   const money = (n: number) => formatGymAmount(n, gym);
   const date = (d: string) => formatGymDateOnly(d, gym);
 
   const series = useMemo(
-    () => (timeline ? timelineSeries(timeline, { kind: legendLabel, date, money, status: statusLabel }) : []),
+    () => (timeline ? timelineSeries(timeline, { kind: kindLabel, date, money, status: statusLabel }) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [timeline, gym],
   );
@@ -63,7 +62,6 @@ export function PaymentsTimelineChart({ memberId, reloadKey }: { memberId: numbe
               xAxisType="time"
               zoom={false}
               xMinInterval={MONTH_TICK_MS}
-              legendPosition="bottom"
               axisLabelFormatter={(x) => monthTickLabel(x, gym)}
               xMarker={{ value: dateToX(timeline.today), label: t('timeline_today') }}
               selectedX={selected}
