@@ -351,12 +351,19 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId', requireModuleWrite('TRAI
   try { await assertPlanWritable(planId, memberId, gymId); } catch (e: any) { return res.status(e.status ?? 500).json({ error: e.message }); }
   const { name, description, scheduled_weekday } = req.body;
   const weekday = scheduled_weekday == null || scheduled_weekday === '' ? null : Number(scheduled_weekday);
-  if (weekday !== null && (weekday < 0 || weekday > 6)) return res.status(400).json({ error: 'scheduled_weekday must be between 0 and 6' });
+  if (weekday !== null && (!Number.isInteger(weekday) || weekday < 0 || weekday > 6)) return res.status(400).json({ error: 'scheduled_weekday must be between 0 and 6' });
+  if (description != null && typeof description !== 'string') return res.status(400).json({ error: 'description must be a string' });
+  // A blank note is a cleared note.
+  const normalizedDescription = typeof description === 'string' && description.trim() !== '' ? description : null;
   try {
     const { rowCount } = await db.query(
-      `UPDATE workouts SET name = COALESCE(?, name), description = IF(?, ?, description), scheduled_weekday = ?
+      // #3466: every field is partial — a rename or a notes edit must not clear
+      // the weekday, so `scheduled_weekday` is written only when the body names it.
+      `UPDATE workouts SET name = COALESCE(?, name), description = IF(?, ?, description),
+         scheduled_weekday = IF(?, ?, scheduled_weekday)
        WHERE id = ? AND training_plan_id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, weekday, workoutId, planId, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, normalizedDescription,
+       'scheduled_weekday' in req.body ? 1 : 0, weekday, workoutId, planId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Workout not found' });
     const { rows } = await db.query('SELECT * FROM workouts WHERE id = ?', [workoutId]);

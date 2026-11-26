@@ -108,18 +108,57 @@ describe('the rolling window counts only positive cycles (#3445)', () => {
     expect(zero.length).toBe(0);
   });
 
-  it('a yearly and a four-weekly line each keep two positive cycles of their own', async () => {
+  it('the window is the set\'s: two distinct positive dates across a yearly and a four-weekly line (stage 2)', async () => {
     const insurance = await product('Insurance', 30, 'year');
     const locker = await product('Locker', 12, 'four_weeks');
     const set = await servicesVersion([{ productId: insurance, frequency: 'year' }, { productId: locker, frequency: 'four_weeks' }]);
     await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: set.id, today: TODAY }));
-    const events = await scheduledEvents(set.id, { regular: true });
-    const bySchedule = new Map<number, number>();
-    for (const e of events) bySchedule.set(Number(e.schedule_id), (bySchedule.get(Number(e.schedule_id)) ?? 0) + 1);
-    expect(bySchedule.size).toBe(2);
-    for (const n of bySchedule.values()) expect(n).toBe(2);
+    const events = await scheduledEvents(set.id);
+    // Two dates in total, not two per schedule: the yearly line's first year (today, with the
+    // locker's prorated first stretch consolidated into it) and the locker's next grid date; the
+    // locker's later cycles and the second year wait until the window advances.
+    const dates = [...new Set(events.map((e) => e.billing_date))];
+    expect(dates.length).toBe(2);
+    expect(events.length).toBe(2);
+    const { rows: yearly } = await db.query<any>(
+      `SELECT bl.billing_event_id FROM billing_event_lines bl JOIN billing_events be ON be.id = bl.billing_event_id
+        WHERE be.product_set_id = ? AND bl.product_id = ?`, [set.id, insurance]);
+    expect(yearly.length).toBe(1);
     const periods = events.map((e) => `${e.schedule_id}|${e.period_start}`);
     expect(new Set(periods).size).toBe(periods.length);
+  });
+
+  it('consolidates two schedules owing on one date into ONE event, each line keeping its schedule (stage 2)', async () => {
+    const towel = await product('Towel', 9, 'month');
+    const parking = await product('Parking', 15, 'month');
+    // Two monthly lines on two schedules of their own: both bill on the 1st.
+    const set = await db.transaction(async (tx) => {
+      const d = await createDraft(tx, { gymId, ownerMemberId: await member(), membershipPlanId: null, startsAt: TODAY, actor });
+      if (d.kind !== 'created') throw new Error('expected created');
+      for (const [key, productId] of [['towel', towel], ['parking', parking]] as const) {
+        const scheduleId = await ensureSchedule(tx, {
+          gymId, productSetId: d.productSet.id, key, anchorDate: TODAY, cadenceInterval: 1, cadenceUnit: 'month',
+        });
+        await addProductSetService(tx, { gymId, productSetId: d.productSet.id, productId, quantity: 1, startsAt: TODAY, scheduleId });
+      }
+      return d.productSet;
+    });
+    await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: set.id, today: TODAY }));
+    const events = await scheduledEvents(set.id, { regular: true });
+    expect(events.length).toBe(2);
+    expect(new Set(events.map((e) => e.billing_date)).size).toBe(2);
+    for (const e of events) {
+      expect(e.amount).toBe(24);
+      const { rows: lines } = await db.query<any>(
+        'SELECT schedule_id, period_start, amount FROM billing_event_lines WHERE billing_event_id = ? ORDER BY id', [e.id]);
+      expect(lines.length).toBe(2);
+      expect(new Set(lines.map((l: any) => Number(l.schedule_id))).size).toBe(2);
+      for (const l of lines) expect(iso(l.period_start)).toBe(e.billing_date);
+    }
+    // Repeated maintenance creates neither a second event nor a separate one for the other schedule.
+    const again = await db.transaction((tx) => materialiseScheduledEvents(tx, { gymId, productSetId: set.id, today: TODAY }));
+    expect(again.created).toBe(0);
+    expect((await scheduledEvents(set.id, { regular: true })).length).toBe(2);
   });
 
   it('a repeated activation or materialisation creates nothing twice', async () => {

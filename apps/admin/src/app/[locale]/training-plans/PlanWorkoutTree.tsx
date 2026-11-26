@@ -6,7 +6,7 @@ import type { useApiClient } from '@/lib/apiClient';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { cardSurfaceStyle, primaryBtnStyle } from '@/components/ui';
-import { formControlStyle, secondaryBtnStyle } from '@/components/formChrome';
+import { formControlStyle, formFieldLabelStyle, formValueStyle, secondaryBtnStyle } from '@/components/formChrome';
 import { weekdayChipStyle, weekdaySelectStyle } from '@/components/workoutChrome';
 import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
 import type { HierBlock } from '../workout-templates/summaries';
@@ -186,8 +186,10 @@ function WorkoutCard({
   const t = useTranslations();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: w.id });
   const [name, setName] = useState(w.name);
+  const [notes, setNotes] = useState(w.description ?? '');
 
   useEffect(() => { setName(w.name); }, [w.name]);
+  useEffect(() => { setNotes(w.description ?? ''); }, [w.description]);
 
   const blocksUrl = `/members/${memberId}/training-plans/${planId}/workouts/${w.id}/blocks`;
 
@@ -205,6 +207,25 @@ function WorkoutCard({
       setName(w.name);
     }
   }
+
+  // #3466: the workout's own notes are `workouts.description`, saved on blur
+  // like the name; a blank field clears them.
+  async function saveNotes() {
+    const next = notes.trim() === '' ? null : notes;
+    if ((next ?? '') === (w.description ?? '')) return;
+    try {
+      await apiFetch(`/members/${memberId}/training-plans/${planId}/workouts/${w.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ description: next }),
+      });
+      onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('training_plans.error_generic'));
+      setNotes(w.description ?? '');
+    }
+  }
+
+  const notesId = `workout-notes-${w.id}`;
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1,
@@ -261,6 +282,25 @@ function WorkoutCard({
           ]} />
         )}
       </div>
+
+      {canWrite ? (
+        <div style={{ marginTop: 8, paddingLeft: 26 }}>
+          <label htmlFor={notesId} style={formFieldLabelStyle}>{t('training_plans.workout_notes')}</label>
+          <textarea
+            id={notesId}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={saveNotes}
+            rows={2}
+            style={{ ...formControlStyle, resize: 'vertical' }}
+          />
+        </div>
+      ) : w.description ? (
+        <div style={{ marginTop: 8 }}>
+          <span style={formFieldLabelStyle}>{t('training_plans.workout_notes')}</span>
+          <p style={formValueStyle}>{w.description}</p>
+        </div>
+      ) : null}
 
       <div style={{ marginTop: 12, paddingLeft: canWrite ? 26 : 0 }}>
         <WorkoutBlockBuilder
