@@ -19,6 +19,7 @@ import {
   TEST_AUTH_HEADER,
   syncLegacySystemFoodsToBase,
 } from './helpers';
+import { gymToday } from '../domain/workoutProgress';
 
 let gymId: string;
 let otherGymId: string;
@@ -26,6 +27,13 @@ let foodId: number;
 let systemFoodId: number;
 let deletedFoodId: number;
 let foreignFoodId: number;
+
+// The route judges a plan's start against the gym's own date (#3405), so the
+// plans here start on that date, never the UTC one: after 23:00 UTC they differ.
+async function gymDate(gid = gymId): Promise<string> {
+  const { rows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gid]);
+  return gymToday(new Date(), (rows as any[])[0]?.time_zone ?? 'Europe/Madrid');
+}
 
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const h = (gid = gymId) => ({ Authorization: TEST_AUTH_HEADER, 'x-gym-id': gid });
@@ -145,7 +153,7 @@ describe('illustrating an existing goal of an assigned plan', () => {
       [gymId, `ngi-plan-${uniq()}@test.com`],
     );
     const planRes = await request.post('/member-nutrition-plans').set(h())
-      .send({ confirm: true, member_id: memberId, template_id: tplId, start_date: new Date().toISOString().slice(0, 10) });
+      .send({ confirm: true, member_id: memberId, template_id: tplId, start_date: await gymDate() });
     expect(planRes.status).toBe(201);
     const hier = await request.get(`/member-nutrition-plans/${planRes.body.id}/hierarchy`).set(h());
     return { planId: planRes.body.id, goalId: hier.body.goals[0].id };
