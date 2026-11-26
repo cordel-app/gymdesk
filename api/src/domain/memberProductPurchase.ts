@@ -75,13 +75,6 @@ export const IN_CART_PURCHASE_STATUS: MemberProductStatus = 'in_cart';
 /** The status a purchase is created with: paid for, or it never happened. */
 export const PENDING_PURCHASE_STATUS: MemberProductStatus = 'pending_payment';
 
-/**
- * #3307 stage 3 — a one-time purchase whose checkout stayed `pending_payment` for 24 hours and
- * expired with it (`expirePendingPayments()`). Terminal; only the purchase snapshot tables hold it
- * (`chk_prsess_status` / `chk_proneoff_status`, migration 483). The cart reads it as `cancelled`.
- */
-export const EXPIRED_PURCHASE_STATUS = 'expired_24h';
-
 /** What the member's catalogue reports per Product (§6). */
 export type ProductPurchaseState = 'available' | 'pending_payment' | 'purchased';
 

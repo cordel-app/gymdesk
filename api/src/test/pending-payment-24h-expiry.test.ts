@@ -3,7 +3,8 @@
 // two-hour return to the cart. Integration against the real stack: the set and
 // its assignment close, the initial Billing Event reads `expired_24h` (cancelled
 // for every other reader), its open attempt closes as `expired`, the one-time
-// Products still `pending_payment` become `expired_24h`, nothing is deleted, a
+// Products still `pending_payment` become `cancelled` (#3307 stage 7: `expired_24h`
+// is the Billing Event's display status only), nothing is deleted, a
 // second run changes nothing, and a checkout younger than 24 hours, one whose
 // payment outcome is unknown and one the provider reports paid are left alone.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -107,7 +108,7 @@ describe('a Pending Payment checkout expires after 24 hours', () => {
     expect(ev.cancelled_at).not.toBeNull();
     expect(ev.expired_at).not.toBeNull();
     expect((await one('SELECT status FROM payment_requests WHERE id = ?', [c.attemptId])).status).toBe('expired');
-    expect(await purchaseStatus(c.purchaseId)).toBe('expired_24h');
+    expect(await purchaseStatus(c.purchaseId)).toBe('cancelled');
 
     // The staff ledger shows it as 24h expired and offers no payment action on it.
     const detail = await auth(request.get(`/payments/billing-events/${c.eventId}`));

@@ -400,7 +400,6 @@
     "purchase_status_pending_payment": "Pending payment",
     "purchase_status_active": "Active",
     "purchase_status_cancelled": "Cancelled",
-    "purchase_status_expired_24h": "24h expired",
     "purchase_status_in_cart": "In Cart",
     "purchase_cart_expires_in": "Expires in {time}",
     "purchase_cart_expired": "Expired",
