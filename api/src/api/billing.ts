@@ -309,7 +309,8 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
 /**
  * POST /billing/maintain-window
  * #3445 — replenishes the rolling window of future Scheduled Billing Events: for every Active
- * Product Set, each recurring schedule keeps its next two positive obligations persisted
+ * Product Set, the next two distinct positive billing dates across all its schedules are persisted
+ * (stage 2: one event per date, consolidating every schedule that owes on it)
  * (`maintainBillingWindow()` over `materialiseScheduledEvents()`). Executes no charge and creates
  * no payment attempt.
  * Auth: X-Internal-Secret header (BILLING_INTERNAL_SECRET env var).

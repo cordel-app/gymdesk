@@ -75,6 +75,11 @@ export interface TimelineEventInput {
   period_start: Date | string | null;
   /** The Products its lines carry (`materialiseScheduledEvents()`' paid-up rule). */
   product_ids?: number[];
+  /**
+   * #3445 stage 2 — the other schedules' obligations a consolidated event carries on its lines
+   * (`billing_event_lines.schedule_id` / `period_start`), so none of them is forecast again.
+   */
+  line_obligations?: { schedule_key: string; period_start: Date | string }[];
   cancelled: boolean;
   latest_tx_status: string | null;
   /** When the latest completed payment attempt completed; `null` when none did. */
@@ -147,6 +152,9 @@ export function buildPaymentsTimeline(input: {
     const billingDay = scheduledExecutionDate(e.billing_date, e.created_at);
     if (!e.cancelled && e.schedule_key != null) {
       persistedObligations.add(obligationKey(e.schedule_key, day(e.period_start ?? e.billing_date ?? e.created_at)));
+    }
+    if (!e.cancelled) {
+      for (const o of e.line_obligations ?? []) persistedObligations.add(obligationKey(o.schedule_key, day(o.period_start)));
     }
     // #3311 stage 3: an expired attempt that collected nothing is not a point.
     if (isExpiredUncollected(e)) continue;
