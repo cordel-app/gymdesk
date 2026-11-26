@@ -234,8 +234,10 @@ describe('POST /billing/maintain-window (#3445)', () => {
   it('reports a contract owing fewer than two future obligations as a legitimate shortfall (#3444)', async () => {
     const locker = await product('ShortLocker', 18, 'month');
     const set = await servicesVersion([{ productId: locker, frequency: 'month' }]);
-    // The line ends ten days from now: one obligation is left within its contract.
-    const ends = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    // The line ends today: whatever the calendar date, at most one obligation (today's) is left
+    // within its contract. (Ending it N days out is date-dependent: a monthly line that crosses
+    // the 1st owes two dates.)
+    const ends = TODAY;
     await db.query(
       `UPDATE product_periodical_snapshots SET ends_at = ?
         WHERE id IN (SELECT product_periodical_snapshot_id FROM product_set_periodical_snapshots WHERE product_set_id = ?)`,
