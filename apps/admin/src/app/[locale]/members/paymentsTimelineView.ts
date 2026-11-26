@@ -2,16 +2,22 @@
  * #3311 — the Member card's **Payments History and Forecast**, as chart input.
  *
  * Pure and JSX-free. The API decides which point is a payment, a scheduled
- * Billing Event or a forecast (`domain/paymentsTimeline.ts`); this module only
- * turns that answer into the three series the chart draws, the month ticks,
- * the Today marker and the points a selected date shows. It computes no
- * amount, status or date of its own.
+ * Billing Event, a forecast or a no-charge cycle (`domain/paymentsTimeline.ts`);
+ * this module only turns that answer into the three series the chart draws, the
+ * month ticks, the Today marker and the points a selected date shows. It computes
+ * no amount, status or date of its own.
+ *
+ * #3446 — Scheduled and Forecasted are one future-charge series (same colour and
+ * line): what tells them apart is the point's own status in the detail card.
  */
 
 import type { ChartSeries } from '@gymdesk/charts';
 import type { GymFormatSettings } from '@/lib/gymFormat';
 
-export type TimelinePointKind = 'payment' | 'scheduled' | 'forecast';
+export type TimelinePointKind = 'payment' | 'scheduled' | 'forecast' | 'no_charge';
+
+/** #3446 — the three series the chart draws (legend order). */
+export type TimelineSeriesKind = 'payment' | 'future' | 'no_charge';
 
 export interface TimelineLine { label: string; quantity: number; amount: number }
 
@@ -30,8 +36,13 @@ export interface TimelinePoint {
 
 export interface PaymentsTimeline { today: string; points: TimelinePoint[] }
 
-/** The three series, in legend order. A forecast is dashed: it is a projection, not a record. */
-export const TIMELINE_KINDS: readonly TimelinePointKind[] = ['payment', 'scheduled', 'forecast'];
+/** The three series, in legend order. No charge is dashed: a projection that charges nothing. */
+export const TIMELINE_SERIES: readonly TimelineSeriesKind[] = ['payment', 'future', 'no_charge'];
+
+/** Which series a point is drawn in: a scheduled and a forecast charge share one. */
+export function seriesOf(kind: TimelinePointKind): TimelineSeriesKind {
+  return kind === 'payment' ? 'payment' : kind === 'no_charge' ? 'no_charge' : 'future';
+}
 
 /** About a month: the smallest gap between two x ticks, so the axis reads by month. */
 export const MONTH_TICK_MS = 28 * 24 * 60 * 60 * 1000;
@@ -57,18 +68,18 @@ export function monthTickLabel(x: number, s: Pick<GymFormatSettings, 'date_forma
 export function timelineSeries(
   timeline: PaymentsTimeline,
   labels: {
-    kind: (kind: TimelinePointKind) => string;
+    kind: (kind: TimelineSeriesKind) => string;
     date: (date: string) => string;
     money: (amount: number) => string;
     status: (point: TimelinePoint) => string;
   },
 ): ChartSeries[] {
-  return TIMELINE_KINDS.map((kind, index) => ({
+  return TIMELINE_SERIES.map((kind, index) => ({
     id: `payments-timeline-${kind}`,
     name: labels.kind(kind),
     colorIndex: index,
-    dashed: kind === 'forecast',
-    points: timeline.points.filter((p) => p.kind === kind).map((p) => ({
+    dashed: kind === 'no_charge',
+    points: timeline.points.filter((p) => seriesOf(p.kind) === kind).map((p) => ({
       x: dateToX(p.date),
       y: p.amount,
       label: labels.date(p.date),
@@ -87,11 +98,13 @@ export function pointsAtX(timeline: PaymentsTimeline, x: number | null): Timelin
 
 /** The ledger statuses the chart has a label for; anything else reads as unknown. */
 export const TIMELINE_STATUSES = [
-  'paid', 'pending', 'failed', 'scheduled', 'waived', 'cancelled', 'refunded', 'partially_refunded', 'expired_24h', 'unknown',
+  'paid', 'pending', 'failed', 'scheduled', 'forecasted', 'no_charge', 'waived', 'cancelled', 'refunded',
+  'partially_refunded', 'expired_24h', 'unknown',
 ] as const;
 
 export function knownStatusKey(point: TimelinePoint): string {
-  if (point.kind === 'forecast') return 'timeline_kind_forecast';
+  if (point.kind === 'forecast') return 'timeline_status_forecasted';
+  if (point.kind === 'no_charge') return 'timeline_status_no_charge';
   const s = point.status ?? 'unknown';
   return `timeline_status_${(TIMELINE_STATUSES as readonly string[]).includes(s) ? s : 'unknown'}`;
 }
