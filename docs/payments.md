@@ -1226,7 +1226,7 @@ two (#2125 stage 9); a one-off is persisted as before.
 them — are ONE Billing Event. The event row is filed under one schedule (`primaryScheduleIndex()`:
 the plan schedule when it has a line on the date, else the oldest), so `UNIQUE (schedule_id,
 period_start)` stays its backstop, and each line records the obligation it bills
-(`billing_event_lines.schedule_id` / `period_start` / `period_end`, migration 489). An obligation
+(`billing_event_lines.schedule_id` / `period_start` / `period_end`, migration 490). An obligation
 counts as persisted when an event is filed under its `(schedule, period)` **or** a line carries it,
 which is what the idempotency check, `loadPaidThroughForSchedule()`, the schedule realignment and
 the Payments History and Forecast read. An existing event is never rewritten: an obligation found

@@ -9,6 +9,9 @@
  * reference) plus `period_start` / `period_end`. Written only by `writeEventLines()` for a line
  * `materialiseScheduledEvents()` persists, never rewritten; NULL on every other line.
  *
+ * The FK makes MySQL rebuild the table (ALGORITHM=COPY, writes blocked while it runs); accepted as
+ * migrations 168/170/174/189 did — the statement stays one, so the `hasColumn` guard covers it whole.
+ *
  * No backfill: an event written before this migration holds one schedule's lines, whose identity is
  * the event's own `(schedule_id, period_start)`, which the readers keep asking.
  */
