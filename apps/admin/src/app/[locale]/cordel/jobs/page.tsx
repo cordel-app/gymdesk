@@ -12,14 +12,18 @@ import { FilterBar, FilterField, filterControlStyle, filterButtonStyle } from '@
 import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listChrome';
 import {
   JOB_RUN_JOBS, JOB_RUN_STATUSES, JOB_RUNS_PAGE_SIZE, type JobRun, type JobRunFilters, type JobRunsResponse,
-  defaultJobRunFilters, detailEntries, filtersError, formatDuration, formatHttpStatus, jobLabelKey,
-  issueLabelKey, jobDescriptionKey, metricsSummary, updatedItemsLabel, jobRunsQuery, pageCount, resultChipColors, resultLabelKey, statusLabelKey, statusTone,
+  defaultJobRunFilters, filtersError, formatDuration, jobLabelKey,
+  jobDescriptionKey, updatedItemsLabel, jobRunsQuery, pageCount, resultChipColors, resultLabelKey, statusLabelKey, statusTone,
   JOB_RUN_OPTIONAL_COLUMNS, JOB_RUN_COLUMNS_STORAGE_KEY, type JobRunOptionalColumn,
   fetchAllJobRuns, isNumericJobRunColumn, jobRunColumnLabelKey, jobRunExportRow, jobRunsExportFileName,
   jobRunsGrid, jobRunsMinWidth, optionalColumnValue, parseStoredJobRunColumns, toggleJobRunColumn,
   visibleJobRunColumns, warningKeys,
 } from '@/lib/jobRuns';
 import { buildXlsx, XLSX_MIME } from '@/lib/xlsxWorkbook';
+import { Tabs } from '@/components/Tabs';
+import { JobRunLog } from '@/components/jobs/JobRunLog';
+import { JobsOverview } from '@/components/jobs/JobsOverview';
+import { DEFAULT_JOBS_PAGE_TAB, JOBS_PAGE_TABS, type JobsPageTab } from '@/lib/jobRuns';
 
 /**
  * #1996 stage 3 — Cordel → Jobs: the execution history of the system jobs, newest first.
@@ -37,6 +41,7 @@ export default function CordelJobsPage() {
   const { apiFetch } = useApiClient();
   const { isSuperadmin, loading: gymLoading } = useGym();
 
+  const [tab, setTab] = useState<JobsPageTab>(DEFAULT_JOBS_PAGE_TAB);
   const [filters, setFilters] = useState<JobRunFilters>(() => defaultJobRunFilters());
   const [applied, setApplied] = useState<JobRunFilters>(filters);
   const [offset, setOffset] = useState(0);
@@ -143,6 +148,9 @@ export default function CordelJobsPage() {
       <h1 style={{ margin: '0 0 6px' }}>{t('title')}</h1>
       <p style={{ margin: '0 0 16px', color: '#666', maxWidth: 720 }}>{t('intro')}</p>
 
+      <Tabs tabs={JOBS_PAGE_TABS} active={tab} onChange={setTab} label={(k) => t(k)} ariaLabel={t('title')} />
+
+      {tab === 'jobs' ? <JobsOverview t={t} /> : (<>
       <FilterBar>
         <FilterField label={t('filter_job')} htmlFor="jobs-job">
           <select
@@ -244,6 +252,7 @@ export default function CordelJobsPage() {
             onClick={() => setOffset(offset + JOB_RUNS_PAGE_SIZE)}>{t('next')}</button>
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -309,10 +318,8 @@ function RunCard({ run, expanded, onToggle, columns, t, started }: {
 }) {
   const tone = statusTone(run.status);
   const badge = tone === 'ok' || tone === 'progress' ? listNameBadgeAccentStyle : listNameBadgeStyle;
-  const entries = detailEntries(run.details);
   const descKey = jobDescriptionKey(run.job);
   const resultKey = resultLabelKey(run.result);
-  const summary = metricsSummary(run);
   return (
     <div style={{ borderBottom: '1px solid #eee' }}>
       <button
@@ -346,26 +353,7 @@ function RunCard({ run, expanded, onToggle, columns, t, started }: {
       </button>
       {expanded && (
         <div style={{ padding: '0 14px 14px 38px', fontSize: 13.5 }}>
-          {summary && (
-            <div style={{ display: 'flex', gap: 24, margin: '4px 0 12px', flexWrap: 'wrap' }}>
-              {summary.map((m) => (
-                <span key={m.key}>
-                  <span style={{ color: '#888' }}>{t(`summary_${m.key}`)}: </span>
-                  <strong>{m.value}</strong>
-                </span>
-              ))}
-            </div>
-          )}
-          <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 14px', margin: 0 }}>
-            {descKey && (<><dt style={{ color: '#888' }}>{t('field_purpose')}</dt><dd style={{ margin: 0 }}>{t(descKey)}</dd></>)}
-            {resultKey && (<><dt style={{ color: '#888' }}>{t('field_result')}</dt><dd style={{ margin: 0 }}>{t(resultKey)}</dd></>)}
-            {(run.issues ?? []).map((i) => (<><dt key={`i-${i}`} style={{ color: '#888' }}>{t('field_warning')}</dt><dd key={`iv-${i}`} style={{ margin: 0, color: '#93370d' }}>{t(issueLabelKey(i))}</dd></>))}
-            <dt style={{ color: '#888' }}>{t('field_started')}</dt><dd style={{ margin: 0 }}>{started}</dd>
-            <dt style={{ color: '#888' }}>{t('field_duration')}</dt><dd style={{ margin: 0 }}>{formatDuration(run.duration_seconds)}</dd>
-            <dt style={{ color: '#888' }}>{t('field_http_status')}</dt><dd style={{ margin: 0 }}>{formatHttpStatus(run.http_status)}</dd>
-            {run.error_summary && (<><dt style={{ color: '#888' }}>{t('field_error')}</dt><dd style={{ margin: 0, color: '#b42318' }}>{run.error_summary}</dd></>)}
-            {entries.map((e) => (<><dt key={`k-${e.key}`} style={{ color: '#888' }}>{e.key}</dt><dd key={`v-${e.key}`} style={{ margin: 0 }}>{e.value}</dd></>))}
-          </dl>
+          <JobRunLog run={run} t={t} started={started} />
         </div>
       )}
     </div>

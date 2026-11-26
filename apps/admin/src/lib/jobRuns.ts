@@ -343,3 +343,31 @@ export function jobRunsExportFileName(filters: JobRunFilters): string {
   const range = [filters.from, filters.to].filter(Boolean).join('_');
   return `jobs${range ? `-${range}` : ''}.xlsx`;
 }
+
+/* ---------- #3471: the Jobs tab ---------- */
+
+/** The two tabs of Cordel → Jobs; Log history is the default. */
+export const JOBS_PAGE_TABS = [
+  { id: 'log_history', labelKey: 'tab_log_history' },
+  { id: 'jobs', labelKey: 'tab_jobs' },
+] as const;
+export type JobsPageTab = (typeof JOBS_PAGE_TABS)[number]['id'];
+export const DEFAULT_JOBS_PAGE_TAB: JobsPageTab = 'log_history';
+
+/** One row of `GET /platform/job-runs/jobs`. */
+export interface SystemJobOverview {
+  job: JobRunJob;
+  /** Whether the application may start it (the API's answer, never decided here). */
+  manual: boolean;
+  running: boolean;
+  latest_run: JobRun | null;
+}
+
+/** The locale key of a failed manual start, from the API's error code. */
+export function manualRunErrorKey(code: unknown): string {
+  if (code === 'job_already_running') return 'run_error_already_running';
+  if (code === 'manual_run_not_supported') return 'run_error_not_supported';
+  if (code === 'not_configured') return 'run_error_not_configured';
+  if (code === 'job_failed') return 'run_error_job_failed';
+  return 'run_error_generic';
+}
