@@ -119,12 +119,12 @@ export function commonForecastHorizon(obligations: { schedule_key: string | null
   return latest;
 }
 
-/** Events the member's ledger never shows as a payment: a card check, a retired status row. */
 /** #3311 stage 3 — an event whose latest attempt expired and that collected nothing: not a point. */
 export function isExpiredUncollected(e: { latest_tx_status: string | null; paid_at: Date | string | null }): boolean {
   return e.latest_tx_status === 'expired' && e.paid_at == null;
 }
 
+/** Events the member's ledger never shows as a payment: a card check, a retired status row. */
 function isPlotted(eventType: string): boolean {
   return eventType !== 'card_verification' && eventType !== 'status_changed';
 }
