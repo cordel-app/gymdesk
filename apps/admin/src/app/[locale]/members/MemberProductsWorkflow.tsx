@@ -41,6 +41,7 @@ export function useSetReview(id: number | null, reloadKey: unknown): ReviewSumma
         plans_to_reactivate: r.plans_to_reactivate ?? [], plans_to_cancel: r.plans_to_cancel ?? [],
         plans_to_cancel_immediately: r.plans_to_cancel_immediately ?? [],
         lines_to_cancel_immediately: r.lines_to_cancel_immediately ?? [],
+        immediate_cancellations: r.immediate_cancellations ?? [],
       }); })
       .catch(() => { if (!cancelled) setReview(null); });
     return () => { cancelled = true; };

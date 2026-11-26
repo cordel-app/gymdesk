@@ -168,3 +168,42 @@ describe('commit (#3358)', () => {
     expect((await snap(umId)).status).toBe('cancelled');
   });
 });
+
+describe('Summary (#3439)', () => {
+  it('the review states the immediate cancellation with the plan and its included Products, and drops it on discard', async () => {
+    const pid = await planId();
+    const { insertId: productId } = await db.query(
+      `INSERT INTO products (gym_id, name, type, billing_frequency, status, enrollment_status, currency, amount, tax_behavior)
+       VALUES (?, ?, 'fee', 'month', 'active', 'public', 'EUR', '5.00', 'inclusive')`, [gymId, `CI Locker ${uniq()}`]);
+    await db.query(`INSERT INTO membership_plan_periodical (gym_id, membership_plan_id, product_id, quantity, mandatory)
+                    VALUES (?, ?, ?, 2, 1)`, [gymId, pid, productId]);
+    const { insertId: memberId } = await db.query(
+      'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'CI Summary', `cis-${uniq()}@test.com`]);
+    const umId = await createTestDraftAssignment(gymId, memberId, pid, { config: { membership_fee_price: 10 } });
+    expect((await authed(request.post(`/user-memberships/${umId}/activate`)).send({ on_conflict: 'add' })).status).toBeLessThan(300);
+    expect((await authed(request.delete(`/user-memberships/${umId}`))).status).toBe(204);
+    const planName = (await db.query<any>('SELECT name FROM membership_plans WHERE id = ?', [pid])).rows[0].name;
+    const productName = (await db.query<any>('SELECT name FROM products WHERE id = ?', [productId])).rows[0].name;
+
+    const mark = await authed(request.post(`/user-memberships/${umId}/mark-cancel-immediately`));
+    expect(mark.status).toBe(200);
+    const eventsBefore = await allEvents(memberId);
+    const review = await authed(request.get(`/product-sets/${mark.body.product_set_id}/review`));
+    expect(review.status).toBe(200);
+    expect(review.body.immediate_cancellations).toEqual([expect.objectContaining({
+      kind: 'plan', name: planName, ends_on: today(),
+      included: [expect.objectContaining({ name: productName, quantity: 2 })],
+    })]);
+    // Not a contracted item, and its Product is not a standalone cancellation.
+    expect((review.body.contracted_items ?? []).map((i: any) => i.name)).not.toContain(planName);
+    expect((review.body.contracted_items ?? []).map((i: any) => i.name)).not.toContain(productName);
+    expect(review.body.lines_to_cancel_immediately).toEqual([]);
+    // Reading the Summary writes nothing.
+    expect(await allEvents(memberId)).toBe(eventsBefore);
+
+    // Un-marking takes it out of the Summary of the same cart.
+    expect((await authed(request.post(`/user-memberships/${umId}/unmark-cancel-immediately`))).status).toBe(200);
+    const after = await authed(request.get(`/product-sets/${mark.body.product_set_id}/review`));
+    if (after.status === 200) expect(after.body.immediate_cancellations).toEqual([]);
+  });
+});

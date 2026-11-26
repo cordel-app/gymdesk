@@ -23,7 +23,7 @@ import { listHeaderCellStyle, listCellStyle, LIST_DIVIDER_COLOR } from '@/compon
 import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
-import type { ContractedItemLike, InitialPaymentLike } from './productsWorkflowView';
+import type { ContractedItemLike, ImmediateCancellationLike, InitialPaymentLike } from './productsWorkflowView';
 import { LineReasonText } from './LineReasonText';
 import { basePriceFormula, compactInitialPaymentLabel, contractedMembersText, discountEntries, initialPaymentLineAction, lineReducedToZero, splitContracted } from './productsWorkflowView';
 import { secondaryBtnSmall } from '@/components/formChrome';
@@ -213,9 +213,11 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
  * two cannot disagree; it re-renders with the read whenever the cart changes. The header wraps,
  * so on a narrow screen the amount drops under the title rather than covering the breakdown.
  */
-export function CheckoutSummaryPanel({ payment, contracted, waive = null }: {
+export function CheckoutSummaryPanel({ payment, contracted, immediateCancellations = null, waive = null }: {
   payment: InitialPaymentLike | null | undefined;
   contracted: ContractedItemLike[] | null | undefined;
+  /** #3439 — the plans this commit cancels today; a section of its own, absent when there are none. */
+  immediateCancellations?: ImmediateCancellationLike[] | null;
   /** #3284 stage 2 — the per-line Waive / Revert waive, only where the In Cart payment is editable. */
   waive?: InitialPaymentWaiveControl | null;
 }) {
@@ -235,7 +237,48 @@ export function CheckoutSummaryPanel({ payment, contracted, waive = null }: {
       <InitialPaymentSection payment={payment} waive={waive} />
       <div style={{ ...sectionHeading, marginTop: 20 }} data-summary-heading>{t('checkout_contracted')}</div>
       <ContractedItemsSection items={contracted} />
+      {immediateCancellations && immediateCancellations.length > 0 && (
+        <>
+          <div style={{ ...sectionHeading, marginTop: 20 }} data-summary-heading>{t('checkout_immediate_cancellation')}</div>
+          <ImmediateCancellationsSection items={immediateCancellations} />
+        </>
+      )}
     </div>
+  );
+}
+
+/**
+ * #3439 — the plans this commit cancels today, each with the Products it includes nested beneath it,
+ * so a plan's Products never read as standalone cancellations. Distinct from a Cancel at End Date
+ * plan (struck through under Contracted Products & Plans with *To be canceled*): its own heading and
+ * an *Immediate cancellation* chip in the Theme's alert colour. Presentation of the review only.
+ */
+export function ImmediateCancellationsSection({ items }: { items: ImmediateCancellationLike[] }) {
+  const t = useTranslations('members');
+  const tFreq = useTranslations('billing_frequency');
+  const gymFmt = useGymFormatSettings();
+  return (
+    <ul data-immediate-cancellations style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 14 }}>
+      {items.map((p, n) => (
+        <li key={n} data-immediate-cancellation style={{ color: alertTextColor }}>
+          <strong style={{ textDecoration: 'line-through' }}>{p.name}</strong>
+          {' '}<span data-immediate-cancellation-chip style={{ border: `1px solid ${alertTextColor}`, borderRadius: 10, padding: '0 6px', fontSize: 11, fontWeight: 600 }}>{t('checkout_immediate_cancellation')}</span>
+          {p.ends_on ? ` · ${t('checkout_ends_on', { date: formatGymDateOnly(p.ends_on, gymFmt) })}` : ''}
+          {p.members.length > 0 ? ` · ${contractedMembersText(p.members)}` : ''}
+          {p.included.length > 0 && (
+            <ul style={{ margin: '2px 0 0', paddingLeft: 18, fontSize: 13 }} data-immediate-cancellation-products>
+              {p.included.map((b, k) => (
+                <li key={k}>
+                  {b.name}{b.quantity > 1 ? ` × ${b.quantity}` : ''}
+                  {` · ${billingFrequencyLabel(b.billing_frequency, tFreq) ?? '—'}`}
+                  {b.members.length > 0 ? ` · ${contractedMembersText(b.members)}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

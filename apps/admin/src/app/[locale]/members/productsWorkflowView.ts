@@ -86,6 +86,17 @@ export interface ReviewSummary {
   plans_to_cancel_immediately?: Array<{ user_membership_id: number; plan_name: string | null }>;
   /** #3358 stage 2: the recurring Product lines this commit cancels today instead of at their End Date. */
   lines_to_cancel_immediately?: Array<{ line_id: number; product_name: string | null }>;
+  /** #3439 — the plans this commit cancels today, each with its included Products nested under it. */
+  immediate_cancellations?: ImmediateCancellationLike[];
+}
+
+/** #3439 — one entry of `immediate_cancellations` (`immediateCancellationItems()`): no amount. */
+export interface ImmediateCancellationLike {
+  kind: 'plan';
+  name: string;
+  ends_on: string | null;
+  members: Array<{ member_id: number; name: string | null }>;
+  included: Array<{ name: string; billing_frequency: string | null; quantity: number; members: Array<{ member_id: number; name: string | null }> }>;
 }
 
 /** #3114 stage 3 — how many plans the cart reactivates or cancels. */
