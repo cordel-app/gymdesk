@@ -1208,6 +1208,28 @@ over, and it is reported beside the totals rather than folded into `expired`.
 
 ---
 
+### B9. The rolling window of future obligations (#3445)
+
+Each recurring schedule of an Active Product Set keeps its next **two positive** obligations
+persisted as Scheduled Billing Events. `materialiseScheduledEvents()` asks
+`planScheduledEvents(…, { positiveOnly: true })`: a cycle that owes nothing (a free, Pre-paid or
+fully discounted period) is never persisted and holds no slot, and the engine's horizon is
+doubled (`MAX_WINDOW_SCAN_CYCLES` = 64 cycles at most, inside the engine's 36-month cap) until each
+schedule has two positive dates or the contract has none left. Each schedule counts on its own, so a
+yearly line and a four-weekly line keep two cycles each; lines sharing a schedule and a date stay one
+event. A prorated first stretch is a stub, not a cycle, and is persisted beside the two (#2125 stage 9).
+
+The window is filled on activation (`activateWithEvents()`, i.e. on payment confirmation or a free
+commit) and replenished by `POST /billing/maintain-window` (`BILLING_INTERNAL_SECRET`,
+`maintainBillingWindow()` in `api/src/api/billing-window-maintenance.ts`): every `active` set, one
+transaction each under its row lock, the same writer, so an obligation already persisted for its
+`(schedule, period)` — attempted, paid or not — is never touched, and `UNIQUE (schedule_id,
+period_start)` is the backstop for a concurrent call. It charges nothing and writes no payment
+request. It answers `{ run_date, product_sets_examined, product_sets_updated, events_created,
+failures }`, and `500` when any set failed (the others are still done; a retry is safe). It claims
+no run-log slot (it is idempotent) and records a `job_run_log` row as `billing_window_maintenance`.
+Its scheduled workflow is #3444.
+
 ## D. Product purchase (member, one-off)
 
 A member buying a Product from the Members App (#1121 stage 2, §5/§6; Promotions on it
@@ -1620,7 +1642,7 @@ assignment was paused is not collected in a catch-up.
 | `PAYMENT_NOTIFICATION_URL` | the `callbackUrl` Monei posts the webhook to — the **payment app's** relay since #1083 (`https://pay.…/webhooks/payment`), not the API |
 | `TRUST_PROXY_HOPS` | optional (default 1) — proxies in front of every route, `trustProxyHops()` |
 | `PAYMENT_WEBHOOK_RELAY_HOPS` | optional (default 0) — the *further* hop `/webhooks/payment` sits behind once the payment app relays it; `paymentWebhookClientKey()`, §A5 (#1083) |
-| `BILLING_INTERNAL_SECRET` | `/billing/run`, `/billing/cleanup` |
+| `BILLING_INTERNAL_SECRET` | `/billing/run`, `/billing/cleanup`, `/billing/maintain-window` |
 | `PAYMENT_REQUEST_ABANDONED_HOURS` | optional (default 24, floored at 1) — `abandonedRequestHours()`, §B8 |
 | `RUN_FRESHNESS_THRESHOLD_HOURS` | optional (default 26, floored at 1) — `runFreshnessThresholdHours()`, `GET /health/runs` (#782) |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | `/recurring-bookings/run` |

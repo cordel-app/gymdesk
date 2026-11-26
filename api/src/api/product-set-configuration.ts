@@ -589,6 +589,13 @@ export async function loadProductSetSimulationAssignment(
 /** Coverage cap at commit time (Q1): never more than two cycles per schedule. */
 export const MAX_COVERED_CYCLES = 2;
 
+/**
+ * #3445 — how far the rolling window may widen the engine's horizon to find a schedule's positive
+ * cycles past free or fully discounted ones (in cycles of each stream; the engine's own
+ * 36-month safety cap still bounds it).
+ */
+export const MAX_WINDOW_SCAN_CYCLES = 64;
+
 interface PlannedEvent {
   scheduleKey: string | null;
   date: string;
@@ -611,7 +618,16 @@ export async function planScheduledEvents(
    * not of the ones it inherits (those were paid for by the version it supersedes). Used for the
    * initial charge of an added plan, which must not ask again for a plan already paid.
    */
-  opts: { newPlansOnly?: boolean } = {},
+  opts: {
+    newPlansOnly?: boolean;
+    /**
+     * #3445 — the rolling window: count only dates whose obligation is worth something. A
+     * zero-value cycle (a free, prepaid or fully discounted period) is dropped and does not use up
+     * one of the `cycles` slots, and the engine's horizon is widened until each schedule has
+     * `cycles` positive dates or its contract runs out (`MAX_WINDOW_SCAN_CYCLES` at most).
+     */
+    positiveOnly?: boolean;
+  } = {},
 ): Promise<PlannedEvent[]> {
   // #2125 stage 7: a version holds N Membership Plans. Each plan is run through the engine on its
   // own and its lines take the schedule its snapshot is linked to (the shared `plan` schedule when
@@ -620,7 +636,7 @@ export async function planScheduledEvents(
   if (assignments.length === 0) return [];
   const planScheduleKeys = await loadPlanSnapshotScheduleKeys(gymId, productSetId, exec);
   const inherited = opts.newPlansOnly ? await loadPlanSnapshotInheritance(gymId, productSetId, exec) : [];
-  const runs = assignments
+  const runsFor = (engineCycles: number) => assignments
     .map((assignment, index) => ({
       assignment,
       scheduleKey: planScheduleKeys[index] ?? PLAN_SCHEDULE_KEY,
@@ -628,11 +644,11 @@ export async function planScheduledEvents(
       // The recurring lines of an added-plan version are the running version's, already paid.
       result: computeBillingSimulation({
         assignments: [opts.newPlansOnly ? { ...assignment, services: [] } : assignment],
-        horizonFrom: from, minimumCycles: cycles,
+        horizonFrom: from, minimumCycles: engineCycles,
       }),
     }))
     .filter((r) => r.result.available && !(opts.newPlansOnly && r.inherited));
-  if (runs.length === 0) return [];
+  if (runsFor(cycles).length === 0) return [];
 
   const { rows: scheduled } = await exec.query(
     // #2126 stage 3o: the recurring lines' schedules, from the Product snapshot (see above).
@@ -649,8 +665,9 @@ export async function planScheduledEvents(
     [gymId, productSetId, gymId, productSetId],
   );
   const keyByProduct = new Map<number, string>((scheduled as any[]).map((r) => [Number(r.product_id), String(r.schedule_key)]));
+  const project = (engineCycles: number): PlannedEvent[] => {
   const buckets = new Map<string, PlannedEvent>();
-  for (const { assignment, scheduleKey, result } of runs) {
+  for (const { assignment, scheduleKey, result } of runsFor(engineCycles)) {
     const hasPlanSchedule = assignment.recurringInterval != null && assignment.recurringUnit != null;
     for (const section of result.sections) {
       for (const event of section.events) {
@@ -673,19 +690,46 @@ export async function planScheduledEvents(
     }
   }
 
+  return [...buckets.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  };
+
   // At most `cycles` dated events per schedule; one-offs are all kept.
-  const perKey = new Map<string, number>();
-  return [...buckets.values()]
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-    .filter((e) => {
+  const capped = (all: PlannedEvent[]) => {
+    const perKey = new Map<string, number>();
+    return all.filter((e) => {
       if (e.scheduleKey === null) return true;
       // #2125 stage 9: the prorated stub of a plan joining mid-cycle is a stretch, not a cycle of
       // the schedule, so it must not use up the cover the schedule's regular dates need.
       if (e.lines.length > 0 && e.lines.every((l) => l.proration)) return true;
+      // #3445: in the rolling window a cycle that owes nothing is never persisted, so it holds no slot.
+      if (opts.positiveOnly && plannedEventAmount(e) <= 0) return false;
       const n = (perKey.get(e.scheduleKey) ?? 0) + 1;
       perKey.set(e.scheduleKey, n);
       return n <= cycles;
     });
+  };
+  if (!opts.positiveOnly) return capped(project(cycles));
+
+  // #3445: widen the engine's horizon until every schedule it projects has `cycles` positive dates,
+  // or the scan cap is reached (a contract that ends, or one that owes nothing more, never fills
+  // its window; the engine's own 36-month safety cap bounds each widening). A wider horizon that
+  // finds nothing new is not a stop: the engine's horizon may already end on the first regular
+  // charge, so the next doubling is the one that reaches past it.
+  let engineCycles = cycles;
+  for (;;) {
+    const all = project(engineCycles);
+    const kept = capped(all);
+    const keys = new Set(all.filter((e) => e.scheduleKey !== null).map((e) => e.scheduleKey!));
+    const short = [...keys].some((k) => kept.filter((e) => e.scheduleKey === k
+      && !(e.lines.length > 0 && e.lines.every((l) => l.proration))).length < cycles);
+    if (!short || engineCycles >= MAX_WINDOW_SCAN_CYCLES) return kept;
+    engineCycles = Math.min(engineCycles * 2, MAX_WINDOW_SCAN_CYCLES);
+  }
+}
+
+/** #3445: what a planned event would charge, from the engine's own lines (as persisted). */
+function plannedEventAmount(e: PlannedEvent): number {
+  return linesTotal(e.lines.map((l) => lineFromSimulation(l)));
 }
 
 /**
@@ -777,7 +821,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
   if (!setRows[0]) return { created: 0 };
 
   const planned = await dropPaidFirstCycle(tx, gymId, productSetId, setRows[0].previous_product_set_id, today,
-    await planScheduledEvents(gymId, productSetId, today, input.cycles, tx));
+    await planScheduledEvents(gymId, productSetId, today, input.cycles, tx, { positiveOnly: true }));
   const scheduleIds = new Map<string, number>();
   const { rows: schedules } = await tx.query<{ id: number; schedule_key: string }>(
     `SELECT id, schedule_key FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()}`, [productSetId]);

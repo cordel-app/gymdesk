@@ -12,6 +12,7 @@ import { issueDueSimplifiedInvoices } from './billing-invoices';
 import { expirePendingPayments } from './product-set-cancellation';
 import { reconcileAbandonedRequests } from './payment-settlement';
 import { reconcilePendingProviderRefunds } from './billing-event-refunds';
+import { maintainBillingWindow } from './billing-window-maintenance';
 
 // The date arithmetic itself lives in `domain/billingDate.ts` since #635
 // stage 11 (see that module for why), and is re-exported here so every caller
@@ -301,6 +302,41 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
   } catch (err) {
     await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
     req.log.error({ err: (err as Error).message }, 'billing cleanup failed');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /billing/maintain-window
+ * #3445 — replenishes the rolling window of future Scheduled Billing Events: for every Active
+ * Product Set, each recurring schedule keeps its next two positive obligations persisted
+ * (`maintainBillingWindow()` over `materialiseScheduledEvents()`). Executes no charge and creates
+ * no payment attempt.
+ * Auth: X-Internal-Secret header (BILLING_INTERNAL_SECRET env var).
+ *
+ * No run-log slot: every set is idempotent (an obligation already persisted for its
+ * `(schedule, period)` is left alone), so a repeated or overlapping call creates nothing twice.
+ * A set that failed is counted in `failures` and answers `500` once the rest are done, so the
+ * caller sees an incomplete run and can retry it.
+ */
+billingRouter.post('/maintain-window', async (req: Request, res: Response) => {
+  if (!checkInternalSecret(req, res)) return;
+
+  const jobRunId = await startJobRun('billing_window_maintenance');
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await maintainBillingWindow(today, req.log);
+    const body = { run_date: today, ...result };
+    const metrics = buildJobMetrics(result.product_sets_updated, result.product_sets_examined - result.product_sets_updated);
+    const failed = result.failures > 0;
+    await finishJobRun(jobRunId, failed ? 'failed' : 'completed', {
+      httpStatus: failed ? 500 : 200, details: { ...body, metrics },
+    });
+    req.log.info(body, 'billing/maintain-window: done');
+    res.status(failed ? 500 : 200).json(body);
+  } catch (err) {
+    await finishJobRun(jobRunId, 'failed', { httpStatus: 500, error: err });
+    req.log.error({ err: (err as Error).message }, 'billing/maintain-window failed');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
