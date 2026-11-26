@@ -43,11 +43,15 @@ export async function loadPaymentsTimeline(gymId: string, memberId: number, toda
   const ids = rows.map((r: any) => Number(r.id));
   const linesByEvent = new Map<number, TimelineLine[]>();
   const productsByEvent = new Map<number, number[]>();
+  const lineObligationsByEvent = new Map<number, { schedule_key: string; period_start: Date | string }[]>();
   if (ids.length > 0) {
     const { rows: lineRows } = await db.query<any>(
-      `SELECT billing_event_id, item_name, quantity, amount, product_id FROM billing_event_lines
-        WHERE gym_id = ? AND billing_event_id IN (${ids.map(() => '?').join(',')})
-        ORDER BY billing_event_id, id`,
+      `SELECT bl.billing_event_id, bl.item_name, bl.quantity, bl.amount, bl.product_id,
+              lsch.schedule_key AS line_schedule_key, bl.period_start AS line_period_start
+         FROM billing_event_lines bl
+         LEFT JOIN product_set_schedules lsch ON lsch.id = bl.schedule_id
+        WHERE bl.gym_id = ? AND bl.billing_event_id IN (${ids.map(() => '?').join(',')})
+        ORDER BY bl.billing_event_id, bl.id`,
       [gymId, ...ids],
     );
     for (const l of lineRows) {
@@ -56,6 +60,10 @@ export async function loadPaymentsTimeline(gymId: string, memberId: number, toda
       list.push({ label: l.item_name, quantity: Number(l.quantity), amount: Number(l.amount) });
       linesByEvent.set(key, list);
       if (l.product_id != null) productsByEvent.set(key, [...(productsByEvent.get(key) ?? []), Number(l.product_id)]);
+      if (l.line_schedule_key != null && l.line_period_start != null) {
+        lineObligationsByEvent.set(key, [...(lineObligationsByEvent.get(key) ?? []),
+          { schedule_key: String(l.line_schedule_key), period_start: l.line_period_start }]);
+      }
     }
   }
   const events: TimelineEventInput[] = rows.map((r: any) => ({
@@ -69,6 +77,7 @@ export async function loadPaymentsTimeline(gymId: string, memberId: number, toda
     schedule_key: r.schedule_key ?? null,
     period_start: r.period_start ?? null,
     product_ids: productsByEvent.get(Number(r.id)) ?? [],
+    line_obligations: lineObligationsByEvent.get(Number(r.id)) ?? [],
     cancelled: r.cancelled_at != null,
     latest_tx_status: r.latest_tx_status ?? null,
     paid_at: r.paid_at ?? null,

@@ -66,6 +66,15 @@ export interface BillingEventLineRow {
    * included), so the Initial Payment can still state its Price; carried, never persisted.
    */
   price_before_waive?: number | null;
+  /**
+   * #3445 stage 2 — the schedule and period of the obligation this line bills, persisted as
+   * `billing_event_lines.schedule_id` / `period_start` / `period_end` by `materialiseScheduledEvents()`,
+   * so a Scheduled Billing Event consolidating several schedules' lines keeps each one's identity.
+   * Absent on every other line.
+   */
+  schedule_id?: number | null;
+  period_start?: string | null;
+  period_end?: string | null;
 }
 
 /**

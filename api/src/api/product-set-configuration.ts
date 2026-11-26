@@ -22,6 +22,7 @@ import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation, l
 import { calendarAnchorOnOrBefore } from '../domain/calendarSchedule';
 import { findScheduleWithIdentity } from '../domain/scheduleConsolidation';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
+import { primaryScheduleIndex, selectGlobalWindow } from '../domain/billingWindow';
 import {
   PLAN_SCHEDULE_KEY, allocateSchedule, billsOnOwnCalendar, cadenceForFrequency, sameCadence,
   type Cadence, type CadenceUnit, type ExistingSchedule,
@@ -586,7 +587,10 @@ export async function loadProductSetSimulationAssignment(
 
 /* ── Generating the persisted obligations ────────────────────────────────── */
 
-/** Coverage cap at commit time (Q1): never more than two cycles per schedule. */
+/**
+ * Coverage cap at commit time (Q1): two cycles. In the rolling window (#3445 stage 2) that is two
+ * distinct positive billing dates per Product Set across all its schedules; elsewhere, per schedule.
+ */
 export const MAX_COVERED_CYCLES = 2;
 
 /**
@@ -623,8 +627,10 @@ export async function planScheduledEvents(
     /**
      * #3445 — the rolling window: count only dates whose obligation is worth something. A
      * zero-value cycle (a free, prepaid or fully discounted period) is dropped and does not use up
-     * one of the `cycles` slots, and the engine's horizon is widened until each schedule has
-     * `cycles` positive dates or its contract runs out (`MAX_WINDOW_SCAN_CYCLES` at most).
+     * one of the `cycles` slots, and since stage 2 the slots are the Product Set's, not each
+     * schedule's: the next `cycles` distinct positive dates across every schedule, with every
+     * positive obligation on those dates kept (`selectGlobalWindow()`). The engine's horizon is
+     * widened until that many dates are found or the contract runs out (`MAX_WINDOW_SCAN_CYCLES` at most).
      */
     positiveOnly?: boolean;
     /**
@@ -716,19 +722,21 @@ export async function planScheduledEvents(
   };
   if (!opts.positiveOnly) return capped(project(cycles));
 
-  // #3445: widen the engine's horizon until every schedule it projects has `cycles` positive dates,
-  // or the scan cap is reached (a contract that ends, or one that owes nothing more, never fills
-  // its window; the engine's own 36-month safety cap bounds each widening). A wider horizon that
-  // finds nothing new is not a stop: the engine's horizon may already end on the first regular
-  // charge, so the next doubling is the one that reaches past it.
+  // #3445 stage 2: the rolling window is the Product Set's — the next `cycles` distinct positive
+  // billing dates across every schedule (`selectGlobalWindow()`), each line still on its own
+  // schedule. The engine's horizon is widened until that many dates are found or the scan cap is
+  // reached (a contract that ends, or one that owes nothing more, never fills its window; the
+  // engine's own 36-month safety cap bounds each widening). A wider horizon that finds nothing new
+  // is not a stop: the engine's horizon may already end on the first regular charge, so the next
+  // doubling is the one that reaches past it.
+  const isStub = (e: PlannedEvent) => e.lines.length > 0 && e.lines.every((l) => l.proration);
   let engineCycles = cycles;
   for (;;) {
     const all = project(engineCycles);
-    const kept = capped(all);
-    const keys = new Set(all.filter((e) => e.scheduleKey !== null).map((e) => e.scheduleKey!));
-    const short = [...keys].some((k) => kept.filter((e) => e.scheduleKey === k
-      && !(e.lines.length > 0 && e.lines.every((l) => l.proration))).length < cycles);
-    if (!short || engineCycles >= MAX_WINDOW_SCAN_CYCLES) return kept;
+    const selection = selectGlobalWindow(all.map((e) => ({
+      scheduleKey: e.scheduleKey, date: e.date, amount: plannedEventAmount(e), stub: isStub(e),
+    })), cycles);
+    if (!selection.short || engineCycles >= MAX_WINDOW_SCAN_CYCLES) return selection.kept.map((i) => all[i]);
     engineCycles = Math.min(engineCycles * 2, MAX_WINDOW_SCAN_CYCLES);
   }
 }
@@ -808,23 +816,46 @@ async function dropPaidFirstCycle(
     .filter((e) => e.lines.length > 0);
 }
 
+/** #3445 stage 2 — what one `materialiseScheduledEvents()` call did, for the maintenance counters. */
+export interface MaterialiseResult {
+  /** Billing Events inserted. */
+  created: number;
+  /** Schedules' obligations examined (one per schedule and date the window keeps). */
+  obligations_examined: number;
+  /** Obligations folded into an event filed under another schedule (same date, one event). */
+  lines_consolidated: number;
+  /** Obligations that owe nothing and were not persisted. */
+  zero_value_skipped: number;
+  /** Obligations already persisted, or already paid by the version's initial payment. */
+  already_covered: number;
+}
+
 /**
  * Persists the version's future obligations as `is_scheduled` Billing Events with
- * their lines. Idempotent: an obligation that already exists for the same
- * `(schedule, period)` — or, for a one-off, the same date — is left alone, so a
- * second call, a retry or a concurrent commit creates nothing twice
- * (`UNIQUE (schedule_id, period_start)` is the backstop).
+ * their lines. Since #3445 stage 2 the window is the Product Set's (`planScheduledEvents()`'
+ * `positiveOnly`): the next two distinct positive billing dates across every schedule, and the
+ * obligations of different schedules that fall on one date are consolidated into ONE event,
+ * filed under one schedule (`primaryScheduleIndex()`) while every line keeps its own schedule and
+ * period (`billing_event_lines.schedule_id` / `period_start` / `period_end`). Idempotent: an
+ * obligation that already exists for the same `(schedule, period)` — on the event row or on a
+ * line — or, for a one-off, the same date, is left alone, so a second call, a retry or a
+ * concurrent commit creates nothing twice (`UNIQUE (schedule_id, period_start)` is the
+ * backstop). An existing event is never rewritten: an obligation found new on a date that
+ * already has an event of the set goes in an event of its own.
  */
 export async function materialiseScheduledEvents(tx: Tx, input: {
   gymId: string; productSetId: number; today: string; cycles?: number;
   /** #1182: who caused the obligations to exist; omitted means the system (`System`). */
   actor?: string | null;
-}): Promise<{ created: number }> {
+}): Promise<MaterialiseResult> {
   const { gymId, productSetId, today } = input;
+  const result: MaterialiseResult = {
+    created: 0, obligations_examined: 0, lines_consolidated: 0, zero_value_skipped: 0, already_covered: 0,
+  };
   const { rows: setRows } = await tx.query<{ owner_member_id: number; previous_product_set_id: number | null }>(
     'SELECT owner_member_id, previous_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?',
     [productSetId, gymId]);
-  if (!setRows[0]) return { created: 0 };
+  if (!setRows[0]) return result;
 
   const planned = await dropPaidFirstCycle(tx, gymId, productSetId, setRows[0].previous_product_set_id, today,
     await planScheduledEvents(gymId, productSetId, today, input.cycles, tx, { positiveOnly: true }));
@@ -834,25 +865,52 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
   for (const s of schedules) scheduleIds.set(String(s.schedule_key), Number(s.id));
 
   const actor = input.actor === undefined ? SYSTEM_ACTOR : input.actor;
-  let created = 0;
-  for (const event of planned) {
-    const scheduleId = event.scheduleKey ? scheduleIds.get(event.scheduleKey) ?? null : null;
-    const lines: BillingEventLineRow[] = event.lines.map((l) => lineFromSimulation(l));
+  const insertEvent = async (
+    scheduleId: number | null, date: string, periodEnd: string | null, lines: BillingEventLineRow[],
+  ) => {
     const amount = linesTotal(lines);
     if (!linesMatchTotal(lines, amount)) throw new Error('Billing event lines do not sum to the event amount');
+    // #2940: a recurring obligation is named for its billing period.
+    const name = await recurringEventNameFor(tx, gymId, scheduleId, date);
+    const { insertId } = await tx.query(
+      `INSERT INTO billing_events
+         (gym_id, member_id, event_type, name, source, amount, product_set_id, schedule_id,
+          period_start, period_end, billing_date, is_scheduled, created_by)
+       VALUES (?, ?, 'charge_created', ?, 'system', ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [gymId, setRows[0].owner_member_id, name, amount, productSetId, scheduleId,
+        date, periodEnd, date, actor],
+    );
+    await writeEventLines(tx, gymId, Number(insertId), lines);
+    result.created += 1;
+  };
+
+  // The obligations still owed, per date (scheduled) or as their own event (one-off).
+  const byDate = new Map<string, Array<{ scheduleKey: string | null; scheduleId: number; periodEnd: string | null; lines: BillingEventLineRow[] }>>();
+  for (const event of planned) {
+    const scheduleId = event.scheduleKey ? scheduleIds.get(event.scheduleKey) ?? null : null;
+    result.obligations_examined += 1;
+    const lines: BillingEventLineRow[] = event.lines.map((l) => ({
+      ...lineFromSimulation(l),
+      ...(scheduleId != null ? { schedule_id: scheduleId, period_start: event.date, period_end: event.periodEnd } : {}),
+    }));
+    const amount = linesTotal(lines);
     // #2106: an actual obligation that owes nothing (a free period, a fully
     // discounted cycle) is never persisted. The simulations keep their €0 rows:
     // they do not come through here.
-    if (amount <= 0) continue;
+    if (amount <= 0) { result.zero_value_skipped += 1; continue; }
 
-    const { rows: existing } = scheduleId != null
-      ? await tx.query(
-        'SELECT id FROM billing_events WHERE schedule_id = ? AND period_start = ? FOR UPDATE', [scheduleId, event.date])
-      : await tx.query(
+    const existing: unknown[] = scheduleId != null
+      ? (await tx.query(
+        'SELECT id FROM billing_events WHERE schedule_id = ? AND period_start = ? FOR UPDATE', [scheduleId, event.date])).rows
+        .concat((await tx.query(
+          // #3445 stage 2: an obligation consolidated into an event filed under another schedule.
+          `SELECT be.id FROM billing_event_lines bl JOIN billing_events be ON be.id = bl.billing_event_id
+            WHERE bl.schedule_id = ? AND bl.period_start = ? FOR UPDATE`, [scheduleId, event.date])).rows)
+      : (await tx.query(
         `SELECT id FROM billing_events
           WHERE product_set_id = ? AND schedule_id IS NULL AND billing_date = ? AND event_type = 'charge_created' FOR UPDATE`,
-        [productSetId, event.date]);
-    if (existing.length > 0) continue;
+        [productSetId, event.date])).rows;
+    if (existing.length > 0) { result.already_covered += 1; continue; }
 
     // #1521: a period the version's initial payment already covers is not an
     // obligation again. The initial event only carries a schedule for the plan's
@@ -868,23 +926,25 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
             AND bl.product_id IN (${productIds.map(() => '?').join(',')})
           LIMIT 1`,
         [gymId, productSetId, event.date, ...productIds]);
-      if (paidUp.length > 0) continue;
+      if (paidUp.length > 0) { result.already_covered += 1; continue; }
     }
 
-    // #2940: a recurring obligation is named for its billing period.
-    const name = await recurringEventNameFor(tx, gymId, scheduleId, event.date);
-    const { insertId } = await tx.query(
-      `INSERT INTO billing_events
-         (gym_id, member_id, event_type, name, source, amount, product_set_id, schedule_id,
-          period_start, period_end, billing_date, is_scheduled, created_by)
-       VALUES (?, ?, 'charge_created', ?, 'system', ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [gymId, setRows[0].owner_member_id, name, amount, productSetId, scheduleId,
-        event.date, event.periodEnd, event.date, actor],
-    );
-    await writeEventLines(tx, gymId, Number(insertId), lines);
-    created += 1;
+    if (scheduleId == null) {
+      await insertEvent(null, event.date, event.periodEnd, lines);
+      continue;
+    }
+    byDate.set(event.date, [...(byDate.get(event.date) ?? []),
+      { scheduleKey: event.scheduleKey, scheduleId, periodEnd: event.periodEnd, lines }]);
   }
-  return { created };
+
+  // #3445 stage 2: one Scheduled Billing Event per date, whichever schedules owe on it.
+  for (const [date, groups] of [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const primary = groups[primaryScheduleIndex(groups, PLAN_SCHEDULE_KEY)];
+    const lines = [primary, ...groups.filter((g) => g !== primary)].flatMap((g) => g.lines);
+    result.lines_consolidated += groups.length - 1;
+    await insertEvent(primary.scheduleId, date, primary.periodEnd, lines);
+  }
+  return result;
 }
 
 /**
