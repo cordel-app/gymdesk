@@ -15,8 +15,10 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { db } from '../infra/db';
 import {
-  JobRunFilter, JobRunRow, normalizeJobRun, parseJobRunFilter,
+  JobRun, JobRunFilter, JobRunRow, normalizeJobRun, parseJobRunFilter,
 } from '../domain/jobRuns';
+import { SYSTEM_JOBS, manualRunRefusal, systemJobOf } from '../domain/systemJobs';
+import { callJobRoute, isManualRunInFlight } from './system-job-trigger';
 
 export const platformJobRunsRouter = Router();
 
@@ -75,6 +77,87 @@ platformJobRunsRouter.get(
         limit: filter.limit,
         offset: filter.offset,
       });
+    } catch (err) { next(err); }
+  },
+);
+
+/**
+ * #3471: the latest run of each job, across all three stores, by start time — the
+ * same rows the list above reads, so a scheduled run and a manual one are one history.
+ */
+async function latestRuns(job?: string): Promise<Map<string, JobRun>> {
+  const { rows } = await db.query(
+    `SELECT r.* FROM (
+       SELECT s.*, ROW_NUMBER() OVER (
+                PARTITION BY s.job ORDER BY s.started_at DESC, s.source, s.source_id DESC) AS rn
+         FROM (${SOURCES_SQL}) s ${job ? 'WHERE s.job = ?' : ''}
+     ) r WHERE r.rn = 1`,
+    job ? [job] : [],
+  );
+  const out = new Map<string, JobRun>();
+  for (const row of rows as JobRunRow[]) {
+    const run = normalizeJobRun(row);
+    out.set(run.job, run);
+  }
+  return out;
+}
+
+/**
+ * GET /platform/job-runs/jobs — #3471: every registered job, never-run ones included,
+ * with whether the application may start it and its latest run (`null` if none).
+ */
+platformJobRunsRouter.get(
+  '/jobs',
+  requireSuperadmin,
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const latest = await latestRuns();
+      res.json({
+        items: SYSTEM_JOBS.map((j) => ({
+          job: j.job,
+          manual: j.manual && !!process.env[j.secretEnv],
+          running: isManualRunInFlight(j.job),
+          latest_run: latest.get(j.job) ?? null,
+        })),
+      });
+    } catch (err) { next(err); }
+  },
+);
+
+/**
+ * POST /platform/job-runs/jobs/:job/run — #3471: starts one job now, through its own
+ * internal route (`system-job-trigger.ts`), and answers with the job's latest run.
+ *
+ *   200 { job, http_status, latest_run }        the job's route answered 2xx
+ *   409 { error: 'job_already_running' }        a manual start is still waiting, or the
+ *                                               route answered 429 (a run in progress)
+ *   409 { error: 'manual_run_not_supported' }   the job is the scheduler's alone
+ *   503 { error: 'not_configured' }             the job's secret is not set here
+ *   502 { error: 'job_failed', http_status, latest_run }  the route answered an error
+ */
+platformJobRunsRouter.post(
+  '/jobs/:job/run',
+  requireSuperadmin,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const jobName = String(req.params.job);
+      const entry = systemJobOf(jobName);
+      const secret = entry ? process.env[entry.secretEnv] : undefined;
+      const refusal = manualRunRefusal(jobName, !!secret);
+      if (refusal === 'unknown_job') return res.status(404).json({ error: refusal });
+      if (refusal === 'manual_run_not_supported') return res.status(409).json({ error: refusal });
+      if (refusal === 'not_configured') return res.status(503).json({ error: refusal });
+      if (isManualRunInFlight(entry!.job)) return res.status(409).json({ error: 'job_already_running' });
+
+      const answer = await callJobRoute(req.app, entry!, secret!);
+      const latest = (await latestRuns(entry!.job)).get(entry!.job) ?? null;
+      if (answer.status === 429) {
+        return res.status(409).json({ error: 'job_already_running', http_status: 429, latest_run: latest });
+      }
+      if (answer.status < 200 || answer.status >= 300) {
+        return res.status(502).json({ error: 'job_failed', http_status: answer.status, latest_run: latest });
+      }
+      res.json({ job: entry!.job, http_status: answer.status, latest_run: latest });
     } catch (err) { next(err); }
   },
 );
