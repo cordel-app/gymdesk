@@ -16,6 +16,7 @@ export const JOB_RUN_JOBS = [
   'plan_allowance_renewals',
   'booking_reminders',
   'assignment_lifecycle',
+  'billing_window_maintenance',
 ] as const;
 export type JobRunJob = (typeof JOB_RUN_JOBS)[number];
 
