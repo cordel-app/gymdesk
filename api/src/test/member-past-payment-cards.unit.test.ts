@@ -22,7 +22,9 @@ describe('#3299 Past Payments use the detailed payment card', () => {
   it('the Past Payments subcard renders each payment through renderPastPaymentCard', () => {
     const tab = fnBody(page, 'renderPaymentsTab');
     const past = tab.slice(tab.indexOf("t('payments.past_heading')"));
-    expect(past).toContain('sections.past.map((event) => renderPastPaymentCard(event))');
+    // #3437 — the list is paged by PastPaymentsList; each item is still the detailed card.
+    expect(past).toContain('<PastPaymentsList');
+    expect(past).toContain('renderItem={(event) => renderPastPaymentCard(event)}');
     expect(past).not.toContain('renderPaymentRow(');
   });
 

@@ -38,6 +38,7 @@ import {
   PastBillingEventRow,
   PaymentDocumentList,
 } from '@/components/MemberPaymentsCard';
+import { PastPaymentsList } from '@/components/PastPaymentsList';
 import {
   MemberProductsSection,
   type MemberProductCardItem,
@@ -1376,12 +1377,25 @@ export default function MembershipPage() {
         </PaymentsSubcard>
 
         <PaymentsSubcard title={t('payments.past_heading')}>
-          {sections.past.length === 0 ? (
-            <p style={styles.hint}>{t('payments.past_empty')}</p>
-          ) : (
-            // #3299 — each past payment on Next Payment's detailed card.
-            sections.past.map((event) => renderPastPaymentCard(event))
-          )}
+          {/* #3437 — read a page at a time as the member scrolls, with date and
+              Product filters; #3299 — each past payment on Next Payment's detailed card. */}
+          <PastPaymentsList
+            load={apiFetch}
+            renderItem={(event) => renderPastPaymentCard(event)}
+            labels={{
+              dateFrom: t('payments.past_filter_from'),
+              dateTo: t('payments.past_filter_to'),
+              product: t('payments.past_filter_product'),
+              allProducts: t('payments.past_filter_all_products'),
+              clear: t('payments.past_filter_clear'),
+              loading: t('payments.past_loading'),
+              empty: t('payments.past_empty'),
+              emptyFiltered: t('payments.past_empty_filtered'),
+              loadFailed: t('payments.past_load_failed'),
+              retry: t('payments.past_retry'),
+              message: (key) => t(key as any),
+            }}
+          />
         </PaymentsSubcard>
       </PaymentsSection>
     );

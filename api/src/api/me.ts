@@ -19,6 +19,13 @@ import { createProductSetCheckout, initialCharge } from './product-set-checkout'
 import { openInitialEventForAssignment } from './product-set-bridge';
 import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
+import {
+  PAST_EVENT_SQL,
+  PAST_PAYMENTS_ORDER_SQL,
+  encodePastPaymentsCursor,
+  parsePastPaymentsQuery,
+  pastPaymentsConditions,
+} from '../domain/pastPaymentsQuery';
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { DateTime } from 'luxon';
@@ -3156,6 +3163,126 @@ async function loadMemberBillingEventLines(gymId: number | string, eventIds: num
   return byEvent;
 }
 
+/**
+ * The member's own ledger rows, shaped as `GET /me/billing-events` reports them.
+ * `extraWhere` / `extraParams` narrow the member's scope; `tail` is the ORDER BY
+ * and LIMIT. #3437: the Past Payments page reads the same shape through it, so
+ * one payment cannot read two ways on two subcards.
+ */
+async function loadMemberLedgerItems(
+  gymId: string,
+  memberId: number,
+  extraWhere: string[],
+  extraParams: Array<string | number>,
+  tail: string,
+): Promise<any[]> {
+  // #1123 §4 — each past event reports its `status` ("Status: Paid"), derived
+  // by the one implementation the staff ledger reads it through
+  // (`deriveBillingEventStatus`, #640/#787: the latest transaction's status,
+  // falling back to what the event type itself says). A second rule here
+  // would let the member's Payments card call an event paid that the
+  // Payments dashboard calls failed.
+  const where = ['be.gym_id = ?', 'be.member_id = ?', "be.event_type <> 'card_verification'", ...extraWhere];
+  const { rows } = await db.query<any>(
+    `SELECT be.id, be.event_type, be.name, be.previous_status, be.new_status,
+            be.amount, be.notes, be.created_at, be.receipt_number, be.receipt_issued_at, be.cancelled_at, be.expired_at,
+            be.billing_date, be.is_scheduled,
+            ct.code AS charge_type_code,
+            (SELECT pr.amount FROM payment_requests pr
+              WHERE pr.billing_event_id = be.id AND pr.transaction_type = 'payment' AND pr.status = 'completed'
+              ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS collected_amount,
+            (SELECT pr.status FROM payment_requests pr
+              WHERE pr.billing_event_id = be.id
+              ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
+            (SELECT pr.payment_method_name FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name
+     FROM billing_events be
+     LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
+     WHERE ${where.join(' AND ')}
+     ${tail}`,
+    [gymId, memberId, ...extraParams],
+  );
+  // #2936 — the latest stored document of each kind, for the download actions.
+  const documents = await loadMemberPaymentDocuments(gymId, rows);
+  // #2937 — each event's own priced lines (#1474), for the expanded row.
+  // Read-only, tenant-scoped, one query for the page; nothing re-prices them.
+  const linesByEvent = await loadMemberBillingEventLines(gymId, rows.map((r: any) => Number(r.id)));
+  // #3297 — full or partial refund, from the one refund summary (#2480).
+  const refundsByEvent = await loadRefundSummaries(gymId, rows.map((r: any) => Number(r.id)));
+  return rows.map(({
+    latest_tx_status, receipt_issued_at: _receiptIssuedAt, billing_date, is_scheduled, collected_amount, expired_at, ...row
+  }: any) => ({
+    ...row,
+    // #3297 — a persisted, not-yet-executed obligation reads `scheduled`, as on
+    // the staff list (`ledgerEventStatus()`), and every event carries the day it
+    // is (or was) executed on, which is what the Payments view groups by.
+    // #3307 stage 3: a checkout's event the 24-hour expiry closed reads `expired_24h`.
+    status: displayBillingEventStatus(
+      ledgerEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null, Number(is_scheduled) === 1),
+      null, expired_at != null),
+    scheduled_date: scheduledExecutionDate(billing_date, row.created_at),
+    payment_type: paymentCoverage(collected_amount, row.amount),
+    refund_type: refundCoverage(refundsByEvent.get(Number(row.id))?.refund_state),
+    documents: documents.get(Number(row.id)) ?? [],
+    lines: linesByEvent.get(Number(row.id)) ?? [],
+  }));
+}
+
+// #3437 — **Past Payments**, a page at a time: the newest three by default,
+// then the next ones from `cursor`, narrowed by execution date and Product
+// before the page is cut (`domain/pastPaymentsQuery.ts` decides all of it).
+// The Family Owner's, as the rest of the Payments tab (#2776).
+meRouter.get('/billing-events/past', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const parsed = parsePastPaymentsQuery(req.query as Record<string, unknown>);
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const { query } = parsed;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
+    const { sql, params } = pastPaymentsConditions(query);
+    // One row beyond the page says whether another page exists. `limit` is a
+    // validated integer, written into the statement (no bound LIMIT).
+    const rows = await loadMemberLedgerItems(
+      gymId, memberId, sql, params, `ORDER BY ${PAST_PAYMENTS_ORDER_SQL} LIMIT ${query.limit + 1}`,
+    );
+    const items = rows.slice(0, query.limit);
+    const last = items[items.length - 1];
+    const nextCursor = rows.length > query.limit && last
+      ? encodePastPaymentsCursor({ date: last.scheduled_date, id: Number(last.id) })
+      : null;
+    res.json({ items, next_cursor: nextCursor });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #3437 — the Products the Past Payments filter offers: the ones a line of one
+// of the member's past payments names, by the line's own stored name (the
+// latest one, should the Product have been renamed between payments).
+meRouter.get('/billing-events/past/products', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
+    const { rows } = await db.query<any>(
+      `SELECT bel.product_id,
+              SUBSTRING_INDEX(GROUP_CONCAT(bel.item_name ORDER BY bel.id DESC SEPARATOR '\n'), '\n', 1) AS name
+         FROM billing_event_lines bel
+         JOIN billing_events be ON be.id = bel.billing_event_id AND be.gym_id = bel.gym_id
+        WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'
+          AND bel.product_id IS NOT NULL AND ${PAST_EVENT_SQL}
+        GROUP BY bel.product_id
+        ORDER BY name, bel.product_id`,
+      [gymId, memberId],
+    );
+    res.json({ items: rows.map((r: any) => ({ id: Number(r.product_id), name: String(r.name) })) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // P1.8: read-only paginated ledger for the caller's own member row.
 meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
@@ -3171,55 +3298,11 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
         WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'`,
       [gymId, memberId],
     );
-    // #1123 §4 — each past event reports its `status` ("Status: Paid"), derived
-    // by the one implementation the staff ledger reads it through
-    // (`deriveBillingEventStatus`, #640/#787: the latest transaction's status,
-    // falling back to what the event type itself says). A second rule here
-    // would let the member's Payments card call an event paid that the
-    // Payments dashboard calls failed.
-    const { rows } = await db.query<any>(
-      `SELECT be.id, be.event_type, be.name, be.previous_status, be.new_status,
-              be.amount, be.notes, be.created_at, be.receipt_number, be.receipt_issued_at, be.cancelled_at, be.expired_at,
-              be.billing_date, be.is_scheduled,
-              ct.code AS charge_type_code,
-              (SELECT pr.amount FROM payment_requests pr
-                WHERE pr.billing_event_id = be.id AND pr.transaction_type = 'payment' AND pr.status = 'completed'
-                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS collected_amount,
-              (SELECT pr.status FROM payment_requests pr
-                WHERE pr.billing_event_id = be.id
-                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
-              (SELECT pr.payment_method_name FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.payment_method_name IS NOT NULL ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_method_name
-       FROM billing_events be
-       LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
-       WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'
-       ORDER BY COALESCE(be.billing_date, DATE(be.created_at)) DESC, be.created_at DESC, be.id DESC
+    const items = await loadMemberLedgerItems(
+      gymId, memberId, [], [],
+      `ORDER BY COALESCE(be.billing_date, DATE(be.created_at)) DESC, be.created_at DESC, be.id DESC
        LIMIT ${limit} OFFSET ${offset}`,
-      [gymId, memberId],
     );
-    // #2936 — the latest stored document of each kind, for the download actions.
-    const documents = await loadMemberPaymentDocuments(gymId, rows);
-    // #2937 — each event's own priced lines (#1474), for the expanded row.
-    // Read-only, tenant-scoped, one query for the page; nothing re-prices them.
-    const linesByEvent = await loadMemberBillingEventLines(gymId, rows.map((r: any) => Number(r.id)));
-    // #3297 — full or partial refund, from the one refund summary (#2480).
-    const refundsByEvent = await loadRefundSummaries(gymId, rows.map((r: any) => Number(r.id)));
-    const items = rows.map(({
-      latest_tx_status, receipt_issued_at: _receiptIssuedAt, billing_date, is_scheduled, collected_amount, expired_at, ...row
-    }) => ({
-      ...row,
-      // #3297 — a persisted, not-yet-executed obligation reads `scheduled`, as on
-      // the staff list (`ledgerEventStatus()`), and every event carries the day it
-      // is (or was) executed on, which is what the Payments view groups by.
-      // #3307 stage 3: a checkout's event the 24-hour expiry closed reads `expired_24h`.
-      status: displayBillingEventStatus(
-        ledgerEventStatus(row.event_type, latest_tx_status, row.cancelled_at != null, Number(is_scheduled) === 1),
-        null, expired_at != null),
-      scheduled_date: scheduledExecutionDate(billing_date, row.created_at),
-      payment_type: paymentCoverage(collected_amount, row.amount),
-      refund_type: refundCoverage(refundsByEvent.get(Number(row.id))?.refund_state),
-      documents: documents.get(Number(row.id)) ?? [],
-      lines: linesByEvent.get(Number(row.id)) ?? [],
-    }));
     res.json({ items, total: Number(countRows[0].total), limit, offset });
   } catch (err) {
     next(err);
