@@ -28,6 +28,8 @@ type MemberBillingEvent = PaymentsTabEvent & BillingEventsTableRow;
  * on its own under *Last billing event* (open by default) and is not repeated
  * under *Past billing events*; every section collapses independently. That
  * last event's row starts expanded, so its Billing Event lines are on screen.
+ * Since #3435 the list asks the API to leave out cancelled attempts that
+ * collected nothing (`exclude_cancelled`), the rule the chart applies too.
  */
 export function MemberPayments({ memberId }: { memberId: number | string }) {
   const t = useTranslations();
@@ -40,7 +42,7 @@ export function MemberPayments({ memberId }: { memberId: number | string }) {
   const flip = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   const load = useCallback(() => {
-    apiFetch<{ items: MemberBillingEvent[] }>(`/payments/billing-events?member_id=${memberId}&limit=200`)
+    apiFetch<{ items: MemberBillingEvent[] }>(`/payments/billing-events?member_id=${memberId}&limit=200&exclude_cancelled=true`)
       .then((r) => { setEvents(r.items ?? []); setFailed(false); setLoads((n) => n + 1); })
       .catch(() => setFailed(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps

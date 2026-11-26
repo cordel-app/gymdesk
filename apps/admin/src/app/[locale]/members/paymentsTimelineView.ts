@@ -21,6 +21,8 @@ export interface TimelinePoint {
   amount: number;
   status: string | null;
   billing_event_id: number | null;
+  /** #3435: a failed or pending payment, which the chart marks with a `!` (the API decides it). */
+  alert?: 'failed' | 'pending' | null;
   name: string | null;
   event_type: string | null;
   lines: TimelineLine[];
@@ -71,6 +73,7 @@ export function timelineSeries(
       y: p.amount,
       label: labels.date(p.date),
       valueLabel: labels.money(p.amount),
+      alert: p.alert != null,
       detailLines: [labels.status(p), ...p.lines.map((l) => `${l.label} × ${l.quantity}: ${labels.money(l.amount)}`)],
     })),
   }));

@@ -15,11 +15,15 @@
 //    (`materialiseScheduledEvents()`) and a forecast point beside them would
 //    report one charge twice.
 //
+// Since #3435 a cancelled attempt that collected nothing is not plotted, and a
+// failed or pending payment carries `alert` (`domain/memberPaymentsVisibility.ts`).
+//
 // Nothing is stored and nothing is written: a forecast point is never a Billing
 // Event, and a past payment keeps its own date whatever the configuration
 // becomes, since it is read from the ledger rather than from the engine.
 
 import { ledgerEventStatus, scheduledExecutionDate } from './memberPaymentView';
+import { isHiddenFromMemberPayments, paymentAlert, type PaymentAlert } from './memberPaymentsVisibility';
 
 export type TimelinePointKind = 'payment' | 'scheduled' | 'forecast';
 
@@ -38,6 +42,8 @@ export interface TimelinePoint {
   status: string | null;
   /** The persisted event this point is; `null` for a forecast. */
   billing_event_id: number | null;
+  /** #3435: a failed or pending payment, marked on the chart; `null` otherwise. */
+  alert: PaymentAlert | null;
   name: string | null;
   event_type: string | null;
   lines: TimelineLine[];
@@ -92,17 +98,21 @@ export function buildPaymentsTimeline(input: {
 
   for (const e of input.events) {
     if (!isPlotted(e.event_type)) continue;
+    // #3435: a cancelled attempt that collected nothing is not a payment.
+    if (isHiddenFromMemberPayments({ cancelled: e.cancelled, latestTxStatus: e.latest_tx_status, collected: e.paid_at != null })) continue;
     const scheduled = e.is_scheduled && !e.cancelled;
     const billingDay = scheduledExecutionDate(e.billing_date, e.created_at);
     if (!e.cancelled && (e.is_scheduled || e.on_schedule) && e.billing_date != null) {
       persistedScheduleDates.add(scheduledExecutionDate(e.billing_date, e.created_at));
     }
+    const status = ledgerEventStatus(e.event_type, e.latest_tx_status, e.cancelled, scheduled);
     points.push({
       kind: scheduled ? 'scheduled' : 'payment',
       date: !scheduled && e.paid_at != null ? day(e.paid_at) : billingDay,
       amount: e.amount,
-      status: ledgerEventStatus(e.event_type, e.latest_tx_status, e.cancelled, scheduled),
+      status,
       billing_event_id: e.id,
+      alert: scheduled ? null : paymentAlert(status),
       name: e.name,
       event_type: e.event_type,
       lines: e.lines,
@@ -118,6 +128,7 @@ export function buildPaymentsTimeline(input: {
       amount: f.total,
       status: null,
       billing_event_id: null,
+      alert: null,
       name: f.name ?? null,
       event_type: null,
       lines: f.lines.map((l) => ({ label: l.label, quantity: l.quantity, amount: l.actual_charge })),
