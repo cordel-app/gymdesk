@@ -46,3 +46,44 @@ describe('tagForecastAssignment + merge', () => {
     expect(planNextPayment({ ...f, available: false }, 7)).toBeNull();
   });
 });
+
+describe('#3463 — a zero-amount payment is never the Next payment', () => {
+  it('skips a zero-value next cycle and shows the following positive one', () => {
+    const f = tagForecastAssignment(result([
+      { date: '2026-12-01', lines: [line('membership_fee', null, 0), line('product', 9, 0)] },
+      { date: '2027-01-01', lines: [line('membership_fee', null, 40), line('product', 9, 5)] },
+    ]), 7) as BillingEventForecast;
+    const plan = planNextPayment(f, 7);
+    expect(plan?.date).toBe('2027-01-01');
+    expect(plan?.total).toBe(45);
+    expect(productNextPayment(f, 9)?.date).toBe('2027-01-01');
+  });
+
+  it('skips several consecutive zero-value cycles', () => {
+    const f = tagForecastAssignment(result([
+      { date: '2026-12-01', lines: [line('membership_fee', null, 0)] },
+      { date: '2027-01-01', lines: [line('membership_fee', null, 0)] },
+      { date: '2027-02-01', lines: [line('membership_fee', null, 0)] },
+      { date: '2027-03-01', lines: [line('membership_fee', null, 30)] },
+    ]), 7) as BillingEventForecast;
+    expect(planNextPayment(f, 7)?.date).toBe('2027-03-01');
+    expect(planNextPayment(f, 7)?.total).toBe(30);
+  });
+
+  it('answers null when no future cycle charges anything', () => {
+    const f = tagForecastAssignment(result([
+      { date: '2026-12-01', lines: [line('membership_fee', null, 0), line('product', 9, 0)] },
+      { date: '2027-01-01', lines: [line('membership_fee', null, 0), line('product', 9, 0)] },
+    ]), 7) as BillingEventForecast;
+    expect(planNextPayment(f, 7)).toBeNull();
+    expect(productNextPayment(f, 9)).toBeNull();
+  });
+
+  it('keeps a date where the plan line is free but the payment it is part of is not', () => {
+    const f = mergeBillingEventForecasts([
+      tagForecastAssignment(result([{ date: '2026-12-01', lines: [line('membership_fee', null, 0)] }]), 7),
+      tagForecastAssignment(result([{ date: '2026-12-01', lines: [line('membership_fee', null, 25)] }]), 8),
+    ]) as unknown as BillingEventForecast;
+    expect(planNextPayment(f, 7)?.total).toBe(25);
+  });
+});
