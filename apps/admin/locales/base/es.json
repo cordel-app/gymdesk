@@ -1341,7 +1341,19 @@
     "doc_link_rectified_in": "Rectificada en {number}",
     "doc_link_rectified_by": "Rectificada por {number}",
     "doc_link_replaces": "Sustituye {number}",
-    "status_expired_24h": "Caducado (24 h)"
+    "status_expired_24h": "Caducado (24 h)",
+    "action_pay_now": "Pagar ahora",
+    "pay_now_title": "Pagar ahora",
+    "pay_now_confirm": "Pagar {amount}",
+    "pay_now_method": "Método de pago",
+    "pay_now_method_choose": "Elige un método de pago",
+    "pay_now_method_unavailable": "no disponible aquí",
+    "pay_now_loading": "Cargando…",
+    "pay_now_hint": "Members App envía un enlace de pago para este mismo evento de facturación; Efectivo y Tarjeta (terminal externo) registran el pago ahora. Cerrar esta ventana no cambia nada.",
+    "pay_now_link_ready": "El enlace de pago de este evento de facturación está listo. Quedará pagado cuando el miembro complete el pago.",
+    "pay_now_link": "Enlace de pago",
+    "pay_now_block_cart_cancelled": "Este pago no se puede completar: el carrito al que pertenece se canceló. Resuelve el carrito antes de cobrarlo.",
+    "pay_now_block_cart_expired": "Este pago no se puede completar: el carrito al que pertenece ha caducado. Resuelve el carrito antes de cobrarlo."
   },
   "payment_providers": {
     "title": "Proveedores de pago",

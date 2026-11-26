@@ -40,6 +40,10 @@ import {
 } from '../domain/billingEventStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment, waiveBillingEvent } from '../domain/billingEventPayments';
+import { payNowFlags, payNowManual, payNowMembersApp, payNowState } from './billing-event-pay-now';
+import { payNowFlowFor, payNowMethodAvailability } from '../domain/billingEventPayNow';
+import { purchaseCartExpiredSql } from '../domain/cartExpiry';
+import { getRequestLocale } from '../infra/locale';
 import { ledgerEventStatus, paymentCoverage, refundCoverage, type PaymentCoverage } from '../domain/memberPaymentView';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
@@ -428,8 +432,17 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       payment_method_name: string | null;
       receipt_number: string | null;
       has_full_invoice: number | boolean;
+      completed_attempts: number | string;
+      cart_status: string | null;
+      cart_clock_expired: number | boolean | null;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
+              -- #3442: Pay now's eligibility (a completed attempt is terminal; a cancelled or expired cart blocks).
+              (SELECT COUNT(*) FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id AND pr.status = 'completed'
+                  AND COALESCE(pr.transaction_type, 'payment') <> 'refund') AS completed_attempts,
+              pu.status AS cart_status,
+              (pu.id IS NOT NULL AND ${purchaseCartExpiredSql('pu')}) AS cart_clock_expired,
               be.receipt_number,
               EXISTS (SELECT 1 FROM invoices i WHERE i.billing_event_id = be.id AND i.gym_id = be.gym_id
                         AND i.invoice_type = 'full' AND i.related_invoice_id IS NULL AND i.status = 'issued') AS has_full_invoice,
@@ -457,6 +470,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
        FROM billing_events be
        LEFT JOIN members m ON m.id = be.member_id
        LEFT JOIN product_sets ps ON ps.id = be.product_set_id
+       LEFT JOIN purchases pu ON pu.id = be.purchase_id AND pu.gym_id = be.gym_id
        -- #2125 M6b-16: the assignment's plan and status are its current plan snapshot's.
        LEFT JOIN plan_snapshots ps_pa
          ON ps_pa.gym_id = be.gym_id AND ${assignmentOfLegacyIdSql(eventAssignmentSql(), 'ps_pa')}
@@ -494,6 +508,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       can_pay_cash: boolean;
       can_pay_card: boolean;
       can_waive: boolean;
+      /** #3442: Pay now is offered (Failed, Pending payment or Scheduled, not yet paid). */
+      can_pay_now: boolean;
+      /** #3442: why Pay now refuses (the event's cart was cancelled or expired), shown before any method. */
+      pay_now_block: 'cart_cancelled' | 'cart_expired' | null;
       /** #1459: a first payment settles through `POST /user-memberships/:id/record-payment`. */
       first_payment: boolean;
       /** #2480: the latest attempt's payment method snapshot (never the live catalogue). */
@@ -588,6 +606,13 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
             payment_actions_available: a.retry || a.payCash,
             can_retry: a.retry, can_pay_cash: a.payCash, can_pay_card: a.payCard,
             can_waive: a.waive, first_payment: a.firstPayment,
+            ...payNowFlags({
+              status, eventType: r.event_type, cancelled,
+              hasCompletedAttempt: Number(r.completed_attempts) > 0,
+              linked: Number(r.from_product_set) === 1, amount: parseFloat(r.amount ?? '0'),
+              cartStatus: r.cart_status, eventExpired: r.expired_at != null,
+              cartClockExpired: Number(r.cart_clock_expired) === 1,
+            }),
           };
         })(),
       };
@@ -993,6 +1018,83 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
       },
     });
     res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /payments/billing-events/:id/pay-now — #3442. What the Pay now modal
+ * needs before a method is chosen: whether the event may be paid (a cancelled
+ * or expired cart answers 409 with its reason) and the active catalogue methods
+ * with whether Pay now can run each. Reads only.
+ */
+paymentsRouter.get('/billing-events/:id/pay-now', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const state = await payNowState(gymId, billingEventId);
+    if (!('ok' in state)) return res.status(state.status).json({ error: state.error, message: state.message });
+    const { rows: methods } = await db.query<any>(
+      `SELECT m.code,
+              COALESCE((SELECT t.name FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = ?),
+                       (SELECT t.name FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = 'en'),
+                       m.code) AS name
+         FROM base_payment_methods m
+        WHERE m.status = 'active' AND m.deleted_at IS NULL ORDER BY m.id`, [getRequestLocale(req)]);
+    res.json({
+      billing_event_id: billingEventId,
+      amount: state.amount,
+      status: state.status,
+      payment_methods: methods.map((m: any) => ({
+        code: String(m.code), name: String(m.name), ...payNowMethodAvailability(String(m.code)),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /payments/billing-events/:id/pay-now — #3442. Collects the event now
+ * with the method chosen in the modal (`{ method }`, a catalogue code):
+ * `members_app` raises (or reuses) a hosted checkout on this event,
+ * `cash` / `card` record a staff-confirmed settlement on it. Never a new
+ * Billing Event; refused for a paid, cancelled or cart-blocked event.
+ */
+paymentsRouter.post('/billing-events/:id/pay-now', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const code = String(req.body?.method ?? '');
+    const flow = payNowFlowFor(code);
+    if (!flow) return res.status(400).json({ error: 'unsupported_payment_method' });
+    const { rows: cat } = await db.query<{ id: number }>(
+      "SELECT id FROM base_payment_methods WHERE code = ? AND status = 'active' AND deleted_at IS NULL", [code]);
+    if (!cat[0]) return res.status(409).json({ error: 'payment_method_inactive' });
+    const actor = resolveRequestActor(getTenantContext(req));
+
+    if (flow.flow === 'members_app') {
+      const out = await payNowMembersApp(gymId, billingEventId, actor);
+      if ('failure' in out) return res.status(out.failure.status).json({ error: out.failure.error, message: out.failure.message });
+      recordAudit(req, {
+        action: 'pay_now', entityType: 'billing_event', entityId: billingEventId,
+        next: { method: code, payment_request_id: out.result.payment_request_id, reused: out.result.reused },
+      });
+      return res.status(out.result.reused ? 200 : 201).json({ outcome: 'checkout', ...out.result });
+    }
+
+    const out = await payNowManual(gymId, billingEventId, flow.attemptMethod, actor);
+    if ('failure' in out) return res.status(out.failure.status).json({ error: out.failure.error, message: out.failure.message });
+    generatePaidRepresentations(gymId, billingEventId).catch(() => {});
+    recordAudit(req, {
+      action: 'pay_now', entityType: 'billing_event', entityId: billingEventId,
+      previous: { status: out.result.previous_status },
+      next: { status: 'paid', method: out.result.method, payment_request_id: out.result.payment_request_id, amount: out.result.amount },
+    });
+    res.status(201).json({ outcome: 'paid', ...out.result });
   } catch (err) {
     next(err);
   }
