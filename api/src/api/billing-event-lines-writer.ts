@@ -16,11 +16,13 @@ export async function writeEventLines(
       `INSERT INTO billing_event_lines
          (gym_id, billing_event_id, kind, source, product_id, item_name, item_type, quantity, regular_unit_price,
           treatment_action, treatment_value, promotion_name, prorated_days, period_days,
-          tax_rate_percent, tax_behavior, amount_excl_tax, amount, line_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          tax_rate_percent, tax_behavior, amount_excl_tax, amount, line_key,
+          schedule_id, period_start, period_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, eventId, l.kind, l.source, l.product_id, l.item_name, l.item_type, l.quantity, l.regular_unit_price,
         l.treatment_action, l.treatment_value, l.promotion_name, l.prorated_days, l.period_days,
-        l.tax_rate_percent, l.tax_behavior, l.amount_excl_tax, l.amount, l.line_key ?? null],
+        l.tax_rate_percent, l.tax_behavior, l.amount_excl_tax, l.amount, l.line_key ?? null,
+        l.schedule_id ?? null, l.period_start ?? null, l.period_end ?? null],
     );
     const reasons = l.reasons ?? [];
     for (let i = 0; i < reasons.length; i++) {

@@ -41,8 +41,18 @@ export async function loadPaidThroughForSchedule(tx: Tx, gymId: string, schedule
       WHERE be.gym_id = ? AND be.schedule_id = ? AND be.period_start IS NOT NULL
         AND EXISTS (SELECT 1 FROM payment_requests pr
                      WHERE pr.billing_event_id = be.id AND pr.gym_id = be.gym_id
+                       AND pr.status = 'completed' AND pr.method <> 'waive')
+     UNION
+     -- #3445 stage 2: this schedule's period consolidated into an event filed under another schedule.
+     SELECT DISTINCT be.id, bl.period_start, bl.period_end
+       FROM billing_event_lines bl
+       JOIN billing_events be ON be.id = bl.billing_event_id
+      WHERE be.gym_id = ? AND bl.schedule_id = ? AND bl.period_start IS NOT NULL
+        AND (be.schedule_id IS NULL OR be.schedule_id <> bl.schedule_id)
+        AND EXISTS (SELECT 1 FROM payment_requests pr
+                     WHERE pr.billing_event_id = be.id AND pr.gym_id = be.gym_id
                        AND pr.status = 'completed' AND pr.method <> 'waive')`,
-    [gymId, Number(sch[0].id)]);
+    [gymId, Number(sch[0].id), gymId, Number(sch[0].id)]);
   const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
   const periods: PaidPeriod[] = events.map((e: any) => ({
     periodStart: iso(e.period_start), periodEnd: e.period_end ? iso(e.period_end) : null,

@@ -1210,14 +1210,28 @@ over, and it is reported beside the totals rather than folded into `expired`.
 
 ### B9. The rolling window of future obligations (#3445)
 
-Each recurring schedule of an Active Product Set keeps its next **two positive** obligations
-persisted as Scheduled Billing Events. `materialiseScheduledEvents()` asks
-`planScheduledEvents(…, { positiveOnly: true })`: a cycle that owes nothing (a free, Pre-paid or
-fully discounted period) is never persisted and holds no slot, and the engine's horizon is
-doubled (`MAX_WINDOW_SCAN_CYCLES` = 64 cycles at most, inside the engine's 36-month cap) until each
-schedule has two positive dates or the contract has none left. Each schedule counts on its own, so a
-yearly line and a four-weekly line keep two cycles each; lines sharing a schedule and a date stay one
-event. A prorated first stretch is a stub, not a cycle, and is persisted beside the two (#2125 stage 9).
+An Active Product Set keeps its next **two positive** billing dates persisted as Scheduled
+Billing Events, **across all its schedules** (stage 2: the window is the set's, not each
+schedule's). `materialiseScheduledEvents()` asks `planScheduledEvents(…, { positiveOnly: true })`:
+every line is dated on its own schedule by the engine, a cycle that owes nothing (a free, Pre-paid
+or fully discounted period) is dropped and holds no slot, and `selectGlobalWindow()`
+(`api/src/domain/billingWindow.ts`) keeps the two earliest distinct dates with something positive
+on them; the engine's horizon is doubled (`MAX_WINDOW_SCAN_CYCLES` = 64 cycles at most, inside the
+engine's 36-month cap) until two such dates are found or the contract has none left. A monthly fee
+and a four-weekly locker therefore hold two dates *between them*; a later date of either waits until
+the window advances. A prorated first stretch is a stub, not a cycle, and is persisted beside the
+two (#2125 stage 9); a one-off is persisted as before.
+
+**Consolidation.** All the positive obligations that fall on one kept date — whatever schedule owns
+them — are ONE Billing Event. The event row is filed under one schedule (`primaryScheduleIndex()`:
+the plan schedule when it has a line on the date, else the oldest), so `UNIQUE (schedule_id,
+period_start)` stays its backstop, and each line records the obligation it bills
+(`billing_event_lines.schedule_id` / `period_start` / `period_end`, migration 489). An obligation
+counts as persisted when an event is filed under its `(schedule, period)` **or** a line carries it,
+which is what the idempotency check, `loadPaidThroughForSchedule()`, the schedule realignment and
+the Payments History and Forecast read. An existing event is never rewritten: an obligation found
+new on a date that already holds an event of the set (one written before stage 2, one schedule
+each) is persisted as an event of its own rather than appended.
 
 The window is filled on activation (`activateWithEvents()`, i.e. on payment confirmation or a free
 commit) and replenished by `POST /billing/maintain-window` (`BILLING_INTERNAL_SECRET`,
@@ -1226,7 +1240,7 @@ transaction each under its row lock, the same writer, so an obligation already p
 `(schedule, period)` — attempted, paid or not — is never touched, and `UNIQUE (schedule_id,
 period_start)` is the backstop for a concurrent call. It charges nothing and writes no payment
 request. It answers `{ run_date, product_sets_examined, product_sets_updated, events_created,
-failures }`, and `500` when any set failed (the others are still done; a retry is safe). It claims
+obligations_examined, lines_consolidated, zero_value_skipped, already_covered, failures }`, and `500` when any set failed (the others are still done; a retry is safe). It claims
 no run-log slot (it is idempotent) and records a `job_run_log` row as `billing_window_maintenance`.
 It is fired daily at 05:23 UTC (and on demand, `workflow_dispatch`) by
 `.github/workflows/billing-window-maintenance.yml` through the admin relay (#3444), a workflow of
