@@ -17,7 +17,6 @@ import { parseQuery, z } from '../infra/validate';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
-import { HIDDEN_FROM_MEMBER_PAYMENTS_SQL } from '../domain/memberPaymentsVisibility';
 import { auditActorField, resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToMembership } from './membership-promotions';
 import { billingInvoicesRouter, generatePaidRepresentations } from './billing-invoices';
@@ -379,8 +378,6 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     payment_method: z.string().trim().max(50).optional(),
     amount_min: z.coerce.number().finite().optional(),
     amount_max: z.coerce.number().finite().optional(),
-    // #3435: the Member card's Payments tab leaves out cancelled attempts that collected nothing.
-    exclude_cancelled: z.enum(['true', 'false']).optional(),
     // #779: `asc` turns the failed filter into a work queue, oldest first.
     order: z.enum(['asc', 'desc']).default('desc'),
     limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -401,7 +398,6 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const params: any[] = [gymId];
     if (q.member_id !== undefined) { where.push('be.member_id = ?'); params.push(q.member_id); }
     if (q.id !== undefined) { where.push('be.id = ?'); params.push(q.id); }
-    if (q.exclude_cancelled === 'true') where.push(`NOT ${HIDDEN_FROM_MEMBER_PAYMENTS_SQL}`);
     if (q.user_membership_id !== undefined) {
       where.push(eventsOfAssignmentSql());
       params.push(...eventsOfAssignmentParams(gymId, q.user_membership_id));

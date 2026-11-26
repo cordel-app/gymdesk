@@ -28,6 +28,17 @@ describe('Member Payments tab (#2099)', () => {
     expect(isUnresolvedEvent('failed')).toBe(true);
   });
 
+  it('#3435 stage 2: a cancelled event is resolved, listed under Past and can be the Last one', () => {
+    expect(isUnresolvedEvent('cancelled')).toBe(false);
+    const { unresolved, past } = splitPaymentsTabEvents([
+      ev(1, 'paid', '2026-01-01'), ev(2, 'cancelled', '2026-03-01'), ev(3, 'scheduled', '2026-12-01'),
+      ev(4, 'pending', '2026-10-02'), ev(5, 'failed', '2026-10-01'),
+    ]);
+    expect(unresolved.map((e) => e.id)).toEqual([5, 4, 3]);
+    expect(past.map((e) => e.id)).toEqual([2, 1]);
+    expect(splitPastEvents(past).last?.id).toBe(2);
+  });
+
   describe('Last billing event (#2778)', () => {
     it('shows the newest past event once and keeps the rest in their order', () => {
       const { past } = splitPaymentsTabEvents([

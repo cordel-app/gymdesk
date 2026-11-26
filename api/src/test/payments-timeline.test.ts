@@ -224,20 +224,24 @@ describe('#3435: cancelled attempts are left out, failed and pending are marked'
     expect(byId.get(pending)).toMatchObject({ kind: 'payment', status: 'pending', alert: 'pending' });
   });
 
-  it('the Payments tab list applies the same rule with exclude_cancelled, and the staff list is unchanged', async () => {
-    const filtered = await asAdmin(`/payments/billing-events?member_id=${memberId}&limit=200&exclude_cancelled=true`);
-    expect(filtered.status).toBe(200);
-    const ids = (filtered.body.items as any[]).map((r) => r.id);
-    expect(ids).not.toContain(cancelledPending);
-    expect(ids).toEqual(expect.arrayContaining([cancelledPaid, failed, pending]));
-
-    const all = await asAdmin(`/payments/billing-events?member_id=${memberId}&limit=200`);
-    expect((all.body.items as any[]).map((r) => r.id)).toContain(cancelledPending);
+  it('the Payments tab table lists every cancelled event as resolved, and the chart rule stays the chart\'s', async () => {
+    // #3435 stage 2: the tab's table request is the unfiltered ledger.
+    const res = await asAdmin(`/payments/billing-events?member_id=${memberId}&limit=200`);
+    expect(res.status).toBe(200);
+    const byId = new Map((res.body.items as any[]).map((r) => [r.id, r]));
+    expect(byId.get(cancelledPending)).toMatchObject({ status: 'cancelled' });
+    expect(byId.get(cancelledPaid)).toMatchObject({ status: 'cancelled' });
+    expect(byId.get(failed)).toMatchObject({ status: 'failed' });
+    expect(byId.get(pending)).toMatchObject({ status: 'pending' });
   });
 
-  it('refuses an unknown exclude_cancelled value', async () => {
-    const res = await asAdmin(`/payments/billing-events?member_id=${memberId}&exclude_cancelled=yes`);
-    expect(res.status).toBe(400);
+  it('a cancelled persisted obligation reads cancelled, never scheduled, in the table and is off the chart', async () => {
+    const ev = await insertEvent({ type: 'payment_recorded', amount: 15, billingDate: dayOffset(30), productSetId: setId, isScheduled: true });
+    await db.query('UPDATE billing_events SET cancelled_at = UTC_TIMESTAMP() WHERE id = ?', [ev]);
+    const list = await asAdmin(`/payments/billing-events?member_id=${memberId}&limit=200`);
+    expect((list.body.items as any[]).find((r) => r.id === ev)).toMatchObject({ status: 'cancelled' });
+    const chart = await asAdmin(`/payments/members/${memberId}/timeline`);
+    expect((chart.body.points as any[]).some((p) => p.billing_event_id === ev)).toBe(false);
   });
 });
 

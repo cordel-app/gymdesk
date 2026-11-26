@@ -144,6 +144,8 @@ describe('#3297 — the API’s answers', () => {
     expect(ledgerEventStatus('charge_created', null, false, true)).toBe('scheduled');
     expect(ledgerEventStatus('charge_created', null, false, false)).toBeNull();
     expect(ledgerEventStatus('payment_recorded', 'completed', false, false)).toBe('paid');
+    // #3435 stage 2: a cancelled obligation is resolved, never `scheduled`.
+    expect(ledgerEventStatus('payment_recorded', null, true, true)).toBe('cancelled');
   });
 
   it('dates a payment by its billing date, else the day it was written', () => {

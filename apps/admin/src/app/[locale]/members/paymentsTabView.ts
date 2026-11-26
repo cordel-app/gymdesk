@@ -20,7 +20,12 @@ export interface PaymentsTabEvent {
   plan_name: string | null;
 }
 
-/** Statuses of an actual event that still awaits a settlement. */
+/**
+ * Statuses of an actual event that still awaits a settlement. Every other
+ * status is resolved and listed under Past — `cancelled` included (#3435
+ * stage 2): the API reports a cancelled event as `cancelled` even when it was
+ * a persisted obligation (`ledgerEventStatus()`), and the tab hides none.
+ */
 export const UNRESOLVED_STATUSES = ['scheduled', 'failed', 'pending'] as const;
 
 export function isUnresolvedEvent(status: string | null): boolean {

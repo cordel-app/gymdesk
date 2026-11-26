@@ -23,14 +23,19 @@
 import { deriveBillingEventStatus, type BillingEventStatus } from './billingEventStatus';
 import { toCents } from './billingEventRefund';
 
-/** The status the ledger reports for an event: a persisted obligation is `scheduled`. */
+/**
+ * The status the ledger reports for an event: a persisted obligation is
+ * `scheduled`, unless it was cancelled — #3435 stage 2: a cancelled event is
+ * resolved, so `cancelled` wins over the `is_scheduled` flag (it never reads as
+ * an obligation still owed, nor sits under *Unresolved*).
+ */
 export function ledgerEventStatus(
   eventType: string,
   latestTransactionStatus: string | null | undefined,
   cancelled: boolean,
   isScheduled: boolean,
 ): BillingEventStatus | null {
-  if (isScheduled) return 'scheduled';
+  if (isScheduled && !cancelled) return 'scheduled';
   return deriveBillingEventStatus(eventType, latestTransactionStatus, cancelled);
 }
 
