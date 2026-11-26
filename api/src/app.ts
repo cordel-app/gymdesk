@@ -10,6 +10,7 @@ import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { productSetsRouter, meProductSetsRouter } from './api/product-sets-router';
 import { meCartRouter } from './api/me-cart';
+import { mePurchaseHistoryRouter } from './api/me-purchase-history';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { superadminsRouter } from './api/superadmins';
 import { orphanedAccountsRouter } from './api/orphaned-accounts';
@@ -354,6 +355,8 @@ app.use('/me/profile/image', requireAuth(), tenantContext, centerContext, meProf
 app.use('/me/membership-plans', requireAuth(), tenantContext, centerContext, meMembershipPlansRouter);
 // #2949 stage 4: the member's standalone cart purchases (no Product Set). Mounted BEFORE /me.
 app.use('/me/cart', requireAuth(), tenantContext, centerContext, meCartRouter);
+// #3443: the Members App's Purchases tab (the member's own purchases, read-only). Mounted BEFORE /me.
+app.use('/me/purchase-history', requireAuth(), tenantContext, centerContext, mePurchaseHistoryRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE
