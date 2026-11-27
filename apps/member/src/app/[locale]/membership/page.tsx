@@ -98,6 +98,7 @@ import {
   planBenefitKey,
   planFinalPriceText,
   planFrequencyKey,
+  planItemProvision,
   planPriceText,
   planPromotionBenefitNote,
   planPromotionDurationNote,
@@ -1959,7 +1960,15 @@ export default function MembershipPage() {
           key: `${p.section}:${p.product_id}`,
           name: p.name,
           requirement: t(p.mandatory ? 'membership.plan_ov_mandatory' : 'membership.plan_ov_optional'),
-          detail: [`${p.quantity} ×`, freq(p.frequency)].filter(Boolean).join(' · '),
+          detail: `${p.quantity} ×`,
+          // #3504 — One-off / Recurring (with its interval) and the access it gives.
+          provision: (() => {
+            const pv = planItemProvision(p);
+            return {
+              kind: [t(pv.kindKey), pv.recurring ? freq(p.frequency) : null].filter(Boolean).join(' · '),
+              access: pv.accessNames ? t(pv.accessKey, { services: pv.accessNames }) : t(pv.accessKey),
+            };
+          })(),
           regularLabel: t('membership.plan_ov_regular'),
           regular: money(p.original_line_price_incl_tax) ?? '—',
           benefit: note ? t(note.key as any, note.values) : t('membership.plan_ov_no_benefit'),
