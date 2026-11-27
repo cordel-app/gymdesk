@@ -8,20 +8,9 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
-import { cardMutedTextStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
+import { cardMutedTextStyle, formErrorStyle } from '@/components/formChrome';
 import { PurchaseDetailBody } from './MemberPurchases';
 import type { MemberPurchase } from './purchasesTabView';
-
-export function SummaryPurchaseDetailToggle({ open, onToggle, purchaseId }: {
-  open: boolean; onToggle: () => void; purchaseId: number;
-}) {
-  const t = useTranslations('members');
-  return (
-    <button type="button" style={secondaryBtnSmall} aria-expanded={open} data-summary-purchase-toggle={purchaseId} onClick={onToggle}>
-      {t(open ? 'summary_purchase_hide_details' : 'summary_purchase_show_details')}
-    </button>
-  );
-}
 
 export function SummaryPurchaseDetail({ memberId, purchaseId, reloadKey }: {
   memberId: number | string; purchaseId: number; reloadKey?: unknown;

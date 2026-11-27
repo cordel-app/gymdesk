@@ -681,8 +681,6 @@
     "recurring_payment_pending": "Pago pendiente",
     "cart_expires_in": "Caduca en",
     "payment_expires_in": "El pago caduca en",
-    "summary_purchase_show_details": "Ver detalles",
-    "summary_purchase_hide_details": "Ocultar detalles",
     "recurring_expired": "Este borrador ha caducado.",
     "recurring_plan_label": "Plan de membresía",
     "recurring_from_plan": "del plan",
