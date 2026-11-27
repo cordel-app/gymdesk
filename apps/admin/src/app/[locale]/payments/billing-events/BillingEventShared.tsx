@@ -506,7 +506,7 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
         <PayNowModal
           billingEventId={payingNow.id!}
           memberName={payingNow.member_name ?? '—'}
-          amountLabel={`${fmtAmount(payingNow.amount)} ${payingNow.currency ?? 'EUR'}`}
+          amount={payingNow.amount ?? null}
           block={payingNow.pay_now_block ?? null}
           onClose={() => setPayingNow(null)}
           onDone={(outcome) => {

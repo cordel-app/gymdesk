@@ -6,21 +6,34 @@
 // reuses) a hosted checkout on this same event and shows its link; Cash and the
 // external card terminal record a staff-confirmed settlement. **Close** sends
 // nothing. A cart cancelled or expired shows the reason and no Pay at all.
+//
+// #3498 — drawn by the shared `PaymentModal` Save & Pay also uses: the amount
+// large at the top right (the event's own, from the read) and the event's
+// persisted lines listed automatically. Pay re-reads both first and refuses to
+// collect when either moved since it was shown.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { CrudModal } from '@/components/CrudModal';
-import { cardHintStyle, cardSectionLabelStyle, formControlStyle } from '@/components/formChrome';
+import { PaymentItemsTable, PaymentMethodSelect, PaymentModal } from '@/components/PaymentModal';
+import { cardHintStyle, formControlStyle } from '@/components/formChrome';
 import { chosenPaymentMethod, paymentActions } from '@/lib/paymentConfirmation';
+import { billingEventPaymentItems, paymentModalAmountLabel, paymentModalUnchanged, type PaymentModalItem } from '@/lib/paymentModal';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { payNowBlockKey, payNowRequest } from './paymentActions';
 
 interface Method { code: string; name: string; available: boolean; reason: string | null }
+interface PayNowRead {
+  amount: string;
+  payment_methods: Method[];
+  lines?: Array<{ id: number; item_name: string | null; quantity: number; amount: string | number }>;
+}
 
-export function PayNowModal({ billingEventId, memberName, amountLabel, block, onClose, onDone }: {
+export function PayNowModal({ billingEventId, memberName, amount, block, onClose, onDone }: {
   billingEventId: number;
   memberName: string;
-  amountLabel: string;
+  /** The list's amount, shown until the read answers with the authoritative one. */
+  amount: string | number | null;
   /** The list's `pay_now_block`; the GET re-checks it. */
   block: string | null;
   onClose: () => void;
@@ -29,7 +42,9 @@ export function PayNowModal({ billingEventId, memberName, amountLabel, block, on
 }) {
   const t = useTranslations('billing_events_page');
   const { apiFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const [methods, setMethods] = useState<Method[] | null>(null);
+  const [shown, setShown] = useState<{ amount: string | number | null; items: PaymentModalItem[] } | null>(null);
   const [blocked, setBlocked] = useState<string | null>(block);
   const [method, setMethod] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,8 +55,12 @@ export function PayNowModal({ billingEventId, memberName, amountLabel, block, on
   useEffect(() => {
     if (block) return;
     let cancelled = false;
-    apiFetch<{ payment_methods: Method[] }>(`/payments/billing-events/${billingEventId}/pay-now`)
-      .then((r) => { if (!cancelled) setMethods(r.payment_methods); })
+    apiFetch<PayNowRead>(`/payments/billing-events/${billingEventId}/pay-now`)
+      .then((r) => {
+        if (cancelled) return;
+        setMethods(r.payment_methods);
+        setShown({ amount: r.amount, items: billingEventPaymentItems(r.lines) });
+      })
       .catch((err: any) => {
         if (cancelled) return;
         const code = err?.body?.error;
@@ -62,6 +81,15 @@ export function PayNowModal({ billingEventId, memberName, amountLabel, block, on
     setBusy(true);
     setError(null);
     try {
+      // Revalidate before collecting: what is paid is what the modal showed.
+      const fresh = await apiFetch<PayNowRead>(`/payments/billing-events/${billingEventId}/pay-now`);
+      const freshShown = { amount: fresh.amount, items: billingEventPaymentItems(fresh.lines) };
+      if (!shown || !paymentModalUnchanged(shown, freshShown)) {
+        setShown(freshShown);
+        setMethods(fresh.payment_methods);
+        setError(t('pay_now_changed'));
+        return;
+      }
       const req = payNowRequest(billingEventId, chosen.code);
       const out = await apiFetch<{ outcome: 'paid' | 'checkout'; checkoutUrl?: string }>(req.path, {
         method: 'POST', body: JSON.stringify(req.body),
@@ -86,25 +114,29 @@ export function PayNowModal({ billingEventId, memberName, amountLabel, block, on
   }
 
   const done = blockKey != null || checkoutUrl != null;
+  const headline = shown?.amount ?? amount;
   return (
-    <CrudModal
-      open
+    <PaymentModal
       title={t('pay_now_title')}
+      amount={headline}
+      amountLabel={t('modal_amount')}
+      itemsLabel={t('pay_now_items')}
+      items={shown == null
+        ? <p style={cardHintStyle}>{t('pay_now_loading')}</p>
+        : <PaymentItemsTable items={shown.items} itemHeader={t('pay_now_col_item')} amountHeader={t('pay_now_col_amount')} emptyLabel={t('pay_now_items_empty')} />}
       error={error}
       saving={busy}
       hideSave={done}
       saveDisabled={!actions.pay}
-      saveLabel={t('pay_now_confirm', { amount: amountLabel })}
+      saveLabel={t('pay_now_confirm', { amount: paymentModalAmountLabel(headline, fmt) })}
       cancelLabel={t('modal_close')}
       onCancel={() => { if (actions.cancel) onClose(); }}
       onSave={pay}
     >
       <div data-pay-now>
         <dl style={{ margin: '0 0 14px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 14 }}>
-          <dt style={{ color: '#6b7280' }}>{t('modal_member')}</dt>
+          <dt style={{ color: 'var(--gd-text-secondary, #6b7280)' }}>{t('modal_member')}</dt>
           <dd style={{ margin: 0, fontWeight: 600 }}>{memberName}</dd>
-          <dt style={{ color: '#6b7280' }}>{t('modal_amount')}</dt>
-          <dd style={{ margin: 0, fontWeight: 600 }}>{amountLabel}</dd>
         </dl>
         {blockKey && <p role="alert" style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{t(blockKey)}</p>}
         {!blockKey && checkoutUrl && (
@@ -114,32 +146,19 @@ export function PayNowModal({ billingEventId, memberName, amountLabel, block, on
               onFocus={(e) => e.currentTarget.select()} />
           </>
         )}
-        {!blockKey && !checkoutUrl && (
-          <>
-            {methods == null && !error && <p style={cardHintStyle}>{t('pay_now_loading')}</p>}
-            {methods && (
-              <>
-                <div style={cardSectionLabelStyle}>{t('pay_now_method')}</div>
-                <select
-                  aria-label={t('pay_now_method')}
-                  value={method}
-                  onChange={(e) => setMethod(e.target.value)}
-                  disabled={busy}
-                  style={{ ...formControlStyle, maxWidth: 320 }}
-                >
-                  <option value="">{t('pay_now_method_choose')}</option>
-                  {methods.map((m) => (
-                    <option key={m.code} value={m.code} disabled={!m.available}>
-                      {m.name}{m.available ? '' : ` — ${t('pay_now_method_unavailable')}`}
-                    </option>
-                  ))}
-                </select>
-                <p style={{ ...cardHintStyle, marginTop: 8 }}>{t('pay_now_hint')}</p>
-              </>
-            )}
-          </>
+        {!blockKey && !checkoutUrl && methods && (
+          <PaymentMethodSelect
+            label={t('pay_now_method')}
+            chooseLabel={t('pay_now_method_choose')}
+            methods={methods}
+            value={method}
+            onChange={setMethod}
+            disabled={busy}
+            unavailableText={() => t('pay_now_method_unavailable')}
+            hint={<p style={{ ...cardHintStyle, marginTop: 8 }}>{t('pay_now_hint')}</p>}
+          />
         )}
       </div>
-    </CrudModal>
+    </PaymentModal>
   );
 }
