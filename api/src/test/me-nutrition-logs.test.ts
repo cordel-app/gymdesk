@@ -116,6 +116,37 @@ describe('GET /me/nutrition-progress', () => {
   });
 });
 
+describe('POST /me/nutrition-logs — Partially Done (#3489)', () => {
+  const twoDaysAgo = DateTime.fromISO(today).minus({ days: 2 }).toISODate() as string;
+  const post = (level?: string) => asMember(request.post('/me/nutrition-logs')).send({ meal_id: allDaysMealId, logged_date: twoDaysAgo, ...(level ? { level } : {}) });
+
+  it('stores a partial completion worth half the meal, and only ever raises it', async () => {
+    const partial = await post('partial').expect(201);
+    expect(partial.body.level).toBe('partial');
+    let progress = await asMember(request.get(`/me/nutrition-progress?date=${twoDaysAgo}`)).expect(200);
+    expect(progress.body.day.percent).toBe(50);
+    expect(progress.body.week_days.find((d: any) => d.date === twoDaysAgo).score).toBe(50);
+
+    // Repeating Partially Done changes nothing.
+    expect((await post('partial').expect(200)).body.level).toBe('partial');
+    // Fully Done raises it to the full credit...
+    const full = await post('done').expect(200);
+    expect(full.body).toMatchObject({ id: partial.body.id, level: 'done' });
+    progress = await asMember(request.get(`/me/nutrition-progress?date=${twoDaysAgo}`)).expect(200);
+    expect(progress.body.day.percent).toBe(100);
+    // ...and a later Partially Done never lowers it.
+    expect((await post('partial').expect(200)).body.level).toBe('done');
+    const { rows } = await db.query('SELECT COUNT(*) AS n FROM nutrition_logs WHERE meal_id = ? AND logged_date = ?', [allDaysMealId, twoDaysAgo]);
+    expect(Number(rows[0].n)).toBe(1);
+  });
+
+  it('defaults to done and refuses an unknown level', async () => {
+    const res = await asMember(request.post('/me/nutrition-logs')).send({ meal_id: allDaysMealId, logged_date: today }).expect(200);
+    expect(res.body.level).toBe('done');
+    await post('half').expect(400);
+  });
+});
+
 describe('POST /me/nutrition-logs — assignment date range (#1957)', () => {
   it('refuses a meal of an ongoing assignment on a date before its start_date', async () => {
     await db.query('UPDATE member_nutrition_plans SET start_date = ? WHERE member_id = ? AND status = \'active\'', [today, memberId]);

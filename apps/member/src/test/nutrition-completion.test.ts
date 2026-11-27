@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { completionActions } from '../lib/nutritionCompletion';
 
 describe('completionActions', () => {
-  it('offers Mark Done on an incomplete meal today or in the past, never Partially Done', () => {
+  it('offers Fully Done and Partially Done on an open meal today or in the past (#3489)', () => {
     for (const d of ['2026-10-14', '2026-10-01']) {
-      const a = completionActions('meal', undefined, d, '2026-10-14');
-      expect(a.showMarkDone).toBe(true);
-      expect(a.showPartiallyDone).toBe(false);
+      expect(completionActions('meal', undefined, d, '2026-10-14')).toMatchObject({ showMarkDone: true, showPartiallyDone: true });
     }
+    expect(completionActions('meal', 'partial', '2026-10-14', '2026-10-14')).toMatchObject({ showMarkDone: true, showPartiallyDone: false, partial: true });
+    expect(completionActions('meal', 'done', '2026-10-14', '2026-10-14')).toMatchObject({ showMarkDone: false, showPartiallyDone: false });
   });
   it('offers both actions on an open restriction, and only Mark Done once partial', () => {
     expect(completionActions('restriction', undefined, '2026-10-14', '2026-10-14')).toMatchObject({ showMarkDone: true, showPartiallyDone: true });

@@ -953,9 +953,12 @@
     "mark_done_aria": "Mark {name} as done",
     "no_meals_today": "No meals scheduled for this day.",
     "status_partial": "Partly completed",
-    "status_legend_partial": "Half red, half green — Score above 50% but below 100%.",
+    "status_legend_partial": "Green and red — The green part of the circle is the day's completion percentage; red is what remains.",
     "partially_done": "Partially Done",
-    "partially_done_state": "Partially done"
+    "partially_done_state": "Partially done",
+    "fully_done": "Fully Done",
+    "fully_done_aria": "Mark {name} as fully done",
+    "partially_done_aria": "Mark {name} as partially done"
   },
   "goals": {
     "title": "My Goals",
