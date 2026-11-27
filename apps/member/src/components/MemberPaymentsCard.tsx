@@ -331,7 +331,7 @@ const styles: Record<string, CSSProperties> = {
     ...rowDividerStyle,
     display: 'flex', flexDirection: 'column', gap: 10, padding: '12px',
   },
-  eventCard: { ...sectionCardStyle, padding: '12px 14px' },
+  eventCard: { padding: '0' },
   eventCardHighlighted: { outline: `2px solid ${memberTheme.primaryButton}`, outlineOffset: 2 },
   eventHead: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -383,7 +383,7 @@ const styles: Record<string, CSSProperties> = {
   // #2937 — a past event's row. One hairline-bordered container in the
   // separator colour, never `sectionCardStyle` (whose themed edges repeated a
   // coloured bar on every nested card).
-  pastEvent: { border: `1px solid ${memberTheme.separator}`, borderRadius: 10, background: memberTheme.surface, overflow: 'hidden' },
+  pastEvent: { overflow: 'hidden' },
   pastHeader: {
     display: 'flex', flexDirection: 'column', gap: 3, width: '100%', padding: '9px 12px',
     background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'inherit',
