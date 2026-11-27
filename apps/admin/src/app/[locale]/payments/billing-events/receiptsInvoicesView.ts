@@ -1,7 +1,7 @@
 // #2806 — the Receipts & Invoices section of a Billing Event. Pure: no React,
 // no `t()`. It decides only presentation: which rows the section lists (the
-// receipt first, then the invoices in issue order) and whether each of the
-// two ⋮ menu document actions is offered (#2648 stage 6). Whether a document may be issued is the
+// receipt first, then the invoices in issue order) and which ⋮ menu document
+// entries are offered (#2648 stage 6, #3548). Whether a document may be issued is the
 // API's (`can_issue_receipt`, the invoice route's own checks); a button that is
 // enabled here can still be refused there.
 
@@ -164,17 +164,14 @@ export function documentStatusKey(status: string): string | null {
   return status === 'issued' || status === 'draft' || status === 'replaced' ? `doc_status_${status}` : null;
 }
 
-/** Why a ⋮ menu document action is disabled, as a `billing_events_page` key. */
-export type GenerateBlock = 'gen_blocked_exists' | 'gen_blocked_not_paid' | 'gen_blocked_no_amount' | 'gen_blocked_read_only';
-
-/** The two document actions of a Billing Event's ⋮ menu (#2648 stage 6). */
-export type MenuDocumentAction = 'receipt' | 'full';
+/** Why the ⋮ menu's Generate Complete Invoice is disabled, as a `billing_events_page` key. */
+export type GenerateBlock = 'gen_blocked_exists' | 'gen_blocked_no_amount' | 'gen_blocked_read_only';
 
 export interface MenuDocumentInput {
   canWrite: boolean;
   /** The API's `can_issue_receipt`: the event records money actually received. */
   canIssueReceipt: boolean;
-  /** Already issued: the receipt action then re-opens it. */
+  /** The receipt number the system assigned (#3511), or null. */
   receiptNumber: string | null;
   amount: string | null;
   /** The API's `has_full_invoice`. */
@@ -182,21 +179,37 @@ export interface MenuDocumentInput {
 }
 
 /**
- * #2648 stage 6 — whether each ⋮ menu document action is offered. There is no
- * simplified-invoice action: the system issues it (on the billing date of a
- * scheduled obligation, or when any other event is paid). A receipt waits for
- * the payment; a complete invoice is offered paid or not, once per event.
+ * #3548 — the receipt entry of a Billing Event's ⋮ menu. A receipt is never
+ * issued by staff: the system assigns its number when the payment completes
+ * (#3511, with the nightly reconciliation as the retry). So the menu only
+ * *views* an issued receipt (`view`, a read, open to every role), says a
+ * receipt is pending when an eligible paid event has none yet (`pending`, a
+ * disabled entry), and offers nothing for an event that will never have one.
  */
-export function menuDocumentBlocks(input: MenuDocumentInput): Record<MenuDocumentAction, GenerateBlock | null> {
+export type ReceiptMenuState = 'view' | 'pending' | null;
+
+export function menuReceiptState(input: Pick<MenuDocumentInput, 'canIssueReceipt' | 'receiptNumber'>): ReceiptMenuState {
+  if (input.receiptNumber) return 'view';
+  return input.canIssueReceipt ? 'pending' : null;
+}
+
+/** #3548: the Receipts & Invoices section notes a receipt the system still owes (never an action). */
+export function receiptPending(input: { canIssueReceipt: boolean; receiptNumber: string | null }): boolean {
+  return menuReceiptState(input) === 'pending';
+}
+
+/**
+ * #2648 stage 6 — whether the ⋮ menu's Generate Complete Invoice is offered.
+ * There is no simplified-invoice action (the system issues it) and, since
+ * #3548, no receipt action either (`menuReceiptState()`). A complete invoice is
+ * offered paid or not, once per event.
+ */
+export function menuFullInvoiceBlock(input: MenuDocumentInput): GenerateBlock | null {
   const amount = parseFloat(input.amount ?? '');
-  let receipt: GenerateBlock | null = null;
-  if (!input.canIssueReceipt) receipt = 'gen_blocked_not_paid';
-  else if (!input.receiptNumber && !input.canWrite) receipt = 'gen_blocked_read_only';
-  let full: GenerateBlock | null = null;
-  if (input.hasFullInvoice) full = 'gen_blocked_exists';
-  else if (!(amount > 0)) full = 'gen_blocked_no_amount';
-  else if (!input.canWrite) full = 'gen_blocked_read_only';
-  return { receipt, full };
+  if (input.hasFullInvoice) return 'gen_blocked_exists';
+  if (!(amount > 0)) return 'gen_blocked_no_amount';
+  if (!input.canWrite) return 'gen_blocked_read_only';
+  return null;
 }
 
 export interface FullInvoiceForm {

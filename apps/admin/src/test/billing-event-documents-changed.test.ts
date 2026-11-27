@@ -27,13 +27,13 @@ describe('billing event documents-changed signal', () => {
     expect(a).not.toHaveBeenCalled();
   });
 
-  it('is announced by both ⋮ document actions after success only', async () => {
+  it('is announced by the ⋮ complete-invoice action after success only (#3548: receipts are the system\'s)', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(new URL('../app/[locale]/payments/billing-events/BillingEventShared.tsx', import.meta.url), 'utf8');
     const notify = src.split('notifyBillingEventDocumentsChanged(id)').length - 1;
-    expect(notify).toBe(2);
+    expect(notify).toBe(1);
     // each call sits inside a try block, before its catch
-    for (const fn of ['async function generateReceipt', 'async function submitCompleteInvoice']) {
+    for (const fn of ['async function submitCompleteInvoice']) {
       const body = src.slice(src.indexOf(fn), src.indexOf('} catch', src.indexOf(fn)));
       expect(body).toContain('notifyBillingEventDocumentsChanged(id)');
     }

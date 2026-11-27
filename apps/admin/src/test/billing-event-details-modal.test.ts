@@ -99,7 +99,10 @@ describe('Billing Event Details modal (#3300)', () => {
     expect(expandedSrc).not.toContain('ViewAuditLogButton');
     // Existing document actions are untouched.
     expect(menu).toContain("t('billing_events_page.generate_full_invoice')");
-    expect(menu).toContain("t('billing_events_page.generate_receipt')");
+    expect(menu).toContain("t('billing_events_page.view_receipt')");
+    // #3548: no manual receipt issuance — the menu only reads an issued receipt.
+    expect(menu).not.toContain('generate_receipt');
+    expect(sharedSrc).not.toMatch(/\/receipt`, [^)]*'POST'/);
   });
 
   it('has its labels in all three locales', () => {

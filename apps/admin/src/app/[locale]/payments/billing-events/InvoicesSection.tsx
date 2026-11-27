@@ -3,8 +3,9 @@
 // #2806 — the Receipts & Invoices section of a Billing Event: every document
 // issued for the event with its type, number, issue date, status and a View
 // action. Since #2648 stage 6 it generates nothing: the simplified invoice is
-// issued by the system, and Generate Receipt / Generate Complete Invoice are
-// the event's ⋮ menu items (`useBillingEventActions`).
+// issued by the system, the receipt too (#3548: a paid event whose receipt is
+// still owed shows a pending note, never an action), and Generate Complete
+// Invoice is the event's ⋮ menu item (`useBillingEventActions`).
 //
 // #2648 stage 5 — an invoice row also carries its VERI*FACTU records: each
 // record's submission status, attempts, last and next attempt and AEAT's last
@@ -65,11 +66,13 @@ const COLUMNS = [
 ] as const;
 
 export function ReceiptsInvoicesSection({
-  billingEventId, gymFmt, receipt, refundReceipts,
+  billingEventId, gymFmt, receipt, refundReceipts, receiptPending = false,
 }: {
   billingEventId: number;
   gymFmt: GymFormatSettings;
   receipt: ReceiptInfo;
+  /** #3548: a paid, eligible event whose receipt the system has not issued yet — a note, never an action. */
+  receiptPending?: boolean;
   /** #3298: the event's Refund Receipts (#2935), listed beside its other documents. */
   refundReceipts?: RefundReceiptInfo[];
 }) {
@@ -142,6 +145,11 @@ export function ReceiptsInvoicesSection({
   return (
     <CollapsibleSection title={t('billing_events_page.invoices_heading')} defaultOpen={false}
       open={open} onOpenChange={setOpen}>
+      {receiptPending && (
+        <p style={{ margin: '0 0 12px', color: '#6b7280', fontSize: 13 }} role="status">
+          {t('billing_events_page.receipt_pending_hint')}
+        </p>
+      )}
       {invoices == null ? (
         <p style={{ margin: '0 0 16px', color: '#6b7280', fontSize: 13 }}>{t('billing_events_page.loading')}</p>
       ) : documents.length === 0 ? (

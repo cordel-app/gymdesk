@@ -101,7 +101,6 @@ export function MemberPaymentsModal({
   const [cashSuccess, setCashSuccess] = useState(false);
 
   // Receipt generation state: eventId -> 'generating' | 'done' | 'error'
-  const [receiptState, setReceiptState] = useState<Record<number, 'generating' | 'done' | 'error'>>({});
 
   async function load() {
     setLoading(true);
@@ -170,19 +169,6 @@ export function MemberPaymentsModal({
       setCashError(err.message ?? t('member_payments.error_generic'));
     } finally {
       setCashSubmitting(false);
-    }
-  }
-
-  async function generateReceipt(eventId: number) {
-    setReceiptState((s) => ({ ...s, [eventId]: 'generating' }));
-    try {
-      const blob = await pdfFetch(`/payments/${eventId}/receipt`, 'POST');
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      setReceiptState((s) => ({ ...s, [eventId]: 'done' }));
-      load();
-    } catch {
-      setReceiptState((s) => ({ ...s, [eventId]: 'error' }));
     }
   }
 
@@ -322,7 +308,6 @@ export function MemberPaymentsModal({
               </thead>
               <tbody>
                 {billingEvents.map((ev) => {
-                  const rs = receiptState[ev.id];
                   return (
                     <tr key={ev.id} style={{ borderBottom: '1px solid #f4f4f4' }}>
                       <td style={td}>{ev.amount ? parseFloat(ev.amount).toFixed(2) : '—'} EUR</td>
@@ -337,17 +322,8 @@ export function MemberPaymentsModal({
                             {ev.receipt_number} ↓
                           </button>
                         ) : (
-                          <button
-                            onClick={() => generateReceipt(ev.id)}
-                            style={btnSmall(rs === 'error' ? '#c0392b' : '#555')}
-                            disabled={rs === 'generating'}
-                          >
-                            {rs === 'generating'
-                              ? t('member_payments.receipt_generating')
-                              : rs === 'error'
-                              ? t('member_payments.receipt_error')
-                              : t('member_payments.receipt_generate')}
-                          </button>
+                          // #3548: the system issues the receipt; nothing to do here.
+                          <span style={{ color: '#888' }}>—</span>
                         )}
                       </td>
                     </tr>

@@ -935,10 +935,10 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       can_pay_card: actions.payCard,
       can_waive: actions.waive,
       first_payment: actions.firstPayment,
-      // #787: the Details view offers the receipt action on any event that
-      // represents money received, not only a cash `payment_recorded`. Issuing
-      // is a write; downloading an already-issued receipt is not, so the flag
-      // says "eligible" and the button reads `receipt_number` to pick which.
+      // #787: an event that represents money received is eligible for a
+      // receipt, not only a cash `payment_recorded`. Since #3548 the Admin never
+      // issues one: the number is the system's (#3511), so the flag only tells
+      // an issued receipt (View) from one still owed (a pending note).
       can_issue_receipt:
         isReceiptableEvent(ev.event_type, ev.latest_tx_status) && parseFloat(ev.amount ?? '0') > 0,
     });
