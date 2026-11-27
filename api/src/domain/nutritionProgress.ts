@@ -21,7 +21,8 @@ export interface DateWindow { from?: string | null; to?: string | null }
 export interface PlanMeal extends DateWindow { id: number; weekday: number; plan?: number }
 /** An assignment in force; on a date with several, only the newest (`order` highest) is the one My Nutrition shows (#2338). */
 export interface PlanWindow extends DateWindow { id: number; order: number }
-export interface MealCompletion { mealId: number; date: string }
+/** #3489: `level` absent reads `done` (every completion written before Partially Done existed). */
+export interface MealCompletion { mealId: number; date: string; level?: RequirementLevel }
 export interface ProgressCounts { completed: number; total: number; percent: number }
 export type NutritionDayStatus = 'completed' | 'partial' | 'pending' | 'scheduled' | 'rest';
 export type RequirementKind = 'goal' | 'restriction';
@@ -42,7 +43,7 @@ export interface RequirementCompletion { kind: RequirementKind; itemId: number; 
 export const WEIGHT_RESTRICTIONS = 30;
 export const WEIGHT_GOALS = 30;
 export const WEIGHT_MEALS = 40;
-/** A restriction marked "partially done" earns half of its share. */
+/** A restriction or (since #3489) a meal marked "partially done" earns half of its share. */
 export const PARTIAL_CREDIT = 0.5;
 export interface NutritionProgress {
   day: ProgressCounts; week: ProgressCounts; month: ProgressCounts;
@@ -96,8 +97,13 @@ export function nutritionProgress(
     for (const p of plans) if (inWindow(p, date) && (!win || p.order > win.order)) win = p;
     return !win || win.id === plan;
   };
-  const done = new Set(completions.map((c) => `${c.mealId}|${String(c.date).slice(0, 10)}`));
-  const isDone = (m: PlanMeal, date: string) => done.has(`${m.id}|${date}`);
+  const mealLevel = new Map<string, RequirementLevel>();
+  for (const c of completions) mealLevel.set(`${c.mealId}|${String(c.date).slice(0, 10)}`, c.level ?? 'done');
+  /** #3489: a meal's credit on a date — 1 Fully Done, PARTIAL_CREDIT Partially Done, 0 otherwise. */
+  const mealCredit = (m: PlanMeal, date: string): number => {
+    const level = mealLevel.get(`${m.id}|${date}`);
+    return level === 'done' ? 1 : level === 'partial' ? PARTIAL_CREDIT : 0;
+  };
   const range = (from: string, to: string): ProgressCounts => {
     let c = 0, t = 0;
     for (let d = DateTime.fromISO(from, { zone: 'UTC' }); (d.toISODate() as string) <= to; d = d.plus({ days: 1 })) {
@@ -105,7 +111,7 @@ export function nutritionProgress(
       for (const m of meals) {
         if (!isMealScheduledOn(m, date) || !planWins(m.plan, date)) continue;
         t++;
-        if (isDone(m, date)) c++;
+        c += mealCredit(m, date);
       }
     }
     return counts(c, t);
@@ -119,7 +125,7 @@ export function nutritionProgress(
     let earned = 0, possible = 0;
     if (scheduled.length > 0) {
       possible += WEIGHT_MEALS;
-      earned += WEIGHT_MEALS * (scheduled.filter((m) => isDone(m, date)).length / scheduled.length);
+      earned += WEIGHT_MEALS * (scheduled.reduce((sum, m) => sum + mealCredit(m, date), 0) / scheduled.length);
     }
     const goalIds = requirements.goalIds.filter((id) => inWindow(requirements.windows?.[`goal|${id}`], date) && planWins(requirements.planOf?.[`goal|${id}`], date));
     const restrictionIds = requirements.restrictionIds.filter((id) => inWindow(requirements.windows?.[`restriction|${id}`], date) && planWins(requirements.planOf?.[`restriction|${id}`], date));

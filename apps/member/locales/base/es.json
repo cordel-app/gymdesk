@@ -954,9 +954,12 @@
     "mark_done_aria": "Marcar {name} como hecho",
     "no_meals_today": "No hay comidas programadas para este día.",
     "status_partial": "Parcialmente completado",
-    "status_legend_partial": "Mitad rojo, mitad verde — Puntuación superior al 50% e inferior al 100%.",
+    "status_legend_partial": "Verde y rojo — La parte verde del círculo es el porcentaje completado del día; el rojo es lo que falta.",
     "partially_done": "Parcialmente hecho",
-    "partially_done_state": "Parcialmente hecho"
+    "partially_done_state": "Parcialmente hecho",
+    "fully_done": "Totalmente hecho",
+    "fully_done_aria": "Marcar {name} como totalmente hecho",
+    "partially_done_aria": "Marcar {name} como parcialmente hecho"
   },
   "goals": {
     "title": "Mis Objetivos",

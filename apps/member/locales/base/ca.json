@@ -954,9 +954,12 @@
     "mark_done_aria": "Marca {name} com a fet",
     "no_meals_today": "No hi ha àpats programats per a aquest dia.",
     "status_partial": "Parcialment completat",
-    "status_legend_partial": "Meitat vermell, meitat verd — Puntuació superior al 50% i inferior al 100%.",
+    "status_legend_partial": "Verd i vermell — La part verda del cercle és el percentatge completat del dia; el vermell és el que falta.",
     "partially_done": "Parcialment fet",
-    "partially_done_state": "Parcialment fet"
+    "partially_done_state": "Parcialment fet",
+    "fully_done": "Totalment fet",
+    "fully_done_aria": "Marca {name} com a totalment fet",
+    "partially_done_aria": "Marca {name} com a parcialment fet"
   },
   "goals": {
     "title": "Els Meus Objectius",

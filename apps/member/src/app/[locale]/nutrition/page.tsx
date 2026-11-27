@@ -1,6 +1,7 @@
 'use client';
 
 import { completionActions } from '@/lib/nutritionCompletion';
+import { dayIndicatorBackground } from '@/lib/nutritionDayIndicator';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -47,7 +48,8 @@ const ALL_DAYS_WEEKDAY = 7;
 // #1580: the same shape /me/training-progress answers, plus the week's day statuses.
 interface NutritionProgress {
   day: ProgressCounts; week: ProgressCounts; month: ProgressCounts;
-  week_days: { date: string; status: NutritionDayStatus }[];
+  // #3489: `score` is the day's weighted completion (0..100), null when nothing applies or it is ahead.
+  week_days: { date: string; status: NutritionDayStatus; score?: number | null }[];
   today?: string;
 }
 const EMPTY_COUNTS: ProgressCounts = { completed: 0, total: 0, percent: 0 };
@@ -75,7 +77,8 @@ export default function NutritionPage() {
   const [progressDate, setProgressDate] = useState<string | null>(null);
   // The summary cards are always today's day, week and month, whichever week the calendar shows.
   const [summary, setSummary] = useState<NutritionProgress>(EMPTY_PROGRESS);
-  const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set());
+  // #3489: meal completions, keyed `mealId|date` -> level (Fully / Partially Done).
+  const [mealLevels, setMealLevels] = useState<Record<string, 'partial' | 'done'>>({});
   // #1603: goal / dietary-restriction completions, keyed `goal|id|date` / `restriction|id|date` -> level.
   const [reqLevels, setReqLevels] = useState<Record<string, 'partial' | 'done'>>({});
   const [pendingReq, setPendingReq] = useState<string | null>(null);
@@ -94,8 +97,8 @@ export default function NutritionPage() {
         const data = await apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan');
         if (!cancelled) setPlan(data.plan);
         if (data.plan) {
-          const logs = await apiFetch<{ meal_id: number; logged_date: string }[]>('/me/nutrition-logs');
-          if (!cancelled) setDoneKeys(new Set(logs.map((l) => `${l.meal_id}|${String(l.logged_date).slice(0, 10)}`)));
+          const logs = await apiFetch<{ meal_id: number; logged_date: string; level?: 'partial' | 'done' }[]>('/me/nutrition-logs');
+          if (!cancelled) setMealLevels(Object.fromEntries(logs.map((l) => [`${l.meal_id}|${String(l.logged_date).slice(0, 10)}`, l.level ?? 'done'])));
           const reqLogs = await apiFetch<{ goal_id: number | null; restriction_id: number | null; level: 'partial' | 'done'; logged_date: string }[]>('/me/nutrition-requirement-logs');
           if (!cancelled) {
             setReqLevels(Object.fromEntries(reqLogs.map((l) => [
@@ -142,7 +145,7 @@ export default function NutritionPage() {
   useEffect(() => {
     if (appLoading || !isLinked || !plan) return;
     loadProgress(selectedDate);
-  }, [appLoading, isLinked, plan, selectedDate, doneKeys]);
+  }, [appLoading, isLinked, plan, selectedDate, mealLevels]);
 
   function onTouchEnd(e: React.TouchEvent) {
     if (!touchStart) return;
@@ -153,12 +156,13 @@ export default function NutritionPage() {
   }
 
   // The server enforces the future-date rule; the button is only hidden for it.
-  async function markMealDone(meal: Meal) {
+  // #3489: it also only ever raises a meal's level (partial -> done), so the stored level is shown.
+  async function markMeal(meal: Meal, level: 'partial' | 'done') {
     setPendingMeal(meal.id);
     setMessage(null);
     try {
-      await apiFetch('/me/nutrition-logs', { method: 'POST', body: JSON.stringify({ meal_id: meal.id, logged_date: selectedDate }) });
-      setDoneKeys((prev) => new Set(prev).add(`${meal.id}|${selectedDate}`));
+      const row = await apiFetch<{ level?: 'partial' | 'done' }>('/me/nutrition-logs', { method: 'POST', body: JSON.stringify({ meal_id: meal.id, logged_date: selectedDate, level }) });
+      setMealLevels((prev) => ({ ...prev, [`${meal.id}|${selectedDate}`]: row?.level ?? level }));
     } catch (err: any) { setMessage(err.message ?? t('nutrition.error')); }
     finally { setPendingMeal(null); }
   }
@@ -188,7 +192,7 @@ export default function NutritionPage() {
     return (
       <div style={styles.reqActions}>
         {level === 'partial' && <span style={{ ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' }}>{t('nutrition.partially_done_state')}</span>}
-        <button type="button" onClick={() => markRequirement(kind, id, 'done')} disabled={busy} style={styles.cardBtn}>{t('nutrition.mark_done')}</button>
+        <button type="button" onClick={() => markRequirement(kind, id, 'done')} disabled={busy} style={styles.cardBtn}>{kind === 'restriction' ? t('nutrition.fully_done') : t('nutrition.mark_done')}</button>
         {actions.showPartiallyDone && (
           <button type="button" onClick={() => markRequirement(kind, id, 'partial')} disabled={busy} style={styles.cardBtn}>{t('nutrition.partially_done')}</button>
         )}
@@ -273,7 +277,8 @@ export default function NutritionPage() {
               {weekDates(selectedDate).map((date) => {
                 const selected = date === selectedDate;
                 const isTodayCell = date === today;
-                const status: NutritionDayStatus = progress.week_days.find((d) => d.date === date)?.status ?? 'rest';
+                const weekDay = progress.week_days.find((d) => d.date === date);
+                const status: NutritionDayStatus = weekDay?.status ?? 'rest';
                 const statusText = t(`nutrition.status_${status}` as any);
                 const longDate = dayText(locale, date, { weekday: 'long', day: 'numeric', month: 'long' });
                 return (
@@ -288,7 +293,7 @@ export default function NutritionPage() {
                     <button type="button" onClick={() => setLegendOpen(true)}
                             aria-label={`${longDate}: ${statusText}. ${t('nutrition.status_legend_open')}`}
                             title={statusText} style={styles.statusBtn}>
-                      <span aria-hidden="true" style={{ ...styles.statusDot, background: DAY_STATUS_COLOR[status] }} />
+                      <span aria-hidden="true" style={{ ...styles.statusDot, background: dayIndicatorBackground(status, weekDay?.score, INDICATOR_COLORS) }} />
                       <span style={styles.srOnly}>{statusText}</span>
                     </button>
                   </div>
@@ -354,7 +359,10 @@ export default function NutritionPage() {
             ) : (
               <div style={styles.mealList}>
                 {mealsForDate.map((meal) => {
-                  const done = doneKeys.has(`${meal.id}|${selectedDate}`);
+                  const level = mealLevels[`${meal.id}|${selectedDate}`];
+                  const done = level === 'done';
+                  const mealActions = completionActions('meal', level, selectedDate, today);
+                  const mealBusy = pendingMeal === meal.id;
                   const title = mealTitleOf(meal);
                   return (
                     // #3428: a meal is a section of its own — its header sits on
@@ -369,11 +377,19 @@ export default function NutritionPage() {
                           {title.suffix && <span style={styles.mealType}> · {title.suffix}</span>}
                         </h3>
                         {done && <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px' }}>✓ {t('nutrition.meal_done')}</span>}
-                        {/* #1580: completion belongs to the whole meal, so its action sits in the meal's own header. */}
-                        {completionActions('meal', done ? 'done' : undefined, selectedDate, today).showMarkDone && (
-                          <button type="button" onClick={() => markMealDone(meal)} disabled={pendingMeal === meal.id}
-                                  aria-label={t('nutrition.mark_done_aria', { name: title.title })} style={styles.reqBtn}>
-                            {t('nutrition.mark_done')}
+                        {mealActions.partial && <span style={{ ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' }}>{t('nutrition.partially_done_state')}</span>}
+                        {/* #1580: completion belongs to the whole meal, so its actions sit in the meal's own header;
+                            #3489: Fully Done (the full credit) beside Partially Done (half of it). */}
+                        {mealActions.showMarkDone && (
+                          <button type="button" onClick={() => markMeal(meal, 'done')} disabled={mealBusy}
+                                  aria-label={t('nutrition.fully_done_aria', { name: title.title })} style={styles.reqBtn}>
+                            {t('nutrition.fully_done')}
+                          </button>
+                        )}
+                        {mealActions.showPartiallyDone && (
+                          <button type="button" onClick={() => markMeal(meal, 'partial')} disabled={mealBusy}
+                                  aria-label={t('nutrition.partially_done_aria', { name: title.title })} style={styles.reqBtn}>
+                            {t('nutrition.partially_done')}
                           </button>
                         )}
                       </div>
@@ -397,6 +413,8 @@ export default function NutritionPage() {
     </main>
   );
 }
+
+const INDICATOR_COLORS = { success: memberTheme.statusSuccess, error: memberTheme.statusError, status: DAY_STATUS_COLOR };
 
 const styles: Record<string, React.CSSProperties> = {
   container:  { padding: 16, maxWidth: 720, margin: '0 auto' },

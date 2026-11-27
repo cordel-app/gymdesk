@@ -1774,7 +1774,7 @@ meRouter.get('/nutrition-progress', requireRole('member'), requireFeatureEnabled
     const logsTo = monthTo > weekTo ? monthTo : weekTo;
     const meals = await planMeals(gymId, memberId);
     const { rows: logs } = await db.query(
-      `SELECT meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM nutrition_logs
+      `SELECT meal_id, level, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM nutrition_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
       [gymId, memberId, logsFrom, logsTo],
     );
@@ -1785,7 +1785,7 @@ meRouter.get('/nutrition-progress', requireRole('member'), requireFeatureEnabled
       [gymId, memberId, logsFrom, logsTo],
     );
     res.json({
-      ...nutritionProgress(meals, (logs as any[]).map((l) => ({ mealId: l.meal_id, date: l.d })), today, selected, requirements,
+      ...nutritionProgress(meals, (logs as any[]).map((l) => ({ mealId: l.meal_id, date: l.d, level: l.level })), today, selected, requirements,
         (reqLogs as any[]).map((l) => ({
           kind: l.goal_id != null ? 'goal' as const : 'restriction' as const,
           itemId: l.goal_id ?? l.restriction_id, date: l.d, level: l.level,
@@ -1805,7 +1805,7 @@ meRouter.get('/nutrition-logs', requireRole('member'), requireFeatureEnabled('nu
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT id, meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS logged_date, created_at
+      `SELECT id, meal_id, level, DATE_FORMAT(logged_date, '%Y-%m-%d') AS logged_date, created_at
        FROM nutrition_logs WHERE gym_id = ? AND member_id = ? ORDER BY logged_date DESC, id DESC`,
       [gymId, memberId],
     );
@@ -1823,6 +1823,11 @@ meRouter.get('/nutrition-logs', requireRole('member'), requireFeatureEnabled('nu
  * UNIQUE (member, meal, date) key means a repeated or concurrent request returns
  * the existing record (200) instead of a second one. No delete route, as with
  * workout block logs.
+ *
+ * #3489: `level` is `done` (Fully Done, the default) or `partial` (Partially
+ * Done, half the meal's credit). As for a restriction (#1603), a completion is
+ * only ever raised (partial -> done): a repeated or lower request leaves the
+ * stored row as it is, so no sequence of taps earns more than a Fully Done.
  */
 meRouter.post('/nutrition-logs', requireRole('member'), requireFeatureEnabled('nutrition.nutrition_plans'), requireFeatureEnabled('member_web.my_nutrition'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
@@ -1833,6 +1838,8 @@ meRouter.post('/nutrition-logs', requireRole('member'), requireFeatureEnabled('n
       || !DateTime.fromISO(loggedDate).isValid) {
     return res.status(400).json({ error: 'meal_id and logged_date (YYYY-MM-DD) are required' });
   }
+  const level = req.body?.level ?? 'done';
+  if (level !== 'done' && level !== 'partial') return res.status(400).json({ error: 'level must be done or partial' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const meals = await planMeals(gymId, memberId);
@@ -1841,16 +1848,22 @@ meRouter.post('/nutrition-logs', requireRole('member'), requireFeatureEnabled('n
     if (!isMealScheduledOn(meal, loggedDate)) return res.status(400).json({ error: 'That meal is not scheduled on that date.' });
     const today = gymToday(new Date(), await gymTimeZone(gymId));
     if (!canCompleteOn(loggedDate, today)) return res.status(400).json({ error: 'A future meal cannot be marked as done.' });
-    const { rowCount } = await db.query(
-      'INSERT IGNORE INTO nutrition_logs (gym_id, member_id, meal_id, logged_date) VALUES (?, ?, ?, ?)',
+    // affectedRows is unreliable for ON DUPLICATE KEY, so "created" is read beforehand (as for requirement logs).
+    const existing = await db.query(
+      'SELECT id FROM nutrition_logs WHERE gym_id = ? AND member_id = ? AND meal_id = ? AND logged_date = ?',
       [gymId, memberId, mealId, loggedDate],
     );
+    await db.query(
+      `INSERT INTO nutrition_logs (gym_id, member_id, meal_id, logged_date, level) VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE level = IF(level = 'partial' AND VALUES(level) = 'done', 'done', level)`,
+      [gymId, memberId, mealId, loggedDate, level],
+    );
     const { rows } = await db.query(
-      `SELECT id, meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS logged_date, created_at
+      `SELECT id, meal_id, level, DATE_FORMAT(logged_date, '%Y-%m-%d') AS logged_date, created_at
        FROM nutrition_logs WHERE gym_id = ? AND member_id = ? AND meal_id = ? AND logged_date = ?`,
       [gymId, memberId, mealId, loggedDate],
     );
-    res.status(rowCount ? 201 : 200).json(rows[0]);
+    res.status(existing.rows.length === 0 ? 201 : 200).json(rows[0]);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);

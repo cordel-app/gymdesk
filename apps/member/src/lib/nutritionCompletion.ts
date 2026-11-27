@@ -10,7 +10,7 @@ export interface CompletionActions {
   showPartiallyDone: boolean;
 }
 
-// Only a dietary restriction has a Partially Done state (#1610 decision); a meal and a goal are
+// A dietary restriction (#1610) and, since #3489, a meal have a Partially Done state; a goal is
 // done or not. A future date offers nothing, and a completed item offers nothing.
 export function completionActions(kind: NutritionItemKind, level: CompletionLevel, selectedDate: string, today: string): CompletionActions {
   const done = level === 'done';
@@ -20,6 +20,6 @@ export function completionActions(kind: NutritionItemKind, level: CompletionLeve
     done,
     partial,
     showMarkDone: open,
-    showPartiallyDone: open && !partial && kind === 'restriction',
+    showPartiallyDone: open && !partial && kind !== 'goal',
   };
 }

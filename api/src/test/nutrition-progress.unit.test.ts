@@ -170,4 +170,15 @@ describe('nutritionProgress month (#3331)', () => {
     const p = nutritionProgress(daily, [{ mealId: 1, date: '2026-10-31' }, { mealId: 1, date: '2026-11-01' }], '2026-11-25', '2026-10-12');
     expect(p.month).toMatchObject({ completed: 1, total: 31 });
   });
+
+  it('#3489: a partially done meal earns half its credit in the day score, the week and the month', () => {
+    const meals = [{ id: 1, weekday: 7 }, { id: 2, weekday: 7 }];
+    const p = nutritionProgress(meals, [{ mealId: 1, date: TODAY, level: 'partial' }, { mealId: 2, date: TODAY }], TODAY, TODAY);
+    expect(p.day.percent).toBe(75);
+    expect(p.week_days.find((d) => d.date === TODAY)?.score).toBe(75);
+    expect(p.day.completed).toBe(1.5);
+    const none = nutritionProgress(meals, [{ mealId: 1, date: TODAY, level: 'partial' }], TODAY, TODAY);
+    expect(none.day.percent).toBe(25);
+  });
 });
+
