@@ -1156,5 +1156,12 @@
     "title": "My family",
     "loading": "Loading…",
     "empty": "No family members to show."
+  },
+  "payment_gateway": {
+    "title": "Register your payment method",
+    "notice": "Your default payment method is Automated, but you are not registered with our payment gateway yet.",
+    "body": "To enable automated payments, register with the official payment gateway. Until then, automated payments cannot be processed.",
+    "register_now": "Register now",
+    "close": "Close"
   }
 }
