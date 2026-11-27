@@ -70,6 +70,22 @@ describe('My Nutrition meal rows', () => {
     expect(PAGE).toMatch(/mealName:[^\n]*fontSize: 22, fontWeight: 700/);
   });
 
+  // #3546 — on a phone the completion actions wrap onto their own row under the
+  // name, right-aligned, instead of squeezing it; on a wide screen they stay inline.
+  it('group the completion actions so they wrap under the name, aligned right', () => {
+    const head = PAGE.indexOf('<div style={styles.mealHead}>');
+    const name = PAGE.indexOf('styles.mealName', head);
+    const group = PAGE.indexOf('<div style={styles.mealActions}>', head);
+    const fully = PAGE.indexOf("markMeal(meal, 'done')", head);
+    const partially = PAGE.indexOf("markMeal(meal, 'partial')", head);
+    expect(group).toBeGreaterThan(name);
+    expect(fully).toBeGreaterThan(group);
+    expect(partially).toBeGreaterThan(fully);
+    expect(PAGE).toMatch(/mealHead:[^\n]*flexWrap: 'wrap'/);
+    expect(PAGE).toMatch(/mealName:[^\n]*flex: '1 1 9rem', minWidth: 0/);
+    expect(PAGE).toMatch(/mealActions:[^\n]*flexWrap: 'wrap', justifyContent: 'flex-end'[^\n]*marginLeft: 'auto'/);
+  });
+
   it('reuse the app avatar circle and the one image preview dialog', () => {
     expect(COMPONENT).toContain('<MemberAvatar');
     expect(COMPONENT).toContain('<ImagePreviewButton');
