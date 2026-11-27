@@ -163,7 +163,8 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
     const scopeClause = type === 'base' ? 'npt.gym_id IS NULL' : 'npt.gym_id = ?';
     const scopeParams: any[] = type === 'base' ? [] : [gymId];
 
-    const where: string[] = [scopeClause, "npt.status != 'deleted'"];
+    // #3484: an unsaved Convert to Template copy is not a template yet; its editor reads it by id.
+    const where: string[] = [scopeClause, "npt.status != 'deleted'", 'npt.conversion_pending_at IS NULL'];
     const params: any[] = [...scopeParams];
     if (status) { where.push('npt.status = ?'); params.push(status); }
     if (name) { where.push('npt.name LIKE ?'); params.push(`%${name}%`); }

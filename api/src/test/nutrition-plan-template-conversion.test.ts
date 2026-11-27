@@ -83,6 +83,9 @@ describe('convert to template', () => {
       status: 'draft', num_days: 1, cloned_from_id: null,
     });
     expect(res.body.conversion_pending_at).not.toBeNull();
+    // Not a template yet: the gym's list does not show it.
+    const list = await api.get('/nutrition-plan-templates?limit=100');
+    expect(list.body.items.map((r: any) => r.id)).not.toContain(res.body.id);
 
     const tree = await api.get(`/nutrition-plan-templates/${res.body.id}/hierarchy`);
     expect(tree.status).toBe(200);
@@ -118,6 +121,8 @@ describe('convert to template', () => {
     const done = await api.post(`/nutrition-plan-templates/${tplId}/conversion/complete`);
     expect(done.status).toBe(200);
     expect(done.body).toMatchObject({ name: 'Cut Template', status: 'active', conversion_pending_at: null });
+    const listed = await api.get('/nutrition-plan-templates?limit=100');
+    expect(listed.body.items.map((r: any) => r.id)).toContain(tplId);
     // Once saved it is an ordinary template: Cancel's hard delete no longer applies.
     expect((await api.del(`/nutrition-plan-templates/${tplId}/conversion`)).status).toBe(409);
     expect((await api.post(`/nutrition-plan-templates/${tplId}/conversion/complete`)).status).toBe(409);
