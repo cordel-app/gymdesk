@@ -619,6 +619,7 @@
     "cart_error_family_owner_pays": "Your family owner pays for purchases.",
     "cart_plans": "{count, plural, one {# Plan} other {# Plans}}",
     "cart_products": "{count, plural, one {# Product} other {# Products}}",
+    "cart_changes": "{count, plural, one {# change} other {# changes}}",
     "cart_pay": "Pay",
     "cart_paying": "Starting payment…",
     "cart_cancel": "Cancel",

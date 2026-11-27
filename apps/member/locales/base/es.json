@@ -619,6 +619,7 @@
     "cart_error_family_owner_pays": "El titular de tu familia paga las compras.",
     "cart_plans": "{count, plural, one {# plan} other {# planes}}",
     "cart_products": "{count, plural, one {# producto} other {# productos}}",
+    "cart_changes": "{count, plural, one {# cambio} other {# cambios}}",
     "cart_pay": "Pagar",
     "cart_paying": "Iniciando el pago…",
     "cart_cancel": "Cancelar",

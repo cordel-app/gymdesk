@@ -241,7 +241,7 @@ describe('Cancel a Pending Payment Product Set (#2747)', () => {
     expect(res.body.status).toBe('pending_payment');
     expect(res.body.pending_amount).toBe(Number(event.amount));
     expect(res.body.pending_amount).toBeGreaterThan(0);
-    expect(res.body.cart).toEqual({ plans: 1, products: 0 });
+    expect(res.body.cart).toEqual({ plans: 1, products: 0, changes: 0 });
   });
 
   it('#3286: the member\'s pending plan and its payment request name the Pending Payment Product Set they belong to', async () => {

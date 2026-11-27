@@ -50,7 +50,7 @@ import { getRequestLocale } from '../infra/locale';
 import crypto from 'crypto';
 import { linkPurchaseToSet, loadSetPurchases, removeSetPurchase } from './set-purchases';
 import { cartPurchasesForCharge } from './cart-checkout';
-import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartCounts } from '../domain/shoppingCart';
+import { AWAITING_STAFF_SETUP, awaitsStaffSetup, cartChangeCount, cartCounts } from '../domain/shoppingCart';
 import { refuseIfStaffPreparesCart } from './staff-cart';
 import { chargeLineView, contractedItems, immediateCancellationItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { isDraftAddable, parsePurchaseQuantity, purchaseBlockResponse } from '../domain/memberProductPurchase';
@@ -803,14 +803,7 @@ async function reviewHandler(req: any, res: any, next: any) {
     // #3358 stage 2 — and the recurring Product lines this commit cancels today instead of at their
     // End Date: the Draft's own copy of a line whose end date it brought forward (its source's is
     // later). A plain removal is already a `removed` change of the diff.
-    const { rows: linesCancellingNow } = await db.query<any>(
-      `SELECT s.product_name AS product_name, s.source_id AS line_id
-         FROM product_set_periodical_snapshots lnk
-         JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
-         JOIN product_periodical_snapshots src ON src.id = s.copied_from_periodical_snapshot_id
-        WHERE lnk.product_set_id = ? AND s.gym_id = ?
-          AND s.ends_at IS NOT NULL AND src.ends_at IS NOT NULL AND s.ends_at < src.ends_at`,
-      [Number(set.id), gymId]);
+    const linesCancellingNow = await loadLinesCancellingNow(gymId, Number(set.id));
     // #3358 stage 3 — the centers a member loses once the whole Draft commits (warning only).
     const centerWarnings = cancellingNow.length > 0
       ? await centerAccessWarnings(gymId, Number(set.owner_member_id), Number(set.id)) : [];
@@ -846,6 +839,24 @@ async function reviewHandler(req: any, res: any, next: any) {
   } catch (err) { next(err); }
 }
 productSetsRouter.get('/:id/review', reviewHandler);
+
+/**
+ * #3358 stage 2 — the recurring Product lines a cart cancels today instead of at their End Date: the
+ * Draft's own copy of a line whose end date it brought forward (its source's is later). The review
+ * lists them and, since #3487, the member's cart read counts them as changes.
+ */
+async function loadLinesCancellingNow(gymId: string, productSetId: number): Promise<any[]> {
+  const { rows } = await db.query<any>(
+    `SELECT s.product_name AS product_name, s.source_id AS line_id
+       FROM product_set_periodical_snapshots lnk
+       JOIN product_periodical_snapshots s ON s.id = lnk.product_periodical_snapshot_id
+       JOIN product_periodical_snapshots src ON src.id = s.copied_from_periodical_snapshot_id
+      WHERE lnk.product_set_id = ? AND s.gym_id = ?
+        AND s.ends_at IS NOT NULL AND src.ends_at IS NOT NULL AND s.ends_at < src.ends_at`,
+    [productSetId, gymId]);
+  return rows;
+}
+
 
 // #3284 stage 2 — staff waive / revert one Initial Payment line of an In Cart set (Admin only: the
 // Members App's `/me/product-sets` router has no such route).
@@ -1030,7 +1041,18 @@ meProductSetsRouter.get('/:id', async (req, res, next) => {
       }))
       : [];
     res.json({
-      ...shape(owned.set), ...view, purchases, cart: cartCounts({ plans: view.plans, lines: view.lines, purchases }), pending_amount,
+      ...shape(owned.set), ...view, purchases,
+      // #3487: what the cart adds, and what else it changes (plans it cancels or reactivates, lines it
+      // removes or cancels today) — a cart holding only changes is still the member's active cart.
+      cart: {
+        ...cartCounts({ plans: view.plans, lines: view.lines, purchases }),
+        changes: isOwner ? cartChangeCount({
+          status: String(owned.set.status), plans: view.plans, removed_lines: view.removed_lines,
+          lines_cancelling_now: owned.set.status === 'in_cart' || owned.set.status === 'pending_payment'
+            ? (await loadLinesCancellingNow(gymId, Number(owned.set.id))).length : 0,
+        }) : 0,
+      },
+      pending_amount,
       cart_purchases,
       // #2895: a Draft staff are still setting up — readable, not payable or editable here.
       awaiting_staff_setup: awaitsStaffSetup(owned.set),

@@ -89,7 +89,8 @@ export type MemberCartView = MemberSetView & {
   purchases?: MemberSetPurchase[];
   /** #2949 stage 6: the standalone purchases this version's checkout pays or is paying (the owner's read only). */
   cart_purchases?: MemberStandalonePurchase[];
-  cart?: { plans: number; products: number };
+  /** #3487: `changes` — what the cart changes beside its additions (plans cancelled or reactivated, lines removed). */
+  cart?: { plans: number; products: number; changes?: number };
   /** #2746 stage 3: a version awaiting payment — its initial event's amount (the owner's read only). */
   pending_amount?: number | null;
   /** #2895 / #3305: a Draft in a cart staff are still preparing (the server's `awaitsStaffSetup()`). */
@@ -158,11 +159,23 @@ function setItems(view: MemberCartView | null): CartItem[] {
   return [...plans, ...lines, ...purchases];
 }
 
+/**
+ * #3487 — what the cart changes beside its additions, as the server counts it (`cartChangeCount()`):
+ * a plan it cancels or reactivates, a line it removes or cancels today. A cart holding only these —
+ * a staff removal in the Admin App — is still the member's active cart, never decided here.
+ */
+export function cartPendingChanges(view: MemberCartView | null): number {
+  if (!isCartVersion(view)) return 0;
+  const n = Number(view.cart?.changes ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** The set's phase alone, ignoring standalone purchases (the pre-stage-6 answer). */
 function setPhase(view: MemberCartView | null, viewerMemberId: number | null): Exclude<CartPhase, 'standalone'> | null {
   // #2949 stage 6: a checkout in flight may pay only standalone purchases it joined (stage 5).
   const joined = view?.status === 'pending_payment' ? view.cart_purchases?.length ?? 0 : 0;
-  if (setItems(view).length + joined === 0) return null;
+  // #3487: the cart's lifecycle decides, not how it was filled — changes count as much as additions.
+  if (setItems(view).length + joined + cartPendingChanges(view) === 0) return null;
   if (awaitsStaffSetup(view)) return 'awaiting_staff';
   if (view!.status === 'in_cart') return 'draft';
   if (viewerMemberId == null || view!.owner_member_id !== viewerMemberId) return null;

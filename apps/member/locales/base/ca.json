@@ -619,6 +619,7 @@
     "cart_error_family_owner_pays": "El titular de la teva família paga les compres.",
     "cart_plans": "{count, plural, one {# pla} other {# plans}}",
     "cart_products": "{count, plural, one {# producte} other {# productes}}",
+    "cart_changes": "{count, plural, one {# canvi} other {# canvis}}",
     "cart_pay": "Paga",
     "cart_paying": "Iniciant el pagament…",
     "cart_cancel": "Cancel·la",
