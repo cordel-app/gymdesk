@@ -916,7 +916,8 @@ function hasPromotionalEffect(promo: AppliedPromotionForBilling): boolean {
  */
 /** #2970 — the parts of a Membership Fee's first charge: a prorated stretch and N full prepaid periods. */
 export interface FeeChargeSplit {
-  prorated: { days: number; period_days: number; start: string; end: string; amount: number };
+  /** `null` only on the prepayment line `splitPrepaidMembershipFees()` makes of a split fee (#3440). */
+  prorated: { days: number; period_days: number; start: string; end: string; amount: number } | null;
   prepaid: { periods: number; start: string; end: string; amount: number } | null;
 }
 
