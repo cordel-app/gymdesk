@@ -37,6 +37,8 @@ import { MealThumbnail } from '@/components/MealThumbnail';
 import { NutritionItemThumbnail } from '@/components/NutritionItemThumbnail';
 import type { MealImageFields } from '@/lib/mealThumbnail';
 import { isCardNavigationClick } from '@/lib/homeNutritionSummary';
+import { mealsCompletionStatus, mealsStatusKey, mealsStatusTone, type MealLog } from '@/lib/homeMealsStatus';
+import { deviceToday } from '@/lib/trainingWeek';
 
 interface UpcomingBooking {
   id: number;
@@ -128,6 +130,8 @@ export default function HomePage() {
   const [cartPendingSetId, setCartPendingSetId] = useState<number | null | undefined>(undefined);
   const [serviceSessions, setServiceSessions] = useState(0);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null);
+  // #3545: the member's meal logs, read fresh on every visit so the Meals chip follows My Nutrition.
+  const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
   const [alert, setAlert] = useState<NotificationItem | null>(null);
   const [loading, setLoading] = useState(true);
   // The server renders this page with Clerk not loaded (`isLoaded` false), but by
@@ -147,12 +151,13 @@ export default function HomePage() {
       const to = new Date();
       to.setDate(to.getDate() + 7);
 
-      const [sessions, mship, notifs, nutrition, requests] = await Promise.all([
+      const [sessions, mship, notifs, nutrition, requests, logs] = await Promise.all([
         apiFetch<UpcomingBooking[]>(`/me/schedule?to=${to.toISOString()}`),
         apiFetch<{ membership: Membership | null; active_products_count?: number; professional_service_sessions?: number; pending_membership?: PendingMembership | null }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0, professional_service_sessions: 0, pending_membership: null })),
         apiFetch<{ items: NotificationItem[] }>('/me/notifications?limit=5').catch(() => ({ items: [] })),
         apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan').catch(() => ({ plan: null })),
         apiFetch<PendingRequest[]>('/me/payment-requests').catch(() => []),
+        apiFetch<MealLog[]>('/me/nutrition-logs').catch(() => [] as MealLog[]),
       ]);
 
       const booked = sessions.filter(
@@ -170,6 +175,7 @@ export default function HomePage() {
       setServiceSessions(mship.professional_service_sessions ?? 0);
       setAlert(notifs.items.find((n) => n.read_at === null) ?? null);
       setNutritionPlan(nutrition.plan);
+      setMealLogs(logs);
     } catch {
       // non-fatal: dashboard degrades gracefully
     } finally {
@@ -249,6 +255,7 @@ export default function HomePage() {
   const todayMeals = nutritionPlan?.days
     .filter((d) => d.weekday === todayWeekday() || d.weekday === ALL_DAYS_WEEKDAY)
     .flatMap((d) => d.meals) ?? [];
+  const mealsStatus = mealsCompletionStatus(todayMeals.map((m) => m.id), mealLogs, deviceToday());
 
   // Superadmin with no impersonation target has no member identity — /me/profile
   // is 403 and widgets would spin forever. Prompt them to impersonate instead (#415).
@@ -449,6 +456,10 @@ export default function HomePage() {
               }
             }}
           >
+            <div style={styles.mealsHeading}>
+              <p style={styles.mealName}>{t('home.meals')}</p>
+              <span style={statusPillStyle(mealsStatusTone(mealsStatus))}>{t(`nutrition.${mealsStatusKey(mealsStatus)}` as any)}</span>
+            </div>
             {todayMeals.map((meal) => {
               const title = mealTitle(meal.display_name, meal.meal_type, meal.meal_name ?? (meal.meal_type ? t(`nutrition.meal_type.${meal.meal_type}` as any) : null)).title;
               return (
@@ -622,6 +633,7 @@ const styles: Record<string, React.CSSProperties> = {
   alertTitle:      { margin: 0, fontSize: 15, fontWeight: 700, color: 'inherit' },
   alertDetail:     { margin: '4px 0 0', fontSize: 13, color: 'inherit' },
   alertLink:       { margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: 'inherit' },
+  mealsHeading:    { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   nutritionCard:   { ...sectionCardStyle, padding: '12px 16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'stretch', textAlign: 'left', gap: 10 },
   mealRow:         { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
   mealText:        { minWidth: 0, flex: '1 1 auto' },
