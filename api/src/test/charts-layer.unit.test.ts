@@ -331,6 +331,18 @@ describe('the Today marker and a dashed series (#3311)', () => {
     expect(o.series[0].markLine.label.formatter).toBe('Today');
   });
 
+  it('draws the Today marker as a dashed line in the theme text colour, never solid (#3500)', () => {
+    const o = lineChartOption({
+      series: [{ id: 'a', points: [{ x: 10, y: 5 }, { x: 20, y: 6 }] }],
+      xMarker: { value: 15, label: 'Today' },
+    }, THEME) as any;
+    expect(o.series[0].markLine.lineStyle.type).toBe('dashed');
+    expect(o.series[0].markLine.lineStyle.color).toBe(THEME.text);
+    // Silent, so it never takes a point's hover or click away.
+    expect(o.series[0].markLine.silent).toBe(true);
+    expect(o.series[0].markLine.label.show).toBe(true);
+  });
+
   it('draws a dashed series dashed and every other one solid', () => {
     const o = lineChartOption({
       series: [
