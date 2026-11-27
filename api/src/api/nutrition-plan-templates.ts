@@ -8,6 +8,7 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { copyTemplateContentTx } from './nutrition-plan-template-copy';
 import { nutritionPlanTemplateEditSessionRouter } from './nutrition-plan-template-edit-session';
+import { nutritionPlanTemplateConversionRouter } from './nutrition-plan-template-conversion';
 import { parseNumDaysInput, templateResyncChanges } from '../domain/nutritionPlanTemplateDays';
 import { memberNotesSetParams, parseMemberNotesInput } from '../domain/nutritionPlanMemberNotes';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
@@ -19,6 +20,8 @@ export const nutritionPlanTemplatesRouter = Router();
 
 // #3482: Edit mode's checkpoint (start, Cancel restores, Save drops).
 nutritionPlanTemplatesRouter.use(nutritionPlanTemplateEditSessionRouter);
+// #3484: a converted Assigned Nutrition Plan's working copy (Save completes, Cancel hard-deletes).
+nutritionPlanTemplatesRouter.use(nutritionPlanTemplateConversionRouter);
 
 const STATUSES = ['active', 'inactive', 'draft', 'deleted'];
 const SORT_COLUMNS: Record<string, string> = {
@@ -160,7 +163,8 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
     const scopeClause = type === 'base' ? 'npt.gym_id IS NULL' : 'npt.gym_id = ?';
     const scopeParams: any[] = type === 'base' ? [] : [gymId];
 
-    const where: string[] = [scopeClause, "npt.status != 'deleted'"];
+    // #3484: an unsaved Convert to Template copy is not a template yet; its editor reads it by id.
+    const where: string[] = [scopeClause, "npt.status != 'deleted'", 'npt.conversion_pending_at IS NULL'];
     const params: any[] = [...scopeParams];
     if (status) { where.push('npt.status = ?'); params.push(status); }
     if (name) { where.push('npt.name LIKE ?'); params.push(`%${name}%`); }
