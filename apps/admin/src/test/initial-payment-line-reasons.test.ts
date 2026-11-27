@@ -1,6 +1,6 @@
 // #3284 — the Initial Payment's Benefit / discount cell words every treatment the server classified.
 import { describe, expect, it } from 'vitest';
-import { discountEntries, initialPaymentLineAction } from '@/app/[locale]/members/productsWorkflowView';
+import { discountEntries, initialPaymentLineAction, waiveNeedsConfirmation } from '@/app/[locale]/members/productsWorkflowView';
 
 const base = {
   name: 'Kit', quantity: 1, unit_price: 100, line_total: 100, discount: 28,
@@ -44,8 +44,15 @@ describe('Initial Payment waive (#3284 stage 2)', () => {
   });
 
   it('renders no Waive and no refusal for a line the server says cannot be waived (#3440)', () => {
-    // A €0.00 line (`nothing_to_waive`) and a Pre-paid Membership Fee (`prepaid_fee`) alike.
+    // A €0.00 line (`nothing_to_waive`), the only line the server refuses since #3440 stage 2.
     expect(initialPaymentLineAction({ line_key: 'a', waived: false, waivable: false })).toBeNull();
     expect(initialPaymentLineAction({ line_key: 'a', waivable: false })).toBeNull();
+  });
+
+  it('confirms a Waive over 50 € first, never a smaller one or a Revert (#3440 stage 2)', () => {
+    expect(waiveNeedsConfirmation('waive', 50.01)).toBe(true);
+    expect(waiveNeedsConfirmation('waive', 50)).toBe(false);
+    expect(waiveNeedsConfirmation('waive', 12)).toBe(false);
+    expect(waiveNeedsConfirmation('revert', 80)).toBe(false);
   });
 });

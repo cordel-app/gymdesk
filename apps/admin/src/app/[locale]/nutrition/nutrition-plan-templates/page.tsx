@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { formActionsRowStyle } from '@/components/formChrome';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -53,6 +53,8 @@ export interface NutritionPlanTemplate {
   modified_by: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
+  /** #3484: set while the row is the working copy of a Convert to Template, until Save. */
+  conversion_pending_at?: string | null;
 }
 
 interface ListResponse {
@@ -131,6 +133,7 @@ export default function NutritionPlanTemplatesPage() {
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
@@ -263,6 +266,30 @@ export default function NutritionPlanTemplatesPage() {
     refetchBranch(tpl.id);
   }
 
+  // #3484: ?convert=<id> (from Assigned Nutrition Plans → Convert to Template) opens the
+  // working copy in Edit mode, once; it is shown first even when the page would sort it later.
+  const convertHandled = useRef(false);
+  useEffect(() => {
+    const convertId = Number(searchParams.get('convert'));
+    if (convertHandled.current || !convertId || loading || gymLoading || !canWrite) return;
+    convertHandled.current = true;
+    (async () => {
+      try {
+        const tpl = await apiFetch<NutritionPlanTemplate>(`/nutrition-plan-templates/${convertId}`);
+        if (!tpl.conversion_pending_at) return;
+        setRows((prev) => [tpl, ...prev.filter((r) => r.id !== tpl.id)]);
+        await startEdit(tpl);
+      } catch (err: any) {
+        toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+      } finally {
+        router.replace(`/${locale}/nutrition/nutrition-plan-templates`);
+      }
+    })();
+  }, [loading, gymLoading, canWrite]);
+
+  const isPendingConversion = (id: number | null) =>
+    id !== null && !!rows.find((r) => r.id === id)?.conversion_pending_at;
+
   function leaveEdit() {
     setEditingId(null);
     setEditForm(emptyForm);
@@ -273,6 +300,20 @@ export default function NutritionPlanTemplatesPage() {
   async function cancelEdit(): Promise<boolean> {
     const id = editingId;
     if (id === null) { leaveEdit(); return true; }
+    // #3484: cancelling a conversion discards the working copy; no template is left behind.
+    if (isPendingConversion(id)) {
+      try {
+        await apiFetch(`/nutrition-plan-templates/${id}/conversion`, { method: 'DELETE' });
+      } catch (err: any) {
+        toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+        return false;
+      }
+      leaveEdit();
+      setRows((prev) => prev.filter((r) => r.id !== id));
+      setExpanded((prev) => { const next = new Set(prev); next.delete(id); return next; });
+      load();
+      return true;
+    }
     try {
       await apiFetch(`/nutrition-plan-templates/${id}/edit-session/cancel`, { method: 'POST' });
     } catch (err: any) {
@@ -296,6 +337,11 @@ export default function NutritionPlanTemplatesPage() {
       await apiFetch(`/nutrition-plan-templates/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
       // The checkpoint is only Cancel's; a failure to drop it changes nothing.
       await apiFetch(`/nutrition-plan-templates/${editingId}/edit-session`, { method: 'DELETE' }).catch(() => {});
+      // #3484: Save is what creates a converted template.
+      if (isPendingConversion(editingId)) {
+        await apiFetch(`/nutrition-plan-templates/${editingId}/conversion/complete`, { method: 'POST' });
+        toast(t('nutrition_plan_templates.converted'), 'success');
+      }
       leaveEdit(); load();
     } catch (err: any) {
       setEditError(err.message ?? t('nutrition_plan_templates.error_generic'));

@@ -57,10 +57,10 @@ export interface BillingEventLineRow {
   line_key?: string | null;
   /** #3284 stage 2 — the staff Initial Payment waive applies to this line (carried, not persisted). */
   waived?: boolean;
-  /** #3284 stage 2 — the line may be waived (a positive amount, no Pre-paid Duration); carried. */
+  /** #3284 stage 2 — the line may be waived (a positive amount, #3440); carried. */
   waivable?: boolean;
   /** #3284 stage 3 — why Waive is disabled on this line (`waiveRefusal()`'s code), `null` when it is not; carried. */
-  waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | null;
+  waive_refusal?: 'nothing_to_waive' | null;
   /**
    * #3282 stage 3 — on a waived line, the cart's own final price the waiver set to zero (VAT
    * included), so the Initial Payment can still state its Price; carried, never persisted.

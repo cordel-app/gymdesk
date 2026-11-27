@@ -29,7 +29,7 @@ import { writeEventLines } from './billing-event-lines-writer';
 import { initialEventNameFor } from './billing-event-name';
 import { loadInitialChargeTaxRates } from './initial-charge-taxes';
 import { initialLineTaxRate, withLineTax } from '../domain/initialChargeTaxes';
-import { applyInitialPaymentWaivers, initialPaymentLineKeys, lineWaivable } from '../domain/initialPaymentWaiver';
+import { applyInitialPaymentWaivers, initialPaymentLineKeys, lineWaivable, splitPrepaidMembershipFees } from '../domain/initialPaymentWaiver';
 import { loadInitialPaymentWaivers } from './initial-payment-waivers';
 
 /**
@@ -251,7 +251,10 @@ export async function initialCharge(
     })),
     ...[...setPurchaseIds, ...cart.map((p) => p.id)].map((id) => ({ kind: 'product' as const, purchaseId: id })),
   ]);
-  const keyed = priced.map((l, i) => ({ ...l, line_key: keys[i] }));
+  // #3440 stage 2: a Membership Fee's prorated stretch and its prepayment are two lines, each with
+  // its own key, so either can be waived alone; `index` maps each priced line to its first part.
+  const split = splitPrepaidMembershipFees(priced.map((l, i) => ({ ...l, line_key: keys[i] })));
+  const keyed = split.lines;
   const lines = opts.applyWaivers === false
     ? keyed.map((l) => ({ ...l, waived: false, waivable: lineWaivable(l) }))
     : applyInitialPaymentWaivers(keyed, await loadInitialPaymentWaivers(exec, gymId, productSetId));
@@ -266,7 +269,7 @@ export async function initialCharge(
     coveredDates: [...new Set(first.map((e) => e.date))].sort(),
     linePeriods: engineLines.flatMap((l, index) => {
       const period = recurringLinePeriod(l, engineEvents[index]);
-      return period ? [{ index, ...period }] : [];
+      return period ? [{ index: split.index[index], ...period }] : [];
     }),
   };
 }

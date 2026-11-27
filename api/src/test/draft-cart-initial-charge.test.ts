@@ -88,8 +88,13 @@ describe('Draft initial payment and simulation (#2899)', () => {
     const review = await staff('get', `/product-sets/${set.id}/review`);
     expect(review.status).toBe(200);
     // The added plan's fee alone: the running €30 plan was paid by the version it supersedes.
-    expect(review.body.immediate_lines).toHaveLength(1);
-    expect(review.body.immediate_lines[0]).toMatchObject({ item_name: await planName(added), quantity: 2, prepaid_periods: 2 });
+    // #3440 stage 2: when the plan joins the running schedule mid-period, its prorated stretch and
+    // its prepayment are two lines of the same fee; otherwise the fee is one line.
+    const addedName = await planName(added);
+    expect(review.body.immediate_lines.length).toBeGreaterThanOrEqual(1);
+    expect(review.body.immediate_lines.length).toBeLessThanOrEqual(2);
+    expect(review.body.immediate_lines.every((l: any) => l.item_name === addedName && l.quantity === 2)).toBe(true);
+    expect(review.body.immediate_lines.filter((l: any) => l.prepaid_periods === 2)).toHaveLength(1);
     expect(review.body.immediate_lines.some((l: any) => l.item_name === runningName)).toBe(false);
     // Two members × two pre-paid €70 months, plus any stretch up to the running schedule's next date.
     expect(review.body.amount_due).toBeGreaterThanOrEqual(280);
