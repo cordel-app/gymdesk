@@ -35,7 +35,8 @@
     "no_nutrition_today": "No nutrition plan for today.",
     "booking_center": "Centre",
     "booking_trainer": "Trainer",
-    "booking_space": "Space"
+    "booking_space": "Space",
+    "meals": "Meals"
   },
   "nav": {
     "back_home": "Back to home",
@@ -981,7 +982,8 @@
     "partially_done_state": "Partially done",
     "fully_done": "Fully Done",
     "fully_done_aria": "Mark {name} as fully done",
-    "partially_done_aria": "Mark {name} as partially done"
+    "partially_done_aria": "Mark {name} as partially done",
+    "not_started": "Not Started"
   },
   "goals": {
     "title": "My Goals",

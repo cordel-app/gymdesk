@@ -35,7 +35,8 @@
     "no_nutrition_today": "Sin plan de nutrición para hoy.",
     "booking_center": "Centro",
     "booking_trainer": "Entrenador",
-    "booking_space": "Espacio"
+    "booking_space": "Espacio",
+    "meals": "Comidas"
   },
   "nav": {
     "back_home": "Volver al inicio",
@@ -981,7 +982,8 @@
     "partially_done_state": "Parcialmente hecho",
     "fully_done": "Totalmente hecho",
     "fully_done_aria": "Marcar {name} como totalmente hecho",
-    "partially_done_aria": "Marcar {name} como parcialmente hecho"
+    "partially_done_aria": "Marcar {name} como parcialmente hecho",
+    "not_started": "Sin empezar"
   },
   "goals": {
     "title": "Mis Objetivos",
