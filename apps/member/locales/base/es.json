@@ -736,7 +736,6 @@
   "purchases": {
     "date": "Comprado el {date}",
     "total": "Total",
-    "no_total": "Sin pago todavía",
     "items_heading": "Artículos",
     "no_items": "Sin artículos",
     "plan": "Plan",

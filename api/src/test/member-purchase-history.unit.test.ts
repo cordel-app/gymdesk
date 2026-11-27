@@ -13,6 +13,7 @@ import {
   purchaseHistoryPath,
   purchasePaymentStatusKey,
   purchaseStatusKey,
+  purchaseHeaderAmount,
   purchaseTotal,
 } from '../../../apps/member/src/lib/memberPurchaseHistory';
 import { membershipTabs } from '../../../apps/member/src/lib/membershipPages';
@@ -107,5 +108,21 @@ describe('locale keys', () => {
         expect(d.purchases.payment_status[s]).toBeTruthy();
       }
     }
+  });
+});
+
+describe('purchaseHeaderAmount (#3495)', () => {
+  it("states an in-cart purchase's Initial Payment, never its (absent) recorded total", () => {
+    expect(purchaseHeaderAmount({ ...purchase(1), status: 'in_cart', total_amount: null, initial_payment_amount: '20.50' })).toBe(20.5);
+    expect(purchaseHeaderAmount({ ...purchase(1), status: 'in_cart', total_amount: null, initial_payment_amount: '0.00' })).toBe(0);
+    // Not computable: no figure rather than a claimed 0.
+    expect(purchaseHeaderAmount({ ...purchase(1), status: 'in_cart', total_amount: null, initial_payment_amount: null })).toBeNull();
+  });
+
+  it('states the recorded amount otherwise, and 0 when nothing was recorded', () => {
+    expect(purchaseHeaderAmount(purchase(2))).toBe(20);
+    expect(purchaseHeaderAmount({ ...purchase(2), total_amount: null })).toBe(0);
+    expect(purchaseHeaderAmount({ ...purchase(2), status: 'pending_payment', total_amount: null })).toBe(0);
+    expect(purchaseHeaderAmount({ ...purchase(2), status: 'cancelled', total_amount: '5.00' })).toBe(5);
   });
 });

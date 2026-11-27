@@ -20,7 +20,7 @@ import {
   purchasePaymentStatusKey,
   purchaseStatusKey,
   purchaseStatusToneValue,
-  purchaseTotal,
+  purchaseHeaderAmount,
   type PurchaseHistoryItem,
   type PurchaseHistoryPage,
 } from '../lib/memberPurchaseHistory';
@@ -76,22 +76,22 @@ export function PurchaseHistoryList({ load, text, formatDate, formatMoney, onOpe
   const label = (key: string | null, fallback = '—') => (key ? text(key) : fallback);
 
   function renderPurchase(p: PurchaseHistoryItem) {
-    const amount = formatMoney(purchaseTotal(p));
+    // #3495: the header always states an amount — the cart's Initial Payment while In cart, else
+    // what was recorded (0 when nothing was) — never a sentence in its place.
+    const amount = formatMoney(purchaseHeaderAmount(p)) ?? '—';
     const status = label(purchaseStatusKey(p.status), p.status);
     return (
       <MemberCollapsibleCard
         key={p.id}
         title={p.name ?? formatDate(p.created_at)}
-        summary={amount ? `${status} · ${amount}` : status}
+        subtitle={text('purchases.date', { date: formatDate(p.created_at) })}
+        center={<span style={statusPillStyle(statusTone(purchaseStatusToneValue(p.status)))}>{status}</span>}
+        amount={amount}
         bodyStyle={styles.body}
       >
         <div style={styles.metaRow}>
-          <span style={styles.muted}>{text('purchases.date', { date: formatDate(p.created_at) })}</span>
-          <span style={statusPillStyle(statusTone(purchaseStatusToneValue(p.status)))}>{status}</span>
-        </div>
-        <div style={styles.metaRow}>
           <span style={styles.muted}>{text('purchases.total')}</span>
-          <strong>{amount ?? text('purchases.no_total')}</strong>
+          <strong>{amount}</strong>
         </div>
 
         <h4 style={styles.heading}>{text('purchases.items_heading')}</h4>

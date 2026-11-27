@@ -12,6 +12,7 @@ const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).sli
 const OWNER_CLERK = `mph-owner-${uniq()}`;
 const CHILD_CLERK = `mph-child-${uniq()}`;
 const OTHER_CLERK = `mph-other-${uniq()}`;
+const CART_CLERK = `mph-cart-${uniq()}`;
 
 let owner: number;
 let child: number;
@@ -74,6 +75,7 @@ beforeAll(async () => {
   await createTestMembership(gymId, 'member', OWNER_CLERK);
   await createTestMembership(gymId, 'member', CHILD_CLERK);
   await createTestMembership(gymId, 'member', OTHER_CLERK);
+  await createTestMembership(gymId, 'member', CART_CLERK);
   owner = await member('Owner', OWNER_CLERK);
   child = await member('Child', CHILD_CLERK);
   other = await member('Other', OTHER_CLERK);
@@ -163,5 +165,52 @@ describe('GET /me/purchase-history (#3443)', () => {
     const res = await asMember(OTHER_CLERK, '/me/purchase-history');
     expect(res.status).toBe(200);
     expect(res.body.items.map((p: any) => p.id)).toEqual([pOther]);
+  });
+});
+
+describe('GET /me/purchase-history — the header amount (#3495)', () => {
+  let cartOwner: number;
+  let cart: number;
+  let paidNoEvent: number;
+
+  beforeAll(async () => {
+    cartOwner = await member('Cart owner', CART_CLERK);
+    // A paid purchase with no Billing Event: no recorded amount.
+    paidNoEvent = await purchase(cartOwner, 'completed', '2026-11-02 10:00:00');
+    await oneoff(cartOwner, paidNoEvent, 'Gift');
+    // The open cart: two standalone In Cart lines (12.50 + 2 × 4.00), created now so it is live.
+    const { insertId } = await db.query(
+      `INSERT INTO purchases (gym_id, owner_member_id, status, name, created_by)
+       VALUES (?, ?, 'in_cart', 'Gym - Purchase - now', 'Cart owner')`, [gymId, cartOwner]);
+    cart = Number(insertId);
+    for (const [name, price, qty] of [['Bottle', 12.5, 1], ['Bar', 4, 2]] as const) {
+      const { insertId: productId } = await db.query(
+        `INSERT INTO products (gym_id, name, type, billing_frequency, status, enrollment_status, currency, amount, tax_behavior)
+         VALUES (?, ?, 'fee', 'once', 'active', 'public', 'EUR', ?, 'inclusive')`, [gymId, `${name} ${uniq()}`, price]);
+      await db.query(
+        `INSERT INTO product_oneoff_snapshots
+           (gym_id, member_id, product_id, source_id, status, product_name, product_type, billing_frequency, quantity,
+            unit_price, purchase_id)
+         VALUES (?, ?, ?, ?, 'in_cart', ?, 'fee', 'once', ?, ?, ?)`,
+        [gymId, cartOwner, productId, Math.floor(Math.random() * 1e9), name, qty, price, cart]);
+    }
+  });
+
+  it("reports an in-cart purchase's Initial Payment, the figure its checkout charges", async () => {
+    const res = await asMember(CART_CLERK, '/me/purchase-history');
+    expect(res.status).toBe(200);
+    const byId = new Map(res.body.items.map((p: any) => [p.id, p]));
+    const open = byId.get(cart) as any;
+    expect(open.status).toBe('in_cart');
+    expect(open.total_amount).toBeNull();
+    expect(open.initial_payment_amount).toBe('20.50');
+  });
+
+  it('reports no Initial Payment for a purchase outside the cart', async () => {
+    const res = await asMember(CART_CLERK, '/me/purchase-history');
+    const paid = res.body.items.find((p: any) => p.id === paidNoEvent);
+    expect(paid.status).toBe('completed');
+    expect(paid.total_amount).toBeNull();
+    expect(paid.initial_payment_amount).toBeNull();
   });
 });
