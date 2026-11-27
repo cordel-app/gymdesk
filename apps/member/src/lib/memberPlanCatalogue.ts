@@ -59,6 +59,10 @@ export interface MemberPlanOverviewData {
     original_price_incl_tax: number | null; final_price_incl_tax: number | null;
     original_line_price_incl_tax: number | null; final_line_price_incl_tax: number | null;
     declined: boolean; image_url: string | null; image_full_url: string | null;
+    /** #3504 — the server's answer (`isRecurringFrequency()`); absent on an older API = One-off. */
+    recurring?: boolean;
+    /** #3504 — the Professional Services the Product gives access to, already localized. */
+    access?: Array<{ id: number; name: string }>;
   }>;
   prepaid_end_date: string | null;
   initial_payment: number | null;
@@ -197,4 +201,26 @@ export function beneficiaryCountErrorKey(limit: MemberPlanOffer['member_limit'],
 /** The picker is offered only to a member with a family to choose from. */
 export function offersBeneficiaryChoice(family: readonly FamilyMemberOption[] | null | undefined): boolean {
   return (family?.length ?? 0) > 1;
+}
+
+/**
+ * #3504 — how one included item of a plan is provided, as locale **keys**: One-off
+ * or Recurring (the server's `recurring`, never re-derived) and the access it
+ * gives (its Products' Professional Services). The page resolves the keys and
+ * the frequency label; an item with no service says so rather than inventing one.
+ */
+export function planItemProvision(p: { recurring?: boolean; access?: Array<{ name: string }> }): {
+  kindKey: 'membership.plan_ov_recurring' | 'membership.plan_ov_one_off';
+  recurring: boolean;
+  accessKey: 'membership.plan_ov_access' | 'membership.plan_ov_access_none';
+  accessNames: string | null;
+} {
+  const recurring = p.recurring === true;
+  const names = (p.access ?? []).map((a) => a.name).filter((n) => n && n.trim() !== '');
+  return {
+    kindKey: recurring ? 'membership.plan_ov_recurring' : 'membership.plan_ov_one_off',
+    recurring,
+    accessKey: names.length > 0 ? 'membership.plan_ov_access' : 'membership.plan_ov_access_none',
+    accessNames: names.length > 0 ? names.join(', ') : null,
+  };
 }

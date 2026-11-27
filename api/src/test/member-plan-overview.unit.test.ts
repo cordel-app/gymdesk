@@ -57,3 +57,16 @@ describe('declined optional Products (#2495)', () => {
     expect(products[1]).toMatchObject({ image_url: 't2', image_full_url: 'f2' });
   });
 });
+
+describe('included item recurrence (#3504)', () => {
+  it('is recurring for a periodic Product or a renewing Session Benefit, One-off otherwise', () => {
+    const { products } = buildMemberPlanOverview({
+      oneoff_benefits: [{ product_id: 1, product_billing_frequency: 'once' }],
+      session_benefits: [{ product_id: 2, frequency: 'week' }, { product_id: 3, frequency: null }],
+      periodical_benefits: [{ product_id: 4, product_billing_frequency: 'month' }],
+      billing_event_simulation: { available: false, dates: [] },
+    }, '2026-11-07');
+    expect(products.map((p) => [p.product_id, p.recurring])).toEqual([[1, false], [2, true], [3, false], [4, true]]);
+    expect(products.every((p) => Array.isArray(p.access) && p.access.length === 0)).toBe(true);
+  });
+});
