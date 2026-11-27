@@ -39,7 +39,7 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
-import { usePurchaseCancel, useRecurringCancelEndsOn } from './usePurchaseCancel';
+import { usePendingPurchaseCancel, usePurchaseCancel, useRecurringCancelEndsOn } from './usePurchaseCancel';
 import { usePurchaseCancelImmediately } from './usePurchaseCancelImmediately';
 import { ItemOriginChip } from '@/components/ItemOriginChip';
 import { itemOriginKey } from '@/lib/itemOrigin';
@@ -52,6 +52,8 @@ import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { cardMutedTextStyle, formErrorStyle } from '@/components/formChrome';
 import { addPurchaseAction, PENDING_PURCHASE_BLOCKED_KEY } from './pendingPurchaseBlock';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useModuleAccess } from '@/lib/useModuleAccess';
+import { purchaseCancelErrorKey } from './purchasesTabView';
 import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
@@ -80,6 +82,7 @@ import {
   purchaseEndDisplay,
   purchasePriceCell,
   purchaseCancelMessageKey,
+  pendingPurchaseCancelId,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
@@ -141,6 +144,23 @@ export function MemberPurchasedProducts({
   const [cancellingNow, setCancellingNow] = useState<PurchasedProduct | null>(null);
   const [cancelNowBusy, setCancelNowBusy] = useState(false);
   const [cancelNowError, setCancelNowError] = useState<string | null>(null);
+  // #3537 — Cancel of a Product awaiting payment: its Purchase, cancelled as the Purchases tab does.
+  const tRoot = useTranslations();
+  const payments = useModuleAccess('PAYMENTS');
+  const pendingCancelRequest = usePendingPurchaseCancel(onChanged);
+  const [cancellingPending, setCancellingPending] = useState<PurchasedProduct | null>(null);
+  const [cancelPendingBusy, setCancelPendingBusy] = useState(false);
+  const [cancelPendingError, setCancelPendingError] = useState<string | null>(null);
+  async function cancelPendingPurchase(item: PurchasedProduct) {
+    const purchaseId = pendingPurchaseCancelId(item);
+    if (purchaseId == null || cancelPendingBusy) return;
+    setCancelPendingBusy(true);
+    setCancelPendingError(null);
+    const code = await pendingCancelRequest(purchaseId);
+    setCancelPendingBusy(false);
+    setCancellingPending(null);
+    if (code) setCancelPendingError(tRoot(purchaseCancelErrorKey(code) as any));
+  }
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [imageOf, setImageOf] = useState<PurchasedProduct | null>(null);
   // #2856 — a line of the open Draft Product Set: `⋮ → Edit` opens the add form on it, `⋮ → Delete` removes it.
@@ -402,6 +422,15 @@ export function MemberPurchasedProducts({
                 },
               ] : []),
               { kind: 'details' as const, label: t('action_details'), onClick: () => setDetail(item) },
+              ...(pendingPurchaseCancelId(item) != null
+                ? [{
+                    label: t('purchase_cancel_pending_action'),
+                    danger: true,
+                    onClick: () => { setCancelPendingError(null); setCancellingPending(item); },
+                    disabled: !payments.canWrite,
+                    title: payments.canWrite ? undefined : payments.readOnlyTitle,
+                  }]
+                : []),
               ...(item.status === 'active' && !item.cancelled_on
                 ? [{
                     label: t('purchase_cancel_action'),
@@ -500,6 +529,7 @@ export function MemberPurchasedProducts({
       {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
       {cancelError && <p role="alert" style={formErrorStyle}>{cancelError}</p>}
       {cancelNowError && <p role="alert" style={formErrorStyle}>{cancelNowError}</p>}
+      {cancelPendingError && <p role="alert" style={formErrorStyle}>{cancelPendingError}</p>}
       {deleteError && <p role="alert" style={formErrorStyle}>{deleteError}</p>}
       <FilterBar style={{ marginBottom: 8 }}>
         <FilterField label={t('purchase_col_status')} htmlFor="purchase-status-filter">
@@ -604,6 +634,17 @@ export function MemberPurchasedProducts({
         busy={cancelBusy}
         onConfirm={() => { if (cancelling) void cancelPurchase(cancelling); }}
         onCancel={() => { if (!cancelBusy) setCancelling(null); }}
+      />
+
+      <ConfirmDialog
+        open={cancellingPending !== null}
+        title={t('purchase_cancel_pending_title')}
+        message={cancellingPending ? t('purchase_cancel_pending_confirm', { product: cancellingPending.product_name }) : ''}
+        confirmLabel={t('purchase_cancel_confirm_button')}
+        cancelLabel={t('purchase_cancel_keep')}
+        busy={cancelPendingBusy}
+        onConfirm={() => { if (cancellingPending) void cancelPendingPurchase(cancellingPending); }}
+        onCancel={() => { if (!cancelPendingBusy) setCancellingPending(null); }}
       />
 
       <ConfirmDialog

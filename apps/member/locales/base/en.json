@@ -473,7 +473,6 @@
     "product_package_price": "Total price for the package",
     "product_tax_included": "Tax included",
     "product_buy": "Buy",
-    "own_products_heading": "My purchases",
     "product_end_date": "Valid until {date}",
     "product_pay": "Pay",
     "product_state_cancelled": "Cancelled",
@@ -694,7 +693,8 @@
     "past_plan_type_merchandise": "Merchandise",
     "past_plan_type_other": "Other",
     "plan_fee_per_member": "{count, plural, one {Per member} other {Per member × #}}",
-    "plan_fee_per_family": "Per family"
+    "plan_fee_per_family": "Per family",
+    "product_cancel": "Cancel"
   },
   "payments": {
     "title": "Payments",
@@ -792,7 +792,16 @@
       "canceled": "Cancelled",
       "refunded": "Refunded",
       "partially_refunded": "Partially refunded"
-    }
+    },
+    "pay": "Pay",
+    "cancel": "Cancel",
+    "cancel_title": "Cancel purchase?",
+    "cancel_body": "Cancel {name}? The purchase awaiting payment is cancelled with everything it holds. Nothing is charged or refunded.",
+    "cancel_keep": "Keep",
+    "cancel_confirm": "Cancel purchase",
+    "cancel_error": "The purchase could not be cancelled. Please try again.",
+    "cancel_error_settled": "This payment has already gone through, so the purchase can no longer be cancelled here. Please contact your gym.",
+    "cancel_error_unresolved": "A payment for this purchase is still being processed. Please try again in a few minutes."
   },
   "payment_banner": {
     "pending_heading": "You have a pending payment",

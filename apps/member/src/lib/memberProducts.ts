@@ -365,6 +365,26 @@ export interface OwnPurchase {
   /** #2609 — the family member it is for (the stored one, else the purchaser). */
   assigned_member_id?: number | null;
   assigned_member_name?: string | null;
+  /** #3537 — the purchase (cart, `purchases.id`) this line belongs to; null before carts existed. */
+  purchase_id?: number | null;
+}
+
+/**
+ * #3537 — the one-time purchases My Products lists beside its Product Set lines. A recurring line
+ * (`source: 'recurring'`, negative id) is already one of those lines, so it is left out rather than
+ * shown twice. There is no separate *My purchases* section any more.
+ */
+export function oneTimeOwnPurchases(list: readonly OwnPurchase[]): OwnPurchase[] {
+  return list.filter((p) => p.source !== 'recurring' && p.id > 0);
+}
+
+/**
+ * #3537 — the purchase whose Cancel a Product awaiting payment offers beside Pay, or `null`. It is
+ * the Purchases tab's own cancel (`purchasePendingCancelPath()`); the server decides again.
+ */
+export function ownPurchaseCancelId(p: OwnPurchase): number | null {
+  if (p.own_state !== 'pending_payment' || p.source === 'recurring' || p.id < 0) return null;
+  return p.purchase_id ?? null;
 }
 
 /** The status word `statusTone()` knows for a purchase state (#983: no tone of our own). */

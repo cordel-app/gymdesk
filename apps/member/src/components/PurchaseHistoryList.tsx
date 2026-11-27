@@ -9,7 +9,7 @@
 // collapsible card (`MemberCollapsibleCard`); opening one fetches nothing.
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { memberTheme, rowDividerStyle, secondaryButtonStyle, statusPillStyle, statusTone } from '../lib/memberChrome';
+import { memberTheme, primaryButtonStyle, rowDividerStyle, secondaryButtonStyle, statusPillStyle, statusTone } from '../lib/memberChrome';
 import { MemberCollapsibleCard } from './MemberCollapsibleCard';
 import {
   appendPurchasePage,
@@ -25,7 +25,7 @@ import {
   type PurchaseHistoryPage,
 } from '../lib/memberPurchaseHistory';
 
-export function PurchaseHistoryList({ load, text, formatDate, formatMoney, onOpenPayments }: {
+export function PurchaseHistoryList({ load, text, formatDate, formatMoney, onOpenPayments, onPay, onCancel, busyId = null, reloadKey = 0 }: {
   /** The page's authenticated GET (`apiFetch`). */
   load: <T>(path: string) => Promise<T>;
   /** Resolves a locale key (with interpolation values) — the page's `t`. */
@@ -34,6 +34,13 @@ export function PurchaseHistoryList({ load, text, formatDate, formatMoney, onOpe
   formatMoney: (amount: number | null) => string | null;
   /** Opens the Payments tab; absent when the member cannot see it. */
   onOpenPayments?: () => void;
+  /** #3537 — Pay and Cancel on a purchase awaiting payment, offered where the API says so. */
+  onPay?: (p: PurchaseHistoryItem) => void;
+  onCancel?: (p: PurchaseHistoryItem) => void;
+  /** The purchase an action is running on (its buttons are disabled). */
+  busyId?: number | null;
+  /** Changing it reads the list again from the first page (after a cancel). */
+  reloadKey?: number;
 }) {
   const [items, setItems] = useState<PurchaseHistoryItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -57,7 +64,7 @@ export function PurchaseHistoryList({ load, text, formatDate, formatMoney, onOpe
     }
   }, [load]);
 
-  useEffect(() => { void fetchPage(0); }, [fetchPage]);
+  useEffect(() => { void fetchPage(0); }, [fetchPage, reloadKey]);
 
   const more = loaded && hasMorePurchases(items.length, total);
   useEffect(() => {
@@ -93,6 +100,20 @@ export function PurchaseHistoryList({ load, text, formatDate, formatMoney, onOpe
           <span style={styles.muted}>{text('purchases.total')}</span>
           <strong>{amount}</strong>
         </div>
+        {((p.can_pay && onPay) || (p.can_cancel && onCancel)) && (
+          <div style={styles.actions} data-purchase-actions>
+            {p.can_pay && onPay && (
+              <button type="button" style={styles.payButton} disabled={busyId === p.id} onClick={() => onPay(p)}>
+                {text('purchases.pay')}
+              </button>
+            )}
+            {p.can_cancel && onCancel && (
+              <button type="button" style={styles.button} disabled={busyId === p.id} onClick={() => onCancel(p)}>
+                {text('purchases.cancel')}
+              </button>
+            )}
+          </div>
+        )}
 
         <h4 style={styles.heading}>{text('purchases.items_heading')}</h4>
         {p.plans.length === 0 && p.products.length === 0 && <p style={styles.muted}>{text('purchases.no_items')}</p>}
@@ -193,6 +214,8 @@ export function PurchaseHistoryList({ load, text, formatDate, formatMoney, onOpe
 
 const styles: Record<string, CSSProperties> = {
   wrap: { display: 'flex', flexDirection: 'column', gap: 10 },
+  actions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 },
+  payButton: { ...primaryButtonStyle, padding: '6px 14px', fontSize: 13 },
   body: { display: 'flex', flexDirection: 'column', gap: 6, padding: '0 16px 14px' },
   metaRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   heading: { margin: '10px 0 2px', fontSize: 13, fontWeight: 700, color: memberTheme.text },

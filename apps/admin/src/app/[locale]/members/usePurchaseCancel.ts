@@ -51,3 +51,22 @@ export function useRecurringCancelEndsOn(memberId: number, item: { id: number; s
   }, [memberId, item?.id, item?.source]);
   return endsOn;
 }
+
+/**
+ * #3537 — cancels the Purchase a Product awaiting payment belongs to, through the Purchases tab's
+ * own route (`POST /payments/purchases/:id/cancel`, #3355 stage 3): one cancellation, never a second.
+ * Answers the API's refusal code (`payment_settled`, `payment_unresolved`, …) or `null` on success.
+ */
+export function usePendingPurchaseCancel(onChanged: () => void) {
+  const { apiFetch } = useApiClient();
+  return async function cancelPendingPurchase(purchaseId: number): Promise<string | null> {
+    try {
+      await apiFetch(`/payments/purchases/${purchaseId}/cancel`, { method: 'POST' });
+      onChanged();
+      return null;
+    } catch (e: any) {
+      onChanged();
+      return e?.body?.error ?? e?.code ?? 'error';
+    }
+  };
+}
