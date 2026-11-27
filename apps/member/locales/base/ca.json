@@ -656,6 +656,8 @@
     "cart_pending_heading": "Tens un pagament pendent",
     "cart_pending_hint": "El pagament d'aquesta compra ja s'ha iniciat. Paga per completar-la o cancel·la la compra sencera.",
     "cart_staff_heading": "El teu gimnàs està preparant un canvi",
+    "cart_staff_editing": "El teu gimnàs està editant aquest carret ara mateix.",
+    "cart_staff_hint": "El teu gimnàs encara ho està preparant. Podràs pagar-ho aquí quan el teu gimnàs ho posi a la teva disposició.",
     "cart_staff_purchasing_disabled": "La compra a l'app no està disponible temporalment mentre el teu gimnàs prepara aquest canvi.",
     "preparing_initial_payment": "Pagament inicial",
     "preparing_open_details": "Mostra els detalls de {name}",

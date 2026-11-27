@@ -1,7 +1,9 @@
 'use client';
 
-// #3154 — the cart card of a Draft staff are still setting up (#2895). It says
-// one thing (in-app purchasing is paused while the gym prepares the change),
+// #3154 — the cart card of a Draft staff are still setting up (#2895). Above it
+// sits the editing notice (*Your gym is currently editing this cart*, restored
+// by the ticket's reopen after #3207 had dropped it); the card itself says
+// that in-app purchasing is paused while the gym prepares the change,
 // lists the plans by name and the Products as bullets, each with its
 // thumbnail and its applied Promotions, and shows the Product Set's Initial
 // Payment large at the top right. Since #2973 stage 7 it also carries the
@@ -22,9 +24,13 @@ import {
   cartSummaryStyle,
   cartTotalStyle,
   memberTheme,
+  noticeStyle,
   secondaryButtonStyle,
 } from '@/lib/memberChrome';
 
+// #3154 reopen — the editing notice sits above the card, where #2895 put it,
+// so the member reads *why* the cart has no Pay before reading the cart.
+const notice: CSSProperties = { ...noticeStyle('warning'), display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 };
 const top: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 };
 const info: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 200px', minWidth: 0 };
 const totalBox: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, marginLeft: 'auto' };
@@ -141,7 +147,12 @@ export function PreparingCartCard({ content, initialPayment, summary }: {
 }) {
   const t = useTranslations();
   return (
-    <div style={cartSummaryStyle} data-cart-card data-cart-awaiting-staff>
+    <div data-cart-awaiting-staff>
+    <div role="status" style={notice} data-cart-staff-editing>
+      <strong>{t('membership.cart_staff_editing')}</strong>
+      <span>{t('membership.cart_staff_hint')}</span>
+    </div>
+    <div style={cartSummaryStyle} data-cart-card>
       <div style={top}>
         <div style={info}>
           <h2 style={cartHeadingStyle}>{t('membership.cart_staff_heading')}</h2>
@@ -163,6 +174,7 @@ export function PreparingCartCard({ content, initialPayment, summary }: {
         </ul>
       )}
       {summary && <div style={{ marginTop: 10 }} data-preparing-summary>{summary}</div>}
+    </div>
     </div>
   );
 }

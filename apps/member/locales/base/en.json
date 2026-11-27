@@ -656,6 +656,8 @@
     "cart_pending_heading": "You have a pending payment",
     "cart_pending_hint": "Payment has started for this purchase. Pay to complete it, or cancel the whole purchase.",
     "cart_staff_heading": "Your gym is preparing a change",
+    "cart_staff_editing": "Your gym is currently editing this cart.",
+    "cart_staff_hint": "Your gym is still setting this up. You will be able to pay for it here once your gym makes it available.",
     "cart_staff_purchasing_disabled": "Purchasing in the app is temporarily unavailable while your gym prepares this change.",
     "preparing_initial_payment": "Initial payment",
     "preparing_open_details": "Show details of {name}",
