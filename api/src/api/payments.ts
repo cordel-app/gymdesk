@@ -1022,8 +1022,9 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
 /**
  * GET /payments/billing-events/:id/pay-now — #3442. What the Pay now modal
  * needs before a method is chosen: whether the event may be paid (a cancelled
- * or expired cart answers 409 with its reason) and the active catalogue methods
- * with whether Pay now can run each. Reads only.
+ * or expired cart answers 409 with its reason), the active catalogue methods
+ * with whether Pay now can run each, and (#3498) the event's persisted lines,
+ * which the shared payment modal lists. Reads only.
  */
 paymentsRouter.get('/billing-events/:id/pay-now', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
@@ -1039,10 +1040,17 @@ paymentsRouter.get('/billing-events/:id/pay-now', async (req, res, next) => {
                        m.code) AS name
          FROM base_payment_methods m
         WHERE m.status = 'active' AND m.deleted_at IS NULL ORDER BY m.id`, [getRequestLocale(req)]);
+    // #3498: the lines being collected, as persisted with the event (never re-priced).
+    const { rows: lines } = await db.query<any>(
+      `SELECT id, item_name, quantity, amount FROM billing_event_lines
+        WHERE billing_event_id = ? AND gym_id = ? ORDER BY id`, [billingEventId, gymId]);
     res.json({
       billing_event_id: billingEventId,
       amount: state.amount,
       status: state.status,
+      lines: lines.map((l: any) => ({
+        id: Number(l.id), item_name: l.item_name ?? null, quantity: Number(l.quantity ?? 1), amount: l.amount,
+      })),
       payment_methods: methods.map((m: any) => ({
         code: String(m.code), name: String(m.name), ...payNowMethodAvailability(String(m.code)),
       })),

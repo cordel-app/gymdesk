@@ -1366,7 +1366,12 @@
     "pay_now_link_ready": "El enlace de pago de este evento de facturación está listo. Quedará pagado cuando el miembro complete el pago.",
     "pay_now_link": "Enlace de pago",
     "pay_now_block_cart_cancelled": "Este pago no se puede completar: el carrito al que pertenece se canceló. Resuelve el carrito antes de cobrarlo.",
-    "pay_now_block_cart_expired": "Este pago no se puede completar: el carrito al que pertenece ha caducado. Resuelve el carrito antes de cobrarlo."
+    "pay_now_block_cart_expired": "Este pago no se puede completar: el carrito al que pertenece ha caducado. Resuelve el carrito antes de cobrarlo.",
+    "pay_now_items": "Conceptos a pagar",
+    "pay_now_col_item": "Concepto",
+    "pay_now_col_amount": "Importe (IVA incl.)",
+    "pay_now_items_empty": "Este evento de facturación no tiene conceptos.",
+    "pay_now_changed": "El importe o los conceptos de este evento de facturación han cambiado. Revisa las cifras actualizadas y pulsa Pagar de nuevo."
   },
   "payment_providers": {
     "title": "Proveedores de pago",
