@@ -239,6 +239,15 @@ describe('the line chart option', () => {
     expect(tooltipHtml({})).toBe('');
   });
 
+  it('#3499: a heading leads one layout — bold uppercase heading, date, lines, bold total', () => {
+    const formatter = option().tooltip.formatter;
+    expect(formatter({ data: { tipHeading: 'Paid', tipLabel: '01 Sep', detailLines: ['Fee × 1: €70', 'Locker × 1: €5'], valueLabel: '€75' } }))
+      .toBe('<strong style="text-transform:uppercase">Paid</strong><br/><span>01 Sep</span><br/>'
+        + '<span>Fee × 1: €70</span><br/><span>Locker × 1: €5</span><br/><strong>€75</strong>');
+    expect(tooltipHtml({ heading: 'No <charge>', label: '01 Oct', valueLabel: '€0' }))
+      .toBe('<strong style="text-transform:uppercase">No &lt;charge&gt;</strong><br/><span>01 Oct</span><br/><strong>€0</strong>');
+  });
+
   it('formats an axis tick with the caller’s own formatter, never its own', () => {
     const labelled = lineChartOption(
       { series: [], axisLabelFormatter: (value) => `day-${value}` },

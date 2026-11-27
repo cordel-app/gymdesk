@@ -19,6 +19,12 @@ export interface ChartPoint {
    * first consumer, but the layer knows nothing about goals.
    */
   group?: number;
+  /**
+   * #3499 — a bold, uppercase heading above `label` (a payment's status, say). With
+   * one, the tooltip is heading, label, `detailLines`, then `valueLabel` in bold:
+   * the one layout every point of a chart that sets it shares.
+   */
+  heading?: string;
   /** The tooltip's first line — a formatted date, say. */
   label?: string;
   /** The tooltip's second line — the value with its unit, say. */

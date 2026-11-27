@@ -851,7 +851,7 @@
     "timeline_kind_forecast": "Previsió",
     "timeline_kind_no_charge": "Sense càrrec",
     "timeline_status_paid": "Pagat",
-    "timeline_status_pending": "Pendent",
+    "timeline_status_pending": "Pagament pendent",
     "timeline_status_failed": "Fallit",
     "timeline_status_scheduled": "Programat",
     "timeline_status_forecasted": "Previst",

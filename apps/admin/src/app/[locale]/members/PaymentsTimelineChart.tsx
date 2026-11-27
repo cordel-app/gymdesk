@@ -41,7 +41,7 @@ export function PaymentsTimelineChart({ memberId, reloadKey }: { memberId: numbe
   const date = (d: string) => formatGymDateOnly(d, gym);
 
   const series = useMemo(
-    () => (timeline ? timelineSeries(timeline, { kind: kindLabel, date, money, status: statusLabel }) : []),
+    () => (timeline ? timelineSeries(timeline, { date, money, status: statusLabel }) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [timeline, gym],
   );

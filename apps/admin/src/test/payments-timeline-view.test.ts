@@ -17,7 +17,6 @@ const timeline: PaymentsTimeline = {
 };
 
 const labels = {
-  kind: (k: string) => k.toUpperCase(),
   date: (d: string) => `D${d}`,
   money: (n: number) => `€${n}`,
   status: (p: { status: string | null }) => p.status ?? 'forecast',
@@ -33,12 +32,18 @@ describe('Payments History and Forecast chart input', () => {
     expect(series[0].points.map((p) => p.x)).toEqual(timeline.points.map((p) => dateToX(p.date)));
   });
 
-  it('#3311 stage 4: tells the kinds apart by marker and by the tooltip, not by series', () => {
+  it('#3311 stage 4: tells the kinds apart by marker, not by series', () => {
     const [line] = timelineSeries(timeline, labels);
     expect(line.points.map((p) => p.symbol)).toEqual(['circle', 'circle', 'diamond', 'emptyCircle', 'emptyDiamond']);
-    expect(line.points.map((p) => p.detailLines?.[0])).toEqual([
-      'PAYMENT · paid', 'PAYMENT · paid', 'SCHEDULED · scheduled', 'FORECAST · forecasted', 'NO_CHARGE · no_charge',
+  });
+
+  it('#3499: every tooltip is headed by its status alone, and carries only its lines between date and total', () => {
+    const [line] = timelineSeries(timeline, labels);
+    expect(line.points.map((p) => p.heading)).toEqual(['paid', 'paid', 'scheduled', 'forecasted', 'no_charge']);
+    expect(line.points.map((p) => p.detailLines)).toEqual([
+      ['Fee × 1: €70'], [], [], ['Fee × 1: €70'], ['Fee × 1: €0'],
     ]);
+    expect(line.points[4]).toMatchObject({ label: 'D2026-09-01', valueLabel: '€0' });
   });
 
   it('sorts points the API handed out of date order', () => {
@@ -51,7 +56,7 @@ describe('Payments History and Forecast chart input', () => {
     const [line] = timelineSeries(timeline, labels);
     expect(line.points[0]).toMatchObject({
       x: dateToX('2026-03-04'), y: 70, label: 'D2026-03-04', valueLabel: '€70',
-      detailLines: ['PAYMENT · paid', 'Fee × 1: €70'],
+      heading: 'paid', detailLines: ['Fee × 1: €70'],
     });
   });
 

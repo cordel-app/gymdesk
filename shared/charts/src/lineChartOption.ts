@@ -71,8 +71,18 @@ export interface LineChartInput {
 }
 
 /** What the tooltip renders for one hovered point. Exported so it is assertable. */
-export function tooltipHtml(point: { label?: string; valueLabel?: string; detailLines?: string[] }): string {
+export function tooltipHtml(point: { heading?: string; label?: string; valueLabel?: string; detailLines?: string[] }): string {
   const details = (point.detailLines ?? []).filter((line) => !!line);
+  if (point.heading) {
+    // #3499 — heading (bold, uppercase), the date, the lines, the total (bold).
+    const parts = [
+      `<strong style="text-transform:uppercase">${escapeHtml(point.heading)}</strong>`,
+      ...(point.label ? [`<span>${escapeHtml(point.label)}</span>`] : []),
+      ...details.map((line) => `<span>${escapeHtml(line)}</span>`),
+      ...(point.valueLabel ? [`<strong>${escapeHtml(point.valueLabel)}</strong>`] : []),
+    ];
+    return parts.join('<br/>');
+  }
   if (details.length > 0) {
     const head = point.label ? `<strong>${escapeHtml(point.label)}</strong><br/>` : '';
     const total = point.valueLabel ? `<br/><strong>${escapeHtml(point.valueLabel)}</strong>` : '';
@@ -177,6 +187,7 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       data: entry.points.map((point, pointIndex) => ({
         value: [point.x, point.y],
         tipLabel: point.label,
+        tipHeading: point.heading,
         valueLabel: point.valueLabel,
         detailLines: point.detailLines,
         // A bridge carries no symbol, so it cannot be hovered and cannot
@@ -289,8 +300,10 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
       borderColor: theme.surfaceBorder,
       textStyle: { color: theme.text, fontSize: 12 },
       formatter: (params: unknown) => {
-        const data = (params as { data?: { tipLabel?: string; valueLabel?: string; detailLines?: string[] } }).data;
-        return data ? tooltipHtml({ label: data.tipLabel, valueLabel: data.valueLabel, detailLines: data.detailLines }) : '';
+        const data = (params as { data?: { tipHeading?: string; tipLabel?: string; valueLabel?: string; detailLines?: string[] } }).data;
+        return data
+          ? tooltipHtml({ heading: data.tipHeading, label: data.tipLabel, valueLabel: data.valueLabel, detailLines: data.detailLines })
+          : '';
       },
     },
     xAxis: {
