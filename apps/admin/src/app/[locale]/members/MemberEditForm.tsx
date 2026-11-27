@@ -25,6 +25,7 @@ import {
 } from './memberProfile';
 import { MemberProfileLayout, NewMemberValue, newMemberChipStyle, profileInlineFieldLabelStyle } from './MemberProfileLayout';
 import { MemberImageField } from '@/components/MemberImageField';
+import { defaultPaymentMethodLabel, type DefaultPaymentMethodOption } from './defaultPaymentMethod';
 
 // #797: the field set itself lives in memberProfile.ts, shared with the
 // read-only PROFILE section of the expanded row so the two cannot drift apart.
@@ -43,6 +44,7 @@ export function MemberEditForm({
   image,
   showCenters, centerOptions, defaultCenterId,
   onChange, onDefaultCenterChange,
+  paymentMethod = null,
   onSave, onCancel,
 }: {
   form: MemberEditFormValues;
@@ -80,6 +82,16 @@ export function MemberEditForm({
   defaultCenterId: number | null;
   onChange: (form: MemberEditFormValues) => void;
   onDefaultCenterChange: (id: number | null) => void;
+  /**
+   * #3497 — the Default Payment Method selector, below Default Center. The
+   * options are the server's (Automated always among them, whether or not the
+   * member has a stored token); Save asks the page to confirm a change.
+   */
+  paymentMethod?: {
+    value: string;
+    options: DefaultPaymentMethodOption[];
+    onChange: (code: string) => void;
+  } | null;
   onSave: () => void;
   onCancel: () => void;
 }) {
@@ -191,6 +203,27 @@ export function MemberEditForm({
                       <option value="">{t('default_center_none')}</option>
                       {centerOptions.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  ),
+                }
+              : null
+          }
+          paymentMethod={
+            paymentMethod
+              ? {
+                  label: t('default_payment_method'),
+                  content: (
+                    <select
+                      style={formControlStyle}
+                      value={paymentMethod.value}
+                      onChange={(e) => paymentMethod.onChange(e.target.value)}
+                      aria-label={t('default_payment_method')}
+                    >
+                      {paymentMethod.options.map((o) => (
+                        <option key={o.code} value={o.code}>
+                          {defaultPaymentMethodLabel(o.code, paymentMethod.options, t('default_payment_method_automated'))}
+                        </option>
                       ))}
                     </select>
                   ),

@@ -25,6 +25,10 @@ import { MemberDetailModal } from './MemberDetailModal';
 import { MemberCommunicationModal } from './MemberCommunicationModal';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { MemberEditForm } from './MemberEditForm';
+import { DefaultPaymentMethodChange } from './MemberDefaultPaymentMethod';
+import {
+  defaultPaymentMethodLabel, needsDefaultPaymentMethodConfirmation, optionFor, type DefaultPaymentMethodView,
+} from './defaultPaymentMethod';
 import { MemberImageField } from '@/components/MemberImageField';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import {
@@ -231,6 +235,10 @@ export default function MembersPage() {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [editCenterOptions, setEditCenterOptions] = useState<CenterOption[]>([]);
   const [editDefaultCenterId, setEditDefaultCenterId] = useState<number | null>(null);
+  // #3497: the persisted Default Payment Method (as the server reports it) and the selection.
+  const [editPaymentMethodView, setEditPaymentMethodView] = useState<DefaultPaymentMethodView | null>(null);
+  const [editPaymentMethod, setEditPaymentMethod] = useState<string | null>(null);
+  const [paymentMethodConfirmOpen, setPaymentMethodConfirmOpen] = useState(false);
   // #797: a saved edit may have changed the Member's centers, and the read-only
   // PROFILE section below reads those from the API rather than from this row.
   // Bumping this is how that section re-reads them without remounting (and
@@ -499,6 +507,11 @@ export default function MembersPage() {
     // #961: the inline form is the Profile's, so `⋮ → Edit` opens that tab —
     // it must never open behind a tab the Member happens to be left on.
     selectTab(m.id, 'profile');
+    setEditPaymentMethodView(null);
+    setEditPaymentMethod(null);
+    apiFetch<DefaultPaymentMethodView>(`/members/${m.id}/default-payment-method`)
+      .then((v) => { setEditPaymentMethodView(v); setEditPaymentMethod(v.default_payment_method); })
+      .catch(() => {});
     if (showCenters) {
       try {
         const [rows, options] = await Promise.all([
@@ -526,9 +539,17 @@ export default function MembersPage() {
     setImageRetry(null);
     setEditCenterOptions([]);
     setEditDefaultCenterId(null);
+    setEditPaymentMethodView(null);
+    setEditPaymentMethod(null);
+    setPaymentMethodConfirmOpen(false);
   }
 
-  async function saveEdit() {
+  /**
+   * #3497: `confirmed` is true only from the confirmation's Accept. A changed
+   * Default Payment Method opens the confirmation first and saves nothing;
+   * Cancel there leaves the editor and every other unsaved edit as they were.
+   */
+  async function saveEdit(confirmed = false) {
     if (!editForm.name.trim()) { setEditError(t('members.error_required')); return; }
     if (showCenters) {
       if (editDefaultCenterId == null) { setEditError(t('members.error_no_default_center')); return; }
@@ -537,6 +558,9 @@ export default function MembersPage() {
       setEditError(t('members.error_document_invalid'));
       return;
     }
+    const paymentMethodChanged = needsDefaultPaymentMethodConfirmation(
+      editPaymentMethodView?.default_payment_method ?? null, editPaymentMethod);
+    if (paymentMethodChanged && !confirmed) { setPaymentMethodConfirmOpen(true); return; }
     setEditSaving(true);
     setEditError(null);
     try {
@@ -558,7 +582,15 @@ export default function MembersPage() {
           body: JSON.stringify({ default_center_id: editDefaultCenterId }),
         });
       }
+      if (paymentMethodChanged) {
+        await apiFetch(`/members/${editedId}/default-payment-method`, {
+          method: 'PUT',
+          body: JSON.stringify({ default_payment_method: editPaymentMethod }),
+        });
+      }
       setEditingId(null);
+      setEditPaymentMethodView(null);
+      setEditPaymentMethod(null);
       setImageRetry(null);
       setProfileVersion((v) => v + 1);
       load();
@@ -824,7 +856,12 @@ export default function MembersPage() {
                 defaultCenterId={editDefaultCenterId}
                 onChange={setEditForm}
                 onDefaultCenterChange={setEditDefaultCenterId}
-                onSave={saveEdit}
+                paymentMethod={editPaymentMethodView && editPaymentMethod ? {
+                  value: editPaymentMethod,
+                  options: editPaymentMethodView.options,
+                  onChange: setEditPaymentMethod,
+                } : null}
+                onSave={() => saveEdit()}
                 onCancel={cancelEdit}
               />
             )}
@@ -1038,6 +1075,27 @@ export default function MembersPage() {
         <MemberDetailModal memberId={detailFor.id} memberName={detailFor.name} onClose={() => setDetailFor(null)} />
       )}
 
+      {/* #3497: confirming a Default Payment Method change, against the persisted one. */}
+      <ConfirmDialog
+        open={paymentMethodConfirmOpen && !!editPaymentMethodView && !!editPaymentMethod}
+        title={t('members.default_payment_method_confirm_title')}
+        message={t('members.default_payment_method_confirm_message')}
+        details={editPaymentMethodView && editPaymentMethod ? (
+          <DefaultPaymentMethodChange
+            previous={optionFor(editPaymentMethodView.default_payment_method, editPaymentMethodView.options)}
+            next={optionFor(editPaymentMethod, editPaymentMethodView.options)}
+            previousLabel={defaultPaymentMethodLabel(editPaymentMethodView.default_payment_method, editPaymentMethodView.options, t('members.default_payment_method_automated'))}
+            nextLabel={defaultPaymentMethodLabel(editPaymentMethod, editPaymentMethodView.options, t('members.default_payment_method_automated'))}
+            previousCaption={t('members.default_payment_method_previous')}
+            nextCaption={t('members.default_payment_method_new')}
+          />
+        ) : null}
+        confirmLabel={t('members.default_payment_method_accept')}
+        cancelLabel={t('members.cancel')}
+        busy={editSaving}
+        onConfirm={() => { setPaymentMethodConfirmOpen(false); saveEdit(true); }}
+        onCancel={() => setPaymentMethodConfirmOpen(false)}
+      />
       <ConfirmDialog
         open={confirming !== null}
         message={t(confirming?.kind === 'access_revoke' ? 'members.confirm_revoke_access' : confirming?.kind === 'revoke' ? 'members.confirm_revoke' : 'members.confirm_delete')}
