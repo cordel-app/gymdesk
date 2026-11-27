@@ -15,7 +15,6 @@ import {
   memberTheme,
   noticeStyle,
   primaryButtonStyle,
-  rowDividerStyle,
   secondaryButtonStyle,
   sectionCardStyle,
   statusPillStyle,
@@ -33,7 +32,11 @@ import { homePendingPayment } from '@/lib/memberProducts';
 import { MEMBERSHIP_PATH } from '@/lib/membershipPages';
 import { RETRY_PAYMENT_PARAM } from '@/lib/paymentReturn';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
-import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
+import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem, type NutritionRestrictionItem } from '@/lib/nutritionFood';
+import { MealThumbnail } from '@/components/MealThumbnail';
+import { NutritionItemThumbnail } from '@/components/NutritionItemThumbnail';
+import type { MealImageFields } from '@/lib/mealThumbnail';
+import { isCardNavigationClick } from '@/lib/homeNutritionSummary';
 
 interface UpcomingBooking {
   id: number;
@@ -78,12 +81,14 @@ interface NotificationItem {
 }
 
 interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
-interface Meal { id: number; meal_type: string | null; display_name: string; items: MealItem[]; meal_name?: string | null }
+interface Meal extends MealImageFields { id: number; meal_type: string | null; display_name: string; items: MealItem[]; meal_name?: string | null }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
 type NutritionGoal = NutritionGoalItem;
-interface NutritionPlan { id: number; name: string; days: NutritionDay[]; goals: NutritionGoal[] }
+interface NutritionPlan { id: number; name: string; days: NutritionDay[]; goals: NutritionGoal[]; restrictions?: NutritionRestrictionItem[] }
 
 const ALL_DAYS_WEEKDAY = 7;
+/** #3490 — the Home summary's circles are small, beside a compact text row. */
+const HOME_THUMBNAIL_SIZE = 36;
 
 function timeOnly(iso: string) { return iso.slice(11, 16); }
 function dateOnly(iso: string) { return iso.slice(0, 10); }
@@ -418,30 +423,77 @@ export default function HomePage() {
         />
       )}
 
-      {/* Today's Nutrition Plan — omitted entirely when there's nothing to show */}
+      {/* Today's Nutrition Plan — omitted entirely when there's nothing to show.
+          #3490: one shared panel (no per-item cards, no dividers). Each meal is a
+          small circular thumbnail beside its name, with its foods as one inline
+          " + " line and no food thumbnails; goals and restrictions follow with
+          circular thumbnails. A thumbnail opens the item's existing image dialog,
+          and anywhere else on the panel opens My Nutrition. */}
       {!loading && todayMeals.length > 0 && (
         <section style={styles.section}>
           <h2 style={styles.h2}>{t('home.nutrition_today')}</h2>
-          <div style={styles.card}>
-            {todayMeals.map((meal) => (
-              <div key={meal.id} style={styles.mealRow}>
-                <p style={styles.mealName}>{mealTitle(meal.display_name, meal.meal_type, meal.meal_name ?? (meal.meal_type ? t(`nutrition.meal_type.${meal.meal_type}` as any) : null)).title}</p>
-                <p style={styles.bookingSub}>
-                  {meal.items.map((i) => i.item_name).join(' + ')}
-                </p>
-              </div>
-            ))}
+          <div
+            role="link"
+            tabIndex={0}
+            aria-label={t('home.nutrition_open')}
+            style={styles.nutritionCard}
+            onClick={(e) => {
+              if (isCardNavigationClick(e.currentTarget, e.target as Node | null, e.defaultPrevented)) {
+                router.push(`/${locale}/nutrition`);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                router.push(`/${locale}/nutrition`);
+              }
+            }}
+          >
+            {todayMeals.map((meal) => {
+              const title = mealTitle(meal.display_name, meal.meal_type, meal.meal_name ?? (meal.meal_type ? t(`nutrition.meal_type.${meal.meal_type}` as any) : null)).title;
+              return (
+                <div key={meal.id} style={styles.mealRow}>
+                  <MealThumbnail meal={meal} title={title} size={HOME_THUMBNAIL_SIZE} />
+                  <div style={styles.mealText}>
+                    <p style={styles.mealName}>{title}</p>
+                    {meal.items.length > 0 && (
+                      <p style={styles.mealFoods}>{meal.items.map((i) => i.item_name).join(' + ')}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
             {nutritionPlan!.goals.length > 0 && (
-              <div style={styles.goalsRow}>
+              <div style={styles.summaryGroup}>
                 <p style={styles.mealName}>{t('home.goals')}</p>
-                <p style={styles.bookingSub}>
+                <div style={styles.summaryItems}>
                   {/* The same slug translation and the same "1 l · daily"
                       wording as My Nutrition (#932): the stored value is
                       `weight_loss`, not a label. */}
-                  {nutritionPlan!.goals
-                    .map((g) => [goalLabel(t, g.item_name), goalDetail(t, g)].filter(Boolean).join(' · '))
-                    .join('   ')}
-                </p>
+                  {nutritionPlan!.goals.map((g) => {
+                    const name = goalLabel(t, g.item_name);
+                    const detail = goalDetail(t, g);
+                    return (
+                      <div key={g.id} style={styles.summaryItem}>
+                        <NutritionItemThumbnail name={name} detail={detail} imageUrl={g.image_url} size={HOME_THUMBNAIL_SIZE} />
+                        <span style={styles.summaryItemText}>{[name, detail].filter(Boolean).join(' · ')}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {(nutritionPlan!.restrictions ?? []).length > 0 && (
+              <div style={styles.summaryGroup}>
+                <p style={styles.mealName}>{t('nutrition.restrictions')}</p>
+                <div style={styles.summaryItems}>
+                  {nutritionPlan!.restrictions!.map((r) => (
+                    <div key={r.id} style={styles.summaryItem}>
+                      <NutritionItemThumbnail name={r.item_name} imageUrl={r.image_url} size={HOME_THUMBNAIL_SIZE} />
+                      <span style={styles.summaryItemText}>{r.item_name}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -570,9 +622,15 @@ const styles: Record<string, React.CSSProperties> = {
   alertTitle:      { margin: 0, fontSize: 15, fontWeight: 700, color: 'inherit' },
   alertDetail:     { margin: '4px 0 0', fontSize: 13, color: 'inherit' },
   alertLink:       { margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: 'inherit' },
-  mealRow:         { ...rowDividerStyle, padding: '6px 0' },
+  nutritionCard:   { ...sectionCardStyle, padding: '12px 16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'stretch', textAlign: 'left', gap: 10 },
+  mealRow:         { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
+  mealText:        { minWidth: 0, flex: '1 1 auto' },
   mealName:        { margin: 0, fontSize: 14, fontWeight: 700, color: memberTheme.text },
-  goalsRow:        { padding: '10px 0 0' },
+  mealFoods:       { margin: '2px 0 0', fontSize: 13, color: memberTheme.textMuted, overflowWrap: 'anywhere' },
+  summaryGroup:    { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 2 },
+  summaryItems:    { display: 'flex', flexWrap: 'wrap', gap: '6px 14px' },
+  summaryItem:     { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  summaryItemText: { fontSize: 13, color: memberTheme.textMuted },
   tileGrid:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
   tile:            { ...sectionCardStyle, gap: 8, padding: '24px 8px', cursor: 'pointer' },
   productsTile:    { ...sectionCardStyle, gap: 8, padding: '24px 8px', cursor: 'pointer' },
