@@ -976,7 +976,7 @@
     "past_title": "Objetivos anteriores",
     "started_on": "Inicio {date}",
     "ended_on": "Fin {date}",
-    "status_in_progress": "En curso",
+    "status_in_progress": "Activo",
     "status_achieved": "Conseguido",
     "status_abandoned": "Abandonado",
     "status_removed": "Eliminado",
