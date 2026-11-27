@@ -103,10 +103,13 @@ import {
   planPromotionBenefitNote,
   planPromotionDurationNote,
 } from '@/lib/memberPlanCatalogue';
-import { PastMembershipPlansCard } from '@/components/PastMembershipPlansCard';
+import { PastPlansAndProductsCard } from '@/components/PastPlansAndProductsCard';
 import {
   type MemberPastPlan,
+  type MemberPastProduct,
   type PastPlanText,
+  mergePastEntries,
+  pastEntryTypeKey,
   pastPlanLineGroup,
   pastPlanLineMeta,
   pastPlanName,
@@ -397,6 +400,8 @@ export default function MembershipPage() {
   // the assignment itself, §5/§6), and the plan awaiting its first payment is
   // what the server reports beside the current one (#1108 stage 2).
   const [ownPurchases, setOwnPurchases] = useState<OwnPurchase[]>([]);
+  // #3539 — the Products the member no longer holds, for Past Plans and Products.
+  const [pastProducts, setPastProducts] = useState<MemberPastProduct[]>([]);
   const [payingPurchase, setPayingPurchase] = useState<number | null>(null);
   const [pendingMembership, setPendingMembership] = useState<MemberPendingPlan | null>(null);
   // #2770: only the Family Owner adds Plans and Products (the API decides; this hides the actions).
@@ -462,7 +467,7 @@ export default function MembershipPage() {
           // read leaves `null`, which keeps the control (and the read on open).
           apiFetch<{ plans: MemberPlanOffer[]; family_members?: FamilyMemberOption[] }>('/me/membership-plans').catch(() => null),
           apiFetch<{ items: MemberServiceBalanceItem[] }>('/me/professional-services').catch(() => null),
-          apiFetch<{ items: OwnPurchase[] }>('/me/purchases').catch(() => null),
+          apiFetch<{ items: OwnPurchase[]; past_items?: MemberPastProduct[] }>('/me/purchases').catch(() => null),
           // #2609: a failed read is "no family" — the Buy dialog then asks nothing.
           apiFetch<{ member_id: number; members: ProductAssignee[] }>('/me/products/assignees').catch(() => null),
         ]);
@@ -485,6 +490,7 @@ export default function MembershipPage() {
         setPlanFamily(plansRes?.family_members ?? []);
         setServiceBalances(serviceRes?.items ?? null);
         setOwnPurchases(ownRes?.items ?? []);
+        setPastProducts(ownRes?.past_items ?? []);
         setAssignees(assigneeRes?.members ?? []);
         setSelfMemberId(assigneeRes?.member_id ?? null);
       } catch (err: any) {
@@ -1496,17 +1502,43 @@ export default function MembershipPage() {
   }
 
   /**
-   * The history card, or nothing at all for a member who has none — a collapsed
-   * card that opens onto an empty list is vertical space spent saying nothing,
-   * which is what §8 asks this section not to do.
+   * #3539 — a past Product as a flat row: its name, its status and the dates it
+   * was held, from its own stored copy. Nothing to expand, no action.
+   */
+  function pastProductCardItem(product: MemberPastProduct): MemberPlanCardItem {
+    return {
+      key: product.id,
+      name: product.product_name,
+      price: null,
+      showCharge: false,
+      imageUrl: null,
+      expandable: false,
+      period: t('membership.plan_period', {
+        start: product.start_date ? formatGymDateOnly(product.start_date, gymFmt) : '—',
+        end: formatGymDateOnly(product.end_date, gymFmt),
+      }),
+      status: <StatusPill status={product.status} label={t(ownPurchaseStateKey(product.status) as any)} />,
+    };
+  }
+
+  /**
+   * #3539 — **Past Plans and Products**: the history card, or nothing at all for
+   * a member who has none — a collapsed card that opens onto an empty list is
+   * vertical space spent saying nothing (§8). Each row says whether it is a plan
+   * or a Product; the count is both together.
    */
   function renderPastPlans() {
-    if (pastPlans.length === 0) return null;
+    const entries = mergePastEntries(pastPlans, pastProducts);
+    if (entries.length === 0) return null;
     return (
-      <PastMembershipPlansCard
+      <PastPlansAndProductsCard
         title={t('membership.past_plans_heading')}
-        summary={t('membership.past_plans_count', { count: pastPlans.length })}
-        items={pastPlans.map(pastPlanCardItem)}
+        summary={t('membership.past_plans_count', { count: entries.length })}
+        items={entries.map((entry) => ({
+          ...(entry.kind === 'plan' ? pastPlanCardItem(entry.plan) : pastProductCardItem(entry.product)),
+          key: entry.key,
+          typeLabel: t(pastEntryTypeKey(entry) as any),
+        }))}
       />
     );
   }
@@ -2458,6 +2490,8 @@ export default function MembershipPage() {
         {renderMyPlans()}
         {renderMyProducts()}
         {renderOwnPurchases()}
+        {/* #3539 — a member holding no plan still has a history to read. */}
+        {renderPastPlans()}
         </>)}
         {renderDialogs()}
       </main>
@@ -2507,7 +2541,7 @@ export default function MembershipPage() {
         </section>
       )}
 
-      {/* #1775 — Past Membership Plans close the page: secondary history,
+      {/* #1775 — Past Plans and Products (#3539) close the page: secondary history,
           collapsed and muted, below everything the member acts on. */}
       {renderPastPlans()}
       </>)}

@@ -1,6 +1,6 @@
 // #1862 — which purchased Products a member is shown (the owner's rule).
 import { describe, expect, it } from 'vitest';
-import { ownPurchaseEndDate, ownPurchaseState } from '../domain/memberOwnPurchases';
+import { ownPurchaseEndDate, ownPurchaseState, pastOwnPurchaseEndDate } from '../domain/memberOwnPurchases';
 
 const TODAY = '2026-10-20';
 const row = (over: Partial<{ status: string; valid_until: string | null; cancelled_on: string | null }>) => ({
@@ -54,5 +54,29 @@ describe('ownPurchaseEndDate', () => {
     expect(ownPurchaseEndDate(row({ valid_until: '2026-11-01' }))).toBe('2026-11-01');
     expect(ownPurchaseEndDate(row({ cancelled_on: '2026-10-10' }))).toBe('2026-10-10');
     expect(ownPurchaseEndDate(row({}))).toBeNull();
+  });
+});
+
+describe('#3539 — pastOwnPurchaseEndDate: the purchases that leave My Products for Past Plans and Products', () => {
+  it('is a paid purchase whose cancellation has taken effect, on the day it stops being listed', () => {
+    expect(pastOwnPurchaseEndDate(row({ cancelled_on: '2026-10-10', valid_until: '2026-10-20' }), TODAY)).toBe('2026-10-20');
+    expect(ownPurchaseState(row({ cancelled_on: '2026-10-10', valid_until: '2026-10-20' }), TODAY)).toBeNull();
+    expect(pastOwnPurchaseEndDate(row({ cancelled_on: '2026-10-12' }), TODAY)).toBe('2026-10-12');
+  });
+
+  it('is never a purchase still listed as current, so nothing appears twice', () => {
+    for (const r of [
+      row({}), row({ valid_until: '2020-01-01' }),
+      row({ cancelled_on: '2026-10-10', valid_until: '2026-10-25' }),
+      row({ status: 'pending_payment' }),
+    ]) {
+      expect(pastOwnPurchaseEndDate(r, TODAY)).toBeNull();
+    }
+  });
+
+  it('is never a purchase the member did not hold (payment never completed, still in the cart)', () => {
+    expect(pastOwnPurchaseEndDate(row({ status: 'cancelled', cancelled_on: '2026-10-01' }), TODAY)).toBeNull();
+    expect(pastOwnPurchaseEndDate(row({ status: 'pending_payment', cancelled_on: '2026-10-01' }), TODAY)).toBeNull();
+    expect(pastOwnPurchaseEndDate(row({ status: 'in_cart', cancelled_on: '2026-10-01' }), TODAY)).toBeNull();
   });
 });

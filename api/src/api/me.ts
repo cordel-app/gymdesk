@@ -96,6 +96,7 @@ import {
   PromotionRefused,
   PricingRefused,
   loadOwnPurchases,
+  loadPastOwnPurchases,
   reissuePurchaseCheckout,
 } from './me-products';
 import { memberServiceBalances } from './me-professional-services';
@@ -3610,7 +3611,11 @@ meRouter.get(
     const { gymId } = ctx;
     try {
       const memberId = await resolveMemberId(gymId, ctx);
-      res.json({ items: await loadOwnPurchases(gymId, memberId) });
+      // #3539: `past_items` feeds *Past Plans and Products*; `items` stays the current list.
+      const [items, pastItems] = await Promise.all([
+        loadOwnPurchases(gymId, memberId), loadPastOwnPurchases(gymId, memberId),
+      ]);
+      res.json({ items, past_items: pastItems });
     } catch (err) {
       next(err);
     }
