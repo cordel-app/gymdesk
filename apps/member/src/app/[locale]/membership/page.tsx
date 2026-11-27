@@ -138,12 +138,9 @@ import {
   showsBuyAction,
   showsRegularProductPrice,
   type OwnPurchase,
-  ownPurchasePayPath,
-  ownPurchaseShowsPay,
   ownPurchaseStateKey,
   ownPurchaseStatusWord,
   oneTimeOwnPurchases,
-  ownPurchaseCancelId,
   type ProductAssignee,
   assigneeOptions,
   assigneePayload,
@@ -407,9 +404,8 @@ export default function MembershipPage() {
   const [ownPurchases, setOwnPurchases] = useState<OwnPurchase[]>([]);
   // #3539 — the Products the member no longer holds, for Past Plans and Products.
   const [pastProducts, setPastProducts] = useState<MemberPastProduct[]>([]);
-  const [payingPurchase, setPayingPurchase] = useState<number | null>(null);
-  // #3537 — the purchase awaiting payment the member is cancelling (from My Products or the
-  // Purchases tab: one dialog, one route), and the Purchases tab's busy row and refresh key.
+  // #3537 — the purchase awaiting payment the member is cancelling from the Purchases tab
+  // (stage 2: My Products offers no action), and that tab's busy row and refresh key.
   const [cancellingPurchase, setCancellingPurchase] = useState<{ id: number; name: string } | null>(null);
   const [cancelPurchaseBusy, setCancelPurchaseBusy] = useState(false);
   const [cancelPurchaseError, setCancelPurchaseError] = useState<string | null>(null);
@@ -849,18 +845,6 @@ export default function MembershipPage() {
 
   /* ── #1862 My purchased Products ────────────────────────────────────────── */
 
-  /** Pay on a purchase awaiting payment: the same hosted page the purchase used. */
-  async function payPurchase(purchase: OwnPurchase) {
-    setPayingPurchase(purchase.id);
-    try {
-      const result = await apiFetch<{ checkoutUrl: string }>(ownPurchasePayPath(purchase), { method: 'POST' });
-      window.location.href = result.checkoutUrl;
-    } catch (err: any) {
-      setError(err?.message ?? t('common.error'));
-      setPayingPurchase(null);
-    }
-  }
-
   /** #3537 — Pay from the Purchases tab: the same hosted page, on the purchase's existing payment. */
   async function payHistoryPurchase(p: PurchaseHistoryItem) {
     setHistoryBusyId(p.id);
@@ -1108,14 +1092,11 @@ export default function MembershipPage() {
     // the separate *My purchases* section is gone (the Purchases tab lists purchases).
     items.push(...ownPurchaseCardItems());
     return (
-      <>
-        {cancelPurchaseError && <p role="alert" style={styles.submitError}>{cancelPurchaseError}</p>}
-        <MemberProductsSection
-          title={t('membership.set_products_heading')}
-          emptyLabel={t('membership.set_products_empty')}
-          items={items}
-        />
-      </>
+      <MemberProductsSection
+        title={t('membership.set_products_heading')}
+        emptyLabel={t('membership.set_products_empty')}
+        items={items}
+      />
     );
   }
 
@@ -1129,32 +1110,9 @@ export default function MembershipPage() {
         ownPurchaseAssigneeName(p, assignees) ? t('membership.product_assignee_line', { name: ownPurchaseAssigneeName(p, assignees)! }) : null,
         p.end_date ? t('membership.product_end_date', { date: formatGymDateOnly(p.end_date, gymFmt) }) : null,
       ].filter(Boolean).join(' · ') || null,
-      action: (
-        <>
-          <StatusPill status={ownPurchaseStatusWord(p.own_state)} label={t(ownPurchaseStateKey(p.own_state) as any)} />
-          {ownPurchaseShowsPay(p) && (
-            <button
-              type="button"
-              style={styles.buyBtn}
-              disabled={payingPurchase === p.id}
-              onClick={() => payPurchase(p)}
-            >
-              {t('membership.product_pay')}
-            </button>
-          )}
-          {ownPurchaseCancelId(p) != null && (
-            <button
-              type="button"
-              style={styles.draftSecondaryBtn}
-              data-cancel-pending-purchase
-              disabled={payingPurchase === p.id || cancelPurchaseBusy}
-              onClick={() => { setCancelPurchaseError(null); setCancellingPurchase({ id: ownPurchaseCancelId(p)!, name: p.product_name }); }}
-            >
-              {t('membership.product_cancel')}
-            </button>
-          )}
-        </>
-      ),
+      // #3537 stage 2 — the card states the purchase and its status and offers no action:
+      // Pay and Cancel on a purchase awaiting payment are the Purchases tab's.
+      action: <StatusPill status={ownPurchaseStatusWord(p.own_state)} label={t(ownPurchaseStateKey(p.own_state) as any)} />,
     }));
   }
 
@@ -2400,7 +2358,7 @@ export default function MembershipPage() {
             </MemberDialog>
           )}
 
-          {/* #3537 — cancelling a purchase awaiting payment (My Products or Purchases), asked first. */}
+          {/* #3537 — cancelling a purchase awaiting payment from the Purchases tab, asked first. */}
           {cancellingPurchase && (
             <MemberDialog
               labelledBy="purchase-cancel-title"
