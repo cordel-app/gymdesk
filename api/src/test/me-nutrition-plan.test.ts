@@ -163,6 +163,21 @@ describe('GET /me/nutrition-plan', () => {
 
     expect(Array.isArray(res.body.plan.goals)).toBe(true);
     expect(res.body.plan.goals[0].item_name).toBe('Protein');
+    // #3491: a plan with no Member Notes reports null, never omits the key.
+    expect(res.body.plan.member_notes).toBeNull();
+  });
+
+  it("returns the plan's Member Notes for the plan header (#3491)", async () => {
+    await insertActivePlan(gymId, memberId, 3);
+    // Every plan of the member carries the notes, so whichever one is current answers with them.
+    await db.query('UPDATE member_nutrition_plans SET member_notes = ? WHERE gym_id = ? AND member_id = ?', ['Drink water before every meal.', gymId, memberId]);
+
+    const res = await request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.plan.member_notes).toBe('Drink water before every meal.');
   });
 
   it('does not return a different member\'s plan from the same gym', async () => {
