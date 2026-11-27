@@ -8,6 +8,7 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { copyTemplateContentTx } from './nutrition-plan-template-copy';
 import { nutritionPlanTemplateEditSessionRouter } from './nutrition-plan-template-edit-session';
+import { nutritionPlanTemplateConversionRouter } from './nutrition-plan-template-conversion';
 import { parseNumDaysInput, templateResyncChanges } from '../domain/nutritionPlanTemplateDays';
 import { memberNotesSetParams, parseMemberNotesInput } from '../domain/nutritionPlanMemberNotes';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
@@ -19,6 +20,8 @@ export const nutritionPlanTemplatesRouter = Router();
 
 // #3482: Edit mode's checkpoint (start, Cancel restores, Save drops).
 nutritionPlanTemplatesRouter.use(nutritionPlanTemplateEditSessionRouter);
+// #3484: a converted Assigned Nutrition Plan's working copy (Save completes, Cancel hard-deletes).
+nutritionPlanTemplatesRouter.use(nutritionPlanTemplateConversionRouter);
 
 const STATUSES = ['active', 'inactive', 'draft', 'deleted'];
 const SORT_COLUMNS: Record<string, string> = {

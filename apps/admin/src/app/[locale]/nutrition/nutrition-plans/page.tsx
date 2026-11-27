@@ -250,6 +250,17 @@ export default function NutritionPlansPage() {
     beginEdit(target);
   }, [rows, loading, canWrite]);
 
+  // #3484: Convert to Template writes a working copy and opens it in the templates' inline
+  // editor; Save there creates the template, Cancel discards the copy. The plan is untouched.
+  async function convertToTemplate(row: MemberNutritionPlan) {
+    try {
+      const tpl = await apiFetch<{ id: number }>(`/member-nutrition-plans/${row.id}/convert-to-template`, { method: 'POST' });
+      router.push(`/${locale}/nutrition/nutrition-plan-templates?convert=${tpl.id}`);
+    } catch (err: any) {
+      toast(err.message ?? t('nutrition_plans.error_generic'));
+    }
+  }
+
   function cancelEdit() {
     // #3405: Cancel leaves a version Draft as it is, so the next Edit resumes it (it may stay a
     // Draft for days); ⋮ → Delete on the Draft discards it. The active plan is never touched.
@@ -450,6 +461,7 @@ export default function NutritionPlansPage() {
               onActivate={() => guardUnsaved(() => promptActivation(row, false))}
               onComplete={() => guardUnsaved(() => setCompleting(row))}
               onDelete={() => guardUnsaved(() => setDeleting(row))}
+              onConvertToTemplate={() => guardUnsaved(() => convertToTemplate(row))}
               onEditFormChange={setEditForm}
               onSave={saveEdit}
               onCancel={cancelEdit}
@@ -529,7 +541,7 @@ export default function NutritionPlansPage() {
 function PlanCard({
   plan, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t,
-  onToggleExpand, onEdit, onDetails, onActivate, onComplete, onDelete,
+  onToggleExpand, onEdit, onDetails, onActivate, onComplete, onDelete, onConvertToTemplate,
   onEditFormChange, onSave, onCancel, onChanged,
 }: {
   plan: MemberNutritionPlan;
@@ -549,6 +561,7 @@ function PlanCard({
   onActivate: () => void;
   onComplete: () => void;
   onDelete: () => void;
+  onConvertToTemplate: () => void;
   onEditFormChange: (f: EditForm) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -567,6 +580,8 @@ function PlanCard({
     // #3474: an assigned plan is not duplicated from this list; a Draft is activated explicitly.
     ...(plan.status === 'draft' ? [{ label: t('nutrition_plans.activate'), onClick: onActivate, disabled: !canWrite, title: roTitle }] : []),
     ...(isActive ? [{ label: t('nutrition_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
+    // #3484: offered in every status; the plan itself is only read.
+    { label: t('nutrition_plans.convert_to_template'), onClick: onConvertToTemplate, disabled: !canWrite, title: roTitle },
     // #2201: a completed plan is read-only — no Edit, no Delete.
     ...(plan.status !== 'completed' ? [{ kind: 'delete' as const, label: t('nutrition_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle }] : []),
   ];
