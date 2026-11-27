@@ -850,7 +850,7 @@
     "timeline_kind_forecast": "Forecast",
     "timeline_kind_no_charge": "No charge",
     "timeline_status_paid": "Paid",
-    "timeline_status_pending": "Pending",
+    "timeline_status_pending": "Pending payment",
     "timeline_status_failed": "Failed",
     "timeline_status_scheduled": "Scheduled",
     "timeline_status_forecasted": "Forecasted",
