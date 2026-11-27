@@ -3199,7 +3199,12 @@
     "error_end_date_required_expired": "La fecha de fin es obligatoria cuando el estado es Expirado.",
     "col_days": "Días",
     "day_count": "{count, plural, one {# día} other {# días}}",
-    "open_ended": "Sin fecha de fin"
+    "open_ended": "Sin fecha de fin",
+    "activate": "Activar",
+    "activate_title": "Activar plan",
+    "activate_confirm": "Este plan pasará a ser el plan de entrenamiento activo del miembro.",
+    "activate_confirm_replace": "El plan \"{name}\" se completará y este plan pasará a ser el plan de entrenamiento activo del miembro.",
+    "keep_draft": "Seguir editando el borrador"
   },
   "template_workouts": {
     "title": "Rutinas",
