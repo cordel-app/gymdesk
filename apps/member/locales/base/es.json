@@ -655,6 +655,8 @@
     "cart_pending_heading": "Tienes un pago pendiente",
     "cart_pending_hint": "El pago de esta compra ya se ha iniciado. Paga para completarla o cancela la compra entera.",
     "cart_staff_heading": "Tu gimnasio está preparando un cambio",
+    "cart_staff_editing": "Tu gimnasio está editando este carrito en este momento.",
+    "cart_staff_hint": "Tu gimnasio todavía lo está preparando. Podrás pagarlo aquí cuando tu gimnasio lo ponga a tu disposición.",
     "cart_staff_purchasing_disabled": "La compra en la app no está disponible temporalmente mientras tu gimnasio prepara este cambio.",
     "preparing_initial_payment": "Pago inicial",
     "preparing_open_details": "Ver detalles de {name}",
