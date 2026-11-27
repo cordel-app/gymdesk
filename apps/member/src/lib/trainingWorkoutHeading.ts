@@ -70,10 +70,17 @@ export function workoutNotes(workout: HeadingWorkout): string | null {
   return workout.description?.trim() || null;
 }
 
-/** Blocks marked Done on the selected date over the Workout's blocks (never its exercises). */
-export function workoutBlockCounter(workout: HeadingWorkout, doneBlockIds: ReadonlySet<number>): { done: number; total: number } {
+/**
+ * Blocks marked Done on the selected date over the Workout's blocks (never its
+ * exercises). #3494: given each block's credit, a Partially Done block counts a half.
+ */
+export function workoutBlockCounter(
+  workout: HeadingWorkout,
+  done: ReadonlySet<number> | ReadonlyMap<number, number>,
+): { done: number; total: number } {
   const blocks = workout.blocks ?? [];
-  return { done: blocks.filter((b) => doneBlockIds.has(b.id)).length, total: blocks.length };
+  const credit = (id: number) => (done instanceof Map ? (done.get(id) ?? 0) : (done as ReadonlySet<number>).has(id) ? 1 : 0);
+  return { done: blocks.reduce((s, b) => s + credit(b.id), 0), total: blocks.length };
 }
 
 /**

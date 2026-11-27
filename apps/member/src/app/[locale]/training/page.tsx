@@ -18,7 +18,8 @@ import { groupWorkoutsByPlan, workoutBlockCounter, workoutNotes } from '@/lib/tr
 import { ExerciseDetailsDialog } from '@/components/ExerciseDetailsDialog';
 import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
 import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
-import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
+import { DAY_STATUSES, blockCredits, blockLevelOn, dayCompletion, dayStatus, dayStatusKey, withBlockLevel, type BlockLevel, type DayBlockLog } from '@/lib/trainingDayStatus';
+import { dayIndicatorBackground } from '@/lib/nutritionDayIndicator';
 import { plansOnDate } from '@/lib/trainingPlanDates';
 import {
   EMPTY_PROGRESS, TrainingProgress, deviceToday, monthCardLabel, stepWeek, swipeWeekDelta, weekDates, weekStart, weekdayOf,
@@ -31,6 +32,8 @@ import {
   primaryButtonStyle,
   secondaryButtonStyle,
   sectionCardStyle,
+  statusPillStyle,
+  statusTone,
 } from '@/lib/memberChrome';
 
 interface BlockExercise {
@@ -123,7 +126,7 @@ export default function TrainingPage() {
   const [logs, setLogs] = useState<Record<number, ExerciseLog[]>>({});
   const [draft, setDraft] = useState<{ weight: string; reps: string }>({ weight: '', reps: '' });
   const [savingLog, setSavingLog] = useState(false);
-  const [allBlockLogs, setAllBlockLogs] = useState<{ workout_block_id: number; logged_date: string }[]>([]);
+  const [allBlockLogs, setAllBlockLogs] = useState<DayBlockLog[]>([]);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [resultInputs, setResultInputs] = useState<Record<number, string>>({});
@@ -135,7 +138,7 @@ export default function TrainingPage() {
     setLoading(true);
     try {
       setPlans(await apiFetch<TrainingPlan[]>('/me/training-plans'));
-      const blockLogs = await apiFetch<{ workout_block_id: number; logged_date: string }[]>('/me/workout-block-logs');
+      const blockLogs = await apiFetch<DayBlockLog[]>('/me/workout-block-logs');
       setAllBlockLogs(blockLogs);
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setLoading(false); }
@@ -148,10 +151,8 @@ export default function TrainingPage() {
     loadPlans();
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
-  const doneBlocks = useMemo(
-    () => new Set(allBlockLogs.filter((l) => String(l.logged_date).slice(0, 10) === selectedDate).map((l) => l.workout_block_id)),
-    [allBlockLogs, selectedDate],
-  );
+  // #3494: each block's credit on the selected date (Fully Done 1, Partially Done 0.5).
+  const doneBlocks = useMemo(() => blockCredits(allBlockLogs, selectedDate), [allBlockLogs, selectedDate]);
 
   async function loadProgress(date: string) {
     try {
@@ -218,7 +219,10 @@ export default function TrainingPage() {
     finally { setSavingLog(false); }
   }
 
-  async function markBlockDone(block: Block) {
+  // #3494: Fully Done / Partially Done. The API keeps one completion per block and date, so a
+  // repeated click or a switch between the two replaces the level; the logs here follow it,
+  // which re-reads the summary and repaints the day circle at once.
+  async function markBlockDone(block: Block, level: BlockLevel) {
     setPending(true);
     try {
       await apiFetch('/me/workout-block-logs', {
@@ -226,10 +230,11 @@ export default function TrainingPage() {
         body: JSON.stringify({
           workout_block_id: block.id,
           logged_date: selectedDate,
+          level,
           result_value: resultUnitKey(block.result_unit) ? resultValueForPayload(resultInputs[block.id]) : null,
         }),
       });
-      setAllBlockLogs((prev) => [...prev, { workout_block_id: block.id, logged_date: selectedDate }]);
+      setAllBlockLogs((prev) => withBlockLevel(prev, block.id, selectedDate, level));
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setPending(false); }
   }
@@ -287,6 +292,8 @@ export default function TrainingPage() {
             const selected = date === selectedDate;
             const isTodayCell = date === today;
             const status = dayStatus(date, weekdayOf(date), today, workoutsOn(date), allBlockLogs);
+            // #3494: the circle's green share is the day's completion (a future day keeps its colour).
+            const completion = dayCompletion(date, weekdayOf(date), workoutsOn(date), allBlockLogs);
             const longDate = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
             return (
               <div key={date} style={styles.dayCell}>
@@ -301,7 +308,7 @@ export default function TrainingPage() {
                 <button type="button" onClick={() => setLegendOpen(true)}
                         aria-label={`${longDate}: ${t(dayStatusKey(status))}. ${t('training.status_legend_open')}`}
                         title={t(dayStatusKey(status))} style={styles.statusBtn}>
-                  <span aria-hidden="true" style={{ ...styles.statusDot, background: DAY_STATUS_COLOR[status] }} />
+                  <span aria-hidden="true" style={{ ...styles.statusDot, background: dayIndicatorBackground(status, completion, INDICATOR_COLORS) }} />
                   <span style={styles.srOnly}>{t(dayStatusKey(status))}</span>
                 </button>
               </div>
@@ -355,7 +362,8 @@ export default function TrainingPage() {
                         {t(`training.block_type_${block.type.toLowerCase()}`)}
                         {block.rounds ? ` · ${t('training.block_rounds', { count: block.rounds })}` : ''}
                       </span>
-                      {doneBlocks.has(block.id) && <span style={styles.doneChip}>✓ {t('training.done')}</span>}
+                      {blockLevelOn(doneBlocks, block.id) === 'done' && <span style={styles.doneChip}>✓ {t('training.done')}</span>}
+                      {blockLevelOn(doneBlocks, block.id) === 'partial' && <span style={styles.partialChip}>{t('training.partially_done_state')}</span>}
                     </div>
                   </div>
                 </div>
@@ -463,11 +471,20 @@ export default function TrainingPage() {
                       </label>
                     );
                   })()}
-                  {!doneBlocks.has(block.id) && (
-                    <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
-                      {t('training.mark_done')}
-                    </button>
-                  )}
+                  {(() => {
+                    const level = blockLevelOn(doneBlocks, block.id);
+                    const name = block.name ?? t(`training.block_type_${block.type.toLowerCase()}`);
+                    return (<>
+                      <button type="button" onClick={() => markBlockDone(block, 'done')} disabled={pending || level === 'done'}
+                              aria-label={t('training.fully_done_aria', { name })} style={styles.blockDoneBtn}>
+                        {t('training.fully_done')}
+                      </button>
+                      <button type="button" onClick={() => markBlockDone(block, 'partial')} disabled={pending || level === 'partial'}
+                              aria-label={t('training.partially_done_aria', { name })} style={styles.blockPartialBtn}>
+                        {t('training.partially_done')}
+                      </button>
+                    </>);
+                  })()}
                 </div>
               </div>
             ))}
@@ -489,6 +506,8 @@ export default function TrainingPage() {
     </main>
   );
 }
+
+const INDICATOR_COLORS = { success: memberTheme.statusSuccess, error: memberTheme.statusError, status: DAY_STATUS_COLOR };
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
@@ -541,8 +560,10 @@ const styles: Record<string, React.CSSProperties> = {
   expandBody: { margin: '10px 12px 12px', padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
   miniInput: { ...inputStyle, width: 56, minWidth: 0, boxSizing: 'border-box', padding: '6px 8px', borderRadius: 4, fontSize: 14 },
   addSetBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
-  blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
+  blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' },
   blockDoneBtn: { ...primaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
+  blockPartialBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
+  partialChip: { ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
   tabs: { display: 'flex', gap: 8, margin: '12px 0', overflowX: 'auto' },
   tab: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', opacity: 0.7 },
