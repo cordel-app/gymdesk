@@ -7,6 +7,7 @@ import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { copyTemplateContentTx } from './nutrition-plan-template-copy';
+import { nutritionPlanTemplateEditSessionRouter } from './nutrition-plan-template-edit-session';
 import { parseNumDaysInput, templateResyncChanges } from '../domain/nutritionPlanTemplateDays';
 import { memberNotesSetParams, parseMemberNotesInput } from '../domain/nutritionPlanMemberNotes';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
@@ -15,6 +16,9 @@ import { resolveRequestActor } from '../domain/auditActor';
 import { TEMPLATE_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const nutritionPlanTemplatesRouter = Router();
+
+// #3482: Edit mode's checkpoint (start, Cancel restores, Save drops).
+nutritionPlanTemplatesRouter.use(nutritionPlanTemplateEditSessionRouter);
 
 const STATUSES = ['active', 'inactive', 'draft', 'deleted'];
 const SORT_COLUMNS: Record<string, string> = {
