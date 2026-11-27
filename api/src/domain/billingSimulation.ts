@@ -822,6 +822,17 @@ function resolvePrepaidMembershipFee(
  * `MAX_SIMULATION_MONTHS` for every discounted assignment. A cycle whose only
  * benefit is the personal one *is* this contract's regular charge.
  */
+/**
+ * #3506 — the fee on `date` when an applied Promotion governs it (inside its own timeline, or
+ * applying its Membership Fee Benefit there), with the Personal Membership Fee Benefit applied
+ * last as `resolveMembershipFee()` does; `null` when no Promotion governs the date.
+ */
+function promotionGovernedFee(regular: number, date: string, a: MembershipFeeContext): ResolvedCharge | null {
+  const fromPromotions = resolvePromotionMembershipFee(regular, date, a.promotions);
+  if (!fromPromotions.promotional && fromPromotions.benefits.length === 0) return null;
+  return withPersonalFeeBenefit(fromPromotions, a.personalFeeBenefit);
+}
+
 function withPersonalFeeBenefit(resolved: ResolvedCharge, benefit: PersonalFeeBenefit): ResolvedCharge {
   if (!personalFeeBenefitApplies(benefit)) return resolved;
   return {
@@ -1090,10 +1101,17 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
     }
     const lead = resolveMembershipFee(regular, joinDate, durationContext);
     const periods = lead.prepaidPeriods ?? 0;
-    const perPeriod = periods > 0 ? lead.amount / periods : lead.amount;
-    const stretch = round2(perPeriod * proration.proratedDays / proration.periodDays);
     const lump = periods > 0 ? lead.amount : 0;
-    return { ...lead, amount: round2(stretch + lump), proratedAmount: stretch, prepaidAmount: lump };
+    // #3506 — a Promotion's timeline is its own (anchored on its application, never on the
+    // schedule), so where it governs the stretch's own dates it prices the stretch: otherwise a
+    // Promotion whose discounted month is the one the plan joins in was never applied at all. The
+    // Plan's Billing & Duration still counts from the first schedule date, and its Pre-paid lump
+    // is still the lead period's.
+    const own = promotionGovernedFee(regular, a.startsAt, ctx);
+    const perPeriod = own ? own.amount : (periods > 0 ? lead.amount / periods : lead.amount);
+    const stretch = round2(perPeriod * proration.proratedDays / proration.periodDays);
+    const basis = own ? { ...own, prepaidPeriods: lead.prepaidPeriods } : lead;
+    return { ...basis, amount: round2(stretch + lump), proratedAmount: stretch, prepaidAmount: lump };
   };
   const resolveOne = resolveFor(a);
   const resolveUnits = unitBenefits?.map((b) => resolveFor({ ...a, personalFeeBenefit: b })) ?? null;

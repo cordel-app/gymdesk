@@ -267,6 +267,43 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     expect(locker.benefits.map((b: any) => b.action)).toContain('waive');
   });
 
+  it('#3506: a Draft’s selected Promotion discounts the prorated first stretch it covers', async () => {
+    // A plan starting today joins the billing calendar on the 1st: the first charge is the
+    // prorated stretch up to then. The Promotion (50% for one month, anchored on its application
+    // month) covers that stretch, so the Billing - Plan Simulation must show it discounted.
+    const planId = await createPlan(gymId, { price: 70 });
+    const umId = await assignPlan(gymId, planId, TODAY(), { activate: false });
+    const { insertId: promotionId } = await db.query(
+      `INSERT INTO promotions
+         (gym_id, name, description, starts_at, ends_at, lifecycle_status, stackable,
+          only_applicable_for_new_members, free_months, paid_months, bonus_months)
+       VALUES (?, ?, 'ABF promo', ?, '2099-12-31', 'active', 1, 0, 0, 2, 0)`,
+      [gymId, `ABF-Fee-Promo-${uniq()}`, dayOffset(-1)],
+    );
+    await db.query(
+      'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+      [gymId, promotionId, planId],
+    );
+    await db.query(
+      `INSERT INTO promotion_membership_fee_benefits
+         (gym_id, promotion_id, enabled, \`action\`, \`value\`, duration_months)
+       VALUES (?, ?, 1, 'percentage_discount', 50, 1)`,
+      [gymId, promotionId],
+    );
+    const applied = await request.post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
+      .send({ promotion_id: promotionId });
+    expect(applied.status).toBe(201);
+
+    const forecast = await forecastOf(gymId, umId);
+    const first = forecast.dates[0];
+    expect(first.date).toBe(TODAY());
+    const fee = first.lines.find((l: any) => l.kind === 'membership_fee');
+    expect(fee.benefits.map((b: any) => b.source)).toContain('promotion');
+    // The stretch to the next 1st (a whole month on the 1st), at half price.
+    expect(fee.actual_charge).toBeCloseTo(proratedToNextFirst(70) / 2, 1);
+  });
+
   it('waives the Membership Fee of a free period, from the assignment’s own duration', async () => {
     const umId = await assignPlan(gymId, await createPlan(gymId, { price: 70, free: 2, paid: 6 }));
     const forecast = await forecastOf(gymId, umId);

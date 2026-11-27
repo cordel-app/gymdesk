@@ -11,6 +11,8 @@ import { LineChart } from '@gymdesk/charts';
 
 import { BillingEventTable, fmtMoney } from './BillingEventSimulation';
 import { innerCardStyle } from './formChrome';
+import { MONTH_TICK_MS, monthTickLabel } from '@/lib/monthAxis';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import {
   type BillingEventSimulationData,
   billingDateAtX,
@@ -36,6 +38,7 @@ export function BillingEventSimulationChart({
   continuousMonths?: boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const gym = useGymFormatSettings();
   const dates = useMemo(
     () => visibleBillingDates(simulation?.dates ?? [], showZero),
     [simulation, showZero],
@@ -70,10 +73,9 @@ export function BillingEventSimulationChart({
         ariaLabel={t('chart_aria')}
         xAxisType="time"
         zoom={false}
-        axisLabelFormatter={(x) => {
-          const point = points.find((p) => p.x === x);
-          return point ? point.label : '';
-        }}
+        // #3506 — month and year, as the Payments tab's chart reads; one tick a month at most.
+        xMinInterval={MONTH_TICK_MS}
+        axisLabelFormatter={(x) => monthTickLabel(x, gym)}
         selectedX={group ? billingDateToX(group.date) : null}
         onPointClick={(x) => setSelected(billingDateAtX(points, x))}
       />

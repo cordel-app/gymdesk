@@ -21,7 +21,6 @@
  */
 
 import type { ChartPointSymbol, ChartSeries } from '@gymdesk/charts';
-import type { GymFormatSettings } from '@/lib/gymFormat';
 
 export type TimelinePointKind = 'payment' | 'scheduled' | 'forecast' | 'no_charge';
 
@@ -53,21 +52,14 @@ export const TIMELINE_POINT_SYMBOLS: Record<TimelinePointKind, ChartPointSymbol>
   no_charge: 'emptyDiamond',
 };
 
-/** About a month: the smallest gap between two x ticks, so the axis reads by month. */
-export const MONTH_TICK_MS = 28 * 24 * 60 * 60 * 1000;
+// #3506 — the month axis is shared with the Billing simulation charts.
+export { MONTH_TICK_MS } from '@/lib/monthAxis';
 
 export function dateToX(date: string): number {
   return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
 }
 
-/** `MM/YYYY`, or `YYYY-MM` for a gym on ISO dates — a month tick on the x axis. */
-export function monthTickLabel(x: number, s: Pick<GymFormatSettings, 'date_format'>): string {
-  const d = new Date(x);
-  if (Number.isNaN(d.getTime())) return '';
-  const year = String(d.getUTCFullYear());
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  return s.date_format === 'YYYY-MM-DD' ? `${year}-${month}` : `${month}/${year}`;
-}
+export { monthTickLabel } from '@/lib/monthAxis';
 
 /**
  * #3311 stage 4 — the one series the chart draws: every point, in date order (the
