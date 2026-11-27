@@ -15,6 +15,10 @@ import { supersedeActivePlansTx } from './training-plan-creation';
  *   before its own start, history kept) and the draft starts on its own start date, or
  *   on the gym's today when that date has passed.
  *
+ * - a **draft of a Completed plan** (#3547, `draft_of_plan_id` naming a `completed` plan):
+ *   the Completed plan is history and is never touched; the draft is activated as a plain
+ *   draft (it replaces the member's active plan) and loses its `draft_of_plan_id`.
+ *
  * Either way it runs under the member-row lock, writes the `member_training_plans` row and
  * re-points `members.member_training_plan_id`, so no two plans are left active.
  */
@@ -56,13 +60,16 @@ export async function activateDraftTrainingPlanTx(
   }
   if (draft.status !== 'draft') fail(409, 'Only a Draft training plan can be activated', 'not_draft');
 
+  let orig: any = null;
   if (draft.draft_of_plan_id) {
-    const yesterday = previousDay(today);
     const { rows: origRows } = await tx.query(
       'SELECT id, name, status, start_date FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? FOR UPDATE',
       [draft.draft_of_plan_id, memberId, gymId],
     );
-    const orig = origRows[0];
+    orig = origRows[0];
+  }
+  if (draft.draft_of_plan_id && orig?.status !== 'completed') {
+    const yesterday = previousDay(today);
     if (!orig || orig.status !== 'active') fail(409, 'The plan this draft was created from is no longer active');
     const origStart = isoDay(orig.start_date) as string;
     const previousName = versionedTrainingPlanName(orig.name, origStart, yesterday);
@@ -97,7 +104,7 @@ export async function activateDraftTrainingPlanTx(
   );
   const previousIds = await supersedeActivePlansTx(tx, gymId, memberId, actor, startDate, true);
   await tx.query(
-    `UPDATE training_plans SET status = 'active', start_date = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE training_plans SET status = 'active', start_date = ?, draft_of_plan_id = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
     [startDate, actor, draft.id, gymId],
   );
@@ -124,7 +131,7 @@ async function insertAssignmentTx(
  */
 export async function loadActivationPreview(
   gymId: string, memberId: string, planId: string, today: string,
-): Promise<{ current_plan: { id: number; name: string } | null; start_date: string } | null> {
+): Promise<{ current_plan: { id: number; name: string } | null; start_date: string; version_draft: boolean } | null> {
   const { rows } = await db.query(
     "SELECT id, status, draft_of_plan_id, start_date FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
     [planId, memberId, gymId],
@@ -132,13 +139,18 @@ export async function loadActivationPreview(
   const plan = rows[0];
   if (!plan) return null;
   if (plan.status !== 'draft') fail(409, 'Only a Draft training plan can be activated', 'not_draft');
-  const { rows: current } = plan.draft_of_plan_id
+  // #3547: a draft of a Completed plan is previewed as a plain draft (it replaces the active plan).
+  const { rows: src } = plan.draft_of_plan_id
+    ? await db.query('SELECT status FROM training_plans WHERE id = ? AND gym_id = ?', [plan.draft_of_plan_id, gymId])
+    : { rows: [] as any[] };
+  const versionDraft = !!plan.draft_of_plan_id && src[0]?.status !== 'completed';
+  const { rows: current } = versionDraft
     ? await db.query("SELECT id, name FROM training_plans WHERE id = ? AND gym_id = ? AND status = 'active'", [plan.draft_of_plan_id, gymId])
     : await db.query(
       "SELECT id, name FROM training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active' AND id != ? ORDER BY id LIMIT 1",
       [memberId, gymId, planId],
     );
   const ownStart = isoDay(plan.start_date);
-  const start = plan.draft_of_plan_id ? today : (ownStart && ownStart > today ? ownStart : today);
-  return { current_plan: current[0] ? { id: current[0].id, name: current[0].name } : null, start_date: start };
+  const start = versionDraft ? today : (ownStart && ownStart > today ? ownStart : today);
+  return { current_plan: current[0] ? { id: current[0].id, name: current[0].name } : null, start_date: start, version_draft: versionDraft };
 }
