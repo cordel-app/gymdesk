@@ -90,7 +90,7 @@ export interface BillingEventsTableRow extends BillingEventHeaderRow {
 }
 
 /** Columns of the shared table; the expanded row spans them all. */
-export const BILLING_EVENTS_TABLE_COLUMNS = 11;
+export const BILLING_EVENTS_TABLE_COLUMNS = 12;
 
 /**
  * #2449 follow-up: the Billing Events **table** — header, rows, chevron and
@@ -120,6 +120,7 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
         <thead>
           <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
             <th style={{ ...th, width: 32 }} />
+            <th style={{ ...th, textAlign: 'right' }}>{t('billing_events_page.col_id')}</th>
             <th style={th}>{t('billing_events_page.col_member')}</th>
             <th style={th}>{t('billing_events_page.col_event_name')}</th>
             <th style={th}>{t('billing_events_page.header_method')}</th>
@@ -157,6 +158,9 @@ export function BillingEventsTable<R extends BillingEventsTableRow>({
                 >
                   <td style={{ padding: '8px 12px', color: '#9ca3af', fontSize: 12 }}>
                     {isExpandable ? (isExpanded ? '▾' : '▸') : null}
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#6b7280' }}>
+                    {row.id ?? '—'}
                   </td>
                   <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
                   <td style={{ padding: '8px 12px', color: '#6b7280' }}>{billingEventDisplayName(row)}</td>

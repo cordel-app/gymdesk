@@ -19,6 +19,7 @@ import {
   cartItemsRemovable,
   cartLockedForStaff,
   cartPendingAmount,
+  cartPendingChanges,
   cartPhase,
   cartProductState,
   cartItemRemovePath,
@@ -364,5 +365,32 @@ describe('a cart staff are still preparing, whatever it holds (#3305)', () => {
     const view = draft({ owner_member_id: 5, awaiting_staff_setup: false } as any);
     expect(cartPhase(view, 5, own)).toBe('draft');
     expect(cartLockedForStaff(view, 5, own)).toBe(false);
+  });
+});
+
+describe('a cart that only changes what the member holds (#3487)', () => {
+  const changeOnly = (over: Partial<MemberCartView> = {}) => draft({
+    lines: [{ id: 12, product_id: 4, change: 'inherited', product_name: 'Towel' }],
+    plans: [{ plan_snapshot_id: 22, membership_plan_id: 1, plan_name: 'Silver', change: 'inherited', status: 'to_be_canceled' }],
+    purchases: [], cart: { plans: 0, products: 0, changes: 1 }, ...over,
+  });
+
+  it('is an active cart in every in-progress state, however it was filled', () => {
+    expect(cartPendingChanges(changeOnly())).toBe(1);
+    expect(cartPhase(changeOnly(), 5)).toBe('draft');
+    expect(hasCart(changeOnly(), 5)).toBe(true);
+    // A staff removal in the Admin App: the preparing card, read-only, blocking the member's adds.
+    expect(cartPhase(changeOnly({ awaiting_staff_setup: true }), 5)).toBe('awaiting_staff');
+    expect(cartLockedForStaff(changeOnly({ awaiting_staff_setup: true }), 5)).toBe(true);
+    expect(cartPhase(changeOnly({ status: 'pending_payment', owner_member_id: 5 }), 5)).toBe('pending_payment');
+  });
+
+  it('is gone once the cart is no longer active, or when nothing is changed', () => {
+    for (const status of ['active', 'superseded', 'cancelled']) {
+      expect(cartPendingChanges(changeOnly({ status }))).toBe(0);
+      expect(cartPhase(changeOnly({ status }), 5)).toBeNull();
+    }
+    expect(cartPhase(changeOnly({ cart: { plans: 0, products: 0, changes: 0 } }), 5)).toBeNull();
+    expect(cartPhase(changeOnly({ cart: { plans: 0, products: 0 } }), 5)).toBeNull();
   });
 });
