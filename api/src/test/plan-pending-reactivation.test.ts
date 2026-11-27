@@ -216,6 +216,60 @@ describe('the pending In Cart view of a reactivation (#3114 stage 3)', () => {
     expect(await futureScheduled(memberId)).toBe(2);
   });
 
+  // #3507 — the forecast lists exactly the periods the commit generates, never fewer.
+  async function paidAheadCancellingPlan(): Promise<{ memberId: number; umId: number }> {
+    const { insertId: memberId } = await db.query(
+      'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymId, 'RA Paid', `ra-paid-${uniq()}@test.com`]);
+    const umId = await createTestDraftAssignment(gymId, memberId, await planId(), { config: { membership_fee_price: 10 } });
+    expect((await authed(request.post(`/user-memberships/${umId}/save-and-pay`)).send({})).status).toBe(200);
+    expect((await authed(request.post(`/user-memberships/${umId}/record-payment`)).send({})).status).toBe(200);
+    expect((await authed(request.delete(`/user-memberships/${umId}`))).status).toBe(204);
+    return { memberId: memberId as number, umId };
+  }
+  const futureDates = async (memberId: number) => (await db.query<any>(
+    `SELECT DATE_FORMAT(billing_date, '%Y-%m-%d') AS d FROM billing_events
+      WHERE gym_id = ? AND member_id = ? AND is_scheduled = 1 AND billing_date >= UTC_DATE() ORDER BY billing_date`,
+    [gymId, memberId])).rows.map((r: any) => r.d as string);
+
+  it('forecasts a reactivated plan paid ahead on every period the commit then persists (#3507)', async () => {
+    const { memberId, umId } = await paidAheadCancellingPlan();
+    expect((await snap(umId)).status).toBe('active_cancel_at_period_end');
+    const mark = await authed(request.post(`/user-memberships/${umId}/mark-reactivate`));
+    expect(mark.status).toBe(200);
+    const eventsBefore = await allEvents(memberId);
+
+    const sim = await authed(request.get(`/product-sets/${mark.body.product_set_id}/billing-event-simulation`));
+    expect(sim.status).toBe(200);
+    const forecast = (sim.body.dates as Array<{ date: string; total: number }>).filter((d) => d.total > 0).map((d) => d.date);
+    expect(forecast.length).toBeGreaterThan(0);
+    // The simulation is predictive only.
+    expect(await allEvents(memberId)).toBe(eventsBefore);
+
+    expect((await authed(request.post(`/product-sets/${mark.body.product_set_id}/activate`))).status).toBeLessThan(300);
+    expect(forecast).toEqual(await futureDates(memberId));
+  });
+
+  it('a stale end date left on the marked plan does not hide it from the forecast (#3507)', async () => {
+    const { umId } = await cancellingPlan();
+    const mark = await authed(request.post(`/user-memberships/${umId}/mark-reactivate`));
+    // A cancellation date further ahead than the forecast's two cycles.
+    await db.query(
+      `UPDATE plan_snapshots SET previous_end_date = DATE_ADD(UTC_DATE(), INTERVAL 6 MONTH)
+        WHERE gym_id = ? AND anchor_plan_snapshot_id = ?`, [gymId, umId]);
+    const sim = await authed(request.get(`/product-sets/${mark.body.product_set_id}/billing-event-simulation`));
+    expect(sim.status).toBe(200);
+    expect(sim.body.total).toBeGreaterThan(0);
+  });
+
+  it('a plan still cancelling at its end date is not forecast after it (#3507)', async () => {
+    const { memberId, umId } = await paidAheadCancellingPlan();
+    const endsAt = (await snap(umId)).ends_at as string;
+    const { rows } = await db.query<any>(
+      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active'`, [gymId, memberId]);
+    const sim = await authed(request.get(`/product-sets/${rows[0].id}/billing-event-simulation`));
+    for (const d of (sim.body.dates ?? []) as Array<{ date: string }>) expect(d.date <= endsAt).toBe(true);
+  });
+
   it('a cart that is not reactivating anything forecasts no reactivated plan', async () => {
     const { umId } = await cancellingPlan();
     const mark = await authed(request.post(`/user-memberships/${umId}/mark-reactivate`));

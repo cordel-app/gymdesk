@@ -1,7 +1,7 @@
 import { exerciseFactSql } from '../domain/exerciseFactSql';
 import { Router } from 'express';
 import { gymToday } from '../domain/workoutProgress';
-import { baseTrainingPlanName, isSameDayEdit, previousDay, versionedTrainingPlanName } from '../domain/trainingPlanVersioning';
+import { baseTrainingPlanName, isSameDayEdit } from '../domain/trainingPlanVersioning';
 import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, exerciseGenderImagePairsSql, exerciseGenderImageColumnsSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { localizedDescriptionExpr, localizedShortDescriptionExpr } from '../domain/exerciseDescriptionTranslations';
 import { db, Tx } from '../infra/db';
@@ -10,6 +10,7 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
 import { insertAndFetch } from '../infra/db-helpers';
+import { activateDraftTrainingPlanTx, gymLocalToday, loadActivationPreview } from './training-plan-activation';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { SupportedLocale, getRequestLocale } from '../infra/locale';
 
@@ -31,9 +32,9 @@ const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {
   Standard: 1, Superset: 2, Triset: 3,
   GiantSet: null, Circuit: null, EMOM: null, AMRAP: null, Tabata: null,
 };
-// #67 lifecycle: draft/active/expired/completed/deleted ('inactive' remapped to 'expired' in migration 054)
-// #112: 'completed' added for explicit trainer-initiated plan completion
-const PLAN_STATUSES = ['draft', 'active', 'expired', 'completed', 'deleted'];
+// #67 lifecycle: draft/active/expired/completed/deleted ('inactive' remapped to 'expired' in migration 054).
+// #112 completes a plan through POST /complete; #3477 activates a Draft through POST /activate, and
+// PUT never changes the status.
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function reorder(tx: Tx, table: string, parentColumn: string, parentId: string, orderedIds: number[]) {
@@ -234,10 +235,6 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
   const actor = resolveRequestActor(ctx);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const { name, description, status, start_date, end_date } = req.body;
-  const EDITABLE_STATUSES = PLAN_STATUSES.filter((s) => s !== 'deleted' && s !== 'completed');
-  if (status && !EDITABLE_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${EDITABLE_STATUSES.join(', ')} (use POST /complete to complete a plan)` });
-  }
   if (start_date != null && !(typeof start_date === 'string' && DATE_RE.test(start_date))) {
     return res.status(400).json({ error: 'start_date must be YYYY-MM-DD' });
   }
@@ -252,28 +249,22 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
     if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
     if (planRows[0].status === 'completed') return res.status(403).json({ error: 'Completed training plans are read-only' });
 
-    // #1958: saving a Draft plan activates it (an explicit expired status still wins).
-    // #1969: a version draft (draft_of_plan_id) is activated only by POST /publish-version.
-    const isVersionDraft = planRows[0].draft_of_plan_id != null;
-    if (isVersionDraft && status && status !== 'draft') {
-      return res.status(409).json({ error: 'A version draft is activated by publishing it, not by changing its status' });
+    // #3477: the status is not edited here. Saving a Draft keeps it a Draft (reversing #1958's
+    // activate-on-save); it becomes Active only through POST /activate (or /publish-version), and
+    // an Active plan ends through POST /complete. A body repeating the stored status is accepted.
+    if (status != null && status !== planRows[0].status) {
+      return res.status(400).json({
+        error: 'The status of a training plan is changed through its actions (Activate, Complete), not by editing it',
+        code: 'status_not_editable',
+      });
     }
-    const nextStatus = planRows[0].status === 'draft' && !isVersionDraft && (!status || status === 'draft') ? 'active' : status;
-
-    if (nextStatus === 'expired') {
-      const effectiveEndDate = ('end_date' in req.body) ? end_date : planRows[0].end_date;
-      if (!effectiveEndDate) {
-        return res.status(400).json({ error: 'End Date is required when status is Expired.' });
-      }
-    }
-
     const { rowCount } = await db.query(
       `UPDATE training_plans SET
-        name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
+        name = COALESCE(?, name), description = IF(?, ?, description),
         start_date = COALESCE(?, start_date), end_date = IF(?, ?, end_date),
         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, nextStatus ?? null,
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null,
        start_date ?? null, 'end_date' in req.body ? 1 : 0, end_date ?? null, actor,
        planId, memberId, gymId],
     );
@@ -975,69 +966,44 @@ trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), 
 });
 
 // #1969: Save on the draft. One transaction ends the current version yesterday (completed, renamed
-// with its date range) and activates the draft from today with no end date.
-trainingPlansRouter.post('/:planId/publish-version', requireModuleWrite('TRAINING'), async (req, res, next) => {
+// with its date range) and activates the draft from today with no end date. Since #3477 the
+// transaction is activateDraftTrainingPlanTx(), shared with POST /activate.
+trainingPlansRouter.post('/:planId/publish-version', requireModuleWrite('TRAINING'), (req, res, next) =>
+  activateRoute(req, res, next, true));
+
+// #3477: what Activate would do, for its confirmation (the plan it completes, the start date).
+trainingPlansRouter.get('/:planId/activation', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { memberId, planId } = req.params as { memberId: string; planId: string };
+  try {
+    const preview = await loadActivationPreview(gymId, memberId, planId, await gymLocalToday(gymId));
+    if (!preview) return res.status(404).json({ error: 'Training plan not found' });
+    res.json(preview);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    next(err);
+  }
+});
+
+// #3477: ⋮ → Activate (and Save → Activate) on a Draft Assigned Training Plan.
+trainingPlansRouter.post('/:planId/activate', requireModuleWrite('TRAINING'), (req, res, next) =>
+  activateRoute(req, res, next, false));
+
+async function activateRoute(req: any, res: any, next: any, versionOnly: boolean) {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   try {
-    const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
-    const today = gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
-    const yesterday = previousDay(today);
-
-    const result = await db.transaction(async (tx) => {
-      const { rows: draftRows } = await tx.query(
-        "SELECT id, name, description, status, draft_of_plan_id, template_id FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? FOR UPDATE",
-        [planId, memberId, gymId],
-      );
-      const draft = draftRows[0];
-      if (!draft || draft.status === 'deleted') throw Object.assign(new Error('Training plan not found'), { status: 404 });
-      if (draft.status !== 'draft' || !draft.draft_of_plan_id) {
-        throw Object.assign(new Error('Only a draft created by editing a plan can be published'), { status: 409 });
-      }
-      const { rows: origRows } = await tx.query(
-        "SELECT id, name, status, start_date FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? FOR UPDATE",
-        [draft.draft_of_plan_id, memberId, gymId],
-      );
-      const orig = origRows[0];
-      if (!orig || orig.status !== 'active') {
-        throw Object.assign(new Error('The plan this draft was created from is no longer active'), { status: 409 });
-      }
-      const origStart = typeof orig.start_date === 'string' ? orig.start_date.slice(0, 10) : new Date(orig.start_date).toISOString().slice(0, 10);
-
-      await tx.query(
-        `UPDATE training_plans SET status = 'completed', end_date = ?, name = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-         WHERE id = ? AND gym_id = ?`,
-        [yesterday, versionedTrainingPlanName(orig.name, origStart, yesterday), actor, orig.id, gymId],
-      );
-      await tx.query(
-        "UPDATE member_training_plans SET status = 'completed', valid_to = ? WHERE training_plan_id = ? AND gym_id = ? AND status = 'active'",
-        [yesterday, orig.id, gymId],
-      );
-      const newName = versionedTrainingPlanName(draft.name, today, null);
-      await tx.query(
-        `UPDATE training_plans SET status = 'active', start_date = ?, end_date = NULL, draft_of_plan_id = NULL, name = ?,
-                modified_at = UTC_TIMESTAMP(), modified_by = ?
-         WHERE id = ? AND gym_id = ?`,
-        [today, newName, actor, draft.id, gymId],
-      );
-      const { insertId: mtpId } = await tx.query(
-        `INSERT INTO member_training_plans
-          (gym_id, member_id, training_plan_id, template_id, name, description, status, valid_from, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-        [gymId, memberId, draft.id, draft.template_id ?? null, newName, draft.description, today, actor],
-      );
-      await tx.query('UPDATE members SET member_training_plan_id = ? WHERE id = ? AND gym_id = ?', [mtpId, memberId, gymId]);
-      return { previousId: orig.id as number, previousName: versionedTrainingPlanName(orig.name, origStart, yesterday) };
-    });
-
+    const today = await gymLocalToday(gymId);
+    const result = await db.transaction((tx) =>
+      activateDraftTrainingPlanTx(tx, { gymId, memberId, planId, actor, today, versionOnly }));
     const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [planId]);
     recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: planId,
-      previous: { status: 'draft' }, next: { status: 'active', replaces: result.previousId, start_date: today } });
-    res.json({ ...rows[0], previous_plan_id: result.previousId, previous_plan_name: result.previousName });
+      previous: { status: 'draft' }, next: { status: 'active', replaces: result.previousIds, start_date: result.startDate } });
+    res.json({ ...rows[0], previous_plan_id: result.previousIds[0] ?? null, previous_plan_name: result.previousName });
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
     next(err);
   }
-});
+}

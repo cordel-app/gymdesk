@@ -115,14 +115,15 @@ describe('POST /training-plans (gym-level)', () => {
   });
 });
 
-describe('PUT /members/:memberId/training-plans/:planId — saving a Draft (#1958)', () => {
+describe('Assigned Training Plan Draft lifecycle (#3477)', () => {
   let gymId: string;
+  let otherGymId: string;
   let memberId: number;
 
-  async function insertPlan(name: string, status: string): Promise<number> {
+  async function insertPlan(name: string, status: string, startDate = TODAY): Promise<number> {
     const { insertId } = await db.query(
-      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date, created_by) VALUES (?, ?, ?, ?, CURRENT_DATE(), 'test')`,
-      [gymId, memberId, name, status],
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date, created_by) VALUES (?, ?, ?, ?, ?, 'test')`,
+      [gymId, memberId, name, status, startDate],
     );
     return insertId;
   }
@@ -132,39 +133,103 @@ describe('PUT /members/:memberId/training-plans/:planId — saving a Draft (#195
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send(body);
+  const activate = (id: number, gym = gymId) =>
+    request
+      .post(`/members/${memberId}/training-plans/${id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gym);
+  const preview = (id: number) =>
+    request
+      .get(`/members/${memberId}/training-plans/${id}/activation`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+  const statusOf = async (id: number) =>
+    (await db.query('SELECT status, start_date, end_date FROM training_plans WHERE id = ?', [id])).rows[0];
 
   beforeAll(async () => {
-    gymId = await createTestGym('Draft Save Gym');
+    gymId = await createTestGym('Draft Lifecycle Gym');
+    otherGymId = await createTestGym('Draft Lifecycle Other Gym');
     await createTestMembership(gymId, 'admin');
+    await createTestMembership(otherGymId, 'admin');
     memberId = await createMember(gymId);
   });
 
-  it('activates a draft when it is saved', async () => {
+  it('saving a draft keeps it a draft (Continue editing the Draft)', async () => {
     const id = await insertPlan('Dup draft', 'draft');
     const res = await put(id, { name: 'Dup draft edited' });
     expect(res.status).toBe(200);
+    expect(res.body.status).toBe('draft');
+    expect(res.body.name).toBe('Dup draft edited');
+  });
+
+  it('refuses a status change through PUT and accepts the stored status repeated', async () => {
+    const id = await insertPlan('Draft status', 'draft');
+    const refused = await put(id, { status: 'active' });
+    expect(refused.status).toBe(400);
+    expect(refused.body.code).toBe('status_not_editable');
+    expect((await statusOf(id)).status).toBe('draft');
+    const active = await insertPlan('Active status', 'active');
+    expect((await put(active, { status: 'expired', end_date: TODAY })).status).toBe(400);
+    const same = await put(active, { name: 'Active status 2', status: 'active' });
+    expect(same.status).toBe(200);
+    expect(same.body.status).toBe('active');
+  });
+
+  it('activates a draft, completing the member\'s active plan (no overlap)', async () => {
+    const memberB = await createMember(gymId);
+    const ins = async (name: string, status: string) => (await db.query(
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date, created_by)
+       VALUES (?, ?, ?, ?, DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY), 'test')`, [gymId, memberB, name, status])).insertId;
+    const current = await ins('Current', 'active');
+    const draft = await ins('Next', 'draft');
+
+    const p = await request.get(`/members/${memberB}/training-plans/${draft}/activation`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(p.status).toBe(200);
+    expect(p.body.current_plan).toEqual({ id: current, name: 'Current' });
+
+    const res = await request.post(`/members/${memberB}/training-plans/${draft}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
     expect(res.body.status).toBe('active');
+    expect(res.body.previous_plan_id).toBe(current);
+    const { rows } = await db.query(
+      "SELECT id FROM training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active'", [memberB, gymId]);
+    expect(rows.map((r: any) => r.id)).toEqual([draft]);
+    expect((await statusOf(current)).status).toBe('completed');
+    const { rows: mtp } = await db.query(
+      "SELECT training_plan_id FROM member_training_plans WHERE member_id = ? AND gym_id = ? AND status = 'active'", [memberB, gymId]);
+    expect(mtp.map((r: any) => r.training_plan_id)).toEqual([draft]);
   });
 
-  it('activates a draft even when the client sends status draft', async () => {
-    const id = await insertPlan('Dup draft 2', 'draft');
-    const res = await put(id, { name: 'Dup draft 2', status: 'draft' });
+  it('activates a draft from today when the member has no active plan', async () => {
+    const memberC = await createMember(gymId);
+    const { insertId: draft } = await db.query(
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date, created_by)
+       VALUES (?, ?, 'Solo', 'draft', DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), 'test')`, [gymId, memberC]);
+    const p = await request.get(`/members/${memberC}/training-plans/${draft}/activation`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(p.body.current_plan).toBeNull();
+    const res = await request.post(`/members/${memberC}/training-plans/${draft}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
     expect(res.body.status).toBe('active');
+    expect(res.body.previous_plan_id).toBeNull();
   });
 
-  it('leaves the original plan untouched and keeps an expired status explicit', async () => {
-    const original = await insertPlan('Original', 'expired');
-    const draft = await insertPlan('Copy', 'draft');
-    await put(draft, { name: 'Copy edited' });
-    const { rows } = await db.query('SELECT status FROM training_plans WHERE id = ?', [original]);
-    expect(rows[0].status).toBe('expired');
-    const res = await put(await insertPlan('Draft to expire', 'draft'), { status: 'expired' });
-    expect(res.status).toBe(400); // end date required, rule unchanged
-  });
-
-  it('does not change an active plan\'s status on save', async () => {
+  it('refuses to activate a plan that is not a draft', async () => {
     const id = await insertPlan('Already active', 'active');
-    const res = await put(id, { name: 'Already active 2' });
-    expect(res.body.status).toBe('active');
+    const res = await activate(id);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('not_draft');
+    expect((await preview(id)).status).toBe(409);
+  });
+
+  it('is tenant-isolated and needs authentication', async () => {
+    const id = await insertPlan('Isolated draft', 'draft');
+    expect((await activate(id, otherGymId)).status).toBe(404);
+    const anon = await request.post(`/members/${memberId}/training-plans/${id}/activate`).set('x-gym-id', gymId);
+    expect(anon.status).toBe(401);
+    expect((await statusOf(id)).status).toBe('draft');
   });
 });

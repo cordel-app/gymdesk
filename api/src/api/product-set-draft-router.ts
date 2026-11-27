@@ -339,12 +339,16 @@ productSetDraftRouter.delete('/promotions/:applicationId', requireModuleWrite('P
     return { ok: true as const };
   }, next, { remove_promotion: Number(req.params.applicationId) }));
 
-/** A forecast without the dates on or before `paidThrough` (#3114 stage 3); nothing is re-priced. */
-export function afterPaidThrough<T extends { dates: Array<{ date: string; total: number }>; total: number }>(
-  sim: T, paidThrough: string | null,
+/**
+ * A forecast without the dates whose period already holds an obligation (#3114 stage 3, #3507);
+ * nothing is re-priced.
+ */
+export function withoutCoveredDates<T extends { dates: Array<{ date: string; total: number }>; total: number }>(
+  sim: T, coveredDates: string[],
 ): T {
-  if (paidThrough == null) return sim;
-  const dates = sim.dates.filter((d) => d.date > paidThrough);
+  if (coveredDates.length === 0) return sim;
+  const covered = new Set(coveredDates);
+  const dates = sim.dates.filter((d) => !covered.has(d.date));
   return { ...sim, dates, total: Math.round(dates.reduce((n, d) => n + d.total, 0) * 100) / 100 };
 }
 
@@ -362,15 +366,15 @@ export async function productSetForecast(gymId: string, id: number) {
   if (assignments.length === 0) return null;
   // #3030: one shared horizon — two complete cycles of the plan with the longest cycle.
   // #3114 stage 3: a plan the owner marked `to_be_reactivated` bills again once the cart is
-  // committed — open-ended, on its own schedule — from the first period after the one it had
-  // already paid through (those periods exist and are never generated again).
+  // committed — open-ended, on its own schedule — on every period the commit will generate: the
+  // periods that already hold an obligation are never generated again (#3507).
   const reactivating = await loadPendingReactivationAssignments(gymId, id);
   const sharedHorizonUntil = sharedCycleHorizon([...assignments, ...reactivating.map((r) => r.assignment)]);
   return mergeBillingEventForecasts([
     ...assignments.map((assignment) =>
       computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true, sharedHorizonUntil })),
-    ...reactivating.map(({ assignment, paidThrough }) => afterPaidThrough(
-      computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true, sharedHorizonUntil }), paidThrough)),
+    ...reactivating.map(({ assignment, coveredDates }) => withoutCoveredDates(
+      computeAssignmentBillingEventSimulation({ assignment, dynamicHorizon: true, sharedHorizonUntil }), coveredDates)),
   ]);
 }
 
