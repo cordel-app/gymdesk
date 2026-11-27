@@ -7,6 +7,8 @@
  * state to and from those two query strings; it filters nothing.
  */
 export interface BillingEventFilters {
+  /** #3510: one Billing Event by id, as typed (`?id=` in the URL). */
+  id: string;
   memberId: number | null;
   memberName: string;
   /** #2553: one Assigned Plan's events, shown as a chip. */
@@ -23,7 +25,7 @@ export interface BillingEventFilters {
 }
 
 export const EMPTY_BILLING_EVENT_FILTERS: BillingEventFilters = {
-  memberId: null, memberName: '', userMembershipId: null, planName: '',
+  id: '', memberId: null, memberName: '', userMembershipId: null, planName: '',
   product: '', processedBy: '', paymentMethod: '',
   from: '', to: '', amountMin: '', amountMax: '', status: [],
 };
@@ -42,8 +44,27 @@ export function amountParam(value: string): string | null {
   return Number.isFinite(Number(trimmed)) ? trimmed : null;
 }
 
+/**
+ * #3510: what a typed ID filter means. `none` when blank (no narrowing),
+ * `valid` with the id to send, `invalid` when it can match no event — the
+ * page then shows the empty state instead of asking the API.
+ */
+export type BillingEventIdFilter =
+  | { kind: 'none' }
+  | { kind: 'valid'; id: number }
+  | { kind: 'invalid' };
+
+export function billingEventIdFilter(value: string): BillingEventIdFilter {
+  const trimmed = value.trim().replace(/^#/, '');
+  if (trimmed === '') return { kind: 'none' };
+  if (!/^\d+$/.test(trimmed)) return { kind: 'invalid' };
+  const id = positiveInt(trimmed);
+  return id !== null && Number.isSafeInteger(id) ? { kind: 'valid', id } : { kind: 'invalid' };
+}
+
 export function filtersFromUrl(params: ParamReader): BillingEventFilters {
   return {
+    id: params.get('id') ?? '',
     memberId: positiveInt(params.get('memberId')),
     memberName: params.get('memberName') ?? '',
     userMembershipId: positiveInt(params.get('userMembershipId')),
@@ -62,6 +83,7 @@ export function filtersFromUrl(params: ParamReader): BillingEventFilters {
 /** The page URL's query string (`order` is carried by the page itself). */
 export function filtersToUrl(f: BillingEventFilters): URLSearchParams {
   const p = new URLSearchParams();
+  if (f.id.trim()) p.set('id', f.id.trim());
   if (f.memberId) { p.set('memberId', String(f.memberId)); p.set('memberName', f.memberName); }
   if (f.userMembershipId) { p.set('userMembershipId', String(f.userMembershipId)); if (f.planName) p.set('planName', f.planName); }
   if (f.product.trim()) p.set('product', f.product.trim());
@@ -77,6 +99,8 @@ export function filtersToUrl(f: BillingEventFilters): URLSearchParams {
 
 /** Appends the filters to the API request's query string. */
 export function appendApiFilters(p: URLSearchParams, f: BillingEventFilters): void {
+  const id = billingEventIdFilter(f.id);
+  if (id.kind === 'valid') p.set('id', String(id.id));
   if (f.memberId) p.set('member_id', String(f.memberId));
   if (f.userMembershipId) p.set('user_membership_id', String(f.userMembershipId));
   if (f.product.trim()) p.set('product', f.product.trim());

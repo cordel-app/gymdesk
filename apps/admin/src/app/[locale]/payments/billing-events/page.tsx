@@ -9,7 +9,7 @@ import { useLocale } from 'next-intl';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { FilterBar, FilterField, filterButtonStyle, filterControlStyle } from '@/components/FilterBar';
 import {
-  EMPTY_BILLING_EVENT_FILTERS, appendApiFilters, filtersFromUrl, filtersToUrl, hasActiveFilter,
+  EMPTY_BILLING_EVENT_FILTERS, appendApiFilters, billingEventIdFilter, filtersFromUrl, filtersToUrl, hasActiveFilter,
   type BillingEventFilters,
 } from './billingEventFilters';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -177,15 +177,15 @@ export default function BillingEventsPage() {
   // #2886: every filter is one state object, synced with the URL.
   const [filters, setFilters] = useState<BillingEventFilters>(() => filtersFromUrl(searchParams));
   // Free-text and number inputs are typed into a draft and committed after a pause.
-  const [draft, setDraft] = useState({ product: filters.product, amountMin: filters.amountMin, amountMax: filters.amountMax });
+  const [draft, setDraft] = useState({ id: filters.id, product: filters.product, amountMin: filters.amountMin, amountMax: filters.amountMax });
   const [options, setOptions] = useState<FilterOptions>({ processed_by: [], payment_methods: [] });
   // #779: `order=asc` is how the sidebar badge opens the failed list as a work
   // queue, oldest first. Carried through the URL like the filters, no control.
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
-  // #1521: `?id=` opens one specific event (the Member card's *View billing
-  // event*), expanded; changing any filter leaves it (`applyFilters` drops it).
-  const eventIdParam = Number(searchParams.get('id'));
-  const eventId = Number.isInteger(eventIdParam) && eventIdParam > 0 ? eventIdParam : null;
+  // #1521 / #3510: `?id=` is the ID filter. A link (the Member card's *View
+  // billing event*) opens that event expanded; the field edits or clears it.
+  const idFilter = billingEventIdFilter(filters.id);
+  const eventId = idFilter.kind === 'valid' ? idFilter.id : null;
   const [offset, setOffset] = useState(0);
 
   const [items, setItems] = useState<BillingEvent[]>([]);
@@ -205,7 +205,7 @@ export default function BillingEventsPage() {
   }
 
   useEffect(() => {
-    if (draft.product === filters.product && draft.amountMin === filters.amountMin && draft.amountMax === filters.amountMax) return;
+    if (draft.id === filters.id && draft.product === filters.product && draft.amountMin === filters.amountMin && draft.amountMax === filters.amountMax) return;
     const timer = setTimeout(() => patchFilters(draft), 400);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,11 +223,15 @@ export default function BillingEventsPage() {
     if (!activeGymId) return;
     setLoading(true);
     setError(null);
+    if (idFilter.kind === 'invalid') {
+      // #3510: an ID no event can have reads as no results, not an error.
+      setItems([]); setTotal(0); setOffset(0); setExpanded(new Set()); setLoading(false);
+      return;
+    }
     try {
       const p = new URLSearchParams({ limit: String(DEFAULT_LIMIT), offset: String(off) });
       appendApiFilters(p, filters);
       if (order === 'asc') p.set('order', 'asc');
-      if (eventId) p.set('id', String(eventId));
       const data = await apiFetch<PageResult>(`/payments/billing-events?${p}`);
       setItems(data.items);
       setTotal(data.total);
@@ -241,7 +245,7 @@ export default function BillingEventsPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGymId, filters, order, eventId]);
+  }, [activeGymId, filters, order]);
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
@@ -283,6 +287,17 @@ export default function BillingEventsPage() {
 
       {/* Filter bar — #2886: each filter narrows server-side; they combine with AND. */}
       <FilterBar>
+        <FilterField label={t('billing_events_page.filter_id')} htmlFor="be-filter-id">
+          <input
+            id="be-filter-id"
+            type="search"
+            inputMode="numeric"
+            value={draft.id}
+            placeholder={t('billing_events_page.filter_id_placeholder')}
+            onChange={(e) => setDraft((d) => ({ ...d, id: e.target.value }))}
+            style={{ ...filterControlStyle, width: 110 }}
+          />
+        </FilterField>
         <FilterField label={t('billing_events_page.filter_member')}>
           <MemberFilter
             value={filters.memberName}
@@ -397,7 +412,7 @@ export default function BillingEventsPage() {
           <button
             type="button"
             onClick={() => {
-              setDraft({ product: '', amountMin: '', amountMax: '' });
+              setDraft({ id: '', product: '', amountMin: '', amountMax: '' });
               applyFilters(EMPTY_BILLING_EVENT_FILTERS);
             }}
             style={filterButtonStyle}
