@@ -11,6 +11,7 @@ import { classifyProviderStatus, normaliseProviderStatus } from '../domain/provi
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordStatusChange } from './billing-events';
 import { payerMemberSql } from './payer-resolution';
+import { chargesAutomatically } from '../domain/memberDefaultPaymentMethod';
 import { writeAssignmentLifecycle } from './assignment-lifecycle-writer';
 
 /**
@@ -71,6 +72,8 @@ interface DueEvent {
   payment_token: string | null;
   sequence_id: string | null;
   provider: string | null;
+  /** #3497: the payer's stored Default Payment Method (NULL = Automated), read when the attempt is decided. */
+  payer_default_payment_method: string | null;
 }
 
 type Outcome = 'succeeded' | 'failed' | 'waived' | 'skipped' | 'unknown';
@@ -140,7 +143,9 @@ export async function executeDueScheduledEvents(opts: {
 
   // First attempts (scheduled and due) and retries (failed, set still Active).
   const { rows: due } = await db.query<DueEvent>(
-    `SELECT be.id, be.gym_id, be.product_set_id, be.member_id, ${payerMemberSql('be.member_id', 'be.gym_id')} AS payer_member_id, be.amount, pm.payment_token, pm.sequence_id, pm.provider
+    `SELECT be.id, be.gym_id, be.product_set_id, be.member_id, ${payerMemberSql('be.member_id', 'be.gym_id')} AS payer_member_id, be.amount, pm.payment_token, pm.sequence_id, pm.provider,
+            (SELECT pay.default_payment_method FROM members pay
+              WHERE pay.id = ${payerMemberSql('be.member_id', 'be.gym_id')} AND pay.gym_id = be.gym_id) AS payer_default_payment_method
        FROM billing_events be
        JOIN product_sets ps ON ps.id = be.product_set_id AND ps.status = 'active'
        LEFT JOIN payment_methods pm ON pm.member_id = ${payerMemberSql('be.member_id', 'be.gym_id')} AND pm.gym_id = be.gym_id
@@ -201,6 +206,10 @@ export async function executeDueScheduledEvents(opts: {
       }
 
       if (!event.payment_token || !event.sequence_id) return 'skip'; // nothing attempted; stays scheduled
+      // #3497: only a payer whose Default Payment Method is Automated is charged by
+      // the run. Another method is collected by staff or a payment link, so the
+      // event stays scheduled and past due, as with no stored card: nothing attempted.
+      if (!chargesAutomatically(event.payer_default_payment_method)) return 'skip';
 
       const { insertId } = await tx.query(
         `INSERT INTO payment_requests

@@ -44,6 +44,7 @@ export function MemberProfileLayout({
   renderField,
   renderCalculated,
   centers,
+  paymentMethod = null,
 }: {
   /**
    * #1374 — the Member's profile image, above the fields in both modes: the
@@ -71,6 +72,11 @@ export function MemberProfileLayout({
     defaultLabel: string;
     default: React.ReactNode;
   } | null;
+  /**
+   * #3497 — the Default Payment Method, directly below Default Center in both
+   * modes. Shown whether or not the gym has several centers.
+   */
+  paymentMethod?: { label: string; content: React.ReactNode } | null;
 }) {
   return (
     <>
@@ -108,6 +114,15 @@ export function MemberProfileLayout({
           <div>
             <label style={profileFieldLabelStyle}>{centers.defaultLabel}</label>
             {centers.default}
+          </div>
+        </div>
+      )}
+
+      {paymentMethod && (
+        <div style={{ ...profileGridStyle, marginTop: PROFILE_ROW_GAP }}>
+          <div>
+            <label style={profileFieldLabelStyle}>{paymentMethod.label}</label>
+            {paymentMethod.content}
           </div>
         </div>
       )}

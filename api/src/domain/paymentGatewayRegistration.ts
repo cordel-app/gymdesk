@@ -9,10 +9,9 @@
  *   1. the member's Default Payment Method is **Automated**, and
  *   2. no MONEI token is stored for the member who pays.
  *
- * **The Default Payment Method is not stored yet.** #3497 adds it, and states
- * its default as Automated for every member with no explicit preference. Until
- * that column exists every member reads as Automated (`resolveDefaultPaymentMethod(null)`),
- * and #3497 only has to pass its stored value here — the rule does not move.
+ * The Default Payment Method is `members.default_payment_method` (#3497,
+ * migration 497): NULL reads as Automated through `resolveDefaultPaymentMethod()`,
+ * and its vocabulary is `memberDefaultPaymentMethod.ts`'.
  *
  * **Only the member who pays is warned.** A Family's charges are taken from the
  * Family Owner's stored card (#2123 stage 2), so a member who is not the payer

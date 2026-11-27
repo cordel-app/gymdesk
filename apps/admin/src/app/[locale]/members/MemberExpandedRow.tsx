@@ -58,6 +58,8 @@ import {
 } from './memberProfile';
 import { MemberCenterAccess } from './MemberCenterAccess';
 import { MemberProfileLayout, NewMemberValue, WelcomedValue, profileValueStyle } from './MemberProfileLayout';
+import { PaymentMethodValue } from './MemberDefaultPaymentMethod';
+import { defaultPaymentMethodLabel, optionFor, type DefaultPaymentMethodView } from './defaultPaymentMethod';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
 import { MemberProfessionalServices } from './MemberProfessionalServices';
@@ -186,6 +188,7 @@ export function MemberExpandedRow({
   // so remounting it is how a change in either section above re-runs it.
 
   const [centers, setCenters] = useState<MemberCenter[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<DefaultPaymentMethodView | null>(null);
   const [clerkStatus, setClerkStatus] = useState<({ status: string } & ClerkAccountFields) | null>(null);
   const [trainingPlans, setTrainingPlans] = useState<TrainingPlanAssignment[]>([]);
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>([]);
@@ -268,7 +271,7 @@ export function MemberExpandedRow({
     setError(null);
     try {
       const [
-        config, memberTrainingPlans, nutrition, clerk, memberCenters, purchases,
+        config, memberTrainingPlans, nutrition, clerk, memberCenters, paymentMethodView, purchases,
       ] = await Promise.all([
         apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`)
           .catch(() => EMPTY_CONFIGURATION),
@@ -278,6 +281,7 @@ export function MemberExpandedRow({
         apiFetch<NutritionPlan[]>(`/member-nutrition-plans?member_id=${memberId}`).catch(() => []),
         apiFetch<{ status: string } & ClerkAccountFields>(`/members/${memberId}/clerk-status`).catch(() => null),
         apiFetch<MemberCenter[]>(`/members/${memberId}/centers`).catch(() => []),
+        apiFetch<DefaultPaymentMethodView>(`/members/${memberId}/default-payment-method`).catch(() => null),
         apiFetch<{ items: PurchasedProduct[] }>(`/members/${memberId}/products`)
           .catch(() => ({ items: [] })),
       ]);
@@ -288,6 +292,7 @@ export function MemberExpandedRow({
       setTrainingPlans(memberTrainingPlans);
       setNutritionPlans(nutrition);
       setCenters(memberCenters);
+      setPaymentMethod(paymentMethodView);
     } catch {
       setError(t('members.expanded_error'));
     } finally {
@@ -296,6 +301,9 @@ export function MemberExpandedRow({
   }
 
   async function loadCenters() {
+    // #3497: the same save may have changed the Default Payment Method.
+    apiFetch<DefaultPaymentMethodView>(`/members/${memberId}/default-payment-method`)
+      .then(setPaymentMethod).catch(() => {});
     try {
       setCenters(await apiFetch<MemberCenter[]>(`/members/${memberId}/centers`));
     } catch {
@@ -471,6 +479,15 @@ export function MemberExpandedRow({
                     defaultLabel: t('members.default_center'),
                     default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
                   }}
+                  paymentMethod={paymentMethod ? {
+                    label: t('members.default_payment_method'),
+                    content: (
+                      <PaymentMethodValue
+                        option={optionFor(paymentMethod.default_payment_method, paymentMethod.options)}
+                        label={defaultPaymentMethodLabel(paymentMethod.default_payment_method, paymentMethod.options, t('members.default_payment_method_automated'))}
+                      />
+                    ),
+                  } : null}
                 />
               </div>
             </Section>

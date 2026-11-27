@@ -42,8 +42,10 @@ mePaymentGatewayRouter.get('/', requireRole('member'), async (req: Request, res:
       memberMayViewPayments(db, gymId, memberId),
       hasMoneiToken(gymId, memberId),
     ]);
-    // #3497 stores the preference; until then every member is Automated.
-    const defaultPaymentMethod = resolveDefaultPaymentMethod(null);
+    const { rows: pref } = await db.query<{ default_payment_method: string | null }>(
+      'SELECT default_payment_method FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
+    // #3497: the member's stored preference, Automated when none.
+    const defaultPaymentMethod = resolveDefaultPaymentMethod(pref[0]?.default_payment_method ?? null);
     res.json({
       default_payment_method: defaultPaymentMethod,
       has_monei_token: tokenStored,
