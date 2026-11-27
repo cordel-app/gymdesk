@@ -421,6 +421,10 @@
     "plan_ov_products": "Productos y servicios incluidos",
     "plan_ov_mandatory": "Obligatorio",
     "plan_ov_optional": "Opcional",
+    "plan_ov_one_off": "Puntual",
+    "plan_ov_recurring": "Recurrente",
+    "plan_ov_access": "Acceso: {services}",
+    "plan_ov_access_none": "No incluye acceso",
     "plan_ov_regular": "Precio regular",
     "plan_ov_no_benefit": "Sin beneficio",
     "plan_ov_prepaid_end": "Compromiso prepagado hasta",
@@ -972,7 +976,7 @@
     "past_title": "Objetivos anteriores",
     "started_on": "Inicio {date}",
     "ended_on": "Fin {date}",
-    "status_in_progress": "En curso",
+    "status_in_progress": "Activo",
     "status_achieved": "Conseguido",
     "status_abandoned": "Abandonado",
     "status_removed": "Eliminado",
@@ -1156,5 +1160,12 @@
     "title": "Mi familia",
     "loading": "Cargando…",
     "empty": "No hay miembros de la familia que mostrar."
+  },
+  "payment_gateway": {
+    "title": "Registra tu método de pago",
+    "notice": "Tu método de pago predeterminado es Automático, pero todavía no estás registrado en nuestra pasarela de pago.",
+    "body": "Para activar los pagos automáticos, regístrate en la pasarela de pago oficial. Hasta entonces, los pagos automáticos no se podrán procesar.",
+    "register_now": "Registrarme ahora",
+    "close": "Cerrar"
   }
 }

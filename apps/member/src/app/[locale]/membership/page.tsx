@@ -98,6 +98,7 @@ import {
   planBenefitKey,
   planFinalPriceText,
   planFrequencyKey,
+  planItemProvision,
   planPriceText,
   planPromotionBenefitNote,
   planPromotionDurationNote,
@@ -159,6 +160,7 @@ import {
   setCommitErrorKey,
   checkoutRequestBody,
   planFeeScopeNote,
+  planShowsCharge,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -908,6 +910,8 @@ export default function MembershipPage() {
         // #2834 stage 2 — per member (× how many) or per family; the price is one fee.
         feeScopeNote ? t(`membership.${feeScopeNote.key}` as any, feeScopeNote.values) : null,
       ].filter(Boolean).join(' · ') || null,
+      // #3501 — a Cancelled / Cancels at End Date plan shows its chip and no charge.
+      showCharge: planShowsCharge(status),
       imageUrl: plan.plan_image_thumbnail_url ?? null,
       imageFullUrl: plan.plan_image_url ?? null,
       includedLabel: t('membership.plan_beneficiaries'),
@@ -1449,6 +1453,7 @@ export default function MembershipPage() {
         ? t(frequencyKey as any)
         : (details?.billing_interval != null && details.billing_unit
           ? formatInterval(details.billing_interval, details.billing_unit, t) : null),
+      showCharge: planShowsCharge(status),
       imageUrl: null,
       period: t('membership.plan_period', {
         start: plan.starts_at ? formatGymDateOnly(plan.starts_at, gymFmt) : '—',
@@ -1959,7 +1964,15 @@ export default function MembershipPage() {
           key: `${p.section}:${p.product_id}`,
           name: p.name,
           requirement: t(p.mandatory ? 'membership.plan_ov_mandatory' : 'membership.plan_ov_optional'),
-          detail: [`${p.quantity} ×`, freq(p.frequency)].filter(Boolean).join(' · '),
+          detail: `${p.quantity} ×`,
+          // #3504 — One-off / Recurring (with its interval) and the access it gives.
+          provision: (() => {
+            const pv = planItemProvision(p);
+            return {
+              kind: [t(pv.kindKey), pv.recurring ? freq(p.frequency) : null].filter(Boolean).join(' · '),
+              access: pv.accessNames ? t(pv.accessKey, { services: pv.accessNames }) : t(pv.accessKey),
+            };
+          })(),
           regularLabel: t('membership.plan_ov_regular'),
           regular: money(p.original_line_price_incl_tax) ?? '—',
           benefit: note ? t(note.key as any, note.values) : t('membership.plan_ov_no_benefit'),

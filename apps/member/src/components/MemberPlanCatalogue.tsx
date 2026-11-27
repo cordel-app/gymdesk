@@ -34,6 +34,8 @@ export interface MemberPlanCardItem {
   /** The catalogue price, formatted; `null` renders `—`. */
   price: string | null;
   frequency?: string | null;
+  /** #3501 — `false` omits the price and the frequency entirely (a plan that charges nothing more). */
+  showCharge?: boolean;
   /** *Final price* — the label and the figure, shown only once a Promotion is applied. */
   finalPriceLabel?: string | null;
   finalPrice?: string | null;
@@ -130,8 +132,8 @@ export function MemberPlanCard({ item }: { item: MemberPlanCardItem }) {
               <span style={styles.name}>{open ? '▾' : '▸'} {item.name}</span>
               <span style={styles.priceGroup}>
                 {item.status}
-                <span style={styles.price}>{item.price ?? '—'}</span>
-                {item.frequency && <span style={styles.frequency}>/ {item.frequency}</span>}
+                {item.showCharge !== false && <span style={styles.price}>{item.price ?? '—'}</span>}
+                {item.showCharge !== false && item.frequency && <span style={styles.frequency}>/ {item.frequency}</span>}
               </span>
             </div>
             {item.period && <span style={styles.line} data-plan-period>{item.period}</span>}

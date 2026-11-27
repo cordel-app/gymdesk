@@ -740,8 +740,11 @@
     "checkout_reason_detail_waive": "exempció",
     "checkout_action_waive": "Eximir",
     "checkout_action_revert_waive": "Revertir l'exempció",
+    "checkout_waive_confirm_title": "Eximir un càrrec de més de 50 €?",
+    "checkout_waive_confirm_message": "Ets a punt d'eximir {item} ({amount}) del pagament inicial. Aquest càrrec supera els 50 €.",
+    "checkout_waive_confirm": "Eximir",
+    "checkout_waive_cancel": "Cancel·lar",
     "checkout_waive_unavailable": "A aquesta línia no li queda import per eximir al pagament inicial.",
-    "checkout_waive_error_prepaid": "No es pot eximir una quota de membresia que cobra una durada prepagada: els períodes prepagats quedarien sense pagar.",
     "checkout_line_no_charge": "Sense càrrec",
     "checkout_split_prorated": "Període prorratejat {start} – {end}: {days} de {period} dies · {amount}",
     "checkout_line_proration_label": "Prorrateig",
@@ -4662,7 +4665,8 @@
     "tree_goal_image_close": "Tanca",
     "tree_goal_image_none": "Sense imatge",
     "tree_goal_no_description": "No hi ha cap descripció disponible.",
-    "label_member_notes": "Notes per al membre"
+    "label_member_notes": "Notes per al membre",
+    "converted": "Plantilla creada a partir del pla assignat."
   },
   "nutrition_library": {
     "details_slug": "Slug",
@@ -4914,7 +4918,7 @@
     "ownership": "Tipus d'objectiu",
     "ownership_system": "Sistema",
     "ownership_gym": "Gimnàs",
-    "status_in_progress": "En curs",
+    "status_in_progress": "Actiu",
     "status_achieved": "Assolit",
     "status_abandoned": "Abandonat",
     "edit": "Editar",
@@ -5970,7 +5974,8 @@
     "activate_confirm_replace": "El pla \"{name}\" es completarà i aquest pla passarà a ser el pla de nutrició actiu del membre.",
     "activate_confirm_none": "Aquest pla passarà a ser el pla de nutrició actiu del membre.",
     "keep_as_draft": "Mantenir com a esborrany",
-    "activated": "Pla de nutrició activat."
+    "activated": "Pla de nutrició activat.",
+    "convert_to_template": "Converteix en plantilla"
   },
   "operating_hours": {
     "title": "Horari i Festius",
