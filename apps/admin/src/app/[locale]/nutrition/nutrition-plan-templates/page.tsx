@@ -38,6 +38,7 @@ export interface NutritionPlanTemplate {
   id: number;
   name: string;
   description: string | null;
+  member_notes?: string | null;
   status: 'active' | 'inactive' | 'draft';
   day_count: number;
   /** #3333: the number of days the plan covers, 0..7. */
@@ -638,6 +639,15 @@ function TemplateCard({
               />
             </div>
             <div>
+              <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_member_notes')}</label>
+              <textarea
+                value={editForm.member_notes}
+                onChange={(e) => onEditFormChange({ ...editForm, member_notes: e.target.value })}
+                rows={2}
+                style={{ ...inlineInputStyle, resize: 'vertical' }}
+              />
+            </div>
+            <div>
               <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_status')}</label>
               <select
                 value={editForm.status}
@@ -753,6 +763,15 @@ function PendingNewCard({
             />
           </div>
           <div>
+            <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_member_notes')}</label>
+            <textarea
+              value={form.member_notes}
+              onChange={(e) => onFormChange({ ...form, member_notes: e.target.value })}
+              rows={2}
+              style={{ ...inlineInputStyle, resize: 'vertical' }}
+            />
+          </div>
+          <div>
             <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_status')}</label>
             <select
               value={form.status}
@@ -805,6 +824,7 @@ function DetailsDialog({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <DetailRow label={t('nutrition_plan_templates.label_name')} value={template.name} />
         <DetailRow label={t('nutrition_plan_templates.label_description')} value={template.description ?? '—'} />
+        <DetailRow label={t('nutrition_plan_templates.label_member_notes')} value={template.member_notes ?? '—'} />
         <DetailRow label={t('nutrition_plan_templates.label_status')} value={<StatusBadge status={template.status} label={t(`status.${template.status}`)} />} />
         <DetailRow label={t('nutrition_plan_templates.label_num_days')} value={toNumDays(template.num_days)} />
         <DetailRow label={t('nutrition_plan_templates.col_source')} value={templateSource(template) === 'system' ? t('nutrition_plan_templates.source_system') : t('nutrition_plan_templates.source_custom')} />

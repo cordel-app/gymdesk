@@ -10,8 +10,10 @@ import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
 import { gymToday } from '../domain/workoutProgress';
-import { baseNutritionPlanName, nextDay, nutritionPlanEditMode, versionedNutritionPlanName } from '../domain/nutritionPlanVersioning';
+import { baseNutritionPlanName, nutritionPlanEditMode } from '../domain/nutritionPlanVersioning';
 import { MEMBER_PLAN_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
+import { memberNotesSetParams, parseMemberNotesInput } from '../domain/nutritionPlanMemberNotes';
+import { activateDraftNutritionPlanTx, activePlansReplacedBy } from './nutrition-plan-activation';
 
 export const memberNutritionPlansRouter = Router();
 
@@ -164,6 +166,8 @@ memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req
   if (!start_date || typeof start_date !== 'string' || !DATE_RE.test(start_date)) {
     return res.status(400).json({ error: 'start_date is required (YYYY-MM-DD)' });
   }
+  const memberNotes = parseMemberNotesInput(req.body);
+  if (memberNotes.kind === 'error') return res.status(400).json({ error: memberNotes.error });
 
   try {
     const { rows: memberRows } = await db.query(
@@ -177,6 +181,7 @@ memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req
       templateId,
       name: name?.trim() || null,
       description,
+      ...(memberNotes.kind === 'value' ? { memberNotes: memberNotes.value } : {}),
       startDate: start_date,
       confirmReplace: confirm === true,
     }));
@@ -256,17 +261,21 @@ memberNutritionPlansRouter.put('/:id', requireModuleWrite('NUTRITION'), async (r
   if ('start_date' in req.body && !(typeof start_date === 'string' && DATE_RE.test(start_date))) {
     return res.status(400).json({ error: 'start_date must be YYYY-MM-DD and cannot be cleared' });
   }
+  const memberNotes = parseMemberNotesInput(req.body);
+  if (memberNotes.kind === 'error') return res.status(400).json({ error: memberNotes.error });
   try {
     const plan = await loadActivePlan(res, id, gymId);
     if (!plan) return;
     await db.query(
       `UPDATE member_nutrition_plans SET
-        name = COALESCE(?, name), description = IF(?, ?, description), start_date = IF(?, ?, start_date),
+        name = COALESCE(?, name), description = IF(?, ?, description), member_notes = IF(?, ?, member_notes),
+        start_date = IF(?, ?, start_date),
         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ?`,
       [
         name?.trim() ?? null,
         'description' in req.body ? 1 : 0, description ?? null,
+        ...memberNotesSetParams(memberNotes),
         'start_date' in req.body ? 1 : 0, start_date ?? null,
         actor, id, gymId,
       ],
@@ -382,8 +391,8 @@ memberNutritionPlansRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, CURRENT_DATE(), ?, ?, UTC_TIMESTAMP(), ?)',
-        [gymId, src.member_id, src.template_id, copyName, src.description ?? null, 'active', actor, actor],
+        'INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, member_notes, start_date, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, ?, CURRENT_DATE(), ?, ?, UTC_TIMESTAMP(), ?)',
+        [gymId, src.member_id, src.template_id, copyName, src.description ?? null, src.member_notes ?? null, 'active', actor, actor],
       );
 
       await copyNutritionPlanContentsTx(tx, gymId, id, insertId);
@@ -401,7 +410,6 @@ memberNutritionPlansRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'
 
 /* ── Versioning (#1970) ───────────────────────────────────────────────────── */
 
-const dateOnly = (v: any): string => (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
 
 // Edit on an active assigned plan works on a Draft copy; the original is untouched until the
 // draft is published. Idempotent: an open draft of the plan is returned as is.
@@ -431,9 +439,9 @@ memberNutritionPlansRouter.post('/:id/edit-draft', requireModuleWrite('NUTRITION
       if (again[0]) return again[0].id as number;
       created = true;
       const { insertId } = await tx.query(
-        `INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, draft_of_plan_id, created_by)
-         VALUES (?, ?, ?, ?, ?, CURRENT_DATE(), 'draft', ?, ?)`,
-        [gymId, src.member_id, src.template_id, baseNutritionPlanName(src.name), src.description ?? null, id, actor],
+        `INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, member_notes, start_date, status, draft_of_plan_id, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_DATE(), 'draft', ?, ?)`,
+        [gymId, src.member_id, src.template_id, baseNutritionPlanName(src.name), src.description ?? null, src.member_notes ?? null, id, actor],
       );
       await copyNutritionPlanContentsTx(tx, gymId, id, insertId);
       return insertId;
@@ -447,61 +455,44 @@ memberNutritionPlansRouter.post('/:id/edit-draft', requireModuleWrite('NUTRITION
   }
 });
 
-// Save on the draft. One transaction ends the current version today (completed, renamed with
-// its date range) and activates the draft from tomorrow with no end date.
-memberNutritionPlansRouter.post('/:id/publish-version', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+// #3474: what activating a Draft would complete — the confirmation names the member's current
+// active plan from this answer, never from a list the page happens to hold.
+memberNutritionPlansRouter.get('/:id/activation', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const found = await activePlansReplacedBy(db, gymId, req.params.id);
+    if (!found) return res.status(404).json({ error: 'Member nutrition plan not found' });
+    res.json({ status: found.draft.status, current_plan: found.current[0] ?? null, current_plans: found.current });
+  } catch (err) { next(err); }
+});
+
+// #3474: activate a Draft. One transaction completes the member's current active plan and makes
+// the Draft the active one (activateDraftNutritionPlanTx); #1970's publish-version is the same route.
+async function activateHandler(req: any, res: any, next: any) {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
-    const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
-    const today = gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
-    const tomorrow = nextDay(today);
-
-    const result = await db.transaction(async (tx) => {
-      const { rows: draftRows } = await tx.query(
-        'SELECT id, member_id, name, status, draft_of_plan_id FROM member_nutrition_plans WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [id, gymId],
-      );
-      const draft = draftRows[0];
-      if (!draft || draft.status === 'deleted') throw Object.assign(new Error('Member nutrition plan not found'), { status: 404 });
-      if (draft.status !== 'draft' || !draft.draft_of_plan_id) {
-        throw Object.assign(new Error('Only a draft created by editing a plan can be published'), { status: 409 });
-      }
-      const { rows: origRows } = await tx.query(
-        'SELECT id, name, status, start_date FROM member_nutrition_plans WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [draft.draft_of_plan_id, gymId],
-      );
-      const orig = origRows[0];
-      if (!orig || orig.status !== 'active') {
-        throw Object.assign(new Error('The plan this draft was created from is no longer active'), { status: 409 });
-      }
-      const origStart = orig.start_date ? dateOnly(orig.start_date) : today;
-      const previousName = versionedNutritionPlanName(orig.name, origStart, today);
-      await tx.query(
-        `UPDATE member_nutrition_plans SET status = 'completed', end_date = ?, name = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-         WHERE id = ? AND gym_id = ?`,
-        [today, previousName, actor, orig.id, gymId],
-      );
-      await tx.query(
-        `UPDATE member_nutrition_plans SET status = 'active', start_date = ?, end_date = NULL, draft_of_plan_id = NULL, name = ?,
-                modified_at = UTC_TIMESTAMP(), modified_by = ?
-         WHERE id = ? AND gym_id = ?`,
-        [tomorrow, versionedNutritionPlanName(draft.name, tomorrow, null), actor, draft.id, gymId],
-      );
-      return { previousId: orig.id as number, previousName };
-    });
-
+    const today = await gymTodayFor(gymId);
+    const result = await db.transaction((tx) => activateDraftNutritionPlanTx(tx, { gymId, draftId: id, actor, today }));
     const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ?`, [id]);
+    const previous = result.previousPlans[0] ?? null;
     recordAudit(req, { action: 'status_change', entityType: 'member_nutrition_plan', entityId: id,
-      previous: { status: 'draft' }, next: { status: 'active', replaces: result.previousId, start_date: tomorrow } });
-    res.json({ ...rows[0], previous_plan_id: result.previousId, previous_plan_name: result.previousName });
+      previous: { status: 'draft' }, next: { status: 'active', replaces: previous?.id ?? null, start_date: result.startDate } });
+    for (const p of result.previousPlans) {
+      recordAudit(req, { action: 'status_change', entityType: 'member_nutrition_plan', entityId: p.id,
+        previous: { status: 'active' }, next: { status: 'completed', replaced_by: Number(id) } });
+    }
+    res.json({ ...withEditMode(rows, today)[0], previous_plan_id: previous?.id ?? null, previous_plan_name: previous?.name ?? null });
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (err.status) return res.status(err.status).json(err.body ?? { error: err.message });
     next(err);
   }
-});
+}
+
+memberNutritionPlansRouter.post('/:id/activate', requireModuleWrite('NUTRITION'), activateHandler);
+memberNutritionPlansRouter.post('/:id/publish-version', requireModuleWrite('NUTRITION'), activateHandler);
 
 /* ── Full hierarchy ───────────────────────────────────────────────────────── */
 

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { memberNotesSetParams, parseMemberNotesInput } from '../domain/nutritionPlanMemberNotes';
 import { parseNumDaysInput } from '../domain/nutritionPlanTemplateDays';
 import { db, Tx } from '../infra/db';
 import { BASE_MEAL_JOIN_SQL, baseMealColumnsSql, listBaseMealsHandler, resolveBaseMealInput } from './base-meal-reference';
@@ -117,7 +118,7 @@ platformNutritionPlanTemplatesRouter.get('/', requireSuperadmin, async (req, res
     if (name) { where.push('npt.name LIKE ?'); params.push(`%${name}%`); }
 
     const { rows } = await db.query(
-      `SELECT npt.id, npt.gym_id, npt.name, npt.description, npt.num_days, npt.status, npt.created_at, npt.created_by, npt.modified_at, npt.modified_by,
+      `SELECT npt.id, npt.gym_id, npt.name, npt.description, npt.member_notes, npt.num_days, npt.status, npt.created_at, npt.created_by, npt.modified_at, npt.modified_by,
               (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count
        FROM nutrition_plan_templates npt
        WHERE ${where.join(' AND ')}
@@ -198,6 +199,8 @@ platformNutritionPlanTemplatesRouter.post('/', requireSuperadmin, async (req, re
   }
   const numDays = parseNumDaysInput(req.body);
   if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
+  const memberNotes = parseMemberNotesInput(req.body);
+  if (memberNotes.kind === 'error') return res.status(400).json({ error: memberNotes.error });
   try {
     const { rows: existing } = await db.query(
       "SELECT id FROM nutrition_plan_templates WHERE gym_id IS NULL AND name = ? AND status != 'deleted'",
@@ -207,8 +210,8 @@ platformNutritionPlanTemplatesRouter.post('/', requireSuperadmin, async (req, re
 
     const actor = resolvePlatformActor((req as any).superadminName);
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_templates (gym_id, name, description, num_days, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
-      [name.trim(), description ?? null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'draft', actor, actor],
+      'INSERT INTO nutrition_plan_templates (gym_id, name, description, member_notes, num_days, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [name.trim(), description ?? null, memberNotes.kind === 'value' ? memberNotes.value : null, numDays.kind === 'value' ? numDays.value : 0, status ?? 'draft', actor, actor],
     );
     const { rows } = await db.query('SELECT * FROM nutrition_plan_templates WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'nutrition_plan_template', entityId: insertId, next: rows[0] });
@@ -224,6 +227,8 @@ platformNutritionPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, 
   }
   const numDays = parseNumDaysInput(req.body);
   if (numDays.kind === 'error') return res.status(400).json({ error: numDays.error });
+  const memberNotes = parseMemberNotesInput(req.body);
+  if (memberNotes.kind === 'error') return res.status(400).json({ error: memberNotes.error });
   try {
     const { rows: existing } = await db.query(
       "SELECT id, name FROM nutrition_plan_templates WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
@@ -243,12 +248,13 @@ platformNutritionPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, 
       `UPDATE nutrition_plan_templates SET
          name = COALESCE(?, name),
          description = IF(? IS NOT NULL, ?, description),
+         member_notes = IF(?, ?, member_notes),
          status = COALESCE(?, status),
          num_days = IF(?, ?, num_days),
          modified_at = UTC_TIMESTAMP(),
          modified_by = ?
        WHERE id = ?`,
-      [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null,
+      [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, ...memberNotesSetParams(memberNotes), status ?? null,
        numDays.kind === 'value' ? 1 : 0, numDays.kind === 'value' ? numDays.value : 0,
        resolvePlatformActor((req as any).superadminName), id],
     );

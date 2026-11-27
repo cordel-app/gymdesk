@@ -36,18 +36,25 @@ describe('num_days', () => {
 
 describe('templatePayload', () => {
   it('trims, nulls an empty description and sends num_days', () => {
-    const r = templatePayload({ name: '  Keto ', description: ' ', status: 'active', num_days: 5 });
-    expect(r).toEqual({ ok: true, body: { name: 'Keto', description: null, status: 'active', num_days: 5 } });
+    const r = templatePayload({ name: '  Keto ', description: ' ', member_notes: '', status: 'active', num_days: 5 });
+    expect(r).toEqual({ ok: true, body: { name: 'Keto', description: null, member_notes: null, status: 'active', num_days: 5 } });
+  });
+
+  it('sends Member Notes apart from the description (#3474)', () => {
+    const r = templatePayload({ name: 'Keto', description: 'Low carb', member_notes: ' Drink water ', status: 'active', num_days: 0 });
+    expect(r).toEqual({ ok: true, body: { name: 'Keto', description: 'Low carb', member_notes: 'Drink water', status: 'active', num_days: 0 } });
   });
 
   it('refuses a blank name and an out-of-range day count', () => {
-    expect(templatePayload({ name: ' ', description: '', status: 'active', num_days: 1 })).toEqual({ ok: false, errorKey: 'error_required' });
-    expect(templatePayload({ name: 'X', description: '', status: 'active', num_days: 8 })).toEqual({ ok: false, errorKey: 'error_num_days' });
+    expect(templatePayload({ name: ' ', description: '', member_notes: '', status: 'active', num_days: 1 })).toEqual({ ok: false, errorKey: 'error_required' });
+    expect(templatePayload({ name: 'X', description: '', member_notes: '', status: 'active', num_days: 8 })).toEqual({ ok: false, errorKey: 'error_num_days' });
   });
 
   it('seeds the edit form from a row', () => {
     expect(templateFormFromRow({ name: 'A', description: null, status: 'draft', num_days: '4' }))
-      .toEqual({ name: 'A', description: '', status: 'draft', num_days: 4 });
+      .toEqual({ name: 'A', description: '', member_notes: '', status: 'draft', num_days: 4 });
+    expect(templateFormFromRow({ name: 'A', description: null, member_notes: 'Eat slowly', status: 'draft', num_days: 0 }).member_notes)
+      .toBe('Eat slowly');
   });
 });
 
