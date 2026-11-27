@@ -4670,7 +4670,8 @@
     "tree_goal_image_close": "Tanca",
     "tree_goal_image_none": "Sense imatge",
     "tree_goal_no_description": "No hi ha cap descripció disponible.",
-    "label_member_notes": "Notes per al membre"
+    "label_member_notes": "Notes per al membre",
+    "converted": "Plantilla creada a partir del pla assignat."
   },
   "nutrition_library": {
     "details_slug": "Slug",
@@ -5978,7 +5979,8 @@
     "activate_confirm_replace": "El pla \"{name}\" es completarà i aquest pla passarà a ser el pla de nutrició actiu del membre.",
     "activate_confirm_none": "Aquest pla passarà a ser el pla de nutrició actiu del membre.",
     "keep_as_draft": "Mantenir com a esborrany",
-    "activated": "Pla de nutrició activat."
+    "activated": "Pla de nutrició activat.",
+    "convert_to_template": "Converteix en plantilla"
   },
   "operating_hours": {
     "title": "Horari i Festius",

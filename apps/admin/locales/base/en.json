@@ -4657,7 +4657,8 @@
     "tree_goal_image_close": "Close",
     "tree_goal_image_none": "No image",
     "tree_goal_no_description": "No description available.",
-    "label_member_notes": "Member Notes"
+    "label_member_notes": "Member Notes",
+    "converted": "Template created from the assigned plan."
   },
   "nutrition_library": {
     "details_slug": "Slug",
@@ -5965,7 +5966,8 @@
     "activate_confirm_replace": "The plan \"{name}\" will be completed and this plan will become the member's active nutrition plan.",
     "activate_confirm_none": "This plan will become the member's active nutrition plan.",
     "keep_as_draft": "Keep as Draft",
-    "activated": "Nutrition plan activated."
+    "activated": "Nutrition plan activated.",
+    "convert_to_template": "Convert to Template"
   },
   "operating_hours": {
     "title": "Operating Hours & Holidays",
