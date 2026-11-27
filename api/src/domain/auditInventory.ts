@@ -88,6 +88,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "nutrition_library_item_qualities": ["parent", "nutrition_library_items"],
   "nutrition_library_item_translations": ["parent", "nutrition_library_items"],
   "nutrition_plan_template_days": ["parent", "nutrition_plan_templates"],
+  "nutrition_plan_template_edit_checkpoints": ["parent", "nutrition_plan_templates (#3482: the content an edit session started from, restored by Cancel)"],
   "nutrition_plan_template_goals": ["parent", "nutrition_plan_templates"],
   "nutrition_plan_template_meal_items": ["parent", "nutrition_plan_templates"],
   "nutrition_plan_template_meals": ["parent", "nutrition_plan_templates"],
