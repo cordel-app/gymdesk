@@ -58,7 +58,7 @@ describe('assigned training plan versions (#1969)', () => {
     expect(put.status).toBe(200);
     expect(put.body.status).toBe('draft');
     const bad = await auth(request.put(`${base()}/${draftId}`)).send({ status: 'active' });
-    expect(bad.status).toBe(409);
+    expect(bad.status).toBe(400); // #3477: status is never edited through PUT
     const list = await auth(request.get('/training-plans?limit=50'));
     const row = list.body.items.find((r: any) => r.id === draftId);
     expect(row.draft_of_plan_id).toBe(planId);
