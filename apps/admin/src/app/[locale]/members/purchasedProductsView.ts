@@ -432,3 +432,15 @@ export function purchasePriceCell(
     : null;
   return { total, breakdown };
 }
+
+/**
+ * #3508 — which sentence the Cancel confirmation of a Product reads: a recurring Product is
+ * worded as a Membership Plan's cancellation is (it stays until the end of the period already
+ * paid for, naming the date once the server has said it, and is applied with the cart's Save &
+ * Pay), a one-time Product keeps its own.
+ */
+export function purchaseCancelMessageKey(item: { source?: string }, endsOn: string | null):
+  'purchase_cancel_confirm' | 'purchase_cancel_confirm_recurring' | 'purchase_cancel_confirm_recurring_until' {
+  if (item.source !== 'recurring') return 'purchase_cancel_confirm';
+  return endsOn ? 'purchase_cancel_confirm_recurring_until' : 'purchase_cancel_confirm_recurring';
+}

@@ -240,7 +240,16 @@ export default function NutritionPlanTemplatesPage() {
     setPendingNewError(null);
   }
 
-  function startEdit(tpl: NutritionPlanTemplate) {
+  // #3482: entering Edit mode stores a server-side checkpoint of the plan's
+  // content; Cancel restores it and Save drops it. The template's own fields
+  // are buffered in `editForm` and only Save writes them.
+  async function startEdit(tpl: NutritionPlanTemplate) {
+    try {
+      await apiFetch(`/nutrition-plan-templates/${tpl.id}/edit-session`, { method: 'POST' });
+    } catch (err: any) {
+      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+      return;
+    }
     // The editor and the plan tree live in the List view.
     if (viewMode !== 'list') setViewMode('list');
     setEditingId(tpl.id);
@@ -248,14 +257,34 @@ export default function NutritionPlanTemplatesPage() {
     setEditError(null);
     if (!expanded.has(tpl.id)) {
       setExpanded((prev) => { const next = new Set(prev); next.add(tpl.id); return next; });
-      loadHierarchy(tpl.id);
     }
+    // Reload the tree either way: the edit session starts from the content the
+    // checkpoint holds.
+    refetchBranch(tpl.id);
   }
 
-  function cancelEdit() {
+  function leaveEdit() {
     setEditingId(null);
     setEditForm(emptyForm);
     setEditError(null);
+  }
+
+  /** Cancel: every change since Edit was entered is discarded (#3482). */
+  async function cancelEdit(): Promise<boolean> {
+    const id = editingId;
+    if (id === null) { leaveEdit(); return true; }
+    try {
+      await apiFetch(`/nutrition-plan-templates/${id}/edit-session/cancel`, { method: 'POST' });
+    } catch (err: any) {
+      // A session that no longer exists (already restored or saved) has nothing to undo.
+      if (err?.body?.code !== 'no_edit_session') {
+        toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+        return false;
+      }
+    }
+    leaveEdit();
+    await refetchBranch(id);
+    return true;
   }
 
   async function saveEdit() {
@@ -265,7 +294,9 @@ export default function NutritionPlanTemplatesPage() {
     const body = payload.body;
     try {
       await apiFetch(`/nutrition-plan-templates/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
-      setEditingId(null); setEditForm(emptyForm); load();
+      // The checkpoint is only Cancel's; a failure to drop it changes nothing.
+      await apiFetch(`/nutrition-plan-templates/${editingId}/edit-session`, { method: 'DELETE' }).catch(() => {});
+      leaveEdit(); load();
     } catch (err: any) {
       setEditError(err.message ?? t('nutrition_plan_templates.error_generic'));
     } finally { setEditSaving(false); }
@@ -373,8 +404,8 @@ export default function NutritionPlanTemplatesPage() {
   function toggleExpand(row: NutritionPlanTemplate) {
     const isExpanded = expanded.has(row.id);
     if (isExpanded && editingId === row.id) {
-      guardUnsaved(() => {
-        cancelEdit();
+      guardUnsaved(async () => {
+        if (!(await cancelEdit())) return;
         setExpanded((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
       });
       return;
@@ -570,10 +601,10 @@ export default function NutritionPlanTemplatesPage() {
         message={t('nutrition_plan_templates.unsaved_changes')}
         confirmLabel={t('nutrition_plan_templates.unsaved_discard')}
         cancelLabel={t('nutrition_plan_templates.cancel')}
-        onConfirm={() => {
+        onConfirm={async () => {
           const action = pendingAction!;
           setPendingAction(null);
-          cancelEdit();
+          if (!(await cancelEdit())) return;
           cancelPendingNew();
           action();
         }}
@@ -705,7 +736,8 @@ function TemplateCard({
             <NutritionPlanTree
               templateId={template.id}
               hierarchy={hierarchy}
-              canWrite={canWrite}
+              // #3482: outside Edit mode the whole plan is read-only, not only its buttons.
+              canWrite={canWrite && editing}
               onChanged={onChanged}
             />
           )}

@@ -39,7 +39,7 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
-import { usePurchaseCancel } from './usePurchaseCancel';
+import { usePurchaseCancel, useRecurringCancelEndsOn } from './usePurchaseCancel';
 import { usePurchaseCancelImmediately } from './usePurchaseCancelImmediately';
 import { ItemOriginChip } from '@/components/ItemOriginChip';
 import { itemOriginKey } from '@/lib/itemOrigin';
@@ -79,6 +79,7 @@ import {
   sharingTypeKey,
   purchaseEndDisplay,
   purchasePriceCell,
+  purchaseCancelMessageKey,
 } from './purchasedProductsView';
 
 export type { PurchasedProduct, PurchasedProductPromotion };
@@ -132,6 +133,8 @@ export function MemberPurchasedProducts({
   // The Cancel action asks first, in the app's own dialog (#1806).
   const [cancelling, setCancelling] = useState<PurchasedProduct | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
+  // #3508: the end date the cancellation would save, named in the confirmation.
+  const cancelEndsOn = useRecurringCancelEndsOn(memberId, cancelling);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // #3358 stage 2 — Cancel Immediately, confirmed in the app's own dialog like Cancel.
   const cancelNowRequest = usePurchaseCancelImmediately(memberId, onChanged);
@@ -591,7 +594,11 @@ export function MemberPurchasedProducts({
 
       <ConfirmDialog
         open={cancelling !== null}
-        message={cancelling ? t(cancelling.source === 'recurring' ? 'purchase_cancel_confirm_recurring' : 'purchase_cancel_confirm', { product: cancelling.product_name }) : ''}
+        title={cancelling?.source === 'recurring' ? t('purchase_cancel_recurring_title', { product: cancelling.product_name }) : undefined}
+        message={cancelling ? t(purchaseCancelMessageKey(cancelling, cancelEndsOn), {
+          product: cancelling.product_name,
+          date: cancelEndsOn ? formatGymDateOnly(cancelEndsOn, gymFmt) : '',
+        }) : ''}
         confirmLabel={t('purchase_cancel_confirm_button')}
         cancelLabel={t('purchase_cancel_keep')}
         busy={cancelBusy}

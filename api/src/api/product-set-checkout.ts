@@ -20,6 +20,7 @@ import { addedPlansFirstCycle, firstCycleEvents, planScheduledEvents } from './p
 export { firstCycleEvents };
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import type { SimulationLine } from '../domain/billingSimulation';
+import { advanceBillingDate } from '../domain/billingDate';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 import { cartChargeLine, cartPurchasesForCharge, joinCartPurchasesToEvent } from './cart-checkout';
@@ -131,6 +132,19 @@ export interface InitialCharge {
   billingDate?: string;
   /** #3167: every date whose engine events this charge covers (the forecast shows them once, here). */
   coveredDates?: string[];
+  /**
+   * #3508 — for each recurring Product line of `lines` (by index), the schedule and period its
+   * charge pays for, so `ensureInitialEvent()` can persist them on the line (`schedule_id`,
+   * `period_start`, `period_end`) and the line's paid-through date (`loadPaidThroughForSchedule()`)
+   * sees a first stretch paid by the initial payment. Carried, resolved to an id when written.
+   */
+  /**
+   * #3508 — the last day the initial event's own period (on `scheduleKey`) pays for, when the
+   * records establish one other than the schedule's cadence: a plan joining its calendar mid-period
+   * pays a prorated stretch, which ends after its prorated days rather than one cadence later.
+   */
+  periodEnd?: string | null;
+  linePeriods?: Array<{ index: number; scheduleKey: string; periodStart: string; periodEnd: string | null }>;
 }
 
 /** What the version's first obligation is: every line dated on its start date. */
@@ -222,6 +236,7 @@ export async function initialCharge(
   if (first.length === 0 && purchases.length === 0) return null;
   // #2947: every line states the rate it is charged at and its net, after its discounts.
   const engineLines = first.flatMap((e) => e.lines);
+  const engineEvents = first.flatMap((e) => e.lines.map(() => e));
   const taxRates = await loadInitialChargeTaxRates(exec, gymId, productSetId,
     engineLines.map((l) => l.product_id).filter((id): id is number => id != null));
   const priced = [
@@ -245,10 +260,43 @@ export async function initialCharge(
     amount: linesTotal(lines), lines,
     simulationLines: [...first.flatMap((e) => e.lines), ...purchases.map((p) => p.simulation)],
     scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null,
+    periodEnd: planEvent && opts.previousProductSetId == null ? proratedPeriodEnd(planEvent) : null,
     cartPurchases: cart.map((p) => ({ id: p.id, amount: p.amount, product_name: p.product_name })),
     ...(earliestDate(first) != null && earliestDate(first) !== startsAt ? { billingDate: earliestDate(first)! } : {}),
     coveredDates: [...new Set(first.map((e) => e.date))].sort(),
+    linePeriods: engineLines.flatMap((l, index) => {
+      const period = recurringLinePeriod(l, engineEvents[index]);
+      return period ? [{ index, ...period }] : [];
+    }),
   };
+}
+
+/**
+ * #3508 — the end of a plan's initial period when its Membership Fee is a prorated stretch (the
+ * plan joined its calendar mid-period), else the engine's own end (`null` for a calendar month,
+ * which the reader closes by the schedule's cadence).
+ */
+function proratedPeriodEnd(event: { date: string; periodEnd: string | null; lines: SimulationLine[] }): string | null {
+  const fee = event.lines.find((l) => l.kind === 'membership_fee' && l.proration?.prorated_days);
+  return fee ? advanceBillingDate(event.date, fee.proration!.prorated_days - 1, 'day') : event.periodEnd;
+}
+
+/**
+ * #3508 — the period a recurring Product line's initial charge pays for: from the event's date to
+ * the day before the line's next billing date. A prorated stretch ends after its own prorated days
+ * (a Product joining the 1st-of-month calendar on the 27th pays the 27th to the 30th); a whole
+ * period keeps the engine's own end, or none, which the reader closes by the schedule's cadence.
+ * A plan's own lines, one-time lines and a line with no schedule carry none.
+ */
+export function recurringLinePeriod(
+  line: SimulationLine, event: { scheduleKey: string | null; date: string; periodEnd: string | null },
+): { scheduleKey: string; periodStart: string; periodEnd: string | null } | null {
+  if (event.scheduleKey == null || line.line_ref == null || lineSource(line) !== 'product') return null;
+  const prorated = line.proration?.prorated_days;
+  const periodEnd = prorated != null && prorated > 0
+    ? advanceBillingDate(event.date, prorated - 1, 'day')
+    : event.periodEnd;
+  return { scheduleKey: event.scheduleKey, periodStart: event.date, periodEnd };
 }
 
 /** Events of two lists, one per `(schedule, date)`, their lines concatenated. */
@@ -294,6 +342,22 @@ async function linesDueBeforeStart(exec: Exec, gymId: string, productSetId: numb
 
 /** Enough cycles for the stretch before a plan's start to be projected in full. */
 const MAX_EARLY_CYCLES = 60;
+
+/** #3508 — the charge's lines, each recurring Product line carrying the schedule and period it pays. */
+async function withLinePeriods(tx: Tx, productSetId: number, charge: InitialCharge): Promise<BillingEventLineRow[]> {
+  const periods = charge.linePeriods ?? [];
+  if (periods.length === 0) return charge.lines;
+  const { rows } = await tx.query<{ id: number; schedule_key: string }>(
+    `SELECT id, schedule_key FROM product_set_schedules WHERE ${scheduleOwnerOfSetSql()}`, [productSetId]);
+  const ids = new Map(rows.map((r) => [String(r.schedule_key), Number(r.id)]));
+  const lines = [...charge.lines];
+  for (const p of periods) {
+    const scheduleId = ids.get(p.scheduleKey);
+    if (scheduleId == null || !lines[p.index]) continue;
+    lines[p.index] = { ...lines[p.index], schedule_id: scheduleId, period_start: p.periodStart, period_end: p.periodEnd };
+  }
+  return lines;
+}
 
 export async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {
   await writeEventLines(tx, gymId, eventId, lines);
@@ -353,12 +417,13 @@ export async function ensureInitialEvent(tx: Tx, input: {
   const { insertId } = await tx.query(
     `INSERT INTO billing_events
        (gym_id, member_id, event_type, name, source, amount, charge_type_id, product_set_id, schedule_id,
-        period_start, billing_date, is_scheduled, created_by)
-     VALUES (?, ?, 'payment_recorded', ?, 'customer', ?, ?, ?, ?, ?, ?, 0, ?)`,
+        period_start, period_end, billing_date, is_scheduled, created_by)
+     VALUES (?, ?, 'payment_recorded', ?, 'customer', ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
     [input.gymId, input.memberId, name, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
-      scheduleId, input.startsAt, input.charge.billingDate ?? input.startsAt, input.actor],
+      scheduleId, input.startsAt, scheduleId != null ? input.charge.periodEnd ?? null : null,
+      input.charge.billingDate ?? input.startsAt, input.actor],
   );
-  await writeLines(tx, input.gymId, insertId, input.charge.lines);
+  await writeLines(tx, input.gymId, insertId, await withLinePeriods(tx, input.productSetId, input.charge));
   // #3251 stage 2: the checkout's initial event is its cart's.
   await stampEventPurchase(tx, input.gymId, Number(insertId), await purchaseOfSet(tx, input.gymId, input.productSetId));
   // #2746: each one-time Product of the cart reaches its payment through this event.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  purchaseCancelMessageKey,
   cartCountdown,
   purchasePriceCell,
   isPurchaseExpiredError,
@@ -198,5 +199,16 @@ describe('purchasePriceCell (#3359)', () => {
   it('shows no breakdown for a quantity of 1, or when the API gave no unit figure', () => {
     expect(purchasePriceCell({ ...line, quantity: 1 }, 'final').breakdown).toBeNull();
     expect(purchasePriceCell({ amount: 27, regular_amount: 30, quantity: 2 }, 'base')).toEqual({ total: 30, breakdown: null });
+  });
+});
+
+describe('purchaseCancelMessageKey (#3508)', () => {
+  it('words a recurring Product like a plan cancellation, naming the date once it is known', () => {
+    expect(purchaseCancelMessageKey({ source: 'recurring' }, '2026-11-30')).toBe('purchase_cancel_confirm_recurring_until');
+    expect(purchaseCancelMessageKey({ source: 'recurring' }, null)).toBe('purchase_cancel_confirm_recurring');
+  });
+  it('keeps the one-time Product wording', () => {
+    expect(purchaseCancelMessageKey({ source: 'one_time' }, '2026-11-30')).toBe('purchase_cancel_confirm');
+    expect(purchaseCancelMessageKey({}, null)).toBe('purchase_cancel_confirm');
   });
 });
