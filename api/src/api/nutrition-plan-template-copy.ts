@@ -39,7 +39,7 @@ export interface TemplateContent {
 }
 
 /** The food a row names, Base or gym-owned (#1849 stage F5: ids are disjoint). */
-function foodId(row: { base_nutrition_library_item_id?: number | null; nutrition_library_item_id?: number | null }): number | null {
+export function foodId(row: { base_nutrition_library_item_id?: number | null; nutrition_library_item_id?: number | null }): number | null {
   return row.base_nutrition_library_item_id ?? row.nutrition_library_item_id ?? null;
 }
 

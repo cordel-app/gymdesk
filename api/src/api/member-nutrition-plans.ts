@@ -13,9 +13,12 @@ import { gymToday } from '../domain/workoutProgress';
 import { baseNutritionPlanName, nutritionPlanEditMode } from '../domain/nutritionPlanVersioning';
 import { MEMBER_PLAN_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 import { memberNotesSetParams, parseMemberNotesInput } from '../domain/nutritionPlanMemberNotes';
+import { memberNutritionPlanConversionRouter } from './nutrition-plan-template-conversion';
 import { activateDraftNutritionPlanTx, activePlansReplacedBy } from './nutrition-plan-activation';
 
 export const memberNutritionPlansRouter = Router();
+// #3484: Convert to Template (writes the working copy; the plan itself is only read).
+memberNutritionPlansRouter.use(memberNutritionPlanConversionRouter);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 

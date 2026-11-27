@@ -178,9 +178,16 @@ repeated identity takes `#2`, `#3`). The waiver is a row of `initial_payment_wai
 coded `initial_payment_waive`. So the review's `amount_due`, the payment request, the cash/card/
 Monei pay flows and the persisted `billing_event_lines` (which store the same `line_key`) are one
 figure; the engine, the plan, its Promotions and every recurring obligation are untouched, and the
-zero line still marks its date as paid up for the scheduled pass. One waiver is refused rather
-than guessed: a Membership Fee that collects a Pre-paid Duration (`prepaid_fee`: the pre-paid
-periods would stay prepaid yet unpaid). Since stage 4 (owner, 25 Nov) a waiver may take the whole
+zero line still marks its date as paid up for the scheduled pass. Since #3440 stage 2 (owner,
+26 Nov) no positive line is refused: a Membership Fee whose first charge is a prorated stretch and
+a Pre-paid Duration is two lines (`splitPrepaidMembershipFees()`: the stretch keeps the fee's key,
+the prepayment is keyed `<key>:prepaid` and carries the engine's lump; the stretch takes the rest,
+so they sum to the original charge to the cent), each waived on its own and both persisted as
+`billing_event_lines`. A waived prepayment collects nothing (amount 0, the waive reason, no money
+moved); its periods stay the plan's Pre-paid ones, which the engine already bills at nothing, and
+the initial event's recorded period is the prorated stretch alone (`proratedPeriodEnd()`, #3508),
+so the waiver records no period as paid. The Admin asks for confirmation before waiving a line over
+50 € (`waiveNeedsConfirmation()`); Revert needs none. Since stage 4 (owner, 25 Nov) a waiver may take the whole
 Initial Payment to zero (`would_leave_nothing_to_pay` is gone). Save & Pay then answers
 `nothing_to_pay` and the Admin commits through `POST /product-sets/:id/activate`, which for a charge
 waived to zero (`isWaivedToZero()`) runs `commitWaivedInitialPayment()`
