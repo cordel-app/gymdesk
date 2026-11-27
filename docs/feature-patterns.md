@@ -2763,6 +2763,10 @@ differences are the pattern:
 
 ---
 
+## A modal that collects money (#3498)
+
+A modal that collects or commits a payment renders `components/PaymentModal.tsx` rather than `CrudModal` directly: pass the title, the server's amount for the action (`amount`, shown large at the top right; `0 €` for zero), the items being paid (`PaymentItemsTable` over persisted lines, or the flow's own server-computed list) and the flow's own content and footer as children. The method picker is `PaymentMethodSelect`. Re-read the amount and items before the final request and refuse when they moved (`paymentModalUnchanged()` in `lib/paymentModal.ts`). Save & Pay and Pay now are the two references.
+
 ## Testing a payment-provider call (#773, #791)
 
 Any new code path that charges, tokenises or refunds through `PaymentProvider` is tested

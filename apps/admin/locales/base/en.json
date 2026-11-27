@@ -1366,7 +1366,12 @@
     "pay_now_link_ready": "The payment link for this billing event is ready. It is paid when the member completes the checkout.",
     "pay_now_link": "Payment link",
     "pay_now_block_cart_cancelled": "This payment cannot be completed: the cart it belongs to was cancelled. Resolve the cart before collecting it.",
-    "pay_now_block_cart_expired": "This payment cannot be completed: the cart it belongs to has expired. Resolve the cart before collecting it."
+    "pay_now_block_cart_expired": "This payment cannot be completed: the cart it belongs to has expired. Resolve the cart before collecting it.",
+    "pay_now_items": "Items being paid",
+    "pay_now_col_item": "Item",
+    "pay_now_col_amount": "Amount (incl. VAT)",
+    "pay_now_items_empty": "This Billing Event lists no items.",
+    "pay_now_changed": "The amount or the items of this Billing Event changed. Review the updated figures and press Pay again."
   },
   "payment_providers": {
     "title": "Payment Providers",

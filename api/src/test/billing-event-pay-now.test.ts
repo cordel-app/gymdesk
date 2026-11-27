@@ -125,6 +125,31 @@ describe('eligibility', () => {
     expect(byCode).toMatchObject({ members_app: true, cash: true, card: true, monei: false });
   });
 
+  it('#3498: lists the event\'s persisted lines and writes nothing', async () => {
+    const f = await createEvent('failed');
+    await db.query(
+      `INSERT INTO billing_event_lines (gym_id, billing_event_id, kind, item_name, quantity, amount)
+       VALUES (?, ?, 'membership_fee', 'Gold Plan', 1, 30), (?, ?, 'product', 'Locker Rental', 2, 10)`,
+      [gymId, f.billingEventId, gymId, f.billingEventId]);
+    const before = await attempts(f.billingEventId);
+    const res = await get(f.billingEventId);
+    expect(res.status).toBe(200);
+    expect(res.body.amount).toBe('40.00');
+    expect(res.body.lines).toEqual([
+      expect.objectContaining({ item_name: 'Gold Plan', quantity: 1, amount: '30.00' }),
+      expect.objectContaining({ item_name: 'Locker Rental', quantity: 2, amount: '10.00' }),
+    ]);
+    expect(await attempts(f.billingEventId)).toEqual(before);
+    expect(await eventCount(f.memberId)).toBe(1);
+  });
+
+  it('#3498: an event with no lines answers an empty list', async () => {
+    const f = await createEvent('scheduled', { billingDate: isoDay(5) });
+    const res = await get(f.billingEventId);
+    expect(res.status).toBe(200);
+    expect(res.body.lines).toEqual([]);
+  });
+
   it('a paid event can never be charged again by this action', async () => {
     const f = await createEvent('paid');
     expect((await post(f.billingEventId, { method: 'cash' })).status).toBe(409);

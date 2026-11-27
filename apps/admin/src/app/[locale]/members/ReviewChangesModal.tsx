@@ -8,12 +8,17 @@
 // `GET /product-sets/:id/review` (the amount from the very function Save & Pay
 // charges from), and it is re-asked when the user confirms, so a stale figure
 // can never be paid. Closing the modal discards nothing: the Draft stays.
+//
+// #3498 — drawn by the shared `PaymentModal` Pay now also uses: the Initial
+// Payment amount large at the top right (`0 €` when nothing is due), the
+// Initial Payment's lines listed first, then the method, the contracted /
+// cancelled products and the forecast, which never feeds the amount.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { CrudModal } from '@/components/CrudModal';
-import { cardHintStyle, cardSectionLabelStyle, formControlStyle, formErrorStyle } from '@/components/formChrome';
+import { PaymentMethodSelect, PaymentModal } from '@/components/PaymentModal';
+import { cardHintStyle, cardSectionLabelStyle, formErrorStyle } from '@/components/formChrome';
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { ProductSetForecast } from './MemberProductSet';
 import { InitialPaymentSection } from './CheckoutSummarySections';
@@ -159,10 +164,23 @@ export function ReviewChangesModal({
     }
   }
 
+  if (!open) return null;
+  const initialItems = loading
+    ? <p style={cardHintStyle}>{t('review_loading')}</p>
+    : !review
+      ? null
+      : review.amount_due == null
+        ? <p style={cardHintStyle}>{t('review_error_amount')}</p>
+        // #2860 — the same Initial Payment the Summary shows, from the same read; #3285 — as the
+        // compact Item / Amount list, the totals below it unchanged.
+        : <InitialPaymentSection payment={review.initial_payment} compact />;
   return (
-    <CrudModal
-      open={open}
+    <PaymentModal
       title={t('review_title')}
+      amount={review?.amount_due ?? null}
+      amountLabel={t('checkout_total_initial_payment')}
+      itemsLabel={t('review_initial_payment')}
+      items={initialItems}
       error={error ?? notice}
       saving={busy}
       saveDisabled={!actions.pay}
@@ -171,9 +189,22 @@ export function ReviewChangesModal({
       onCancel={onClose}
       onSave={confirm}
     >
-      {loading && <p style={cardHintStyle}>{t('review_loading')}</p>}
       {review && (
         <div data-review-changes>
+          {review.amount_due != null && owes && (
+            <PaymentMethodSelect
+              label={t('pay_method')}
+              chooseLabel={t('pay_method_choose')}
+              methods={methods}
+              value={method}
+              onChange={setMethod}
+              disabled={busy}
+              unavailableText={(m) => (m.reason === 'monei_token_missing' ? t('pay_monei_no_token') : t('pay_method_unavailable'))}
+              hint={methods.some((m) => m.code === 'monei' && m.reason === 'monei_token_missing')
+                ? <p style={cardHintStyle}>{t('pay_monei_no_token')}</p> : undefined}
+            />
+          )}
+
           {(() => {
             const { contracted, cancelled } = splitChanges(review.changes);
             const planCancels = review.plans_to_cancel ?? [];
@@ -243,45 +274,11 @@ export function ReviewChangesModal({
             );
           })()}
 
-          <div style={cardSectionLabelStyle}>{t('review_initial_payment')}</div>
-          {review.amount_due == null ? (
-            <p style={cardHintStyle}>{t('review_error_amount')}</p>
-          ) : (
-            <>
-              {/* #2860 — the same Initial Payment the Summary shows, from the same read; #3285 — as the
-                  compact Item / Amount list, the totals below it unchanged. */}
-              <InitialPaymentSection payment={review.initial_payment} compact />
-              <div style={{ marginBottom: 12 }} />
-              {owes && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={cardSectionLabelStyle}>{t('pay_method')}</div>
-                  <select
-                    aria-label={t('pay_method')}
-                    value={method}
-                    onChange={(e) => setMethod(e.target.value)}
-                    disabled={busy}
-                    style={{ ...formControlStyle, maxWidth: 320 }}
-                  >
-                    <option value="">{t('pay_method_choose')}</option>
-                    {methods.map((m) => (
-                      <option key={m.code} value={m.code} disabled={!m.available} style={m.available ? undefined : { opacity: 0.5 }}>
-                        {m.name}{m.available ? '' : ` — ${m.reason === 'monei_token_missing' ? t('pay_monei_no_token') : t('pay_method_unavailable')}`}
-                      </option>
-                    ))}
-                  </select>
-                  {methods.some((m) => m.code === 'monei' && m.reason === 'monei_token_missing') && (
-                    <p style={cardHintStyle}>{t('pay_monei_no_token')}</p>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
           <div style={cardSectionLabelStyle}>{t('review_future')}</div>
           <p style={cardHintStyle}>{t('review_future_hint')}</p>
           <ProductSetForecast forecast={forecast} loading={false} error={forecast == null} hideDetails />
         </div>
       )}
-    </CrudModal>
+    </PaymentModal>
   );
 }

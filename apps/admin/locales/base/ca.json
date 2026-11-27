@@ -1367,7 +1367,12 @@
     "pay_now_link_ready": "L'enllaç de pagament d'aquest esdeveniment de facturació està a punt. Quedarà pagat quan el membre completi el pagament.",
     "pay_now_link": "Enllaç de pagament",
     "pay_now_block_cart_cancelled": "Aquest pagament no es pot completar: el carretó al qual pertany es va cancel·lar. Resol el carretó abans de cobrar-lo.",
-    "pay_now_block_cart_expired": "Aquest pagament no es pot completar: el carretó al qual pertany ha caducat. Resol el carretó abans de cobrar-lo."
+    "pay_now_block_cart_expired": "Aquest pagament no es pot completar: el carretó al qual pertany ha caducat. Resol el carretó abans de cobrar-lo.",
+    "pay_now_items": "Conceptes a pagar",
+    "pay_now_col_item": "Concepte",
+    "pay_now_col_amount": "Import (IVA incl.)",
+    "pay_now_items_empty": "Aquest esdeveniment de facturació no té conceptes.",
+    "pay_now_changed": "L'import o els conceptes d'aquest esdeveniment de facturació han canviat. Revisa les xifres actualitzades i torna a prémer Pagar."
   },
   "payment_providers": {
     "title": "Proveïdors de pagament",

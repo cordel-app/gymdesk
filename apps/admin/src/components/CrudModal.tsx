@@ -18,15 +18,24 @@ interface CrudModalProps {
   children: ReactNode;
   /** Optional node rendered before the Cancel/Save buttons (e.g. a Delete button). */
   extraFooter?: ReactNode;
+  /** #3498 — optional node at the header's right (the payment modal's amount); the header wraps on a narrow screen. */
+  headerAside?: ReactNode;
 }
 
-export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, cancelLabel, saveLabel, onCancel, onSave, children, extraFooter }: CrudModalProps) {
+export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, cancelLabel, saveLabel, onCancel, onSave, children, extraFooter, headerAside }: CrudModalProps) {
   if (!open) return null;
 
   return (
     <div style={overlayStyle} onClick={onCancel}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: '0 0 20px' }}>{title}</h2>
+        {headerAside ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, margin: '0 0 20px' }}>
+            <h2 style={{ margin: 0 }}>{title}</h2>
+            {headerAside}
+          </div>
+        ) : (
+          <h2 style={{ margin: '0 0 20px' }}>{title}</h2>
+        )}
 
         {children}
 
