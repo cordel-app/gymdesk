@@ -979,7 +979,7 @@
     "past_title": "Past goals",
     "started_on": "Started {date}",
     "ended_on": "Ended {date}",
-    "status_in_progress": "In progress",
+    "status_in_progress": "Active",
     "status_achieved": "Achieved",
     "status_abandoned": "Abandoned",
     "status_removed": "Removed",

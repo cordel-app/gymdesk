@@ -979,7 +979,7 @@
     "past_title": "Objectius anteriors",
     "started_on": "Inici {date}",
     "ended_on": "Fi {date}",
-    "status_in_progress": "En curs",
+    "status_in_progress": "Actiu",
     "status_achieved": "Assolit",
     "status_abandoned": "Abandonat",
     "status_removed": "Eliminat",
