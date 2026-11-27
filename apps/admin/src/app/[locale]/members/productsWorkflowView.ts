@@ -146,7 +146,8 @@ export interface InitialPaymentLike {
     prepaid_periods?: number | null; prepaid_cadence?: { interval: number; unit: string } | null;
     /** #2970 — the prorated stretch and the full prepaid periods of a Membership Fee's first charge. */
     fee_split?: {
-      prorated: { days: number; period_days: number; start: string; end: string; amount: number };
+      /** `null` on a split fee's prepayment line (#3440 stage 2). */
+      prorated: { days: number; period_days: number; start: string; end: string; amount: number } | null;
       prepaid: { periods: number; start: string; end: string; amount: number } | null;
     } | null;
     /** #3165 stage 2 — the partial first period the line was prorated to, by its own billing calendar. */
@@ -164,7 +165,7 @@ export interface InitialPaymentLike {
     waived?: boolean;
     waivable?: boolean;
     /** #3284 stage 3 — why the server disabled Waive on this line; `null` when it did not. */
-    waive_refusal?: 'nothing_to_waive' | 'prepaid_fee' | null;
+    waive_refusal?: 'nothing_to_waive' | null;
   }>;
   subtotal_excl_tax: number;
   discount_total: number;
@@ -322,8 +323,9 @@ export const INITIAL_PAYMENT_WAIVE_CODE = 'initial_payment_waive';
 /**
  * #3284 stage 2 — the per-line action of the Initial Payment table: Revert waive on a waived line,
  * an enabled Waive on a line the server says may be waived, and nothing at all otherwise (#3440):
- * a line with nothing to waive (€0.00) or one the domain rule excludes (a Pre-paid Membership Fee)
- * gets no button and no explanatory text, and a line the read gave no identity gets none either.
+ * a line with nothing to waive (€0.00) gets no button and no explanatory text, and a line the read
+ * gave no identity gets none either. Since stage 2 every positive line is waivable, a Membership
+ * Fee's prorated stretch and its prepayment each on its own line.
  * The server re-judges every request; this only picks the button.
  */
 export function initialPaymentLineAction(
@@ -335,9 +337,19 @@ export function initialPaymentLineAction(
   return null;
 }
 
+/**
+ * #3440 stage 2 — a Waive above this amount (VAT included) is confirmed first; at or below it the
+ * waive is sent at once. The confirmation never hides or disables the button, and Revert needs none.
+ */
+export const WAIVE_CONFIRMATION_THRESHOLD = 50;
+
+/** Whether clicking Waive on this line asks for confirmation first. */
+export function waiveNeedsConfirmation(kind: 'waive' | 'revert', amount: number): boolean {
+  return kind === 'waive' && Number(amount) > WAIVE_CONFIRMATION_THRESHOLD;
+}
+
 /** #3284 — the locale key a refused waive request is worded with (`members` namespace, the error line). */
 export const WAIVE_REFUSAL_KEYS: Record<string, string> = {
-  prepaid_fee: 'checkout_waive_error_prepaid',
   nothing_to_waive: 'checkout_waive_unavailable',
 };
 
