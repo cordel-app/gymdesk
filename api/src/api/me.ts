@@ -1614,7 +1614,8 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     const onDate = parsedDate ?? new Date().toISOString().slice(0, 10);
 
     const { rows: planRows } = await db.query(
-      `SELECT id, name, description, start_date, end_date
+      // #3491: `member_notes` is the plan header's text under the name on My Nutrition.
+      `SELECT id, name, description, member_notes, start_date, end_date
        FROM member_nutrition_plans mnp
        WHERE gym_id = ? AND member_id = ? AND ${planEffectiveOnSql('mnp')}
        ORDER BY created_at DESC
