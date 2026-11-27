@@ -31,7 +31,7 @@ import rateLimit from 'express-rate-limit';
 import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
-import { calendarMonthRange, gymToday, trainingProgress, ROLLING_WEEK_DAYS } from '../domain/workoutProgress';
+import { calendarMonthRange, gymToday, parseBlockLevelInput, type WorkoutDef, trainingProgress, ROLLING_WEEK_DAYS } from '../domain/workoutProgress';
 import { canCompleteOn, inWindow, isMealScheduledOn, nutritionProgress, type PlanRequirements } from '../domain/nutritionProgress';
 import { db } from '../infra/db';
 import type { Tx } from '../infra/db';
@@ -51,7 +51,6 @@ import { CANCELLATION_GRACE_HOURS, CANCELLATION_NOTICE_HOURS } from '../domain/b
 import { validateRequest as validateSharedRequest } from './shared-training-requests';
 import { planTreeSelect } from './training-plans';
 import { imageSexForGender } from '../domain/effectiveExerciseImage';
-import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { newBookingGroupId, parseParticipantIds } from '../domain/duoBooking';
 import { createSoloFamily } from './family-membership';
@@ -1559,7 +1558,8 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
     if (q && !/^\d{4}-\d{2}-\d{2}$/.test(q)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     const selected = q || today;
     const { rows: blocks } = await db.query(
-      `SELECT w.id AS workout_id, w.scheduled_weekday, wb.id AS block_id
+      `SELECT w.id AS workout_id, w.scheduled_weekday, wb.id AS block_id,
+              DATE_FORMAT(tp.start_date, '%Y-%m-%d') AS start_date, DATE_FORMAT(tp.end_date, '%Y-%m-%d') AS end_date
        FROM workouts w
        JOIN training_plans tp ON tp.id = w.training_plan_id
        LEFT JOIN workout_blocks wb ON wb.workout_id = w.id AND wb.deleted_at IS NULL
@@ -1568,9 +1568,14 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
          AND w.deleted_at IS NULL`,
       [gymId, memberId],
     );
-    const byWorkout = new Map<number, { id: number; weekday: number | null; blockIds: number[] }>();
+    // #3494: a workout with no weekday is listed (and counted) every day, as the page and its
+    // day circle already list it (#1709), and only inside its plan's own dates.
+    const byWorkout = new Map<number, WorkoutDef>();
     for (const r of blocks as any[]) {
-      const w = byWorkout.get(r.workout_id) ?? { id: r.workout_id, weekday: r.scheduled_weekday, blockIds: [] as number[] };
+      const w = byWorkout.get(r.workout_id) ?? {
+        id: r.workout_id, weekday: r.scheduled_weekday, blockIds: [] as number[],
+        startDate: r.start_date ?? null, endDate: r.end_date ?? null,
+      };
       if (r.block_id != null) w.blockIds.push(r.block_id);
       byWorkout.set(r.workout_id, w);
     }
@@ -1578,14 +1583,14 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
     const [monthFrom, monthTo] = calendarMonthRange(selected, today);
     const weekFrom = DateTime.fromISO(selected).minus({ days: ROLLING_WEEK_DAYS }).toISODate() as string;
     const { rows: logs } = await db.query(
-      `SELECT workout_block_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM workout_block_logs
+      `SELECT workout_block_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d, level FROM workout_block_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
       [gymId, memberId, monthFrom < weekFrom ? monthFrom : weekFrom, monthTo > selected ? monthTo : selected],
     );
     res.json({
       ...trainingProgress(
         [...byWorkout.values()],
-        (logs as any[]).map((l) => ({ blockId: l.workout_block_id, date: l.d })),
+        (logs as any[]).map((l) => ({ blockId: l.workout_block_id, date: l.d, level: l.level })),
         today,
         Number(gym[0]?.first_day_of_week ?? 1),
         selected,
@@ -2154,6 +2159,8 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
   if (!workout_block_id || !logged_date) {
     return res.status(400).json({ error: 'workout_block_id and logged_date are required' });
   }
+  const level = parseBlockLevelInput(req.body.level);
+  if (level !== 'done' && level !== 'partial') return res.status(400).json({ error: level });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: blockRows } = await db.query(
@@ -2169,16 +2176,45 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
     // that unit is snapshotted onto the log beside the value.
     const result = parseBlockLogResult(blockRows[0].result_unit ?? null, result_value);
     if (typeof result === 'string') return res.status(400).json({ error: result });
+    const unit = result.value === null ? null : (blockRows[0].result_unit ?? null);
 
-    const row = await insertAndFetch(
-      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_value, result_unit, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, memberId, workout_block_id, logged_date, started_at ?? null, finished_at ?? null,
-       result.value, result.value === null ? null : (blockRows[0].result_unit ?? null), notes ?? null],
-      'SELECT * FROM workout_block_logs WHERE id = ?',
-      (id) => [id],
-    );
-    res.status(201).json(row);
+    // #3494: one completion per block and date. A block already logged that
+    // date is moved to the level chosen (Fully Done ↔ Partially Done) rather
+    // than logged again, so a repeated click awards nothing more and switching
+    // replaces the contribution; a result is kept unless a new one is typed.
+    const outcome = await db.transaction(async (tx) => {
+      const { rows: existing } = await tx.query(
+        `SELECT id FROM workout_block_logs
+         WHERE gym_id = ? AND member_id = ? AND workout_block_id = ? AND logged_date = ?
+         ORDER BY id DESC FOR UPDATE`,
+        [gymId, memberId, workout_block_id, logged_date],
+      );
+      if (existing.length > 0) {
+        const keepResult = result.value === null;
+        await tx.query(
+          `UPDATE workout_block_logs SET level = ?, modified_at = UTC_TIMESTAMP(), modified_by_member_id = ?
+           WHERE gym_id = ? AND member_id = ? AND workout_block_id = ? AND logged_date = ?`,
+          [level, memberId, gymId, memberId, workout_block_id, logged_date],
+        );
+        if (!keepResult) {
+          await tx.query(
+            'UPDATE workout_block_logs SET result_value = ?, result_unit = ? WHERE id = ?',
+            [result.value, unit, existing[0].id],
+          );
+        }
+        const { rows } = await tx.query('SELECT * FROM workout_block_logs WHERE id = ?', [existing[0].id]);
+        return { status: 200, row: rows[0] };
+      }
+      const { insertId } = await tx.query(
+        `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, level, started_at, finished_at, result_value, result_unit, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, memberId, workout_block_id, logged_date, level, started_at ?? null, finished_at ?? null,
+         result.value, unit, notes ?? null],
+      );
+      const { rows } = await tx.query('SELECT * FROM workout_block_logs WHERE id = ?', [insertId]);
+      return { status: 201, row: rows[0] };
+    });
+    res.status(outcome.status).json(outcome.row);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);

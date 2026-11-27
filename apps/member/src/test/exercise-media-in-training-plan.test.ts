@@ -245,7 +245,7 @@ describe('My Training Plan page (#723 Scope, Hierarchy, API)', () => {
     expect(src).toContain('(workout.blocks ?? []).map');
     expect(src).toContain('(block.exercises ?? []).map');
     expect(src).toContain('setSelectedDate');
-    expect(src).toContain("t('training.mark_done')");
+    expect(src).toContain("t('training.fully_done')");
     expect(src).toContain('commitDraft(we)');
   });
 

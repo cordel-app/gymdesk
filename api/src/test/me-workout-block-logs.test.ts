@@ -285,3 +285,114 @@ describe('GET /me/workout-block-logs (#1009)', () => {
     expect(res.body.map((l: any) => l.workout_block_id)).not.toContain(foreignMemberBlockId);
   });
 });
+
+// #3494 — Fully Done / Partially Done, one completion per block and date, and a
+// progress that moves with every block marked.
+describe('Fully Done / Partially Done (#3494)', () => {
+  let planId: number;
+  let blockA: number;
+  let blockB: number;
+  let unscheduledBlock: number;
+  /** A Monday, matching the scheduled workout's weekday (1). */
+  const DATE = '2026-11-23';
+
+  beforeAll(async () => {
+    // A plan of its own, so the earlier suites' plans do not enter the figures:
+    // close every other plan of the member first.
+    await db.query("UPDATE training_plans SET status = 'completed' WHERE gym_id = ? AND member_id = ?", [gymId, memberId]);
+    ({ insertId: planId } = await db.query(
+      `INSERT INTO training_plans (gym_id, member_id, name, status, start_date)
+       VALUES (?, ?, 'Partial Plan', 'active', '2026-11-01')`,
+      [gymId, memberId],
+    ));
+    await db.query(
+      `INSERT INTO member_training_plans (gym_id, member_id, training_plan_id, status) VALUES (?, ?, ?, 'active')`,
+      [gymId, memberId, planId],
+    );
+    const { insertId: monday } = await db.query(
+      `INSERT INTO workouts (gym_id, training_plan_id, name, position, scheduled_weekday) VALUES (?, ?, 'Monday', 1, 1)`,
+      [gymId, planId],
+    );
+    ({ insertId: blockA } = await db.query(
+      `INSERT INTO workout_blocks (gym_id, workout_id, position, type) VALUES (?, ?, 1, 'Standard')`, [gymId, monday],
+    ));
+    ({ insertId: blockB } = await db.query(
+      `INSERT INTO workout_blocks (gym_id, workout_id, position, type) VALUES (?, ?, 2, 'GiantSet')`, [gymId, monday],
+    ));
+    const { insertId: anyDay } = await db.query(
+      `INSERT INTO workouts (gym_id, training_plan_id, name, position, scheduled_weekday) VALUES (?, ?, 'Any day', 2, NULL)`,
+      [gymId, planId],
+    );
+    ({ insertId: unscheduledBlock } = await db.query(
+      `INSERT INTO workout_blocks (gym_id, workout_id, position, type) VALUES (?, ?, 1, 'Standard')`, [gymId, anyDay],
+    ));
+  });
+
+  const mark = (block: number, level?: string) =>
+    asMember(request.post('/me/workout-block-logs')).send({ workout_block_id: block, logged_date: DATE, ...(level ? { level } : {}) });
+  const dayProgress = async () =>
+    (await asMember(request.get(`/me/training-progress?date=${DATE}`)).expect(200)).body.day;
+  const logCount = async (block: number) =>
+    (await db.query<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM workout_block_logs WHERE workout_block_id = ? AND logged_date = ?', [block, DATE],
+    )).rows[0].n;
+
+  it('starts at 0% and counts the unscheduled workout beside the scheduled one', async () => {
+    expect(await dayProgress()).toEqual({ completed: 0, total: 2, percent: 0 });
+  });
+
+  it('a single block marked moves the day before the whole workout is done', async () => {
+    const res = await mark(blockA).expect(201);
+    expect(res.body.level).toBe('done');
+    // Monday workout: (1 + 0) / 2 = 0.5 of 2 workouts → 25 %.
+    expect(await dayProgress()).toEqual({ completed: 0.5, total: 2, percent: 25 });
+  });
+
+  it('Partially Done records exactly half of Fully Done', async () => {
+    await mark(blockB, 'partial').expect(201);
+    // Monday workout: (1 + 0.5) / 2 = 0.75 → 0.75 of 2 → 38 %.
+    expect(await dayProgress()).toEqual({ completed: 0.75, total: 2, percent: 38 });
+  });
+
+  it('repeated clicks award nothing more and write no second log', async () => {
+    await mark(blockB, 'partial').expect(200);
+    await mark(blockB, 'partial').expect(200);
+    expect(await logCount(blockB)).toBe(1);
+    expect((await dayProgress()).completed).toBe(0.75);
+  });
+
+  it('Partially Done → Fully Done replaces the contribution (never 150%)', async () => {
+    const res = await mark(blockB, 'done').expect(200);
+    expect(res.body.level).toBe('done');
+    expect(await dayProgress()).toEqual({ completed: 1, total: 2, percent: 50 });
+  });
+
+  it('Fully Done → Partially Done lowers it to half, legacy duplicates included', async () => {
+    // A pre-#3494 client could log one block twice the same day.
+    await db.query(
+      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date) VALUES (?, ?, ?, ?)`,
+      [gymId, memberId, blockA, DATE],
+    );
+    await mark(blockA, 'partial').expect(200);
+    const { rows } = await db.query<{ level: string }>(
+      'SELECT level FROM workout_block_logs WHERE workout_block_id = ? AND logged_date = ?', [blockA, DATE],
+    );
+    expect(rows.map((r) => r.level)).toEqual(['partial', 'partial']);
+    expect(await dayProgress()).toEqual({ completed: 0.75, total: 2, percent: 38 });
+  });
+
+  it('every component Fully Done reads 100%', async () => {
+    await mark(blockA, 'done').expect(200);
+    await mark(unscheduledBlock, 'done').expect(201);
+    expect(await dayProgress()).toEqual({ completed: 2, total: 2, percent: 100 });
+  });
+
+  it('refuses an unknown level', async () => {
+    await mark(blockA, 'half').expect(400);
+  });
+
+  it('a day before the plan starts lists none of its workouts', async () => {
+    const res = await asMember(request.get('/me/training-progress?date=2026-10-26')).expect(200);
+    expect(res.body.day.total).toBe(0);
+  });
+});

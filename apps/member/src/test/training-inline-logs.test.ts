@@ -9,8 +9,9 @@ describe('My Training inline logs (#1297)', () => {
   it('does not hardcode the Mark done colour', () => {
     expect(page).not.toMatch(/blockDoneBtn:[^\n]*statusSuccess/);
   });
-  it('hides Mark done once a block is done and shows the Done! chip', () => {
-    expect(page).toContain('!doneBlocks.has(block.id)');
+  it('shows the Done! chip on a Fully Done block and disables the level it already holds (#3494)', () => {
+    expect(page).toContain("blockLevelOn(doneBlocks, block.id) === 'done'");
+    expect(page).toContain("disabled={pending || level === 'done'}");
     expect(page).toContain("t('training.done')");
   });
   it('has no Save button and reads the latest 5 logs of the exercise', () => {
