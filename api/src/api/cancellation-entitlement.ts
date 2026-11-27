@@ -1,7 +1,7 @@
 import type { Tx } from '../infra/db';
 import { BillingDateUnit } from '../domain/billingDate';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
-import { PaidPeriod, ScheduleCadence, paidThroughDate } from '../domain/cancellationEntitlement';
+import { PaidPeriod, ScheduleCadence, paidThroughDate, recurringLineEndDate } from '../domain/cancellationEntitlement';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 
 /**
@@ -58,4 +58,16 @@ export async function loadPaidThroughForSchedule(tx: Tx, gymId: string, schedule
     periodStart: iso(e.period_start), periodEnd: e.period_end ? iso(e.period_end) : null,
   }));
   return paidThroughDate(periods, cadence);
+}
+
+/**
+ * #3508 — the end date a recurring Product line takes when it is cancelled today: the one rule
+ * `removeService()` applies and the cancellation confirmation previews, so the date staff are told
+ * is the date that is saved.
+ */
+export async function recurringLineCancellationEnd(
+  tx: Tx, gymId: string, scheduleId: number | null, today: string,
+): Promise<string> {
+  const paidThrough = scheduleId != null ? await loadPaidThroughForSchedule(tx, gymId, scheduleId) : null;
+  return recurringLineEndDate(paidThrough, today);
 }

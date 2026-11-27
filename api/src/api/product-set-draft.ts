@@ -16,7 +16,7 @@ import { ownPlanSnapshot, ownPrimaryPlanSnapshot } from './plan-snapshot-ownersh
 import { deleteUnlinkedPlanSnapshots } from './plan-assignment-sync';
 import { PLAN_LINE_CATEGORIES, PLAN_LINE_TABLE, planSnapshotInheritedSql, planSnapshotOfAssignment, planSnapshotSharedSql, primaryPlanSnapshotId, primaryPlanSnapshotSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { allocateItemSchedules } from './product-set-configuration';
-import { loadPaidThroughForSchedule } from './cancellation-entitlement';
+import { recurringLineCancellationEnd } from './cancellation-entitlement';
 import { violatesOnePerMember, ONE_PER_MEMBER_MESSAGE } from './one-per-member';
 import { AssigneeRefused, resolveAssignedMember } from './product-assignee';
 import { insertSiblingLine, memberGroupsOf, splitPlanLines, syncPlanLineAllocations } from './plan-line-allocation';
@@ -741,9 +741,8 @@ export async function removeService(
   } else {
     // #1914 — a removed line keeps what was paid for: it ends on the last day
     // of its last paid period when that is still ahead, else today.
-    const paidThrough = rows[0].schedule_id != null
-      ? await loadPaidThroughForSchedule(tx, draft.gym_id, Number(rows[0].schedule_id)) : null;
-    endsAt = paidThrough && paidThrough > today ? paidThrough : today;
+    endsAt = await recurringLineCancellationEnd(tx, draft.gym_id,
+      rows[0].schedule_id != null ? Number(rows[0].schedule_id) : null, today);
     await updateRecurringLine(tx, draft.gym_id, lineId, { ends_at: endsAt });
   }
   await touch(tx, draft);
