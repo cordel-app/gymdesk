@@ -331,7 +331,7 @@ export function toGoalUpdatePayload(values: GoalFormValues) {
  * `removed` is the fourth and is **not** a stored status: a goal the member
  * removed keeps the progress it had (migration 212 keeps the two axes apart),
  * so the row says `in_progress` with a `deleted_at` beside it and reading the
- * column alone would label a removed goal *In progress* in the Past Goals
+ * column alone would label a removed goal *Active* in the Past Goals
  * list. Deciding it here is what keeps the page from re-deriving it.
  */
 export function goalStatusKey(goal: Pick<MemberGoal, 'deleted_at' | 'status'>): string {
