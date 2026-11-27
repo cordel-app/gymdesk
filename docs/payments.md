@@ -121,6 +121,16 @@ first stretch is owed in full (matched by Product, it read as already paid and t
 review, Save & Pay, the free activation and the Draft's initial-payment forecast group all read
 this one figure, and reading it writes nothing.
 
+**A Promotion covering the alignment stretch prices it (#3506).** A plan that joins the billing
+calendar mid-period bills a prorated first stretch at the fee of the period it leads into (M5c),
+with its Billing & Duration counted from the first schedule date. A Promotion's timeline is its own
+(anchored on the month of its application), so where an applied Promotion governs the stretch's
+own start date (`promotionGovernedFee()` in `domain/billingSimulation.ts`), the stretch is priced
+from that Promotion (Personal Membership Fee Benefit applied last) and only the Pre-paid lump stays
+the lead period's. Before, a one-month fee discount on the joining month was never charged at all.
+The engine is the one place, so the plan simulation, Save & Pay's initial charge and the persisted
+obligations move together; a stretch no Promotion governs is priced exactly as before.
+
 **An added plan owes its own first cycle, whatever day it starts on (#3441).** The added plan's
 lines are taken from its own start date with a first version's rule (`addedPlansFirstCycle()` in
 `product-set-configuration.ts`, over `firstCycleEvents()`): the events on its start date and, for a
