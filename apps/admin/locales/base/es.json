@@ -4635,7 +4635,8 @@
     "hierarchy_failed": "No se ha podido cargar el plan.",
     "tree_goal_image_close": "Cerrar",
     "tree_goal_image_none": "Sin imagen",
-    "tree_goal_no_description": "No hay descripción disponible."
+    "tree_goal_no_description": "No hay descripción disponible.",
+    "label_member_notes": "Notas para el miembro"
   },
   "nutrition_library": {
     "details_slug": "Slug",
@@ -5885,8 +5886,6 @@
     "col_created_at": "Creado el",
     "col_created_by": "Creado por",
     "col_status": "Estado",
-    "version_confirm": "Al guardar, la versión actual de este plan termina hoy y se crea una nueva versión, con tus cambios, que empieza mañana. La versión anterior se conserva como histórico.",
-    "version_confirm_btn": "Guardar nueva versión",
     "title": "Planes de nutrición asignados",
     "replace_confirm_title": "Ya hay un plan de nutrición activo",
     "replace_confirm": "Este miembro ya tiene un plan de nutrición activo («{name}»). Si continúas, se sustituirá: el plan anterior se marca como Completado y termina el día antes de que empiece el nuevo, y el nuevo pasa a ser el plan activo del miembro. El plan anterior se conserva como historial.",
@@ -5923,8 +5922,6 @@
     "error_generic": "Se ha producido un error. Inténtalo de nuevo.",
     "edit": "Editar",
     "details": "Detalles",
-    "duplicate": "Duplicar",
-    "duplicated": "Plan de nutrición duplicado.",
     "complete": "Marcar como completado",
     "confirm_complete": "¿Marcar este plan de nutrición como completado? Pasará a ser de solo lectura.",
     "save_changes": "Guardar cambios",
@@ -5940,7 +5937,14 @@
     "unsaved_discard": "Descartar cambios",
     "col_end_date": "Fecha de fin",
     "label_end_date": "Fecha de fin",
-    "open_ended": "Sin fecha de fin"
+    "open_ended": "Sin fecha de fin",
+    "label_member_notes": "Notas para el miembro",
+    "activate": "Activar",
+    "activate_title": "Activar plan de nutrición",
+    "activate_confirm_replace": "El plan \"{name}\" se completará y este plan pasará a ser el plan de nutrición activo del miembro.",
+    "activate_confirm_none": "Este plan pasará a ser el plan de nutrición activo del miembro.",
+    "keep_as_draft": "Mantener como borrador",
+    "activated": "Plan de nutrición activado."
   },
   "operating_hours": {
     "title": "Horario y Festivos",

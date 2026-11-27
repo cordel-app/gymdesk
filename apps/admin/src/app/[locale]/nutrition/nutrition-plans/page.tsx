@@ -32,6 +32,8 @@ interface MemberNutritionPlan {
   id: number;
   name: string;
   description: string | null;
+  /** #3474: the note written for the member, a copy of the template's when assigned from one. */
+  member_notes?: string | null;
   member_id: number;
   member_name: string;
   template_id: number | null;
@@ -51,8 +53,15 @@ interface MemberNutritionPlan {
 /** The statuses the list may be filtered by (#2661) — the API's listable set. */
 const FILTER_STATUSES = ['active', 'draft', 'completed'] as const;
 
-interface EditForm { name: string; description: string; start_date: string }
-const emptyEditForm: EditForm = { name: '', description: '', start_date: '' };
+interface EditForm { name: string; description: string; member_notes: string; start_date: string }
+const emptyEditForm: EditForm = { name: '', description: '', member_notes: '', start_date: '' };
+
+/** #3474: the activation confirmation — which Draft, the API's current active plan, and whether Save opened it. */
+interface ActivationPrompt {
+  plan: MemberNutritionPlan;
+  currentPlanName: string | null;
+  fromSave: boolean;
+}
 
 function formatDate(iso: string, settings: GymFormatSettings) {
   return formatGymDate(iso, settings);
@@ -139,8 +148,9 @@ export default function NutritionPlansPage() {
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm);
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
-  // #1970: Save on a version draft asks for confirmation before ending the current version.
-  const [versionConfirmOpen, setVersionConfirmOpen] = useState(false);
+  // #3474: Save on a Draft and ⋮ → Activate both ask before the member's active plan is completed.
+  const [activation, setActivation] = useState<ActivationPrompt | null>(null);
+  const [activating, setActivating] = useState(false);
 
   // Unsaved-changes guard
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -204,7 +214,10 @@ export default function NutritionPlansPage() {
 
   function startEdit(plan: MemberNutritionPlan) {
     setEditingId(plan.id);
-    setEditForm({ name: plan.name, description: plan.description ?? '', start_date: plan.start_date?.slice(0, 10) ?? '' });
+    setEditForm({
+      name: plan.name, description: plan.description ?? '', member_notes: plan.member_notes ?? '',
+      start_date: plan.start_date?.slice(0, 10) ?? '',
+    });
     setEditError(null);
     if (!expanded.has(plan.id)) {
       setExpanded((prev) => { const next = new Set(prev); next.add(plan.id); return next; });
@@ -245,43 +258,61 @@ export default function NutritionPlansPage() {
     setEditError(null);
   }
 
+  /** The PUT body of the inline form. A version Draft's start date is set by its activation, so it is not sent. */
+  function editBody(row: MemberNutritionPlan) {
+    return {
+      name: editForm.name.trim(),
+      description: editForm.description.trim() || null,
+      member_notes: editForm.member_notes.trim() || null,
+      // #3403: a plan always keeps a start date — a blank field leaves the stored one.
+      ...(editForm.start_date && !row.draft_of_plan_id ? { start_date: editForm.start_date } : {}),
+    };
+  }
+
+  /** #3474: asks the API which active plan activating this Draft would complete, then opens the confirmation. */
+  async function promptActivation(plan: MemberNutritionPlan, fromSave: boolean) {
+    try {
+      const info = await apiFetch<{ current_plan: { id: number; name: string } | null }>(`/member-nutrition-plans/${plan.id}/activation`);
+      setActivation({ plan, currentPlanName: info.current_plan ? displayNutritionPlanName(info.current_plan.name) : null, fromSave });
+    } catch (err: any) {
+      if (fromSave) setEditError(err.message ?? t('nutrition_plans.error_generic'));
+      else toast(err.message ?? t('nutrition_plans.error_generic'));
+    }
+  }
+
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('nutrition_plans.error_required')); return; }
     const row = rows.find((r) => r.id === editingId)!;
-    if (row.draft_of_plan_id && !versionConfirmOpen) { setVersionConfirmOpen(true); return; }
-    setVersionConfirmOpen(false);
+    // #3474: Save on a Draft never activates it implicitly — it asks: Activate, or Keep as Draft.
+    if (row.status === 'draft') { await promptActivation(row, true); return; }
     setEditSaving(true); setEditError(null);
-    // #3403: a plan always keeps a start date — a blank field leaves the stored one.
-    const body = {
-      name: editForm.name.trim(),
-      description: editForm.description.trim() || null,
-      ...(editForm.start_date ? { start_date: editForm.start_date } : {}),
-    };
     try {
-      if (row.draft_of_plan_id) {
-        // #1970: name/description first, then one transaction ends the old version and activates this one.
-        await apiFetch(`/member-nutrition-plans/${editingId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ name: body.name, description: body.description }),
-        });
-        await apiFetch(`/member-nutrition-plans/${editingId}/publish-version`, { method: 'POST' });
-      } else {
-        await apiFetch(`/member-nutrition-plans/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
-      }
+      await apiFetch(`/member-nutrition-plans/${editingId}`, { method: 'PUT', body: JSON.stringify(editBody(row)) });
       setEditingId(null); setEditForm(emptyEditForm); load();
     } catch (err: any) {
       setEditError(err.message ?? t('nutrition_plans.error_generic'));
     } finally { setEditSaving(false); }
   }
 
-  async function handleDuplicate(plan: MemberNutritionPlan) {
+  /** #3474: the answer to the confirmation. `activate` false is Keep as Draft (only offered from Save). */
+  async function resolveActivation(activate: boolean) {
+    if (!activation) return;
+    const { plan, fromSave } = activation;
+    setActivating(true);
     try {
-      await apiFetch(`/member-nutrition-plans/${plan.id}/duplicate`, { method: 'POST' });
-      toast(t('nutrition_plans.duplicated'), 'success');
+      if (fromSave) {
+        await apiFetch(`/member-nutrition-plans/${plan.id}`, { method: 'PUT', body: JSON.stringify(editBody(plan)) });
+      }
+      if (activate) await apiFetch(`/member-nutrition-plans/${plan.id}/activate`, { method: 'POST' });
+      setActivation(null);
+      if (fromSave) { setEditingId(null); setEditForm(emptyEditForm); }
+      if (activate) toast(t('nutrition_plans.activated'), 'success');
       load();
     } catch (err: any) {
-      toast(err.message ?? t('nutrition_plans.error_generic'));
-    }
+      setActivation(null);
+      if (fromSave) setEditError(err.message ?? t('nutrition_plans.error_generic'));
+      else toast(err.message ?? t('nutrition_plans.error_generic'));
+    } finally { setActivating(false); }
   }
 
   async function complete() {
@@ -416,7 +447,7 @@ export default function NutritionPlansPage() {
               onToggleExpand={() => toggleExpand(row)}
               onEdit={() => guardUnsaved(() => beginEdit(row))}
               onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
-              onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
+              onActivate={() => guardUnsaved(() => promptActivation(row, false))}
               onComplete={() => guardUnsaved(() => setCompleting(row))}
               onDelete={() => guardUnsaved(() => setDeleting(row))}
               onEditFormChange={setEditForm}
@@ -453,13 +484,20 @@ export default function NutritionPlansPage() {
         onCancel={() => setDeleting(null)}
       />
 
+      {/* #3474: one confirmation for ⋮ → Activate and for Save on a Draft (which adds Keep as Draft). */}
       <ConfirmDialog
-        open={versionConfirmOpen}
-        message={t('nutrition_plans.version_confirm')}
-        confirmLabel={t('nutrition_plans.version_confirm_btn')}
+        open={activation !== null}
+        title={t('nutrition_plans.activate_title')}
+        message={activation?.currentPlanName
+          ? t('nutrition_plans.activate_confirm_replace', { name: activation.currentPlanName })
+          : t('nutrition_plans.activate_confirm_none')}
+        confirmLabel={t('nutrition_plans.activate')}
         cancelLabel={t('nutrition_plans.cancel')}
-        onConfirm={saveEdit}
-        onCancel={() => setVersionConfirmOpen(false)}
+        secondaryLabel={activation?.fromSave ? t('nutrition_plans.keep_as_draft') : undefined}
+        onSecondary={activation?.fromSave ? () => resolveActivation(false) : undefined}
+        onConfirm={() => resolveActivation(true)}
+        onCancel={() => setActivation(null)}
+        busy={activating}
       />
 
       {/* Unsaved changes guard */}
@@ -491,7 +529,7 @@ export default function NutritionPlansPage() {
 function PlanCard({
   plan, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onComplete, onDelete,
+  onToggleExpand, onEdit, onDetails, onActivate, onComplete, onDelete,
   onEditFormChange, onSave, onCancel, onChanged,
 }: {
   plan: MemberNutritionPlan;
@@ -508,7 +546,7 @@ function PlanCard({
   onToggleExpand: () => void;
   onEdit: () => void;
   onDetails: () => void;
-  onDuplicate: () => void;
+  onActivate: () => void;
   onComplete: () => void;
   onDelete: () => void;
   onEditFormChange: (f: EditForm) => void;
@@ -526,7 +564,8 @@ function PlanCard({
   const menuItems = [
     ...(isActive || plan.status === 'draft' ? [{ kind: 'edit' as const, label: t('nutrition_plans.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
     { kind: 'details' as const, label: t('nutrition_plans.details'), onClick: onDetails },
-    { label: t('nutrition_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
+    // #3474: an assigned plan is not duplicated from this list; a Draft is activated explicitly.
+    ...(plan.status === 'draft' ? [{ label: t('nutrition_plans.activate'), onClick: onActivate, disabled: !canWrite, title: roTitle }] : []),
     ...(isActive ? [{ label: t('nutrition_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
     // #2201: a completed plan is read-only — no Edit, no Delete.
     ...(plan.status !== 'completed' ? [{ kind: 'delete' as const, label: t('nutrition_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle }] : []),
@@ -552,6 +591,15 @@ function PlanCard({
               <textarea
                 value={editForm.description}
                 onChange={(e) => onEditFormChange({ ...editForm, description: e.target.value })}
+                rows={2}
+                style={{ ...inlineInputStyle, resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('nutrition_plans.label_member_notes')}</label>
+              <textarea
+                value={editForm.member_notes}
+                onChange={(e) => onEditFormChange({ ...editForm, member_notes: e.target.value })}
                 rows={2}
                 style={{ ...inlineInputStyle, resize: 'vertical' }}
               />
@@ -666,6 +714,7 @@ function DetailsDialog({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <DetailRow label={t('nutrition_plans.label_name')} value={displayNutritionPlanName(plan.name)} />
         <DetailRow label={t('nutrition_plans.label_description')} value={plan.description ?? '—'} />
+        <DetailRow label={t('nutrition_plans.label_member_notes')} value={plan.member_notes ?? '—'} />
         <DetailRow label={t('nutrition_plans.label_member')} value={plan.member_name} />
         <DetailRow label={t('nutrition_plans.label_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
         <DetailRow label={t('nutrition_plans.label_start_date')} value={plan.start_date ? formatGymDateOnly(plan.start_date, gymFmt) : '—'} />

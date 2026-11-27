@@ -18,6 +18,8 @@ export type CreateNutritionPlanArgs = {
   templateId: number | null;
   name: string | null; // required by callers when templateId is null
   description?: string | null; // undefined -> inherit template's when cloning
+  /** #3474: undefined -> copy the template's Member Notes (a stored copy, never a live reference). */
+  memberNotes?: string | null;
   startDate: string | null;
   /** #2572: the caller confirmed superseding the member's current active plan. */
   confirmReplace?: boolean;
@@ -79,6 +81,7 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
   let planId: number;
   let planName: string;
   let planDescription: string | null;
+  let planMemberNotes: string | null;
 
   if (templateId) {
     const { rows: tplRows } = await tx.query(
@@ -91,12 +94,13 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
     const template = tplRows[0];
     planName = name?.trim() || template.name;
     planDescription = description !== undefined ? description : (template.description ?? null);
+    planMemberNotes = args.memberNotes !== undefined ? args.memberNotes : (template.member_notes ?? null);
 
     const { insertId: newPlanId } = await tx.query(
       `INSERT INTO member_nutrition_plans
-        (gym_id, member_id, template_id, name, description, start_date, status, created_by, modified_at, modified_by)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?)`,
-      [gymId, memberId, templateId, planName, planDescription, startDate, actor, actor],
+        (gym_id, member_id, template_id, name, description, member_notes, start_date, status, created_by, modified_at, modified_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?)`,
+      [gymId, memberId, templateId, planName, planDescription, planMemberNotes, startDate, actor, actor],
     );
     planId = newPlanId;
 
@@ -155,11 +159,12 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
   } else {
     planName = (name ?? '').trim();
     planDescription = description ?? null;
+    planMemberNotes = args.memberNotes ?? null;
     const { insertId: newPlanId } = await tx.query(
       `INSERT INTO member_nutrition_plans
-        (gym_id, member_id, template_id, name, description, start_date, status, created_by, modified_at, modified_by)
-       VALUES (?, ?, NULL, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?)`,
-      [gymId, memberId, planName, planDescription, startDate, actor, actor],
+        (gym_id, member_id, template_id, name, description, member_notes, start_date, status, created_by, modified_at, modified_by)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?)`,
+      [gymId, memberId, planName, planDescription, planMemberNotes, startDate, actor, actor],
     );
     planId = newPlanId;
   }
