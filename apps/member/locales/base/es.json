@@ -473,7 +473,6 @@
     "product_package_price": "Precio total del paquete",
     "product_tax_included": "Impuestos incluidos",
     "product_buy": "Comprar",
-    "own_products_heading": "Mis compras",
     "product_end_date": "Válido hasta {date}",
     "product_pay": "Pagar",
     "product_state_cancelled": "Cancelado",
@@ -696,7 +695,8 @@
     "plan_fee_per_member": "{count, plural, one {Por miembro} other {Por miembro × #}}",
     "plan_fee_per_family": "Por familia",
     "past_entry_type_plan": "Plan",
-    "past_entry_type_product": "Producto"
+    "past_entry_type_product": "Producto",
+    "product_cancel": "Cancelar"
   },
   "payments": {
     "title": "Pagos",
@@ -794,7 +794,16 @@
       "canceled": "Cancelado",
       "refunded": "Reembolsado",
       "partially_refunded": "Reembolsado parcialmente"
-    }
+    },
+    "pay": "Pagar",
+    "cancel": "Cancelar",
+    "cancel_title": "¿Cancelar la compra?",
+    "cancel_body": "¿Cancelar {name}? La compra pendiente de pago se cancela con todo lo que contiene. No se cobra ni se reembolsa nada.",
+    "cancel_keep": "Mantener",
+    "cancel_confirm": "Cancelar compra",
+    "cancel_error": "No se ha podido cancelar la compra. Inténtalo de nuevo.",
+    "cancel_error_settled": "Este pago ya se ha realizado, así que la compra ya no se puede cancelar aquí. Ponte en contacto con tu gimnasio.",
+    "cancel_error_unresolved": "Un pago de esta compra todavía se está procesando. Inténtalo de nuevo en unos minutos."
   },
   "payment_banner": {
     "pending_heading": "Tienes un pago pendiente",

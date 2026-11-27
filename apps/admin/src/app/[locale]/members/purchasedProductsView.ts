@@ -444,3 +444,16 @@ export function purchaseCancelMessageKey(item: { source?: string }, endsOn: stri
   if (item.source !== 'recurring') return 'purchase_cancel_confirm';
   return endsOn ? 'purchase_cancel_confirm_recurring_until' : 'purchase_cancel_confirm_recurring';
 }
+
+/**
+ * #3537 — the Purchase (`purchases.id`) whose `⋮ → Cancel` a Product awaiting payment offers, or
+ * `null`: only a one-time purchase still `pending_payment` that belongs to a Purchase. Cancelling it
+ * is the Purchases tab's own cancel (`POST /payments/purchases/:id/cancel`, #3355 stage 3), which the
+ * server decides again; a recurring line awaiting payment is its Product Set's, cancelled there.
+ */
+export function pendingPurchaseCancelId(
+  item: Pick<PurchasedProduct, 'status' | 'source' | 'purchase_id'>,
+): number | null {
+  if (item.status !== 'pending_payment' || item.source === 'recurring') return null;
+  return item.purchase_id ?? null;
+}

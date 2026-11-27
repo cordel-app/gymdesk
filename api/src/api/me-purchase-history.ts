@@ -20,6 +20,13 @@ import { loadMemberPurchases, type MemberPurchase } from './member-purchases';
 import { db } from '../infra/db';
 import { commitCharge } from './product-set-checkout';
 import { cartTotal, loadCartPurchases } from './cart-checkout';
+import { memberMaySettlePendingPurchase } from '../domain/memberPendingPurchase';
+import { cancelPendingPurchase, cancelPurchaseResponse, reconcilePurchasePayments } from './purchase-cancellation';
+import { reissuePurchaseCheckout } from './me-products';
+import { getRequestLocale } from '../infra/locale';
+import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
+import { sourceForRole } from './billing-events';
 
 export const PURCHASE_HISTORY_DEFAULT_LIMIT = 10;
 export const PURCHASE_HISTORY_MAX_LIMIT = 50;
@@ -40,6 +47,12 @@ export interface MemberPurchaseView {
    * the figure cannot be computed.
    */
   initial_payment_amount: string | null;
+  /**
+   * #3537: whether the member may Pay or Cancel this purchase here — a standalone checkout of
+   * one-time Products they own, awaiting payment (`memberMaySettlePendingPurchase()`).
+   */
+  can_pay: boolean;
+  can_cancel: boolean;
   owner: { id: number; name: string | null };
   plans: Array<{
     name: string | null;
@@ -78,6 +91,8 @@ export function toMemberPurchaseView(p: MemberPurchase): MemberPurchaseView {
     created_at: p.created_at,
     total_amount: p.total_amount,
     initial_payment_amount: null,
+    can_pay: false,
+    can_cancel: false,
     owner: { id: p.owner.id, name: p.owner.name },
     plans: p.plans.map((plan) => ({
       name: plan.name,
@@ -162,12 +177,129 @@ mePurchaseHistoryRouter.get('/', requireRole('member'), requireFeatureEnabled('m
       const memberId = await resolveMemberId(gymId, ctx);
       if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
       const { items, total } = await loadMemberPurchases(gymId, memberId, parsed.limit, parsed.offset);
+      const withSet = await purchasesWithProductSet(gymId, items.filter((p) => p.status === 'pending_payment').map((p) => p.id));
       const views = await Promise.all(items.map(async (p) => {
         const view = toMemberPurchaseView(p);
+        const settle = memberMaySettlePendingPurchase(pendingFacts(p, withSet.has(p.id)), memberId);
+        view.can_pay = settle;
+        view.can_cancel = settle;
         if (p.status === 'in_cart') view.initial_payment_amount = await cartInitialPayment(gymId, p.owner.id, p.id);
         return view;
       }));
       res.json({ items: views, total, limit: parsed.limit, offset: parsed.offset });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+/** The ids among `ids` that a Product Set belongs to (#3537: those are the cart card's to settle). */
+async function purchasesWithProductSet(gymId: string, ids: number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const { rows } = await db.query<{ purchase_id: number }>(
+    `SELECT DISTINCT purchase_id FROM product_sets WHERE gym_id = ? AND purchase_id IN (${ids.map(() => '?').join(',')})`,
+    [gymId, ...ids]);
+  return new Set(rows.map((r) => Number(r.purchase_id)));
+}
+
+function pendingFacts(p: MemberPurchase, hasProductSet: boolean) {
+  return {
+    status: p.status,
+    ownerMemberId: Number(p.owner.id),
+    planCount: p.plans.length,
+    productKinds: p.products.map((l) => l.kind),
+    hasProductSet,
+  };
+}
+
+/** #3537 — the member's own purchase awaiting payment that they may settle here, or null. */
+async function loadSettleablePurchase(gymId: string, memberId: number, purchaseId: number): Promise<MemberPurchase | null> {
+  const { items } = await loadMemberPurchases(gymId, memberId, 1, 0, purchaseId);
+  const p = items[0];
+  if (!p) return null;
+  const withSet = await purchasesWithProductSet(gymId, [p.id]);
+  return memberMaySettlePendingPurchase(pendingFacts(p, withSet.has(p.id)), memberId) ? p : null;
+}
+
+function parseId(raw: unknown): number | null {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * POST /me/purchase-history/:id/pay — #3537. Pay on a purchase awaiting payment: a fresh page token
+ * on its existing request, through `reissuePurchaseCheckout()` — the very Pay My Products offers
+ * (#1862), never a second provider payment.
+ */
+mePurchaseHistoryRouter.post('/:id/pay', requireRole('member'), requireFeatureEnabled('member_web.my_membership'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    const purchaseId = parseId(req.params.id);
+    if (!purchaseId) return res.status(400).json({ error: 'Invalid id' });
+    try {
+      const memberId = await resolveMemberId(gymId, ctx);
+      if (!(await loadSettleablePurchase(gymId, memberId, purchaseId))) {
+        return res.status(404).json({ error: 'No purchase awaiting payment found' });
+      }
+      // Every pending line of a checkout shares its one payment request, so any of them reissues it.
+      const { rows } = await db.query<{ source_id: number }>(
+        `SELECT source_id FROM product_oneoff_snapshots
+          WHERE gym_id = ? AND purchase_id = ? AND status = 'pending_payment' AND source_id IS NOT NULL
+         UNION ALL
+         SELECT source_id FROM product_session_snapshots
+          WHERE gym_id = ? AND purchase_id = ? AND status = 'pending_payment' AND source_id IS NOT NULL
+         ORDER BY source_id`,
+        [gymId, purchaseId, gymId, purchaseId]);
+      for (const r of rows) {
+        const result = await reissuePurchaseCheckout({
+          gymId, memberId, purchaseId: Number(r.source_id), requestLocale: getRequestLocale(req),
+        });
+        if (result) return res.json(result);
+      }
+      res.status(404).json({ error: 'No purchase awaiting payment found' });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+/**
+ * POST /me/purchase-history/:id/cancel — #3537. The member cancels their own purchase awaiting
+ * payment, from My Products or the Purchases tab (both call this one route). It is staff's
+ * `cancelPendingPurchase()` (#3355 stage 3) unchanged: the provider is asked first, a settled or
+ * unresolved payment is refused, and the purchase, its Billing Event and its one-time Products are
+ * kept as `cancelled` — no attempt, charge or refund is written. A repeat answers 200.
+ */
+mePurchaseHistoryRouter.post('/:id/cancel', requireRole('member'), requireFeatureEnabled('member_web.my_membership'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    const purchaseId = parseId(req.params.id);
+    if (!purchaseId) return res.status(400).json({ error: 'Invalid id' });
+    try {
+      const memberId = await resolveMemberId(gymId, ctx);
+      const { rows: carts } = await db.query<{ status: string; owner_member_id: number }>(
+        'SELECT status, owner_member_id FROM purchases WHERE id = ? AND gym_id = ?', [purchaseId, gymId]);
+      const cart = carts[0];
+      if (!cart || Number(cart.owner_member_id) !== memberId) return res.status(404).json({ error: 'Purchase not found' });
+      if (cart.status === 'cancelled') return res.json({ purchase_id: purchaseId, status: 'cancelled' });
+      if (!(await loadSettleablePurchase(gymId, memberId, purchaseId))) {
+        return res.status(409).json({ error: 'not_pending_payment', status: cart.status });
+      }
+      const { logger } = await import('../lib/logger');
+      await reconcilePurchasePayments(gymId, purchaseId, logger);
+      const out = await db.transaction((tx) => cancelPendingPurchase(tx, gymId, purchaseId, {
+        actor: resolveRequestActor(ctx), actorUserId: ctx.userId ?? null, source: sourceForRole(ctx.role),
+      }));
+      const failure = cancelPurchaseResponse(out);
+      if (failure) return res.status(failure.status).json(failure.body);
+      if (out.kind === 'cancelled') {
+        recordAudit(req, {
+          action: 'cancel', entityType: 'purchase', entityId: purchaseId,
+          previous: { status: 'pending_payment' },
+          next: { status: out.mode === 'kept' ? 'cancelled' : 'deleted' },
+        });
+      }
+      res.json({ purchase_id: purchaseId, status: out.kind === 'cancelled' && out.mode === 'deleted' ? 'deleted' : 'cancelled' });
     } catch (err) {
       next(err);
     }

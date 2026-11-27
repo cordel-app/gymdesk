@@ -41,6 +41,9 @@ import {
 import { PastPaymentsList } from '@/components/PastPaymentsList';
 import { PurchaseHistoryList } from '@/components/PurchaseHistoryList';
 import {
+  purchaseCancelErrorKey, purchaseCancelPath, purchasePayPath, type PurchaseHistoryItem,
+} from '@/lib/memberPurchaseHistory';
+import {
   MemberProductsSection,
   type MemberProductCardItem,
   type MemberProductCardPromotion,
@@ -139,6 +142,8 @@ import {
   ownPurchaseShowsPay,
   ownPurchaseStateKey,
   ownPurchaseStatusWord,
+  oneTimeOwnPurchases,
+  ownPurchaseCancelId,
   type ProductAssignee,
   assigneeOptions,
   assigneePayload,
@@ -403,6 +408,13 @@ export default function MembershipPage() {
   // #3539 — the Products the member no longer holds, for Past Plans and Products.
   const [pastProducts, setPastProducts] = useState<MemberPastProduct[]>([]);
   const [payingPurchase, setPayingPurchase] = useState<number | null>(null);
+  // #3537 — the purchase awaiting payment the member is cancelling (from My Products or the
+  // Purchases tab: one dialog, one route), and the Purchases tab's busy row and refresh key.
+  const [cancellingPurchase, setCancellingPurchase] = useState<{ id: number; name: string } | null>(null);
+  const [cancelPurchaseBusy, setCancelPurchaseBusy] = useState(false);
+  const [cancelPurchaseError, setCancelPurchaseError] = useState<string | null>(null);
+  const [historyBusyId, setHistoryBusyId] = useState<number | null>(null);
+  const [historyKey, setHistoryKey] = useState(0);
   const [pendingMembership, setPendingMembership] = useState<MemberPendingPlan | null>(null);
   // #2770: only the Family Owner adds Plans and Products (the API decides; this hides the actions).
   const [canAdd, setCanAdd] = useState(true);
@@ -849,6 +861,35 @@ export default function MembershipPage() {
     }
   }
 
+  /** #3537 — Pay from the Purchases tab: the same hosted page, on the purchase's existing payment. */
+  async function payHistoryPurchase(p: PurchaseHistoryItem) {
+    setHistoryBusyId(p.id);
+    try {
+      const result = await apiFetch<{ checkoutUrl: string }>(purchasePayPath(p.id), { method: 'POST' });
+      window.location.href = result.checkoutUrl;
+    } catch (err: any) {
+      setError(err?.message ?? t('common.error'));
+      setHistoryBusyId(null);
+    }
+  }
+
+  /** #3537 — the one cancellation of a purchase awaiting payment, confirmed first. */
+  async function confirmCancelPurchase() {
+    if (!cancellingPurchase || cancelPurchaseBusy) return;
+    setCancelPurchaseBusy(true);
+    setCancelPurchaseError(null);
+    try {
+      await apiFetch(purchaseCancelPath(cancellingPurchase.id), { method: 'POST' });
+    } catch (err: any) {
+      setCancelPurchaseError(t(purchaseCancelErrorKey(err?.body?.error) as any));
+    } finally {
+      setCancelPurchaseBusy(false);
+      setCancellingPurchase(null);
+      setReloadKey((k) => k + 1);
+      setHistoryKey((k) => k + 1);
+    }
+  }
+
   /* ── #2663 My Plans + My Products — one Product Set, read once ─────────── */
   //
   // Both sections read `setView`, the one version `currentSetId()` selects (the
@@ -1063,18 +1104,23 @@ export default function MembershipPage() {
         ) : undefined,
       };
     });
+    // #3537 — the member's one-time purchases (pending payment included) are My Products too;
+    // the separate *My purchases* section is gone (the Purchases tab lists purchases).
+    items.push(...ownPurchaseCardItems());
     return (
-      <MemberProductsSection
-        title={t('membership.set_products_heading')}
-        emptyLabel={t('membership.set_products_empty')}
-        items={items}
-      />
+      <>
+        {cancelPurchaseError && <p role="alert" style={styles.submitError}>{cancelPurchaseError}</p>}
+        <MemberProductsSection
+          title={t('membership.set_products_heading')}
+          emptyLabel={t('membership.set_products_empty')}
+          items={items}
+        />
+      </>
     );
   }
 
-  function renderOwnPurchases() {
-    if (ownPurchases.length === 0) return null;
-    const items: MemberProductCardItem[] = ownPurchases.map((p) => ({
+  function ownPurchaseCardItems(): MemberProductCardItem[] {
+    return oneTimeOwnPurchases(ownPurchases).map((p) => ({
       key: `own-${p.id}`,
       name: p.product_name,
       price: formatPaymentAmount(p.amount, p.currency, gymFmt),
@@ -1096,16 +1142,20 @@ export default function MembershipPage() {
               {t('membership.product_pay')}
             </button>
           )}
+          {ownPurchaseCancelId(p) != null && (
+            <button
+              type="button"
+              style={styles.draftSecondaryBtn}
+              data-cancel-pending-purchase
+              disabled={payingPurchase === p.id || cancelPurchaseBusy}
+              onClick={() => { setCancelPurchaseError(null); setCancellingPurchase({ id: ownPurchaseCancelId(p)!, name: p.product_name }); }}
+            >
+              {t('membership.product_cancel')}
+            </button>
+          )}
         </>
       ),
     }));
-    return (
-      <MemberProductsSection
-        title={t('membership.own_products_heading')}
-        emptyLabel=""
-        items={items}
-      />
-    );
   }
 
   /* ── #1121 Additional Products and Services ─────────────────────────────── */
@@ -1311,13 +1361,20 @@ export default function MembershipPage() {
   /** #3443 — the member's purchases, read a page at a time; Payments' sibling. */
   function renderPurchasesTab() {
     return (
+      <>
+      {cancelPurchaseError && <p role="alert" style={styles.submitError}>{cancelPurchaseError}</p>}
       <PurchaseHistoryList
         load={apiFetch}
         text={(key, values) => t(key as any, values as any)}
         formatDate={(iso) => formatPaymentDate(iso, gymFmt)}
         formatMoney={(amount) => formatPaymentAmount(amount, forecast.currency, gymFmt)}
         onOpenPayments={paymentsVisible ? () => setTab('payments') : undefined}
+        onPay={payHistoryPurchase}
+        onCancel={(p) => { setCancelPurchaseError(null); setCancellingPurchase({ id: p.id, name: p.name ?? formatPaymentDate(p.created_at, gymFmt) }); }}
+        busyId={historyBusyId ?? (cancelPurchaseBusy ? cancellingPurchase?.id ?? null : null)}
+        reloadKey={historyKey}
       />
+      </>
     );
   }
 
@@ -2343,6 +2400,37 @@ export default function MembershipPage() {
             </MemberDialog>
           )}
 
+          {/* #3537 — cancelling a purchase awaiting payment (My Products or Purchases), asked first. */}
+          {cancellingPurchase && (
+            <MemberDialog
+              labelledBy="purchase-cancel-title"
+              title={t('purchases.cancel_title')}
+              onClose={cancelPurchaseBusy ? () => {} : () => setCancellingPurchase(null)}
+              actions={(
+                <>
+                  <button
+                    type="button"
+                    style={styles.dialogSecondary}
+                    onClick={() => setCancellingPurchase(null)}
+                    disabled={cancelPurchaseBusy}
+                  >
+                    {t('purchases.cancel_keep')}
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...styles.dialogPrimary, ...(cancelPurchaseBusy ? styles.busy : null) }}
+                    onClick={confirmCancelPurchase}
+                    disabled={cancelPurchaseBusy}
+                  >
+                    {t('purchases.cancel_confirm')}
+                  </button>
+                </>
+              )}
+            >
+              <p style={styles.modalBody}>{t('purchases.cancel_body', { name: cancellingPurchase.name })}</p>
+            </MemberDialog>
+          )}
+
           {/* #2746 stage 3 — cancelling a cart awaiting payment cancels the whole purchase (#2747), so it asks first. */}
           {confirmPendingCancel && (
             <MemberDialog
@@ -2489,7 +2577,6 @@ export default function MembershipPage() {
         {renderPlansHeader()}
         {renderMyPlans()}
         {renderMyProducts()}
-        {renderOwnPurchases()}
         {/* #3539 — a member holding no plan still has a history to read. */}
         {renderPastPlans()}
         </>)}
@@ -2514,10 +2601,6 @@ export default function MembershipPage() {
       {renderMyPlans()}
       {renderMyProducts()}
 
-      {/* #1121 §3 — Additional Products and Services, directly below the
-          membership card. (#3294 removed the "Make a payment" button that sat
-          between them; payments go through the cart and the Payments tab.) */}
-      {renderOwnPurchases()}
 
       {packages.length > 0 && (
         <section style={styles.section}>
