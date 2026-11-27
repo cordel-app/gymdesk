@@ -3239,7 +3239,8 @@
     "activate_title": "Activate plan",
     "activate_confirm": "This plan will become the member's active training plan.",
     "activate_confirm_replace": "The plan \"{name}\" will be completed and this plan will become the member's active training plan.",
-    "keep_draft": "Continue editing the Draft"
+    "save_draft": "Save Draft",
+    "save_and_activate": "Save & Activate"
   },
   "template_workouts": {
     "title": "Workouts",

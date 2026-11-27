@@ -90,7 +90,8 @@ describe('assigned training plan versions (#1969)', () => {
     expect(orig.body.status).toBe('completed');
     expect(orig.body.name).toMatch(/^Strength \[\d{4}-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}\]$/);
     expect((await auth(request.post(`${base()}/${draftId}/publish-version`))).status).toBe(409);
-    expect((await auth(request.post(`${base()}/${planId}/edit-draft`))).status).toBe(409);
+    // #3547: the completed version is edited through a Draft copy, never reopened.
+    expect((await auth(request.post(`${base()}/${planId}/edit-draft`))).status).toBe(201);
   });
 });
 

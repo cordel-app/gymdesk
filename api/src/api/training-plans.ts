@@ -910,6 +910,11 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
 
 // #1969: Edit on an active assigned plan works on a Draft copy; the original is untouched
 // until the draft is published. Idempotent: an open draft of the plan is returned as is.
+// #3547: Edit on a Completed plan does the same — the Completed record is never reopened or
+// edited; the Draft copy (`draft_of_plan_id` = the Completed plan) is resumed on the next Edit
+// and, when activated, replaces the member's active plan (activateDraftTrainingPlanTx()).
+const EDITABLE_AS_DRAFT = new Set(['active', 'completed']);
+
 trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const ctx = getTenantContext(req);
   const { gymId, gymMembershipId } = ctx;
@@ -922,7 +927,7 @@ trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), 
     );
     if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
     const src = planRows[0];
-    if (src.status !== 'active') return res.status(409).json({ error: 'Only an active training plan can be edited as a new version' });
+    if (!EDITABLE_AS_DRAFT.has(src.status)) return res.status(409).json({ error: 'Only an active or completed training plan can be edited as a new version' });
 
     const { rows: existing } = await db.query(
       "SELECT id FROM training_plans WHERE draft_of_plan_id = ? AND gym_id = ? AND status = 'draft'",
@@ -931,7 +936,7 @@ trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), 
     // #3409: a plan that started on the gym's today is edited in place — the response is the plan
     // itself (no draft_of_plan_id), so the client saves it with the ordinary PUT and asks no
     // confirmation. A draft opened before this rule existed is still resumed rather than orphaned.
-    if (!existing[0]) {
+    if (!existing[0] && src.status === 'active') {
       const { rows: gymRows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
       const today = gymToday(new Date(), gymRows[0]?.time_zone ?? 'Europe/Madrid');
       if (isSameDayEdit(src.start_date, today)) return res.status(200).json(src);
@@ -942,7 +947,7 @@ trainingPlansRouter.post('/:planId/edit-draft', requireModuleWrite('TRAINING'), 
       draftId = await db.transaction(async (tx) => {
         const { rows: lock } = await tx.query(
           "SELECT status FROM training_plans WHERE id = ? AND gym_id = ? FOR UPDATE", [planId, gymId]);
-        if (lock[0]?.status !== 'active') throw Object.assign(new Error('Only an active training plan can be edited as a new version'), { status: 409 });
+        if (!EDITABLE_AS_DRAFT.has(lock[0]?.status)) throw Object.assign(new Error('Only an active or completed training plan can be edited as a new version'), { status: 409 });
         const { rows: again } = await tx.query(
           "SELECT id FROM training_plans WHERE draft_of_plan_id = ? AND gym_id = ? AND status = 'draft'", [planId, gymId]);
         if (again[0]) return again[0].id as number;

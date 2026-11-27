@@ -349,6 +349,11 @@ export default function NutritionPage() {
                           {title.title}
                           {title.suffix && <span style={styles.mealType}> · {title.suffix}</span>}
                         </h3>
+                        {/* #3546: the status and the completion actions are one group that
+                            stays beside the name while it fits and otherwise wraps onto a row
+                            of its own under it, aligned right — the name is never squeezed. */}
+                        {(done || mealActions.partial || mealActions.showMarkDone || mealActions.showPartiallyDone) && (
+                        <div style={styles.mealActions}>
                         {done && <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px' }}>✓ {t('nutrition.meal_done')}</span>}
                         {mealActions.partial && <span style={{ ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' }}>{t('nutrition.partially_done_state')}</span>}
                         {/* #1580: completion belongs to the whole meal, so its actions sit in the meal's own header;
@@ -364,6 +369,8 @@ export default function NutritionPage() {
                                   aria-label={t('nutrition.partially_done_aria', { name: title.title })} style={styles.reqBtn}>
                             {t('nutrition.partially_done')}
                           </button>
+                        )}
+                        </div>
                         )}
                       </div>
                       {(meal.items.length > 0 || meal.notes) && (
@@ -436,6 +443,9 @@ const styles: Record<string, React.CSSProperties> = {
   mealList:   { display: 'flex', flexDirection: 'column', gap: 28 },
   mealBlock:  { display: 'flex', flexDirection: 'column', gap: 14 },
   mealHead:   { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14 },
+  // #3546: the name's 9rem basis is what makes this group wrap under it on a phone;
+  // `marginLeft: auto` keeps the group right-aligned on either row.
+  mealActions: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginLeft: 'auto' },
   mealCard:   { ...sectionCardStyle, padding: '14px 18px' },
   reqActions: { display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'stretch' },
   reqBtn:     { ...primaryButtonStyle, padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 },
@@ -454,7 +464,7 @@ const styles: Record<string, React.CSSProperties> = {
   statusBtn:  { background: 'none', border: 'none', padding: 6, cursor: 'pointer', display: 'flex' },
   statusDot:  { width: 12, height: 12, borderRadius: '50%', display: 'block' },
   srOnly:     { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
-  mealName:   { margin: 0, flex: 1, minWidth: 0, fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: memberTheme.title2, fontFamily: memberTheme.title2Font, overflowWrap: 'anywhere' },
+  mealName:   { margin: 0, flex: '1 1 9rem', minWidth: 0, fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: memberTheme.title2, fontFamily: memberTheme.title2Font, overflowWrap: 'anywhere' },
   mealType:   { fontSize: 14, fontWeight: 500, color: memberTheme.textMuted, textTransform: 'none' },
   mealNotes:  { margin: '8px 0 0', fontSize: 12, color: memberTheme.textMuted, fontStyle: 'italic' },
   sectionEmpty: { color: memberTheme.textMuted, fontSize: 13, margin: '14px 0' },
