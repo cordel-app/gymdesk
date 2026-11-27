@@ -219,7 +219,8 @@ export function lineChartOption(input: LineChartInput, theme: ChartTheme): Chart
               color: theme.text,
               fontSize: 11,
             },
-            lineStyle: { color: theme.text, type: 'solid', width: 1 },
+            // #3500 — dashed, so the marker reads as a boundary rather than as data.
+            lineStyle: { color: theme.text, type: 'dashed', width: 1 },
             data: [
               { xAxis: input.xMarker.value },
               ...(input.reference ? [{ yAxis: input.reference.value }] : []),
