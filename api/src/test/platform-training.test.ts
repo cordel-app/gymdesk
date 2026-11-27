@@ -553,3 +553,39 @@ describe('platform training plan templates CRUD', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// #3485: a Base Workout Template's edit session — Cancel restores its blocks.
+describe('platform workout template edit session', () => {
+  it('Cancel restores the blocks exactly; Save drops the checkpoint', async () => {
+    const auth = { Authorization: TEST_AUTH_HEADER };
+    const created = await request.post('/platform/workout-templates').set(auth).send({ name: `Base Edit Session ${Date.now()}` });
+    expect(created.status).toBe(201);
+    const tplId = created.body.id;
+    createdWorkoutTemplateIds.push(tplId);
+    const block = await request.post(`/platform/workout-templates/${tplId}/blocks`).set(auth).send({ type: 'Standard', name: 'Original' });
+    expect(block.status).toBe(201);
+    const names = async () => (await db.query(
+      'SELECT name FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position', [tplId],
+    )).rows.map((r: any) => r.name);
+
+    expect((await request.post(`/platform/workout-templates/${tplId}/edit-session`).set(auth)).status).toBe(204);
+    await request.put(`/platform/workout-templates/${tplId}/blocks/${block.body.id}`).set(auth).send({ type: 'Standard', name: 'Renamed' });
+    await request.post(`/platform/workout-templates/${tplId}/blocks`).set(auth).send({ type: 'Standard', name: 'Added' });
+    expect(await names()).toEqual(['Renamed', 'Added']);
+    expect((await request.post(`/platform/workout-templates/${tplId}/edit-session/cancel`).set(auth)).status).toBe(204);
+    expect(await names()).toEqual(['Original']);
+
+    await request.post(`/platform/workout-templates/${tplId}/edit-session`).set(auth);
+    await request.post(`/platform/workout-templates/${tplId}/blocks`).set(auth).send({ type: 'Standard', name: 'Kept' });
+    expect((await request.delete(`/platform/workout-templates/${tplId}/edit-session`).set(auth)).status).toBe(204);
+    expect(await names()).toEqual(['Original', 'Kept']);
+    expect((await request.post(`/platform/workout-templates/${tplId}/edit-session/cancel`).set(auth)).status).toBe(409);
+  });
+
+  it('answers 404 for a gym-owned template', async () => {
+    const { rows } = await db.query('SELECT id FROM workout_templates WHERE gym_id IS NOT NULL LIMIT 1', []);
+    if (rows.length === 0) return;
+    const res = await request.post(`/platform/workout-templates/${rows[0].id}/edit-session`).set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(404);
+  });
+});

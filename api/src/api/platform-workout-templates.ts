@@ -8,8 +8,12 @@ import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
+import { workoutTemplateEditSessionRouter } from './workout-template-edit-session';
 
 export const platformWorkoutTemplatesRouter = Router();
+
+// #3485: Edit mode's checkpoint (start, Cancel restores, Save drops).
+platformWorkoutTemplatesRouter.use(workoutTemplateEditSessionRouter('platform'));
 
 const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'EMOM', 'AMRAP', 'Tabata'];
 const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {

@@ -12,12 +12,20 @@ import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import { CardGrid } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
-import { cardSurfaceStyle, primaryBtnStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS,
   listScrollerClass,
 } from '@/components/listChrome';
 import { WorkoutTemplateCard } from '../../workout-templates/WorkoutTemplateCard';
+import { WorkoutBlockBuilder } from '../../workout-templates/WorkoutBlockBuilder';
+import { type WtHierarchy } from '../../workout-templates/WorkoutTemplateTree';
+import { CardSection } from '@/components/CardSection';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import {
+  cardMutedTextStyle, formControlStyle, formErrorStyle, formFieldLabelStyle,
+  inlineActionsRowStyle, secondaryBtnSmall,
+} from '@/components/formChrome';
 import {
   CELL_CLASS, LIST_COLUMNS, LIST_COLUMN_GAP, LIST_GRID_COLUMNS, LIST_MIN_WIDTH, ROW_PADDING_X,
   WorkoutTemplateRowCells,
@@ -55,6 +63,11 @@ const EMPTY_FORM: BaseForm = { name: '', description: '', status: 'active', note
  * (Blocks in place of Primary Muscles). Every row here is a System template, so
  * the Source column always reads System sourced. Base rows have no block tree
  * on this screen, so the chevron cell stays empty.
+ *
+ * #3485: a row now expands into its General fields and its block tree, both
+ * read-only; `⋮ → Edit` opens inline Edit mode (the gym page's), which starts a
+ * server-side checkpoint so Cancel restores every block and exercise change and
+ * Save keeps them.
  */
 export default function CordelWorkoutTemplatesPage() {
   const t = useTranslations('workout_templates');
@@ -74,8 +87,12 @@ export default function CordelWorkoutTemplatesPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [editing, setEditing] = useState<BaseTemplate | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<BaseForm>(EMPTY_FORM);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [hierarchies, setHierarchies] = useState<Record<number, WtHierarchy>>({});
 
   const [deleting, setDeleting] = useState<BaseTemplate | null>(null);
 
@@ -111,17 +128,71 @@ export default function CordelWorkoutTemplatesPage() {
     } finally { setSaving(false); }
   }
 
-  async function handleEdit() {
-    if (!editing) return;
-    if (!editForm.name.trim()) { setFormError(t('error_required')); return; }
-    setSaving(true); setFormError(null);
+  const refetchHierarchy = useCallback(async (id: number) => {
     try {
-      await apiFetch(`${API_BASE}/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload(editForm)) });
-      setEditing(null);
+      const h = await apiFetch<WtHierarchy>(`${API_BASE}/${id}`);
+      setHierarchies((prev) => ({ ...prev, [id]: h }));
+    } catch (e: any) {
+      toast(e.message ?? t('error_generic'));
+    }
+  }, [apiFetch]);
+
+  function toggleExpand(id: number) {
+    if (editingId === id) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    if (!hierarchies[id]) refetchHierarchy(id);
+  }
+
+  async function openEdit(tpl: BaseTemplate) {
+    if (editingId === tpl.id) return; // re-checkpointing would lose what Cancel restores
+    if (editingId !== null) await cancelEdit();
+    try {
+      await apiFetch(`${API_BASE}/${tpl.id}/edit-session`, { method: 'POST' });
+    } catch (e: any) {
+      toast(e.message ?? t('error_generic'));
+      return;
+    }
+    if (viewMode !== 'list') setViewMode('list');
+    setEditingId(tpl.id);
+    setEditForm({
+      name: tpl.name,
+      description: tpl.description ?? '',
+      status: tpl.status === 'inactive' ? 'inactive' : 'active',
+      notes: tpl.notes ?? '',
+    });
+    setEditError(null);
+    setExpanded((prev) => new Set([...prev, tpl.id]));
+    refetchHierarchy(tpl.id);
+  }
+
+  async function cancelEdit() {
+    const id = editingId;
+    setEditingId(null); setEditError(null);
+    if (id === null) return;
+    try {
+      await apiFetch(`${API_BASE}/${id}/edit-session/cancel`, { method: 'POST' });
+    } catch (e: any) {
+      toast(e.message ?? t('error_generic'));
+    }
+    await refetchHierarchy(id);
+    load();
+  }
+
+  async function handleEdit(tpl: BaseTemplate) {
+    if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
+    setSaving(true); setEditError(null);
+    try {
+      await apiFetch(`${API_BASE}/${tpl.id}`, { method: 'PUT', body: JSON.stringify(payload(editForm)) });
+      await apiFetch(`${API_BASE}/${tpl.id}/edit-session`, { method: 'DELETE' });
+      setEditingId(null);
       toast(t('base_updated'), 'success');
       load();
     } catch (e: any) {
-      setFormError(e.message ?? t('error_generic'));
+      setEditError(e.message ?? t('error_generic'));
     } finally { setSaving(false); }
   }
 
@@ -129,6 +200,7 @@ export default function CordelWorkoutTemplatesPage() {
     if (!deleting) return;
     try {
       await apiFetch(`${API_BASE}/${deleting.id}`, { method: 'DELETE' });
+      if (editingId === deleting.id) setEditingId(null);
       setDeleting(null);
       toast(t('base_deleted'), 'success');
       load();
@@ -142,27 +214,92 @@ export default function CordelWorkoutTemplatesPage() {
       {
         kind: 'edit' as const,
         label: t('edit'),
-        onClick: () => {
-          setEditing(tpl);
-          setEditForm({
-            name: tpl.name,
-            description: tpl.description ?? '',
-            status: tpl.status === 'inactive' ? 'inactive' : 'active',
-            notes: tpl.notes ?? '',
-          });
-          setFormError(null);
-        },
+        onClick: () => openEdit(tpl),
       },
       { kind: 'delete' as const, label: t('delete'), danger: true, onClick: () => setDeleting(tpl) },
     ];
   }
 
+  function renderTree(tpl: BaseTemplate, editable: boolean) {
+    const h = hierarchies[tpl.id];
+    if (!h) return <p style={{ ...cardMutedTextStyle, margin: '4px 0 12px' }}>{t('loading')}</p>;
+    return (
+      <div style={{ marginTop: 4 }}>
+        <WorkoutBlockBuilder
+          workoutKey={`base-${tpl.id}`}
+          blocksUrl={`${API_BASE}/${tpl.id}/blocks`}
+          exercisesUrl="/platform/exercises?status=active"
+          allowDuplicate={false}
+          blocks={h.blocks ?? []}
+          canWrite={editable}
+          onChanged={() => refetchHierarchy(tpl.id)}
+        />
+      </div>
+    );
+  }
+
   function renderRow(tpl: BaseTemplate) {
+    const isExpanded = expanded.has(tpl.id);
+    const isEditing = editingId === tpl.id;
     return (
       <div key={tpl.id} style={rowCardStyle}>
-        <div className={LIST_GRID_ROW_CLASS} style={rowStyle}>
-          <WorkoutTemplateRowCells template={tpl} expanded={null} menuItems={menuItems(tpl)} fmtDate={(iso) => formatGymDate(iso, gymFmt)} />
+        <div
+          className={LIST_GRID_ROW_CLASS}
+          style={{ ...rowStyle, cursor: 'pointer', userSelect: 'none' }}
+          onClick={() => toggleExpand(tpl.id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleExpand(tpl.id); }}
+        >
+          <WorkoutTemplateRowCells template={tpl} expanded={isExpanded} menuItems={menuItems(tpl)} fmtDate={(iso) => formatGymDate(iso, gymFmt)} />
         </div>
+
+        {isEditing && (
+          <div style={expandedBodyStyle}>
+            <CardSection label={t('section_general')} first>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={formFieldLabelStyle}>{t('label_name')} *</label>
+                  <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} autoFocus style={formControlStyle} />
+                </div>
+                <div>
+                  <label style={formFieldLabelStyle}>{t('label_status')}</label>
+                  <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as BaseStatus })} style={formControlStyle}>
+                    <option value="active">{tStatus('active')}</option>
+                    <option value="inactive">{tStatus('inactive')}</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={formFieldLabelStyle}>{t('label_notes_for_member')}</label>
+                  <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} rows={3} placeholder={t('notes_placeholder')} style={{ ...formControlStyle, resize: 'vertical' }} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={formFieldLabelStyle}>{t('label_description')}</label>
+                  <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} style={{ ...formControlStyle, resize: 'vertical' }} />
+                </div>
+              </div>
+            </CardSection>
+            <CardSection label={t('section_workout_structure')}>{renderTree(tpl, true)}</CardSection>
+            {editError && <p style={formErrorStyle}>{editError}</p>}
+            <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
+              <button onClick={cancelEdit} style={secondaryBtnSmall}>{t('cancel')}</button>
+              <button onClick={() => handleEdit(tpl)} disabled={saving} style={primaryBtnSmall()}>
+                {saving ? t('saving') : t('save_changes')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isExpanded && !isEditing && (
+          <div style={expandedBodyStyle}>
+            <CardSection label={t('section_general')} first>
+              <CardDetailRow label={t('label_description')} value={tpl.description ?? '—'} />
+              <CardDetailRow label={t('label_status')} value={tStatus(tpl.status)} />
+              <CardDetailRow label={t('label_notes_for_member')} value={<span style={{ whiteSpace: 'pre-wrap' }}>{tpl.notes || '—'}</span>} />
+            </CardSection>
+            <CardSection label={t('section_workout_structure')}>{renderTree(tpl, false)}</CardSection>
+          </div>
+        )}
       </div>
     );
   }
@@ -245,19 +382,6 @@ export default function CordelWorkoutTemplatesPage() {
         {formFields(form, setForm)}
       </CrudModal>
 
-      <CrudModal
-        open={editing !== null}
-        title={t('base_modal_edit')}
-        onCancel={() => setEditing(null)}
-        onSave={handleEdit}
-        saving={saving}
-        error={formError}
-        cancelLabel={t('cancel')}
-        saveLabel={t('save_changes')}
-      >
-        {formFields(editForm, setEditForm)}
-      </CrudModal>
-
       <ConfirmDialog
         open={deleting !== null}
         message={t('base_confirm_delete', { name: deleting?.name ?? '' })}
@@ -270,6 +394,7 @@ export default function CordelWorkoutTemplatesPage() {
   );
 }
 
+const expandedBodyStyle: React.CSSProperties = { padding: '16px 20px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' };
 const rowCardStyle: React.CSSProperties = { ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' };
 const rowStyle: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS, alignItems: 'center',
