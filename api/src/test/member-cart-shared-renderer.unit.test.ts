@@ -47,10 +47,22 @@ describe('shared cart renderer', () => {
     for (const l of ['en', 'es', 'ca']) {
       const msgs = JSON.parse(read(`locales/base/${l}.json`));
       expect(msgs.membership.cart_staff_purchasing_disabled).toBeTruthy();
-      expect(msgs.membership.cart_staff_editing).toBeUndefined();
-      expect(msgs.membership.cart_staff_hint).toBeUndefined();
+      // #3154 reopen: the editing notice #3207 dropped is back.
+      expect(msgs.membership.cart_staff_editing).toBeTruthy();
+      expect(msgs.membership.cart_staff_hint).toBeTruthy();
       expect(msgs.home.cart_open).toBeUndefined();
     }
+  });
+
+  it('#3154 reopen: the editing notice sits above the cart card, as a status banner', () => {
+    const card = read('src/components/PreparingCartCard.tsx');
+    const notice = card.indexOf('data-cart-staff-editing');
+    expect(notice).toBeGreaterThan(-1);
+    expect(card).toContain("t('membership.cart_staff_editing')");
+    expect(card).toContain("t('membership.cart_staff_hint')");
+    expect(card).toContain('role="status"');
+    // The banner precedes the card surface, so it reads first.
+    expect(notice).toBeLessThan(card.indexOf('style={cartSummaryStyle}'));
   });
 });
 
