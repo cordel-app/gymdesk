@@ -19,7 +19,8 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
 import { auditActorField, resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToMembership } from './membership-promotions';
-import { billingInvoicesRouter, generatePaidRepresentations } from './billing-invoices';
+import { billingInvoicesRouter } from './billing-invoices';
+import { ensurePaidEventDocumentsLater } from './paid-event-documents';
 import { receiptPdf } from './receipt-documents';
 import {
   MEMBER_PURCHASES_DEFAULT_LIMIT, MEMBER_PURCHASES_MAX_LIMIT, loadMemberPurchases, memberExistsInGym,
@@ -999,7 +1000,7 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
       return res.status(outcome.failure.status).json({ error: outcome.failure.error });
     }
     const { result } = outcome;
-    generatePaidRepresentations(gymId, result.billing_event_id).catch(() => {});
+    ensurePaidEventDocumentsLater(gymId, result.billing_event_id, req.log);
     recordAudit(req, {
       action: 'manual_payment',
       entityType: 'billing_event',
@@ -1092,7 +1093,7 @@ paymentsRouter.post('/billing-events/:id/pay-now', requireModuleWrite('PAYMENTS'
 
     const out = await payNowManual(gymId, billingEventId, flow.attemptMethod, actor);
     if ('failure' in out) return res.status(out.failure.status).json({ error: out.failure.error, message: out.failure.message });
-    generatePaidRepresentations(gymId, billingEventId).catch(() => {});
+    ensurePaidEventDocumentsLater(gymId, billingEventId, req.log);
     recordAudit(req, {
       action: 'pay_now', entityType: 'billing_event', entityId: billingEventId,
       previous: { status: out.result.previous_status },

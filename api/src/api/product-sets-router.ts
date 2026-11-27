@@ -7,7 +7,7 @@ import { amountChangedBody, isStaleAmount, parseExpectedAmountInput, sameAmount 
 import { commitWaivedInitialPayment, isWaivedToZero } from './waived-initial-payment';
 import { initialPaymentWaiveHandler } from './initial-payment-waive';
 import { Router } from 'express';
-import { generatePaidRepresentations } from './billing-invoices';
+import { ensurePaidEventDocumentsLater } from './paid-event-documents';
 import { refuseUnlessMayAdd } from './family-add-rights';
 import { recordPaymentAttempt } from './payment-attempt';
 import { db, type Tx } from '../infra/db';
@@ -482,6 +482,8 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
     const { eventId, attemptId } = staged as { eventId: number; attemptId: number };
 
     if (flow.flow === 'manual') {
+      // #3511: a payment taken at the desk gets its receipt and simplified invoice.
+      ensurePaidEventDocumentsLater(gymId, eventId, req.log);
       recordAudit(req, { action: 'save_and_pay', entityType: 'product_set', entityId: set.id, next: { status: 'active', method: code } });
       return res.status(201).json({ product_set_id: Number(set.id), status: 'active', outcome: 'paid', billing_event_id: eventId, amount: charge.amount });
     }
@@ -511,6 +513,7 @@ productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, r
         }
       });
       outcome = internal === 'completed' ? 'paid' : internal === 'pending' ? 'pending' : 'failed';
+      if (outcome === 'paid') ensurePaidEventDocumentsLater(gymId, eventId, req.log);
     } catch {
       // Provider threw or never answered: the attempt stays pending with no provider status —
       // an unknown outcome the charge guard treats as unresolved. Never reported as paid.
@@ -562,7 +565,7 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
   if (out.kind === 'no_open_event') return res.status(409).json({ error: 'no_open_event' });
   if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });
   // #2648 stage 6: the paid event gets its simplified invoice (best-effort).
-  generatePaidRepresentations(gymId, out.billingEventId).catch(() => {});
+  ensurePaidEventDocumentsLater(gymId, out.billingEventId, req.log);
   recordAudit(req, { action: 'record_payment', entityType: 'product_set', entityId: set.id, next: { status: 'active', method: 'cash' } });
   res.json({ product_set_id: Number(set.id), status: 'active', billing_event_id: out.billingEventId });
 });

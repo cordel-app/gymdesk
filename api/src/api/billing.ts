@@ -9,6 +9,7 @@ import { finishJobRun, startJobRun } from '../infra/job-run-log';
 import { buildJobMetrics } from '../domain/jobRuns';
 import { executeDueScheduledEvents } from './scheduled-event-execution';
 import { issueDueSimplifiedInvoices } from './billing-invoices';
+import { paidDocumentsSince, reconcilePaidEventDocuments } from './paid-event-documents';
 import { expirePendingPayments } from './product-set-cancellation';
 import { reconcileAbandonedRequests } from './payment-settlement';
 import { reconcilePendingProviderRefunds } from './billing-event-refunds';
@@ -157,11 +158,21 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
     } catch (err) {
       req.log.error({ err: (err as Error).message }, 'billing/run: automatic invoicing failed');
     }
+    // #3511: every event paid in the last days that still lacks its receipt
+    // number or its paid simplified invoice (a path that missed it, a failure
+    // after the payment) gets them now. Idempotent; never fails the run.
+    let paidDocuments = { candidates: 0, receipts: 0, representations: 0, failed: 0 };
+    try {
+      const r = await reconcilePaidEventDocuments({ since: paidDocumentsSince(today), log: req.log });
+      paidDocuments = { candidates: r.candidates, receipts: r.receipts, representations: r.representations, failed: r.failed };
+    } catch (err) {
+      req.log.error({ err: (err as Error).message }, 'billing/run: paid document reconciliation failed');
+    }
 
     await finishRun(BILLING_RUN_LOG, claim.runId, 'completed', { processed, succeeded, failed, waived });
 
     req.log.info(
-      { processed, succeeded, failed, waived, paused, receiptsIssued, invoices, scheduledEvents },
+      { processed, succeeded, failed, waived, paused, receiptsIssued, invoices, paidDocuments, scheduledEvents },
       'billing/run: complete',
     );
     res.json({
@@ -169,6 +180,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       receipts_issued: receiptsIssued,
       invoices_issued: invoices.issued,
       invoices_failed: invoices.failed,
+      paid_documents: paidDocuments,
       scheduled_events: scheduledEvents,
     });
   } catch (err) {
