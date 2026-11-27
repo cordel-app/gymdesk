@@ -248,7 +248,21 @@ export default function WorkoutTemplatesPage() {
 
   // ─── Edit (General section) ───────────────────────────────────────────────
 
-  function openEdit(wt: WorkoutTemplate) {
+  /**
+   * #3485: Edit mode opens a server-side checkpoint of the template's blocks
+   * and exercises (#3482's device) — the tree persists each change at once, so
+   * Cancel restores the checkpoint and Save drops it. Only one template is in
+   * Edit mode at a time, and nothing is editable outside it.
+   */
+  async function openEdit(wt: WorkoutTemplate) {
+    if (editingId === wt.id) return; // re-checkpointing would lose what Cancel restores
+    if (editingId !== null) await cancelEdit();
+    try {
+      await apiFetch(`/workout-templates/${wt.id}/edit-session`, { method: 'POST' });
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+      return;
+    }
     if (viewMode !== 'list') setViewMode('list');
     setEditingId(wt.id);
     setEditForm({
@@ -262,7 +276,18 @@ export default function WorkoutTemplatesPage() {
     loadHierarchy(wt.id);
   }
 
-  function cancelEdit() { setEditingId(null); setEditError(null); }
+  async function cancelEdit() {
+    const id = editingId;
+    setEditingId(null); setEditError(null);
+    if (id === null) return;
+    try {
+      await apiFetch(`/workout-templates/${id}/edit-session/cancel`, { method: 'POST' });
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+    await refetchBranch(id);
+    load();
+  }
 
   async function handleSave(wt: WorkoutTemplate) {
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
@@ -277,6 +302,7 @@ export default function WorkoutTemplatesPage() {
           notes: editForm.notes.trim() || null,
         }),
       });
+      await apiFetch(`/workout-templates/${wt.id}/edit-session`, { method: 'DELETE' });
       setEditingId(null);
       load();
     } catch (err: any) {
@@ -358,6 +384,8 @@ export default function WorkoutTemplatesPage() {
   );
 
   async function moveBlock(sourceId: number, blockId: number, targetId: number, position: number | null) {
+    // #3485: a block leaving the template in Edit mode would escape its checkpoint.
+    if (editingId !== null) return;
     const src = hierarchies[sourceId];
     const block = src?.blocks?.find((b) => b.id === blockId);
     if (src?.blocks && block) {
@@ -581,7 +609,7 @@ export default function WorkoutTemplatesPage() {
                 <WorkoutTemplateTree
                   templateId={wt.id}
                   hierarchy={h}
-                  canWrite={!!canWrite}
+                  canWrite={!!canWrite && isEditing}
                   onChanged={() => refetchBranch(wt.id)}
                 />
               ) : null}
@@ -616,7 +644,7 @@ export default function WorkoutTemplatesPage() {
                 <WorkoutTemplateTree
                   templateId={wt.id}
                   hierarchy={h}
-                  canWrite={!!canWrite}
+                  canWrite={false}
                   onChanged={() => refetchBranch(wt.id)}
                 />
               ) : null}

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BillingEventLineRow } from '../domain/billingEventLines';
 import {
-  applyInitialPaymentWaivers, initialPaymentLineKeys, INITIAL_PAYMENT_WAIVE_REASON, waiveRefusal,
+  applyInitialPaymentWaivers, initialPaymentLineKeys, INITIAL_PAYMENT_WAIVE_REASON, splitPrepaidMembershipFees, waiveRefusal,
 } from '../domain/initialPaymentWaiver';
 
 const line = (key: string, amount: number, extra: Partial<BillingEventLineRow> = {}): BillingEventLineRow => ({
@@ -39,9 +39,9 @@ describe('waiveRefusal()', () => {
     expect(waiveRefusal(lines, 'a', new Set(['b']))).toBeNull();
     expect(waiveRefusal([line('only', 25)], 'only', new Set())).toBeNull();
   });
-  it('refuses a Membership Fee that collects a Pre-paid Duration', () => {
+  it('allows a Membership Fee that collects a Pre-paid Duration (#3440 stage 2)', () => {
     const fee = line('f', 120, { kind: 'membership_fee', prepaid_periods: 3 });
-    expect(waiveRefusal([fee, line('a', 10)], 'f', new Set())).toBe('prepaid_fee');
+    expect(waiveRefusal([fee, line('a', 10)], 'f', new Set())).toBeNull();
   });
 });
 
@@ -54,10 +54,9 @@ describe('applyInitialPaymentWaivers()', () => {
     expect(out[1]).toMatchObject({ amount: 0, amount_excl_tax: 0, regular_unit_price: 60, quantity: 1, waived: true, waivable: false });
     expect(out[1].reasons).toEqual([reason, INITIAL_PAYMENT_WAIVE_REASON]);
   });
-  it('ignores a stale waiver whose line is gone or now collects a Pre-paid Duration', () => {
-    const out = applyInitialPaymentWaivers(
-      [line('a', 40), line('f', 90, { kind: 'membership_fee', prepaid_periods: 2 })], new Set(['gone', 'f']));
-    expect(out.map((l) => l.amount)).toEqual([40, 90]);
+  it('ignores a stale waiver whose line is gone or now owes nothing', () => {
+    const out = applyInitialPaymentWaivers([line('a', 40), line('z', 0)], new Set(['gone', 'z']));
+    expect(out.map((l) => l.amount)).toEqual([40, 0]);
     expect(out.every((l) => l.waived === false)).toBe(true);
   });
   it('still offers Waive on the last line left to pay (stage 4)', () => {
@@ -80,10 +79,48 @@ describe('a prorated Membership Fee (#3284 stage 3)', () => {
     const shown = applyInitialPaymentWaivers([fee, line('a', 17.5)], new Set());
     expect(shown[0]).toMatchObject({ waivable: true, waive_refusal: null });
   });
-  it('is still refused when the split collects a Pre-paid Duration', () => {
-    const fee = line('f', 89.33, { kind: 'membership_fee', fee_split: split(true) });
-    expect(waiveRefusal([fee, line('a', 17.5)], 'f', new Set())).toBe('prepaid_fee');
-    expect(applyInitialPaymentWaivers([fee, line('a', 17.5)], new Set())[0]).toMatchObject({ waivable: false, waive_refusal: 'prepaid_fee' });
+});
+
+describe('splitPrepaidMembershipFees() (#3440 stage 2)', () => {
+  const feeSplit = {
+    prorated: { days: 7, period_days: 30, start: '2026-11-24', end: '2026-11-30', amount: 9.33 },
+    prepaid: { periods: 2, start: '2026-12-01', end: '2027-01-31', amount: 80 },
+  };
+  const fee = line('fee:7:0', 89.33, {
+    kind: 'membership_fee', regular_unit_price: 80, prorated_days: 7, period_days: 30,
+    prepaid_periods: 2, prepaid_cadence: { interval: 1, unit: 'month' }, fee_split: feeSplit,
+  });
+
+  it('makes the prorated stretch and the prepayment two lines that reconcile to the cent', () => {
+    const { lines, index } = splitPrepaidMembershipFees([line('a', 10), fee, line('b', 5)]);
+    expect(index).toEqual([0, 1, 3]);
+    expect(lines.map((l) => l.line_key)).toEqual(['a', 'fee:7:0', 'fee:7:0:prepaid', 'b']);
+    const [, prorated, prepaid] = lines;
+    expect(prorated).toMatchObject({
+      amount: 9.33, amount_excl_tax: 7.71, regular_unit_price: 9.33, prorated_days: 7, period_days: 30,
+      prepaid_periods: null, fee_split: { prorated: feeSplit.prorated, prepaid: null },
+    });
+    expect(prepaid).toMatchObject({
+      amount: 80, amount_excl_tax: 66.12, regular_unit_price: 80, prorated_days: null, period_days: null,
+      prepaid_periods: 2, fee_split: { prorated: null, prepaid: feeSplit.prepaid },
+    });
+    expect(Math.round((prorated.amount + prepaid.amount) * 100) / 100).toBe(89.33);
+  });
+
+  it('keeps one line for a fee with no prepayment, and for any other line', () => {
+    const proratedOnly = line('fee:8:0', 9.33, { kind: 'membership_fee', fee_split: { ...feeSplit, prepaid: null } });
+    const prepaidOnly = line('fee:9:0', 80, { kind: 'membership_fee', prepaid_periods: 2 });
+    const { lines } = splitPrepaidMembershipFees([proratedOnly, prepaidOnly, line('a', 10)]);
+    expect(lines).toHaveLength(3);
+  });
+
+  it('lets either part be waived without touching the other', () => {
+    const { lines } = splitPrepaidMembershipFees([fee]);
+    expect(waiveRefusal(lines, 'fee:7:0:prepaid', new Set())).toBeNull();
+    const out = applyInitialPaymentWaivers(lines, new Set(['fee:7:0:prepaid']));
+    expect(out.map((l) => [l.amount, l.waived])).toEqual([[9.33, false], [0, true]]);
+    const other = applyInitialPaymentWaivers(lines, new Set(['fee:7:0']));
+    expect(other.map((l) => [l.amount, l.waived])).toEqual([[0, true], [80, false]]);
   });
 });
 

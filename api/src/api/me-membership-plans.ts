@@ -11,6 +11,8 @@ import { resolveMemberId } from './me';
 import { computePriceFields } from './products';
 import { enrichPlan } from './membership-plans';
 import { buildMemberPlanOverview } from '../domain/memberPlanOverview';
+import { attachPlanItemAccess } from './member-plan-item-access';
+import { getRequestLocale } from '../infra/locale';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import {
   effectivePrice, planAssignabilityError,
@@ -139,9 +141,9 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
       // output) re-shaped for the member — nothing is priced here.
       const { rows: fullPlan } = await db.query<any>(
         'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ?', [plan.id, gymId]);
-      const overview = fullPlan[0]
+      const overview = await attachPlanItemAccess(fullPlan[0]
         ? buildMemberPlanOverview(await enrichPlan(fullPlan[0], gymId), today)
-        : null;
+        : null, gymId, getRequestLocale(req));
       const eff = await effectivePrice(Number(plan.id), gymId, today);
       const { effective: taxRate } = selectPlanTaxRates(taxRateRows, plan.tax_rate_id);
       const priceFields = computePriceFields({
@@ -295,7 +297,8 @@ meMembershipPlansRouter.get('/:id/overview', async (req, res, next) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
     const today = new Date().toISOString().slice(0, 10);
-    res.json({ overview: buildMemberPlanOverview(await enrichPlan(rows[0], gymId, { declined }), today) });
+    res.json({ overview: await attachPlanItemAccess(
+      buildMemberPlanOverview(await enrichPlan(rows[0], gymId, { declined }), today), gymId, getRequestLocale(req)) });
   } catch (err) { next(err); }
 });
 

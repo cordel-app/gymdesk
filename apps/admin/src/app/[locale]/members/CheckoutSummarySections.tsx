@@ -25,8 +25,9 @@ import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { billingFrequencyLabel, cadenceFrequencyLabel, prepaidPaymentLabel } from '@/lib/billingFrequency';
 import type { ContractedItemLike, ImmediateCancellationLike, InitialPaymentLike } from './productsWorkflowView';
 import { LineReasonText } from './LineReasonText';
-import { basePriceFormula, compactInitialPaymentLabel, contractedMembersText, discountEntries, initialPaymentLineAction, lineReducedToZero, splitContracted } from './productsWorkflowView';
+import { basePriceFormula, compactInitialPaymentLabel, contractedMembersText, discountEntries, initialPaymentLineAction, lineReducedToZero, splitContracted, waiveNeedsConfirmation } from './productsWorkflowView';
 import { secondaryBtnSmall } from '@/components/formChrome';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const money = (n: number) => `${n.toFixed(2)} €`;
 
@@ -53,6 +54,7 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
   const t = useTranslations('members');
   const tFreq = useTranslations('billing_frequency');
   const fmt = useGymFormatSettings();
+  const [confirming, setConfirming] = React.useState<{ lineKey: string; name: string; amount: number } | null>(null);
   if (!payment) return null;
   if (payment.total == null) return <p style={cardHintStyle}>{t('review_error_amount')}</p>;
   if (payment.lines.length === 0) return <p style={cardHintStyle}>{t('review_nothing_due')}</p>;
@@ -120,12 +122,15 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                     // #2970 — the prorated stretch and the full prepaid periods are separate parts of
                     // this charge, each with its own dates and amount (VAT included).
                     <span data-fee-split style={{ ...cardHintStyle, margin: 0, display: 'block' }}>
-                      <span data-fee-prorated style={{ display: 'block' }}>
-                        {t('checkout_split_prorated', {
-                          start: formatGymDateOnly(l.fee_split.prorated.start, fmt), end: formatGymDateOnly(l.fee_split.prorated.end, fmt),
-                          days: l.fee_split.prorated.days, period: l.fee_split.prorated.period_days, amount: money(l.fee_split.prorated.amount),
-                        })}
-                      </span>
+                      {/* #3440 stage 2 — the review splits such a fee into two lines, each carrying one part. */}
+                      {l.fee_split.prorated && (
+                        <span data-fee-prorated style={{ display: 'block' }}>
+                          {t('checkout_split_prorated', {
+                            start: formatGymDateOnly(l.fee_split.prorated.start, fmt), end: formatGymDateOnly(l.fee_split.prorated.end, fmt),
+                            days: l.fee_split.prorated.days, period: l.fee_split.prorated.period_days, amount: money(l.fee_split.prorated.amount),
+                          })}
+                        </span>
+                      )}
                       {l.fee_split.prepaid && (
                         <span data-fee-prepaid style={{ display: 'block' }}>
                           {t('checkout_split_prepaid', {
@@ -182,7 +187,9 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
                         data-line-action={action.kind}
                         style={secondaryBtnSmall}
                         disabled={waive.busyKey != null}
-                        onClick={() => waive.onAction(action.kind, action.lineKey)}
+                        onClick={() => (waiveNeedsConfirmation(action.kind, l.amount)
+                          ? setConfirming({ lineKey: action.lineKey, name: l.name ?? '—', amount: l.amount })
+                          : waive.onAction(action.kind, action.lineKey))}
                       >
                         {t(action.kind === 'waive' ? 'checkout_action_waive' : 'checkout_action_revert_waive')}
                       </button>
@@ -195,6 +202,23 @@ export function InitialPaymentSection({ payment, compact = false, waive = null }
         </tbody>
       </table>
       {totalsBlock}
+      {waive && (
+        // #3440 stage 2 — a Waive over 50 € is confirmed first; Cancel leaves the line as it was.
+        <ConfirmDialog
+          open={confirming != null}
+          title={t('checkout_waive_confirm_title')}
+          message={confirming ? t('checkout_waive_confirm_message', { item: confirming.name, amount: money(confirming.amount) }) : ''}
+          confirmLabel={t('checkout_waive_confirm')}
+          cancelLabel={t('checkout_waive_cancel')}
+          busy={waive.busyKey != null}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const target = confirming;
+            setConfirming(null);
+            if (target) waive.onAction('waive', target.lineKey);
+          }}
+        />
+      )}
     </div>
   );
 }
