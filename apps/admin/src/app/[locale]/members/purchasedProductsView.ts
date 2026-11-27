@@ -90,6 +90,7 @@ export interface PurchasedProduct {
   product_one_time_purchase?: boolean | null;
   product_one_per_member?: boolean | null;
   product_sharing_type?: string | null;
+  /** #3541 — the Notes frozen on the purchase's own snapshot (null for one written before they were kept). */
   product_notes?: string | null;
   /** #3021 — the Product's image, for the thumbnail in the row and the Product modal. */
   product_image_url?: string | null;

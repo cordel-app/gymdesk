@@ -328,6 +328,40 @@ describe('a one-time purchase (#1521)', () => {
     });
   });
 
+  it('#3541 — a purchase reports the Notes frozen on its snapshot, while the image stays the live Product\'s', async () => {
+    const m = await member();
+    const p = await product({ name: 'Notes Pass', amount: '25.00' });
+    await db.query('UPDATE products SET notes = ?, image_url = ? WHERE id = ?', ['Original notes', 'https://img.test/a.webp', p]);
+    expect((await auth(request.post(base(m))).send({ product_id: p })).status).toBe(201);
+    const recurringItem = await product({ name: 'Notes Locker', frequency: 'month', amount: '20.00', type: 'service' });
+    await db.query('UPDATE products SET notes = ? WHERE id = ?', ['Locker notes', recurringItem]);
+    // (a pending one-time purchase blocks the member's next add, #3355, so the line is another member's)
+    const lineOwner = await member();
+    expect((await auth(request.post(base(lineOwner))).send({ product_id: recurringItem })).status).toBe(201);
+
+    // The catalogue Product's Notes and image change afterwards.
+    await db.query('UPDATE products SET notes = ?, image_url = ? WHERE id IN (?, ?)',
+      ['Edited later', 'https://img.test/b.webp', p, recurringItem]);
+    const read = await auth(request.get(`/members/${m}/products`));
+    expect(read.status).toBe(200);
+    const oneTime = read.body.items.find((r: any) => r.product_id === p);
+    const recurring = (await auth(request.get(`/members/${lineOwner}/products`))).body.items
+      .find((r: any) => r.product_id === recurringItem);
+    expect(oneTime).toMatchObject({ product_notes: 'Original notes', product_image_url: 'https://img.test/b.webp' });
+    expect(recurring).toMatchObject({ source: 'recurring', product_notes: 'Locker notes' });
+
+    // A new purchase takes the Notes as they stand now.
+    const other = await member();
+    expect((await auth(request.post(base(other))).send({ product_id: p })).status).toBe(201);
+    const fresh = await auth(request.get(`/members/${other}/products`));
+    expect(fresh.body.items.find((r: any) => r.product_id === p).product_notes).toBe('Edited later');
+
+    // A legacy snapshot (no Notes stored) reads null, never today's catalogue Notes.
+    await db.query('UPDATE product_oneoff_snapshots SET notes = NULL WHERE gym_id = ? AND member_id = ? AND product_id = ?', [gymId, m, p]);
+    const legacy = await auth(request.get(`/members/${m}/products`));
+    expect(legacy.body.items.find((r: any) => r.product_id === p).product_notes).toBeNull();
+  });
+
   it('sells the same one-time Product again once it is held, while a checkout in flight still blocks (#1864)', async () => {
     const m = await member();
     const p = await product({ name: 'Registration fee 2' });
