@@ -19,8 +19,13 @@ export interface PlanOverviewProduct {
   name: string;
   /** *Mandatory* / *Optional*. */
   requirement: string;
-  /** *2 × · Monthly* — quantity and frequency, pre-composed. */
+  /** *2 ×* — the quantity, pre-composed. */
   detail: string;
+  /**
+   * #3504 — how the item is provided: *Recurring · Monthly* / *One-off*, and
+   * *Access: Personal Training* / *No access included*. Absent renders nothing.
+   */
+  provision?: { kind: string; access: string } | null;
   regularLabel: string;
   regular: string;
   /** The benefit applied, or *No benefit*. */
@@ -92,6 +97,12 @@ export function MemberPlanOverview({ view }: { view: PlanOverviewView }) {
                   </label>
                 )}
                 <span style={styles.muted}>{p.detail}</span>
+                {p.provision && (
+                  <>
+                    <span style={styles.wrapMuted} data-plan-item-kind>{p.provision.kind}</span>
+                    <span style={styles.wrapMuted} data-plan-item-access>{p.provision.access}</span>
+                  </>
+                )}
                 <div style={styles.row}><span style={styles.muted}>{p.regularLabel}</span><span>{p.regular}</span></div>
                 <div style={styles.row}><span style={styles.muted}>{p.benefit}</span></div>
                 <div style={styles.row}><span style={styles.muted}>{p.finalLabel}</span><span style={styles.strong}>{p.final}</span></div>
@@ -148,6 +159,7 @@ const styles: Record<string, CSSProperties> = {
   struck: { textDecoration: 'line-through', opacity: 0.6 },
   checkRow: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: memberTheme.text },
   muted: { color: memberTheme.textSecondary },
+  wrapMuted: { color: memberTheme.textSecondary, overflowWrap: 'anywhere' },
   strong: { fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
   toggle: { display: 'flex', justifyContent: 'space-between', gap: 10, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: memberTheme.text, textAlign: 'left' },
 };
