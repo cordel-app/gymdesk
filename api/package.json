@@ -22,6 +22,7 @@
     "goals:audit-base-links": "tsx src/scripts/audit-base-goal-links.ts",
     "schedules:realign": "tsx src/scripts/realign-billing-schedules.ts",
     "reservations:backfill": "tsx src/scripts/backfill-service-reservations.ts",
+    "billing:backfill-paid-documents": "tsx src/scripts/backfill-paid-event-documents.ts",
     "plan-lines:split": "tsx src/scripts/split-committed-plan-lines.ts",
     "plan-snapshots:validate": "tsx src/scripts/validate-plan-snapshots.ts",
     "plan-assignments:validate": "tsx src/scripts/validate-plan-assignments.ts",

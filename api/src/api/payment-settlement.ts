@@ -1,4 +1,4 @@
-import { generatePaidRepresentations } from './billing-invoices';
+import { ensurePaidEventDocuments } from './paid-event-documents';
 import type { logger } from '../lib/logger';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
@@ -119,14 +119,16 @@ export async function settlePaymentRequest(
 ): Promise<SettleOutcome> {
   const outcome = await settleInTransaction(payload, opts);
   if (outcome.kind === 'settled' && outcome.status === 'completed') {
-    // #2567 stage 3: the event is paid now — give its issued invoices their
-    // paid representation. Best-effort: the money is already recorded.
+    // #2567 stage 3 / #3511: the event is paid now — its receipt number and
+    // simplified invoice (with the paid representation). Best-effort and
+    // logged: the money is already recorded, and the nightly reconciliation
+    // retries whatever fails here.
     try {
       const { rows } = await db.query<{ gym_id: string; billing_event_id: number | null }>(
         'SELECT gym_id, billing_event_id FROM payment_requests WHERE provider_order = ?', [payload.orderId]);
-      if (rows[0]?.billing_event_id) await generatePaidRepresentations(rows[0].gym_id, rows[0].billing_event_id);
+      if (rows[0]?.billing_event_id) await ensurePaidEventDocuments(rows[0].gym_id, rows[0].billing_event_id, opts.log);
     } catch (err) {
-      opts.log.warn({ orderId: payload.orderId, err: String((err as any)?.message ?? err) }, 'Paid invoice representation failed');
+      opts.log.warn({ orderId: payload.orderId, err: String((err as any)?.message ?? err) }, 'Paid event documents failed');
     }
   }
   return outcome;
