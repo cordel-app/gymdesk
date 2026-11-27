@@ -3201,7 +3201,12 @@
     "error_end_date_required_expired": "La data de fi és obligatòria quan l'estat és Caducat.",
     "col_days": "Dies",
     "day_count": "{count, plural, one {# dia} other {# dies}}",
-    "open_ended": "Sense data de fi"
+    "open_ended": "Sense data de fi",
+    "activate": "Activar",
+    "activate_title": "Activar pla",
+    "activate_confirm": "Aquest pla passarà a ser el pla d'entrenament actiu del membre.",
+    "activate_confirm_replace": "El pla \"{name}\" es completarà i aquest pla passarà a ser el pla d'entrenament actiu del membre.",
+    "keep_draft": "Continuar editant l'esborrany"
   },
   "template_workouts": {
     "title": "Rutines",
@@ -4540,8 +4545,7 @@
     "tree_add_day": "+ Afegir Dia",
     "tree_no_days": "Encara no s'han afegit dies.",
     "tree_remove_day": "Eliminar Dia",
-    "tree_change_day": "Canviar dia",
-    "tree_save_day": "Desar",
+    "tree_day_label": "Dia",
     "tree_confirm_remove_day": "Eliminar aquest dia i tots els seus àpats?",
     "tree_pick_weekday": "Selecciona un dia de la setmana.",
     "tree_add_meal": "+ Afegir Àpat",

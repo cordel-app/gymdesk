@@ -3201,7 +3201,12 @@
     "error_end_date_required_expired": "La fecha de fin es obligatoria cuando el estado es Expirado.",
     "col_days": "Días",
     "day_count": "{count, plural, one {# día} other {# días}}",
-    "open_ended": "Sin fecha de fin"
+    "open_ended": "Sin fecha de fin",
+    "activate": "Activar",
+    "activate_title": "Activar plan",
+    "activate_confirm": "Este plan pasará a ser el plan de entrenamiento activo del miembro.",
+    "activate_confirm_replace": "El plan \"{name}\" se completará y este plan pasará a ser el plan de entrenamiento activo del miembro.",
+    "keep_draft": "Seguir editando el borrador"
   },
   "template_workouts": {
     "title": "Rutinas",
@@ -4513,8 +4518,7 @@
     "tree_add_day": "+ Añadir Día",
     "tree_no_days": "Aún no se han añadido días.",
     "tree_remove_day": "Eliminar Día",
-    "tree_change_day": "Cambiar día",
-    "tree_save_day": "Guardar",
+    "tree_day_label": "Día",
     "tree_confirm_remove_day": "¿Eliminar este día y todas sus comidas?",
     "tree_pick_weekday": "Selecciona un día de la semana.",
     "tree_add_meal": "+ Añadir Comida",

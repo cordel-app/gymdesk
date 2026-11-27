@@ -3215,7 +3215,12 @@
     "error_end_date_required_expired": "End Date is required when status is Expired.",
     "col_days": "Days",
     "day_count": "{count, plural, one {# day} other {# days}}",
-    "open_ended": "Open-ended"
+    "open_ended": "Open-ended",
+    "activate": "Activate",
+    "activate_title": "Activate plan",
+    "activate_confirm": "This plan will become the member's active training plan.",
+    "activate_confirm_replace": "The plan \"{name}\" will be completed and this plan will become the member's active training plan.",
+    "keep_draft": "Continue editing the Draft"
   },
   "template_workouts": {
     "title": "Workouts",
@@ -4527,8 +4532,7 @@
     "tree_add_day": "+ Add Day",
     "tree_no_days": "No days added yet.",
     "tree_remove_day": "Remove Day",
-    "tree_change_day": "Change Day",
-    "tree_save_day": "Save",
+    "tree_day_label": "Day",
     "tree_confirm_remove_day": "Remove this day and all its meals?",
     "tree_pick_weekday": "Please select a weekday.",
     "tree_add_meal": "+ Add Meal",
