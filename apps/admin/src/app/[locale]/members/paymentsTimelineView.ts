@@ -13,6 +13,11 @@
  * status in the tooltip and the detail card — never a separate series, a colour of
  * its own or a legend. (This supersedes #3311 stage 2's legend and #3446's three
  * series.)
+ *
+ * #3499 — every point's tooltip shares one layout: its status as the heading
+ * (bold, uppercase: Paid, Scheduled, Pending payment, Failed, Forecasted, No
+ * charge), its date, its lines, its total in bold. The kind is told by the marker,
+ * so the heading never repeats it (`Payment · Paid`).
  */
 
 import type { ChartPointSymbol, ChartSeries } from '@gymdesk/charts';
@@ -72,7 +77,6 @@ export function monthTickLabel(x: number, s: Pick<GymFormatSettings, 'date_forma
 export function timelineSeries(
   timeline: PaymentsTimeline,
   labels: {
-    kind: (kind: TimelinePointKind) => string;
     date: (date: string) => string;
     money: (amount: number) => string;
     status: (point: TimelinePoint) => string;
@@ -88,14 +92,12 @@ export function timelineSeries(
     points: ordered.map((p) => ({
       x: dateToX(p.date),
       y: p.amount,
+      heading: labels.status(p),
       label: labels.date(p.date),
       valueLabel: labels.money(p.amount),
       alert: p.alert != null,
       symbol: TIMELINE_POINT_SYMBOLS[p.kind],
-      detailLines: [
-        `${labels.kind(p.kind)} · ${labels.status(p)}`,
-        ...p.lines.map((l) => `${l.label} × ${l.quantity}: ${labels.money(l.amount)}`),
-      ],
+      detailLines: p.lines.map((l) => `${l.label} × ${l.quantity}: ${labels.money(l.amount)}`),
     })),
   }];
 }
