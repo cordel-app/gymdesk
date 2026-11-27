@@ -140,6 +140,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "workout_blocks": ["parent", "training_plans"],
   "workout_exercises": ["parent", "training_plans"],
   "workout_template_blocks": ["parent", "workout_templates"],
+  "workout_template_edit_checkpoints": ["parent", "workout_templates (#3485: the blocks and exercises an edit session started from, restored by Cancel)"],
   "workout_template_exercises": ["parent", "workout_templates"],
   "workouts": ["parent", "training_plans"],
 };

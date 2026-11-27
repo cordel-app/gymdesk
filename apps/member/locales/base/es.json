@@ -1160,5 +1160,12 @@
     "title": "Mi familia",
     "loading": "Cargando…",
     "empty": "No hay miembros de la familia que mostrar."
+  },
+  "payment_gateway": {
+    "title": "Registra tu método de pago",
+    "notice": "Tu método de pago predeterminado es Automático, pero todavía no estás registrado en nuestra pasarela de pago.",
+    "body": "Para activar los pagos automáticos, regístrate en la pasarela de pago oficial. Hasta entonces, los pagos automáticos no se podrán procesar.",
+    "register_now": "Registrarme ahora",
+    "close": "Cerrar"
   }
 }

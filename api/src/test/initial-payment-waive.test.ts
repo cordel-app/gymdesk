@@ -246,6 +246,59 @@ describe('Initial Payment waive of a prorated Membership Fee (#3284 stage 3)', (
   });
 });
 
+// #3440 stage 2 — a Membership Fee that starts mid-period and collects a Pre-paid Duration is two
+// Initial Payment lines, the prorated stretch and the prepayment, each waivable on its own.
+describe('Initial Payment split of a prorated fee with a prepayment (#3440 stage 2)', () => {
+  it('shows two fee lines that reconcile, waives the prepayment alone and persists both', async () => {
+    const d = new Date();
+    const startsAt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 10)).toISOString().slice(0, 10);
+    const { insertId: planId } = await db.query(
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit,
+          free_periods, paid_periods, bonus_periods, pay_beforehand_periods)
+       VALUES (?, ?, 'active', 'public', '1', 0, 12, 0, 2)`, [gymId, `Prepaid Plan ${uniq()}`]);
+    await db.query(`INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+       VALUES (?, ?, 40, '2025-01-01', 'active')`, [gymId, planId]);
+    await db.query(`INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+       VALUES (?, ?, 1, 'month')`, [gymId, planId]);
+    const { insertId: memberId } = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
+      [gymId, 'Prepaid Member', `prepaid-${uniq()}@t.com`]);
+    const res = await staff('post', `/membership-plans/${planId}/assign`)
+      .send({ starts_at: startsAt, owner_member_id: memberId, beneficiary_member_ids: [memberId] });
+    expect(res.status).toBe(201);
+    const { rows } = await db.query<any>(
+      `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`, [res.body.id]);
+    const setId = Number(rows[0].id);
+
+    const before = await review(setId);
+    const fees = before.initial_payment.lines.filter((l: any) => l.fee_split != null);
+    expect(fees).toHaveLength(2);
+    const [prorated, prepaid] = fees;
+    expect(prorated.fee_split).toMatchObject({ prepaid: null });
+    expect(prepaid.fee_split).toMatchObject({ prorated: null, prepaid: { periods: 2, amount: 80 } });
+    expect(prepaid).toMatchObject({ amount: 80, prepaid_periods: 2, waivable: true, waive_refusal: null });
+    expect(prorated).toMatchObject({ waivable: true, waive_refusal: null });
+    expect(prorated.amount).toBeGreaterThan(0);
+    expect(prepaid.line_key).toBe(`${prorated.line_key}:prepaid`);
+    expect(before.amount_due).toBeCloseTo(prorated.amount + prepaid.amount, 2);
+
+    expect((await waive(setId, prepaid.line_key)).status).toBe(200);
+    const after = await review(setId);
+    const byKey = (k: string) => after.initial_payment.lines.find((l: any) => l.line_key === k);
+    expect(byKey(prepaid.line_key)).toMatchObject({ amount: 0, tax_amount: 0, waived: true });
+    expect(byKey(prorated.line_key)).toMatchObject({ amount: prorated.amount, waived: false, waivable: true });
+    expect(after.amount_due).toBeCloseTo(prorated.amount, 2);
+
+    const pay = await staff('post', `/product-sets/${setId}/save-and-pay`).send({});
+    expect(pay.status).toBe(201);
+    expect(pay.body.amount).toBeCloseTo(prorated.amount, 2);
+    const { rows: lines } = await db.query<any>(
+      'SELECT amount, line_key FROM billing_event_lines WHERE billing_event_id = ? ORDER BY id', [pay.body.billing_event_id]);
+    expect(lines.map((l: any) => [l.line_key, Number(l.amount)])).toEqual([
+      [prorated.line_key, prorated.amount], [prepaid.line_key, 0],
+    ]);
+  });
+});
+
 // #3284 stage 4 — reported on 25 Nov: Waive was refused (and the button disabled) whenever it would
 // leave the Initial Payment at zero. A waiver may now take the whole Initial Payment to €0.00; such a
 // cart is committed by the free activation, which still records the waived first period as the

@@ -61,6 +61,12 @@ const useExDragId = () => {
     scheme === 'page' ? `ex:${key}:${blockId}:${exId}` : mkExId(key, blockId, exId);
 };
 
+/**
+ * #3485: whether a block and an exercise offer `⋮ → Duplicate`. Cordel's Base
+ * Workout Templates have no duplicate routes, so their builder offers none.
+ */
+const DuplicatesContext = React.createContext<boolean>(true);
+
 /* ---- Block row ---- */
 function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplicate, onDelete, onDeleteExercise, onChanged }: {
   workoutKey: string | number;
@@ -75,6 +81,7 @@ function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplica
 }) {
   const blockDragId = useBlockDragId();
   const t = useTranslations();
+  const allowDuplicate = React.useContext(DuplicatesContext);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -220,7 +227,7 @@ function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplica
           <ContextMenu
             ariaLabel={t('workout_templates.col_actions')}
             items={[
-              { label: t('workout_template_blocks.duplicate'), onClick: onDuplicate },
+              ...(allowDuplicate ? [{ label: t('workout_template_blocks.duplicate'), onClick: onDuplicate }] : []),
               { kind: 'delete' as const, label: t('workout_template_blocks.delete'), onClick: onDelete, danger: true },
             ]}
           />
@@ -397,6 +404,7 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
 }) {
   const exDragId = useExDragId();
   const t = useTranslations();
+  const allowDuplicate = React.useContext(DuplicatesContext);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -587,7 +595,7 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
           <ContextMenu
             ariaLabel={t('workout_templates.col_actions')}
             items={[
-              { label: t('block_exercises.duplicate'), onClick: onDuplicate },
+              ...(allowDuplicate ? [{ label: t('block_exercises.duplicate'), onClick: onDuplicate }] : []),
               { kind: 'delete' as const, label: t('block_exercises.delete'), onClick: onDelete, danger: true },
             ]}
           />
@@ -598,9 +606,16 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
 }
 
 /* ---- Main builder ---- */
-export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, onChanged, dragScheme = 'builder' }: {
+export function WorkoutBlockBuilder({
+  workoutKey, blocksUrl, blocks, canWrite, onChanged, dragScheme = 'builder',
+  exercisesUrl = '/exercises?status=active', allowDuplicate = true,
+}: {
   /** 'page' = drag-and-drop is handled by an enclosing DndContext (no context of its own). */
   dragScheme?: WorkoutDragScheme;
+  /** #3485: the exercise picker's catalogue — Cordel's Base templates pick Base Exercises. */
+  exercisesUrl?: string;
+  /** #3485: false hides `⋮ → Duplicate` on blocks and exercises (Base templates have no such routes). */
+  allowDuplicate?: boolean;
   workoutKey: number | string;
   blocksUrl: string;
   blocks: HierBlock[];
@@ -619,8 +634,8 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
   useEffect(() => { setLocalBlocks(blocks); }, [blocks]);
   useEffect(() => {
     if (!canWrite) return; // read-only: no exercise picker, nothing to fetch
-    apiFetch<ExerciseOption[]>('/exercises?status=active').then(setExercises).catch(() => {});
-  }, [canWrite]);
+    apiFetch<ExerciseOption[]>(exercisesUrl).then(setExercises).catch(() => {});
+  }, [canWrite, exercisesUrl]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -795,10 +810,12 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
   );
 
   return (
-    <DragSchemeContext.Provider value={dragScheme}>
-      {dragScheme === 'page' ? body : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>{body}</DndContext>
-      )}
-    </DragSchemeContext.Provider>
+    <DuplicatesContext.Provider value={allowDuplicate}>
+      <DragSchemeContext.Provider value={dragScheme}>
+        {dragScheme === 'page' ? body : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>{body}</DndContext>
+        )}
+      </DragSchemeContext.Provider>
+    </DuplicatesContext.Provider>
   );
 }

@@ -160,6 +160,7 @@ import {
   setCommitErrorKey,
   checkoutRequestBody,
   planFeeScopeNote,
+  planShowsCharge,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -909,6 +910,8 @@ export default function MembershipPage() {
         // #2834 stage 2 — per member (× how many) or per family; the price is one fee.
         feeScopeNote ? t(`membership.${feeScopeNote.key}` as any, feeScopeNote.values) : null,
       ].filter(Boolean).join(' · ') || null,
+      // #3501 — a Cancelled / Cancels at End Date plan shows its chip and no charge.
+      showCharge: planShowsCharge(status),
       imageUrl: plan.plan_image_thumbnail_url ?? null,
       imageFullUrl: plan.plan_image_url ?? null,
       includedLabel: t('membership.plan_beneficiaries'),
@@ -1450,6 +1453,7 @@ export default function MembershipPage() {
         ? t(frequencyKey as any)
         : (details?.billing_interval != null && details.billing_unit
           ? formatInterval(details.billing_interval, details.billing_unit, t) : null),
+      showCharge: planShowsCharge(status),
       imageUrl: null,
       period: t('membership.plan_period', {
         start: plan.starts_at ? formatGymDateOnly(plan.starts_at, gymFmt) : '—',

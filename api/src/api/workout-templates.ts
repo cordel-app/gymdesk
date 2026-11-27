@@ -11,6 +11,7 @@ import { getRequestLocale } from '../infra/locale';
 import { resolveRequestActor } from '../domain/auditActor';
 import { templateSource, workoutTemplateResyncChanges } from '../domain/workoutTemplateSync';
 import { CascadeImportError, importWorkoutTemplatesCascade, planWorkoutTemplateImport } from './workout-template-cascade';
+import { workoutTemplateEditSessionRouter } from './workout-template-edit-session';
 
 /**
  * #55: WorkoutTemplate -> WorkoutTemplateBlock -> WorkoutTemplateExercise.
@@ -26,6 +27,9 @@ import { CascadeImportError, importWorkoutTemplatesCascade, planWorkoutTemplateI
  */
 
 export const workoutTemplatesRouter = Router();
+
+// #3485: Edit mode's checkpoint (start, Cancel restores, Save drops).
+workoutTemplatesRouter.use(workoutTemplateEditSessionRouter('gym'));
 
 const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'EMOM', 'AMRAP', 'Tabata'];
 // null = unlimited
@@ -714,6 +718,15 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/move', requireModuleWrite('TRAI
     if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
     if (!(await templateExists(String(targetId), gymId))) {
       return res.status(400).json({ error: 'target_workout_template_id does not belong to this gym' });
+    }
+    // #3485: a block leaving or joining a template in Edit mode would escape its
+    // checkpoint, so Cancel could not put either template back.
+    const { rows: sessions } = await db.query(
+      'SELECT 1 FROM workout_template_edit_checkpoints WHERE workout_template_id IN (?, ?) LIMIT 1',
+      [id, targetId],
+    );
+    if (sessions.length > 0) {
+      return res.status(409).json({ error: 'A template in Edit mode cannot move blocks to another template', code: 'edit_session_open' });
     }
     await db.transaction(async (tx) => {
       const { rows: sourceRows } = await tx.query(

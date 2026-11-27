@@ -1160,5 +1160,12 @@
     "title": "La meva família",
     "loading": "Carregant…",
     "empty": "No hi ha membres de la família per mostrar."
+  },
+  "payment_gateway": {
+    "title": "Registra el teu mètode de pagament",
+    "notice": "El teu mètode de pagament predeterminat és Automàtic, però encara no estàs registrat a la nostra passarel·la de pagament.",
+    "body": "Per activar els pagaments automàtics, registra't a la passarel·la de pagament oficial. Fins aleshores, els pagaments automàtics no es podran processar.",
+    "register_now": "Registra'm ara",
+    "close": "Tanca"
   }
 }
