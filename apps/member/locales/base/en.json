@@ -475,7 +475,6 @@
     "product_tax_included": "Tax included",
     "product_buy": "Buy",
     "product_end_date": "Valid until {date}",
-    "product_pay": "Pay",
     "product_state_cancelled": "Cancelled",
     "product_state_active": "Active",
     "product_state_pending": "Pending payment",
@@ -696,8 +695,7 @@
     "plan_fee_per_member": "{count, plural, one {Per member} other {Per member × #}}",
     "plan_fee_per_family": "Per family",
     "past_entry_type_plan": "Plan",
-    "past_entry_type_product": "Product",
-    "product_cancel": "Cancel"
+    "past_entry_type_product": "Product"
   },
   "payments": {
     "title": "Payments",

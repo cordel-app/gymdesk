@@ -378,15 +378,6 @@ export function oneTimeOwnPurchases(list: readonly OwnPurchase[]): OwnPurchase[]
   return list.filter((p) => p.source !== 'recurring' && p.id > 0);
 }
 
-/**
- * #3537 — the purchase whose Cancel a Product awaiting payment offers beside Pay, or `null`. It is
- * the Purchases tab's own cancel (`purchasePendingCancelPath()`); the server decides again.
- */
-export function ownPurchaseCancelId(p: OwnPurchase): number | null {
-  if (p.own_state !== 'pending_payment' || p.source === 'recurring' || p.id < 0) return null;
-  return p.purchase_id ?? null;
-}
-
 /** The status word `statusTone()` knows for a purchase state (#983: no tone of our own). */
 export function ownPurchaseStatusWord(state: OwnPurchase['own_state']): string {
   return state === 'pending_payment' ? 'pending' : state;
@@ -399,16 +390,6 @@ export function ownPurchaseStateKey(state: OwnPurchase['own_state']): string {
     case 'cancelled': return 'membership.product_state_cancelled';
     default: return 'membership.product_state_active';
   }
-}
-
-/** Pay is offered on exactly the purchases awaiting payment — never hidden or disabled there. */
-export function ownPurchaseShowsPay(p: OwnPurchase): boolean {
-  return p.own_state === 'pending_payment';
-}
-
-/** Whether a purchase is paid through the one-off route or the plan's Pay now. */
-export function ownPurchasePayPath(p: OwnPurchase): string {
-  return p.source === 'recurring' || p.id < 0 ? '/me/payment-requests' : `/me/purchases/${p.id}/pay`;
 }
 
 /* ── #2609 stage 2 — who a Product is for ──────────────────────────────────── */

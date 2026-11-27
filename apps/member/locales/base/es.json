@@ -475,7 +475,6 @@
     "product_tax_included": "Impuestos incluidos",
     "product_buy": "Comprar",
     "product_end_date": "Válido hasta {date}",
-    "product_pay": "Pagar",
     "product_state_cancelled": "Cancelado",
     "product_state_active": "Activo",
     "product_state_pending": "Pago pendiente",
@@ -696,8 +695,7 @@
     "plan_fee_per_member": "{count, plural, one {Por miembro} other {Por miembro × #}}",
     "plan_fee_per_family": "Por familia",
     "past_entry_type_plan": "Plan",
-    "past_entry_type_product": "Producto",
-    "product_cancel": "Cancelar"
+    "past_entry_type_product": "Producto"
   },
   "payments": {
     "title": "Pagos",
