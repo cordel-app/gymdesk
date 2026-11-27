@@ -12,6 +12,7 @@ import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext
 import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
 import { NutritionItemRow, nutritionItemGridStyle } from '@/components/NutritionItemRow';
 import { MealThumbnail } from '@/components/MealThumbnail';
+import { NutritionPlanHeader } from '@/components/NutritionPlanHeader';
 import type { MealImageFields } from '@/lib/mealThumbnail';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
@@ -38,6 +39,8 @@ interface NutritionPlan {
   id: number;
   name: string;
   description: string | null;
+  // #3491: the plan header's text under the name; older API builds omit it.
+  member_notes?: string | null;
   days: NutritionDay[];
   goals: NutritionGoalItem[];
   restrictions: NutritionRestrictionItem[];
@@ -313,47 +316,17 @@ export default function NutritionPage() {
               onClose={() => setLegendOpen(false)} />
           )}
 
-          {/* #932 §2 — the goal's name is a slug (`weight_loss`), translated
-              before it is shown, and its value and frequency read as
-              "1 l · daily". Both sections render through the same row, so they
-              cannot drift apart (§4), and each says so in words when it is
-              empty rather than disappearing (§5). */}
-          <section style={styles.section}>
-            <h2 style={styles.h2}>{t('nutrition.goals')}</h2>
-            <div style={styles.card}>
-              {goals.length === 0 ? (
-                <p style={styles.sectionEmpty}>{t('nutrition.goals_empty')}</p>
-              ) : (
-                <div style={nutritionItemGridStyle}>{goals.map((g) => (
-                  <NutritionItemRow
-                    key={g.id}
-                    name={goalLabel(t, g.item_name)}
-                    detail={goalDetail(t, g)}
-                    imageUrl={g.image_url ?? null}
-                    actions={requirementActions('goal', g.id)}
-                  />
-                ))}</div>
-              )}
-            </div>
-          </section>
-
-          <section style={styles.section}>
-            <h2 style={styles.h2}>{t('nutrition.restrictions')}</h2>
-            <div style={styles.card}>
-              {restrictions.length === 0 ? (
-                <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
-              ) : (
-                <div style={nutritionItemGridStyle}>{restrictions.map((r) => (
-                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url} crossed
-                    actions={requirementActions('restriction', r.id)} />
-                ))}</div>
-              )}
-            </div>
-          </section>
+          {/* #3491: the Assigned Nutrition Plan in force on the selected date — its
+              name and Member Notes, once, above the day's meals. */}
+          {shown && (
+            <NutritionPlanHeader name={shown.name} notes={shown.member_notes}
+              expandLabel={t('nutrition.plan_notes_expand')} collapseLabel={t('nutrition.plan_notes_collapse')} />
+          )}
 
           {/* #1580: the selected date's meals — a day with its own weekday plus the "every day" ones. */}
           <section style={styles.section}>
-            <h2 style={styles.h2}>{dayText(locale, selectedDate, { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
+            {/* #3491: the selected date is the day selector's; this section is titled MEALS. */}
+            <h2 style={styles.h2}>{t('nutrition.meals_title')}</h2>
             {mealsForDate.length === 0 ? (
               <p style={styles.hint}>{t('nutrition.no_meals_today')}</p>
             ) : (
@@ -408,6 +381,44 @@ export default function NutritionPage() {
               </div>
             )}
           </section>
+          {/* #932 §2 — the goal's name is a slug (`weight_loss`), translated
+              before it is shown, and its value and frequency read as
+              "1 l · daily". Both sections render through the same row, so they
+              cannot drift apart (§4), and each says so in words when it is
+              empty rather than disappearing (§5). */}
+          <section style={styles.section}>
+            <h2 style={styles.h2}>{t('nutrition.goals')}</h2>
+            <div style={styles.card}>
+              {goals.length === 0 ? (
+                <p style={styles.sectionEmpty}>{t('nutrition.goals_empty')}</p>
+              ) : (
+                <div style={nutritionItemGridStyle}>{goals.map((g) => (
+                  <NutritionItemRow
+                    key={g.id}
+                    name={goalLabel(t, g.item_name)}
+                    detail={goalDetail(t, g)}
+                    imageUrl={g.image_url ?? null}
+                    actions={requirementActions('goal', g.id)}
+                  />
+                ))}</div>
+              )}
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <h2 style={styles.h2}>{t('nutrition.restrictions')}</h2>
+            <div style={styles.card}>
+              {restrictions.length === 0 ? (
+                <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
+              ) : (
+                <div style={nutritionItemGridStyle}>{restrictions.map((r) => (
+                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url} crossed
+                    actions={requirementActions('restriction', r.id)} />
+                ))}</div>
+              )}
+            </div>
+          </section>
+
         </>
       )}
     </main>
