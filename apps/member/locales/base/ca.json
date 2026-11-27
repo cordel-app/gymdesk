@@ -35,7 +35,8 @@
     "no_nutrition_today": "Sense pla de nutrició per avui.",
     "booking_center": "Centre",
     "booking_trainer": "Entrenador",
-    "booking_space": "Espai"
+    "booking_space": "Espai",
+    "meals": "Àpats"
   },
   "nav": {
     "back_home": "Torna a l'inici",
@@ -981,7 +982,8 @@
     "partially_done_state": "Parcialment fet",
     "fully_done": "Totalment fet",
     "fully_done_aria": "Marca {name} com a totalment fet",
-    "partially_done_aria": "Marca {name} com a parcialment fet"
+    "partially_done_aria": "Marca {name} com a parcialment fet",
+    "not_started": "Sense començar"
   },
   "goals": {
     "title": "Els Meus Objectius",
