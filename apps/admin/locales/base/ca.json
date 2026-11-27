@@ -3225,7 +3225,8 @@
     "activate_title": "Activar pla",
     "activate_confirm": "Aquest pla passarà a ser el pla d'entrenament actiu del membre.",
     "activate_confirm_replace": "El pla \"{name}\" es completarà i aquest pla passarà a ser el pla d'entrenament actiu del membre.",
-    "keep_draft": "Continuar editant l'esborrany"
+    "save_draft": "Desa l'esborrany",
+    "save_and_activate": "Desa i activa"
   },
   "template_workouts": {
     "title": "Rutines",
