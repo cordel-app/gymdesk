@@ -175,7 +175,7 @@ export async function loadProductSetSimulationAssignments(
   return out;
 }
 
-const PLAN_ROW_SELECT = `SELECT s.id, COALESCE(cf.anchor_plan_snapshot_id, cf.id, s.anchor_plan_snapshot_id, s.id) AS plan_instance_key, s.membership_plan_id, s.starts_at, s.ends_at, s.previous_end_date, s.membership_fee_price,
+const PLAN_ROW_SELECT = `SELECT s.id, s.schedule_id, COALESCE(cf.anchor_plan_snapshot_id, cf.id, s.anchor_plan_snapshot_id, s.id) AS plan_instance_key, s.membership_plan_id, s.starts_at, s.ends_at, s.previous_end_date, s.membership_fee_price,
             s.free_periods, s.paid_periods, s.bonus_periods, s.pay_beforehand_periods, s.auto_renew,
             s.personal_fee_benefit_action, s.personal_fee_benefit_value,
             mp.name AS plan_name, sch.cadence_interval, sch.cadence_unit, sch.anchor_date,
@@ -231,14 +231,20 @@ async function planRowAssignment(
 /**
  * #3114 stage 3 — the plans the owner marked `to_be_reactivated` that this uncommitted version
  * carries (an entitlement-only link: a plan running to its end date), as the engine will bill them
- * once the reactivation is committed: open-ended (the commit clears `ends_at`). `paidThrough` is the
- * end date the plan had when it was marked (`previous_end_date`): the periods up to it are already
- * paid and are never generated again, so a forecast drops them. Only the Draft's forecast reads
- * this; the initial charge never does (Option A: no extra charge for a period already paid).
+ * once the reactivation is committed: open-ended (the commit clears `ends_at`). Only the Draft's
+ * forecast reads this; the initial charge never does (Option A: no extra charge for a period
+ * already paid).
+ *
+ * #3507 — `coveredDates` are the periods of the plan's schedule that already hold an obligation
+ * (`billing_events.schedule_id` / `period_start`, or a line's since #3445 stage 2): exactly the
+ * periods `materialiseScheduledEvents()` leaves alone when the reactivation is committed, so the
+ * forecast drops those and nothing else. It used to drop every date up to the plan's old end
+ * date (`previous_end_date`), which both hid periods the commit does generate and, for a plan
+ * paid further ahead than the forecast's two cycles, hid the reactivated plan altogether.
  */
 export async function loadPendingReactivationAssignments(
   gymId: string, productSetId: number, exec: Exec = db,
-): Promise<Array<{ assignment: SimulationAssignment; paidThrough: string | null }>> {
+): Promise<Array<{ assignment: SimulationAssignment; coveredDates: string[] }>> {
   const { rows } = await exec.query(
     `${PLAN_ROW_SELECT}
        JOIN product_sets ps ON ps.id = psj.product_set_id
@@ -247,16 +253,29 @@ export async function loadPendingReactivationAssignments(
       ORDER BY psj.id`,
     [gymId, productSetId],
   );
-  const out: Array<{ assignment: SimulationAssignment; paidThrough: string | null }> = [];
+  const out: Array<{ assignment: SimulationAssignment; coveredDates: string[] }> = [];
   for (const row of rows as any[]) {
     const assignment = await planRowAssignment(exec, gymId, row, 1, null, []);
     out.push({
       assignment: { ...assignment, endsAt: null },
-      paidThrough: row.previous_end_date != null ? toDateOnly(row.previous_end_date)
-        : row.ends_at != null ? toDateOnly(row.ends_at) : null,
+      coveredDates: row.schedule_id != null ? await scheduleCoveredDates(exec, gymId, Number(row.schedule_id)) : [],
     });
   }
   return out;
+}
+
+/** The periods of one schedule that already hold an obligation, on the event row or on a line. */
+async function scheduleCoveredDates(exec: Exec, gymId: string, scheduleId: number): Promise<string[]> {
+  const { rows } = await exec.query(
+    `SELECT DATE_FORMAT(period_start, '%Y-%m-%d') AS d FROM billing_events
+      WHERE gym_id = ? AND schedule_id = ? AND period_start IS NOT NULL
+     UNION
+     SELECT DATE_FORMAT(bl.period_start, '%Y-%m-%d') AS d FROM billing_event_lines bl
+       JOIN billing_events be ON be.id = bl.billing_event_id
+      WHERE be.gym_id = ? AND bl.schedule_id = ? AND bl.period_start IS NOT NULL`,
+    [gymId, scheduleId, gymId, scheduleId],
+  );
+  return (rows as any[]).map((r) => String(r.d));
 }
 
 /**

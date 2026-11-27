@@ -14,9 +14,13 @@ import { MEAL_THUMBNAIL_SIZE, mealThumbnailView, type MealImageFields } from '@/
  * description. A meal with no image draws the initials and is not a button, since
  * there is nothing to enlarge. Presentation only: the title is the caller's.
  */
-export function MealThumbnail({ meal, title }: { meal: MealImageFields; title: string }) {
+export function MealThumbnail({ meal, title, size = MEAL_THUMBNAIL_SIZE }: {
+  meal: MealImageFields;
+  title: string;
+  /** #3490 — the Home summary draws the same circle smaller. */
+  size?: number;
+}) {
   const view = mealThumbnailView(meal);
-  const size = MEAL_THUMBNAIL_SIZE;
   return (
     <span style={{ width: size, height: size, flexShrink: 0, display: 'inline-flex' }}>
       <ImagePreviewButton

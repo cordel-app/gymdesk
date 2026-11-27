@@ -62,7 +62,6 @@ interface TemplateOption { id: number; name: string }
 type SortKey = 'name' | 'member' | 'template' | 'status' | 'start_date' | 'end_date' | 'created_by' | 'created_at' | 'modified_at';
 
 const STATUSES = ['draft', 'active', 'expired', 'completed'] as const;
-const EDITABLE_STATUSES = ['draft', 'active', 'expired'] as const;
 const LIMIT = 20;
 
 /* ---- List columns (#724) ----
@@ -170,8 +169,10 @@ export default function TrainingPlansPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
-  // #1969: Save on a version draft asks for confirmation before ending the current version.
-  const [versionConfirmOpen, setVersionConfirmOpen] = useState(false);
+  // #3477: the one Activate confirmation, from ⋮ → Activate or from Save on a Draft. `fromSave`
+  // adds the Continue editing the Draft answer (save and keep the Draft open in the editor).
+  const [activation, setActivation] = useState<{ row: TrainingPlanRow; currentPlanName: string | null; fromSave: boolean } | null>(null);
+  const [activationBusy, setActivationBusy] = useState(false);
 
   // #613: impersonation-aware; read-only roles see controls disabled.
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
@@ -292,7 +293,7 @@ export default function TrainingPlansPage() {
     setEditForm({
       name: row.name,
       description: row.description ?? '',
-      status: row.status === 'draft' ? 'active' : row.status, // #1958: saving a Draft activates it
+      status: row.status, // #3477: read-only in the form; changed only through ⋮ actions
       start_date: (row.start_date ?? '').slice(0, 10),
       end_date: row.end_date ? row.end_date.slice(0, 10) : '',
     });
@@ -330,32 +331,42 @@ export default function TrainingPlansPage() {
     setEditError(null);
   }
 
-  async function saveEdit() {
-    if (!editForm.name.trim()) { setEditError(t('training_plans.error_required')); return; }
-    const row = rows.find((r) => r.id === editingId)!;
-    if (row.draft_of_plan_id && !versionConfirmOpen) { setVersionConfirmOpen(true); return; }
-    setVersionConfirmOpen(false);
-    setEditSaving(true); setEditError(null);
+  // #3477: what Activate would complete, for the confirmation's wording.
+  async function openActivation(row: TrainingPlanRow, fromSave: boolean) {
     try {
-      if (row.draft_of_plan_id) {
-        // #1969: name/description first, then one transaction ends the old version and activates this one.
-        await apiFetch(`/members/${row.member_id}/training-plans/${editingId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null }),
-        });
-        await apiFetch(`/members/${row.member_id}/training-plans/${editingId}/publish-version`, { method: 'POST' });
-      } else {
-        await apiFetch(`/members/${row.member_id}/training-plans/${editingId}`, {
-          method: 'PUT',
-          body: JSON.stringify({
+      const preview = await apiFetch<{ current_plan: { id: number; name: string } | null }>(
+        `/members/${row.member_id}/training-plans/${row.id}/activation`);
+      setActivation({ row, currentPlanName: preview.current_plan?.name ?? null, fromSave });
+    } catch (err: any) {
+      if (fromSave) setEditError(err.message ?? t('training_plans.error_generic'));
+      else toast(err.message ?? t('training_plans.error_generic'));
+    }
+  }
+
+  async function putEdit(row: TrainingPlanRow) {
+    // #3477: the status is never sent — it changes only through Activate / Complete.
+    // A version draft (#1969) keeps the plan's dates, so only name and description go.
+    await apiFetch(`/members/${row.member_id}/training-plans/${row.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(row.draft_of_plan_id
+        ? { name: editForm.name.trim(), description: editForm.description.trim() || null }
+        : {
             name: editForm.name.trim(),
             description: editForm.description.trim() || null,
-            status: editForm.status,
             start_date: editForm.start_date || null,
             end_date: editForm.end_date || null,
           }),
-        });
-      }
+    });
+  }
+
+  async function saveEdit() {
+    if (!editForm.name.trim()) { setEditError(t('training_plans.error_required')); return; }
+    const row = rows.find((r) => r.id === editingId)!;
+    // #3477: Save on a Draft asks Activate or Continue editing the Draft.
+    if (row.status === 'draft') { await openActivation(row, true); return; }
+    setEditSaving(true); setEditError(null);
+    try {
+      await putEdit(row);
       setEditingId(null);
       load();
       refetchHierarchy(editingId!);
@@ -363,6 +374,46 @@ export default function TrainingPlansPage() {
       setEditError(err.message ?? t('training_plans.error_generic'));
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  // #3477: Continue editing the Draft — the changes are saved, the plan stays a Draft and the
+  // editor stays open.
+  async function keepDraft() {
+    if (!activation) return;
+    const { row } = activation;
+    setActivationBusy(true); setEditError(null);
+    try {
+      await putEdit(row);
+      setActivation(null);
+      load();
+      refetchHierarchy(row.id);
+    } catch (err: any) {
+      setActivation(null);
+      setEditError(err.message ?? t('training_plans.error_generic'));
+    } finally {
+      setActivationBusy(false);
+    }
+  }
+
+  // #3477: Activate — from Save, the changes are saved first; then the one activation route.
+  async function confirmActivation() {
+    if (!activation) return;
+    const { row, fromSave } = activation;
+    setActivationBusy(true);
+    try {
+      if (fromSave) await putEdit(row);
+      await apiFetch(`/members/${row.member_id}/training-plans/${row.id}/activate`, { method: 'POST' });
+      setActivation(null);
+      if (fromSave || editingId === row.id) { setEditingId(null); setEditError(null); }
+      load();
+      refetchHierarchy(row.id);
+    } catch (err: any) {
+      setActivation(null);
+      if (fromSave) setEditError(err.message ?? t('training_plans.error_generic'));
+      else toast(err.message ?? t('training_plans.error_generic'));
+    } finally {
+      setActivationBusy(false);
     }
   }
 
@@ -504,6 +555,7 @@ export default function TrainingPlansPage() {
                   onEdit={() => guardUnsaved(() => beginEdit(row))}
                   onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
                   onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
+                  onActivate={() => guardUnsaved(() => openActivation(row, false))}
                   onComplete={() => guardUnsaved(() => { setCompletingPlan(row); setCompleteEndDate(new Date().toISOString().slice(0, 10)); })}
                   onDelete={() => guardUnsaved(() => setDeleting(row))}
                   onEditFormChange={setEditForm}
@@ -538,12 +590,20 @@ export default function TrainingPlansPage() {
         onConfirm={handleDelete} onCancel={() => setDeleting(null)} />
 
       <ConfirmDialog
-        open={versionConfirmOpen}
-        message={t('training_plans.version_confirm')}
-        confirmLabel={t('training_plans.version_confirm_btn')}
+        open={activation !== null}
+        title={t('training_plans.activate_title')}
+        message={activation?.row.draft_of_plan_id
+          ? t('training_plans.version_confirm')
+          : activation?.currentPlanName
+            ? t('training_plans.activate_confirm_replace', { name: displayTrainingPlanName(activation.currentPlanName) })
+            : t('training_plans.activate_confirm')}
+        confirmLabel={t('training_plans.activate')}
         cancelLabel={t('training_plans.cancel')}
-        onConfirm={saveEdit}
-        onCancel={() => setVersionConfirmOpen(false)}
+        secondaryLabel={activation?.fromSave ? t('training_plans.keep_draft') : undefined}
+        onSecondary={activation?.fromSave ? keepDraft : undefined}
+        onConfirm={confirmActivation}
+        onCancel={() => setActivation(null)}
+        busy={activationBusy}
       />
 
       <ConfirmDialog
@@ -595,7 +655,7 @@ type EditForm = { name: string; description: string; status: string; start_date:
 function PlanCard({
   row, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onComplete, onDelete,
+  onToggleExpand, onEdit, onDetails, onDuplicate, onActivate, onComplete, onDelete,
   onEditFormChange, onSave, onCancel,
   apiFetch, toast, onChanged,
 }: {
@@ -614,6 +674,7 @@ function PlanCard({
   onEdit: () => void;
   onDetails: () => void;
   onDuplicate: () => void;
+  onActivate: () => void;
   onComplete: () => void;
   onDelete: () => void;
   onEditFormChange: (f: EditForm) => void;
@@ -632,6 +693,7 @@ function PlanCard({
     ...(!isCompleted ? [{ kind: 'edit' as const, label: t('training_plan_templates.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
     { kind: 'details' as const, label: t('training_plans.details'), onClick: onDetails },
     { label: t('training_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
+    ...(row.status === 'draft' ? [{ label: t('training_plans.activate'), onClick: onActivate, disabled: !canWrite, title: roTitle }] : []),
     ...(row.status === 'active' ? [{ label: t('training_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
     { kind: 'delete' as const, label: t('training_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
   ];
@@ -653,14 +715,12 @@ function PlanCard({
               <textarea value={editForm.description} onChange={(e) => onEditFormChange({ ...editForm, description: e.target.value })}
                 rows={2} style={{ ...formControlStyle, resize: 'vertical' }} />
             </div>
-            {!row.draft_of_plan_id && (<>
+            {/* #3477: the status is shown, never edited — it changes through ⋮ → Activate / Complete. */}
             <div>
-              <label style={formFieldLabelStyle}>{t('training_plans.label_status')}</label>
-              <select value={editForm.status} onChange={(e) => onEditFormChange({ ...editForm, status: e.target.value })}
-                style={{ ...formControlStyle, width: 'auto' }}>
-                {EDITABLE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
-              </select>
+              <span style={formFieldLabelStyle}>{t('training_plans.label_status')}</span>
+              <div style={{ padding: '8px 0' }}><StatusBadge status={row.status} label={t(`status.${row.status}`)} /></div>
             </div>
+            {!row.draft_of_plan_id && (<>
             <div>
               <label style={formFieldLabelStyle}>{t('training_plans.label_start_date')}</label>
               <input type="date" value={editForm.start_date} onChange={(e) => onEditFormChange({ ...editForm, start_date: e.target.value })}
