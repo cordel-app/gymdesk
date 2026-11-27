@@ -56,6 +56,17 @@ export function cancellationEndDate(input: { paidThrough: string | null; today: 
 }
 
 /**
+ * #1914 / #3508 — the day a cancelled recurring Product line ends on (inclusive): the last day of its
+ * last paid period when that is still ahead, else the cancellation day itself. A line is not cut short
+ * of a period the member paid for, whether that period was a whole one, a prorated first stretch or
+ * several collected in advance; with nothing paid ahead it ends today (its own existing rule, unlike a
+ * plan's day before).
+ */
+export function recurringLineEndDate(paidThrough: string | null, today: string): string {
+  return paidThrough && paidThrough > today ? paidThrough : today;
+}
+
+/**
  * #2488 — the last day covered by a first payment that includes a Pre-paid Duration: `prepaidPeriods` billing
  * periods from `startsAt`, using the schedule's own cadence. `null` (the schedule's single-period rule applies)
  * when fewer than two periods are prepaid, a Free Period comes first (the lump is then owed later, not at the

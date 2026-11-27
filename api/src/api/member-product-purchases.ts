@@ -53,6 +53,7 @@ import { DateTime } from 'luxon';
 import { endDateOnCancel } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { loadEditLockForDraftEdit } from './product-set-checkout';
+import { recurringLineCancellationEnd } from './cancellation-entitlement';
 import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
 import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
 import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
@@ -611,6 +612,39 @@ memberProductPurchasesRouter.delete('/recurring/:lineId', requireModuleWrite('ME
     }
     recordAudit(req, { action: 'update', entityType: 'product_set', entityId: draftId, next: { remove_recurring_line: lineId } });
     res.json({ product_set_id: draftId, deleted: true });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #3508 — the end date a recurring Product line would take if it were cancelled today, for the
+ * cancellation confirmation (the plan's `GET /user-memberships/:id/cancellation-preview`, one
+ * entity over): the last day of its last paid period when that is still ahead, else today, from
+ * `recurringLineCancellationEnd()`, the rule `removeService()` saves. Read-only. `lineId` is the
+ * committed line's id (the negative row id the Products list carries), of one of this member's sets.
+ */
+memberProductPurchasesRouter.get('/recurring/:lineId/cancellation-preview', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = memberIdOf(req);
+  const lineId = parseInt(String(req.params.lineId), 10);
+  try {
+    if (!(await loadMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
+    if (!Number.isInteger(lineId) || lineId <= 0) return res.status(404).json({ error: 'Line not found' });
+    const out = await db.transaction(async (tx) => {
+      const { rows } = await tx.query<any>(
+        `SELECT s.schedule_id
+           FROM product_periodical_snapshots s
+          WHERE s.gym_id = ? AND s.source_id = ?
+            AND EXISTS (SELECT 1 FROM product_set_periodical_snapshots lnk
+                          JOIN product_sets ps ON ps.id = lnk.product_set_id
+                         WHERE lnk.product_periodical_snapshot_id = s.id AND ps.gym_id = s.gym_id
+                           AND ps.owner_member_id = ?)
+          ORDER BY s.id LIMIT 1`, [gymId, lineId, memberId]);
+      if (!rows[0]) return null;
+      const scheduleId = rows[0].schedule_id != null ? Number(rows[0].schedule_id) : null;
+      return { ends_on: await recurringLineCancellationEnd(tx, gymId, scheduleId, todayUtc()) };
+    });
+    if (!out) return res.status(404).json({ error: 'Line not found' });
+    res.json(out);
   } catch (err) { next(err); }
 });
 
