@@ -21,6 +21,9 @@ export interface PurchaseHistoryItem {
   total_amount: string | null;
   /** #3495: an `in_cart` purchase's Initial Payment (the API's figure); null otherwise. */
   initial_payment_amount?: string | null;
+  /** #3537: whether Pay / Cancel are offered (the API's `memberMaySettlePendingPurchase()`). */
+  can_pay?: boolean;
+  can_cancel?: boolean;
   owner: PurchaseHistoryMember;
   plans: Array<{
     name: string | null;
@@ -137,4 +140,24 @@ export function beneficiaryName(
 ): string | null {
   if (!beneficiary || beneficiary.id === ownerId || !beneficiary.name) return null;
   return beneficiary.name;
+}
+
+/** #3537 — Pay on a purchase awaiting payment: a fresh page on its existing payment. */
+export function purchasePayPath(purchaseId: number): string {
+  return `${PURCHASE_HISTORY_PATH}/${purchaseId}/pay`;
+}
+
+/**
+ * #3537 — the one cancellation of a purchase awaiting payment, called by My Products and by the
+ * Purchases tab alike (never two mechanisms).
+ */
+export function purchaseCancelPath(purchaseId: number): string {
+  return `${PURCHASE_HISTORY_PATH}/${purchaseId}/cancel`;
+}
+
+/** #3537 — the locale key explaining a refused cancel, from the API's error code. */
+export function purchaseCancelErrorKey(code: string | null | undefined): string {
+  if (code === 'payment_settled') return 'purchases.cancel_error_settled';
+  if (code === 'payment_unresolved') return 'purchases.cancel_error_unresolved';
+  return 'purchases.cancel_error';
 }

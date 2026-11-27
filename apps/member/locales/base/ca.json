@@ -473,7 +473,6 @@
     "product_package_price": "Preu total del paquet",
     "product_tax_included": "Impostos inclosos",
     "product_buy": "Comprar",
-    "own_products_heading": "Les meves compres",
     "product_end_date": "Vàlid fins al {date}",
     "product_pay": "Pagar",
     "product_state_cancelled": "Cancel·lat",
@@ -694,7 +693,8 @@
     "past_plan_type_merchandise": "Article",
     "past_plan_type_other": "Altres",
     "plan_fee_per_member": "{count, plural, one {Per membre} other {Per membre × #}}",
-    "plan_fee_per_family": "Per família"
+    "plan_fee_per_family": "Per família",
+    "product_cancel": "Cancel·lar"
   },
   "payments": {
     "title": "Pagaments",
@@ -792,7 +792,16 @@
       "canceled": "Cancel·lat",
       "refunded": "Reemborsat",
       "partially_refunded": "Reemborsat parcialment"
-    }
+    },
+    "pay": "Pagar",
+    "cancel": "Cancel·lar",
+    "cancel_title": "Vols cancel·lar la compra?",
+    "cancel_body": "Vols cancel·lar {name}? La compra pendent de pagament es cancel·la amb tot el que conté. No es cobra ni es reemborsa res.",
+    "cancel_keep": "Mantenir",
+    "cancel_confirm": "Cancel·lar compra",
+    "cancel_error": "No s'ha pogut cancel·lar la compra. Torna-ho a provar.",
+    "cancel_error_settled": "Aquest pagament ja s'ha fet, així que la compra ja no es pot cancel·lar aquí. Posa't en contacte amb el teu gimnàs.",
+    "cancel_error_unresolved": "Un pagament d'aquesta compra encara s'està processant. Torna-ho a provar d'aquí a uns minuts."
   },
   "payment_banner": {
     "pending_heading": "Tens un pagament pendent",
