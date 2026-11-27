@@ -57,11 +57,11 @@ export async function insertRecurringLine(tx: Conn, line: NewRecurringLine): Pro
     `INSERT INTO product_periodical_snapshots
        (gym_id, member_id, product_id, source_id, line_ref, status,
         quantity, starts_at, schedule_id, origin, assigned_member_id, created_at,
-        product_name, product_type, unit_price, billing_frequency, currency, tax_rate_percent)
+        product_name, product_type, unit_price, billing_frequency, currency, tax_rate_percent, notes)
      SELECT gc.gym_id, ps.owner_member_id, gc.id, NULL, NULL, ps.status,
             ?, ?, ?, ?, ?, ?,
             ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency,
-            (SELECT tr.rate_percent FROM tax_rates tr WHERE tr.id = gc.tax_rate_id)
+            (SELECT tr.rate_percent FROM tax_rates tr WHERE tr.id = gc.tax_rate_id), gc.notes
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        JOIN product_sets ps ON ps.id = ? AND ps.gym_id = gc.gym_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
@@ -127,7 +127,7 @@ export async function copyRecurringLines(
 const SNAPSHOT_LINE_COLUMNS = `s.id AS snapshot_id, s.source_id AS id, s.product_id, s.quantity, s.starts_at, s.ends_at,
             s.product_name AS item_name, s.product_type AS item_type, s.unit_price,
             s.billing_frequency AS item_billing_frequency, s.currency, s.schedule_id,
-            s.list_price AS list_unit_price, s.direct_discount_percent, s.assigned_member_id, s.line_ref, s.origin`;
+            s.list_price AS list_unit_price, s.direct_discount_percent, s.assigned_member_id, s.line_ref, s.origin, s.notes`;
 
 /**
  * One line written onto `toSetId` as an inherited line, with its snapshot from the very values the
@@ -144,14 +144,15 @@ async function copyLine(
        (gym_id, member_id, product_id, source_id, status, copied_from_periodical_snapshot_id,
         product_name, product_type,
         billing_frequency, quantity, currency, unit_price, list_price, direct_discount_percent, starts_at, ends_at,
-        origin, schedule_id, line_ref, created_at, assigned_member_id, tax_rate_percent)
+        origin, schedule_id, line_ref, created_at, assigned_member_id, tax_rate_percent, notes)
      SELECT ps.gym_id, ps.owner_member_id, p.id, NULL, ps.status, ?, COALESCE(?, p.name), COALESCE(?, p.type),
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT tax_rate_percent FROM (SELECT tax_rate_percent FROM product_periodical_snapshots WHERE id = ?) t)
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT tax_rate_percent FROM (SELECT tax_rate_percent FROM product_periodical_snapshots WHERE id = ?) t), ?
        FROM product_sets ps JOIN products p ON p.id = ?
       WHERE ps.id = ? AND ps.gym_id = ?`,
     [Number(r.snapshot_id), r.item_name, r.item_type, r.item_billing_frequency, r.quantity, r.currency, r.unit_price,
       r.list_unit_price, r.direct_discount_percent, r.starts_at, r.ends_at, r.origin, r.schedule_id, r.line_ref,
-      now, assignee, Number(r.snapshot_id), r.product_id, toSetId, gymId]);
+      // #3541: the copy keeps its source's Notes (NULL for a legacy line), never the Product's current ones.
+      now, assignee, Number(r.snapshot_id), r.notes ?? null, r.product_id, toSetId, gymId]);
   if (!insertId) throw new Error(`recurring line ${r.id} could not be copied`);
   const lineId = Number(insertId);
   await tx.query('UPDATE product_periodical_snapshots SET source_id = id WHERE id = ?', [lineId]);

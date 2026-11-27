@@ -390,6 +390,10 @@ export interface MemberPurchasedProduct {
   product_one_time_purchase?: boolean | null;
   product_one_per_member?: boolean | null;
   product_sharing_type?: string | null;
+  /**
+   * #3541 — the Product's Notes as frozen on this purchase's own snapshot when it was written (never the live
+   * Product's; NULL for a snapshot written before migration 498, so nothing is shown rather than today's Notes).
+   */
   product_notes?: string | null;
   /** #3021 — the Product's image (live read, like the rest of its configuration): opens the Product modal from the row. */
   product_image_url?: string | null;
@@ -422,7 +426,7 @@ export async function loadMemberPurchases(
             DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
-            mp.in_product_set, mp.purchase_id, mp.cart_expires_at,
+            mp.in_product_set, mp.purchase_id, mp.cart_expires_at, mp.notes AS snapshot_notes,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id,
             ${assignedMemberSql('mp', 'mp.member_id')} AS assigned_member_id,
             (SELECT am.name FROM members am WHERE am.id = ${assignedMemberSql('mp', 'mp.member_id')}) AS assigned_member_name
@@ -487,6 +491,7 @@ export async function loadMemberPurchases(
       purchase_id: row.purchase_id == null ? null : Number(row.purchase_id),
       assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
       assigned_member_name: row.assigned_member_name ?? null,
+      product_notes: row.snapshot_notes ?? null,
     };
   });
   const recurring = await loadRecurringPurchases(gymId, memberId);
@@ -496,7 +501,7 @@ export async function loadMemberPurchases(
   return all;
 }
 
-/** #3021 — attach each row's Product configuration (one query for the whole list); the staff read only, never `/me`. */
+/** #3021 — attach each row's Product configuration (one query for the whole list); the staff read only, never `/me`. #3541: the Notes are the snapshot's own (`loadMemberPurchases()`), never read here; the image stays the live Product's. */
 export async function withProductConfiguration(
   gymId: string,
   items: MemberPurchasedProduct[],
@@ -504,7 +509,7 @@ export async function withProductConfiguration(
   const ids = [...new Set(items.map((i) => i.product_id).filter((id) => Number.isInteger(id) && id > 0))];
   if (ids.length === 0) return items;
   const { rows } = await db.query<any>(
-    `SELECT id, description, mandatory, one_time_purchase, one_per_member, sharing_type, notes, image_url, image_thumbnail_url
+    `SELECT id, description, mandatory, one_time_purchase, one_per_member, sharing_type, image_url, image_thumbnail_url
        FROM products WHERE gym_id = ? AND id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids],
   );
@@ -518,7 +523,6 @@ export async function withProductConfiguration(
       product_one_time_purchase: p ? Boolean(p.one_time_purchase) : null,
       product_one_per_member: p ? Boolean(p.one_per_member) : null,
       product_sharing_type: p ? p.sharing_type ?? null : null,
-      product_notes: p ? p.notes ?? null : null,
       product_image_url: p ? p.image_url ?? null : null,
       product_image_thumbnail_url: p ? p.image_thumbnail_url ?? null : null,
     };
@@ -636,7 +640,7 @@ async function loadRecurringPurchases(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.ends_at, s.created_at, s.origin, s.purchase_id, ps.status AS set_status, ps.id AS set_id,
+            s.currency, s.starts_at, s.ends_at, s.created_at, s.origin, s.purchase_id, s.notes AS snapshot_notes, ps.status AS set_status, ps.id AS set_id,
             (SELECT src.ends_at FROM product_periodical_snapshots src
               WHERE src.id = s.copied_from_periodical_snapshot_id) AS source_ends_at,
             COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
@@ -675,7 +679,7 @@ async function loadRecurringPurchases(
     `SELECT s.source_id AS id, s.product_id, s.quantity, s.product_name AS item_name,
             s.product_type AS item_type, s.unit_price, s.list_price AS list_unit_price,
             s.direct_discount_percent, s.billing_frequency AS item_billing_frequency,
-            s.currency, s.starts_at, s.ends_at, s.created_at, s.origin, s.purchase_id, ps.id AS set_id,
+            s.currency, s.starts_at, s.ends_at, s.created_at, s.origin, s.purchase_id, s.notes AS snapshot_notes, ps.id AS set_id,
             COALESCE(s.tax_rate_percent, (SELECT tr.rate_percent FROM products tp JOIN tax_rates tr ON tr.id = tp.tax_rate_id
                                            WHERE tp.id = s.product_id AND tp.gym_id = s.gym_id)) AS tax_rate_percent,
             COALESCE(s.line_ref, s.source_id) AS line_ref, ps.created_by AS set_created_by,
@@ -764,6 +768,7 @@ async function loadRecurringPurchases(
         quantity: Number(row.quantity) || 1,
         assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
         assigned_member_name: row.assigned_member_name ?? null,
+        product_notes: row.snapshot_notes ?? null,
       };
     });
   const activeRows: MemberPurchasedProduct[] = rows.map((active: any) => {
@@ -819,6 +824,7 @@ async function loadRecurringPurchases(
       quantity: Number(row.quantity) || 1,
       assigned_member_id: row.assigned_member_id == null ? null : Number(row.assigned_member_id),
       assigned_member_name: row.assigned_member_name ?? null,
+      product_notes: row.snapshot_notes ?? null,
     };
   });
   return [...activeRows, ...draftOnly];
