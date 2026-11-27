@@ -47,22 +47,30 @@ export function canResyncWithSystem(row: { source?: string | null; gym_id?: unkn
 export interface TemplateForm {
   name: string;
   description: string;
+  /** #3474: the note written for the member, below Description; copied onto a plan assigned from the template. */
+  member_notes: string;
   status: string;
   num_days: number;
 }
 
-export const EMPTY_TEMPLATE_FORM: TemplateForm = { name: '', description: '', status: 'active', num_days: 0 };
+export const EMPTY_TEMPLATE_FORM: TemplateForm = { name: '', description: '', member_notes: '', status: 'active', num_days: 0 };
 
-export function templateFormFromRow(row: { name: string; description: string | null; status: string; num_days?: unknown }): TemplateForm {
-  return { name: row.name, description: row.description ?? '', status: row.status, num_days: toNumDays(row.num_days) };
+export function templateFormFromRow(row: { name: string; description: string | null; member_notes?: string | null; status: string; num_days?: unknown }): TemplateForm {
+  return { name: row.name, description: row.description ?? '', member_notes: row.member_notes ?? '', status: row.status, num_days: toNumDays(row.num_days) };
 }
 
 /** The POST/PUT body; `null` with an error key when the form cannot be submitted. */
 export function templatePayload(form: TemplateForm):
-  | { ok: true; body: { name: string; description: string | null; status: string; num_days: number } }
+  | { ok: true; body: { name: string; description: string | null; member_notes: string | null; status: string; num_days: number } }
   | { ok: false; errorKey: 'error_required' | 'error_num_days' } {
   const name = form.name.trim();
   if (!name) return { ok: false, errorKey: 'error_required' };
   if (!isValidNumDays(form.num_days)) return { ok: false, errorKey: 'error_num_days' };
-  return { ok: true, body: { name, description: form.description.trim() || null, status: form.status, num_days: form.num_days } };
+  return { ok: true, body: {
+    name,
+    description: form.description.trim() || null,
+    member_notes: form.member_notes.trim() || null,
+    status: form.status,
+    num_days: form.num_days,
+  } };
 }

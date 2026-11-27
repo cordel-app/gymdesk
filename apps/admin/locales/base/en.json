@@ -4643,7 +4643,8 @@
     "hierarchy_failed": "The plan could not be loaded.",
     "tree_goal_image_close": "Close",
     "tree_goal_image_none": "No image",
-    "tree_goal_no_description": "No description available."
+    "tree_goal_no_description": "No description available.",
+    "label_member_notes": "Member Notes"
   },
   "nutrition_library": {
     "details_slug": "Slug",
@@ -5893,8 +5894,6 @@
     "col_created_at": "Created At",
     "col_created_by": "Created By",
     "col_status": "Status",
-    "version_confirm": "Saving ends the current version of this plan today and creates a new version, with your changes, starting tomorrow. The previous version stays available as history.",
-    "version_confirm_btn": "Save new version",
     "title": "Assigned Nutrition Plans",
     "replace_confirm_title": "Active Nutrition Plan already assigned",
     "replace_confirm": "This member already has an active Nutrition Plan (\"{name}\"). Continuing supersedes it: the previous plan is marked Completed and ends the day before the new plan starts, and the new plan becomes the member's active plan. The previous plan stays available as history.",
@@ -5931,8 +5930,6 @@
     "error_generic": "An error occurred. Please try again.",
     "edit": "Edit",
     "details": "Details",
-    "duplicate": "Duplicate",
-    "duplicated": "Nutrition plan duplicated.",
     "complete": "Mark as Completed",
     "confirm_complete": "Mark this nutrition plan as completed? It will become read-only.",
     "save_changes": "Save Changes",
@@ -5948,7 +5945,14 @@
     "unsaved_discard": "Discard changes",
     "col_end_date": "End Date",
     "label_end_date": "End Date",
-    "open_ended": "Open-ended"
+    "open_ended": "Open-ended",
+    "label_member_notes": "Member Notes",
+    "activate": "Activate",
+    "activate_title": "Activate nutrition plan",
+    "activate_confirm_replace": "The plan \"{name}\" will be completed and this plan will become the member's active nutrition plan.",
+    "activate_confirm_none": "This plan will become the member's active nutrition plan.",
+    "keep_as_draft": "Keep as Draft",
+    "activated": "Nutrition plan activated."
   },
   "operating_hours": {
     "title": "Operating Hours & Holidays",
