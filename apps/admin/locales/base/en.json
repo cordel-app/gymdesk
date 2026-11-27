@@ -681,8 +681,6 @@
     "recurring_payment_pending": "Payment pending",
     "cart_expires_in": "Expires in",
     "payment_expires_in": "Payment expires in",
-    "summary_purchase_show_details": "Show details",
-    "summary_purchase_hide_details": "Hide details",
     "recurring_expired": "This draft has expired.",
     "recurring_plan_label": "Membership Plan",
     "recurring_from_plan": "from plan",
