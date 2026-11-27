@@ -12,6 +12,12 @@ import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MEMBER_LOCALES, isMemberLocale, memberLocaleLabel } from '@/lib/memberLocale';
 import { MemberPhotoField } from '@/components/MemberPhotoField';
+import { ImagePreviewButton } from '@/components/ImagePreview';
+import {
+  DEFAULT_PAYMENT_METHOD_PATH,
+  defaultPaymentMethodDisplay,
+  type MemberDefaultPaymentMethod,
+} from '@/lib/memberDefaultPaymentMethod';
 import {
   inputStyle,
   memberTheme,
@@ -64,6 +70,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'ok' | 'pending' | 'failed' | null>(null);
+  // #3503: read-only; `undefined` while loading, `null` when it could not be read (the row is then absent).
+  const [defaultMethod, setDefaultMethod] = useState<MemberDefaultPaymentMethod | null | undefined>(undefined);
 
   const [toast, setToast] = useState<string | null>(null);
 
@@ -80,12 +88,14 @@ export default function ProfilePage() {
     let cancelled = false;
     (async () => {
       try {
-        const [data, prs] = await Promise.all([
+        const [data, prs, method] = await Promise.all([
           apiFetch<Profile>('/me/profile'),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
+          apiFetch<MemberDefaultPaymentMethod>(DEFAULT_PAYMENT_METHOD_PATH).catch(() => null),
         ]);
         if (cancelled) return;
         setProfile(data);
+        setDefaultMethod(method);
         if (prs.some((p) => p.status === 'failed')) setPaymentStatus('failed');
         else if (prs.some((p) => p.status === 'pending')) setPaymentStatus('pending');
         else setPaymentStatus('ok');
@@ -223,6 +233,30 @@ export default function ProfilePage() {
           {localeError && <p style={styles.fieldError}>{localeError}</p>}
         </div>
 
+        {/* #3503: the Default Payment Method staff saved, read-only — no control
+            here can change it. The thumbnail opens the app's one image preview. */}
+        {defaultMethod && (() => {
+          const shown = defaultPaymentMethodDisplay(defaultMethod, t('profile.default_payment_method_automated'));
+          return (
+            <div style={styles.editRow}>
+              <p style={styles.label}>{t('profile.default_payment_method')}</p>
+              {shown.kind === 'empty' ? (
+                <p style={styles.value}><span style={styles.empty}>{t('profile.default_payment_method_none')}</span></p>
+              ) : (
+                <div style={styles.methodRow}>
+                  {shown.thumbnail && (
+                    <ImagePreviewButton src={shown.image} alt={shown.label} title={shown.label} description={shown.description} style={styles.methodThumbButton}>
+                      <img src={shown.thumbnail} alt="" style={styles.methodThumb} />
+                    </ImagePreviewButton>
+                  )}
+                  <p style={{ ...styles.value, margin: 0 }}>{shown.label}</p>
+                </div>
+              )}
+              <p style={styles.note}>{t('profile.default_payment_method_readonly')}</p>
+            </div>
+          );
+        })()}
+
         <div style={{ padding: '12px 0' }}>
           <p style={styles.label}>{t('profile.payment_status')}</p>
           <p style={styles.value}>
@@ -264,5 +298,8 @@ const styles: Record<string, React.CSSProperties> = {
   btnSave:     { ...primaryButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
   btnCancel:   { ...secondaryButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
   toast:       { ...noticeStyle('success'), marginBottom: 16 },
+  methodRow:   { display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 },
+  methodThumbButton: { width: 40, height: 40, flexShrink: 0 },
+  methodThumb: { width: 40, height: 40, objectFit: 'contain' as const, borderRadius: 6, display: 'block' },
   hint:        { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

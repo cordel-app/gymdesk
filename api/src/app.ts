@@ -12,6 +12,7 @@ import { productSetsRouter, meProductSetsRouter } from './api/product-sets-route
 import { meCartRouter } from './api/me-cart';
 import { mePurchaseHistoryRouter } from './api/me-purchase-history';
 import { mePaymentGatewayRouter } from './api/me-payment-gateway';
+import { meDefaultPaymentMethodRouter } from './api/me-default-payment-method';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { superadminsRouter } from './api/superadmins';
 import { orphanedAccountsRouter } from './api/orphaned-accounts';
@@ -360,6 +361,8 @@ app.use('/me/cart', requireAuth(), tenantContext, centerContext, meCartRouter);
 // #3443: the Members App's Purchases tab (the member's own purchases, read-only). Mounted BEFORE /me.
 app.use('/me/purchase-history', requireAuth(), tenantContext, centerContext, mePurchaseHistoryRouter);
 app.use('/me/payment-gateway-status', requireAuth(), tenantContext, centerContext, mePaymentGatewayRouter);
+// #3503: the member's Default Payment Method, read-only (Members App Profile). Mounted BEFORE /me.
+app.use('/me/default-payment-method', requireAuth(), tenantContext, centerContext, meDefaultPaymentMethodRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE

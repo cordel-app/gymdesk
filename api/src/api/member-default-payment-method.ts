@@ -21,16 +21,19 @@ import {
  */
 export const memberDefaultPaymentMethodRouter = Router({ mergeParams: true });
 
-interface CatalogueEntry { code: string; status: string; name: string; image_url: string | null; image_thumbnail_url: string | null }
+export interface CatalogueEntry { code: string; status: string; name: string; description: string | null; image_url: string | null; image_thumbnail_url: string | null }
 
-async function loadCatalogue(locale: string): Promise<Map<string, CatalogueEntry>> {
+/** The payment-method catalogue in the request's locale (English, then the code, as the fallback). Shared with `GET /me/default-payment-method` (#3503). */
+export async function loadCatalogue(locale: string): Promise<Map<string, CatalogueEntry>> {
   const { rows } = await db.query<CatalogueEntry>(
     `SELECT m.code, m.status, m.image_url, m.image_thumbnail_url,
             COALESCE((SELECT t.name FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = ?),
                      (SELECT t.name FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = 'en'),
-                     m.code) AS name
+                     m.code) AS name,
+            COALESCE((SELECT t.description FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = ?),
+                     (SELECT t.description FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = 'en')) AS description
        FROM base_payment_methods m
-      WHERE m.deleted_at IS NULL`, [locale]);
+      WHERE m.deleted_at IS NULL`, [locale, locale]);
   return new Map(rows.map((r) => [String(r.code), r]));
 }
 
