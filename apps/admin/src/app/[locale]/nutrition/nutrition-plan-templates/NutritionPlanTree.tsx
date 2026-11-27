@@ -603,8 +603,10 @@ function DayRow({
         </DndContext>
 
         {canWrite && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+          // #3482: Add Meal sits beside the meal being chosen, on the left — never
+          // pushed to the far edge of the day by a full-width picker.
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+            <div style={{ flex: '0 1 320px', minWidth: 0 }}>
               <MealPicker
                 value={addMealType ? Number(addMealType) : null}
                 meals={baseMeals}
