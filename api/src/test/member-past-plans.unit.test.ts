@@ -22,6 +22,9 @@ import {
   withCancelledPlanSets,
 } from '../domain/memberPlanHistory';
 import {
+  mergePastEntries,
+  pastEntryTypeKey,
+  type MemberPastProduct,
   pastPlanEndedOn,
   pastPlanLineGroup,
   pastPlanLineMeta,
@@ -229,7 +232,7 @@ describe('how the Members App words one', () => {
 
   it('resolves no t() and spells no colour in either half', () => {
     const lib = withoutComments(read(MEMBER, 'src', 'lib', 'memberPlans.ts'));
-    const card = withoutComments(read(MEMBER, 'src', 'components', 'PastMembershipPlansCard.tsx'));
+    const card = withoutComments(read(MEMBER, 'src', 'components', 'PastPlansAndProductsCard.tsx'));
     for (const source of [lib, card]) {
       expect(source).not.toMatch(/\bt\(/);
       expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
@@ -242,14 +245,14 @@ describe('how the Members App words one', () => {
     // the chrome out of the Payments card removed.
     // Since #2740 Payments is a tab of its own and wears no outer card at all,
     // so it must not grow a collapsible card of its own either.
-    const card = read(MEMBER, 'src', 'components', 'PastMembershipPlansCard.tsx');
+    const card = read(MEMBER, 'src', 'components', 'PastPlansAndProductsCard.tsx');
     const payments = withoutComments(read(MEMBER, 'src', 'components', 'MemberPaymentsCard.tsx'));
     expect(card).toContain('MemberCollapsibleCard');
     expect(payments).not.toMatch(/CollapsibleCard/);
   });
 
   it('#3293 — draws each past plan with My Plans\' own plan card, with no picture and no action', () => {
-    const card = withoutComments(read(MEMBER, 'src', 'components', 'PastMembershipPlansCard.tsx'));
+    const card = withoutComments(read(MEMBER, 'src', 'components', 'PastPlansAndProductsCard.tsx'));
     expect(card).toContain('<MemberPlanCard');
     const page = withoutComments(read(MEMBER, 'src', 'app', '[locale]', 'membership', 'page.tsx'));
     const fn = page.slice(page.indexOf('function pastPlanCardItem'), page.indexOf('function renderPastPlans'));
@@ -310,5 +313,59 @@ describe('#3293 — a past plan\'s items read as an active plan\'s', () => {
     expect(pastPlanLineMeta(line({ billing_frequency: null }))).toEqual([
       { key: 'membership.plan_line_quantity', values: { quantity: 2 } },
     ]);
+  });
+});
+
+describe('#3539 — Past Plans and Products', () => {
+  const plan = (id: number, ended_on: string | null) => ({
+    id, membership_plan_id: 10, plan_name: `Plan ${id}`, status: 'cancelled', starts_at: '2026-01-01', ended_on,
+  });
+  const product = (id: string, end_date: string): MemberPastProduct => ({
+    id, product_name: `Product ${id}`, status: 'cancelled', start_date: '2026-02-01', end_date, source: 'one_time',
+  });
+
+  it('lists plans and Products together, the most recently ended first, each typed by its own list', () => {
+    const entries = mergePastEntries(
+      [plan(1, '2026-09-12'), plan(2, null), plan(3, '2026-05-01')],
+      [product('one_time-7', '2026-10-01'), product('recurring-8', '2026-05-01')],
+    );
+    expect(entries.map((e) => e.key)).toEqual([
+      'product-one_time-7', 'plan-1', 'plan-3', 'product-recurring-8', 'plan-2',
+    ]);
+    expect(entries.map(pastEntryTypeKey)).toEqual([
+      'membership.past_entry_type_product', 'membership.past_entry_type_plan', 'membership.past_entry_type_plan',
+      'membership.past_entry_type_product', 'membership.past_entry_type_plan',
+    ]);
+  });
+
+  it('keys a plan cancelled while awaiting payment by its Product Set, never colliding with an assignment', () => {
+    const [entry] = mergePastEntries([{ ...plan(5, '2026-09-01'), product_set_id: 5 }], []);
+    expect(entry.key).toBe('plan-ps-5');
+  });
+
+  it('declares the heading, the count and both type labels in every locale', () => {
+    for (const code of LOCALES) {
+      const membership = messages(code).membership;
+      expect(membership.past_entry_type_plan).toBeTruthy();
+      expect(membership.past_entry_type_product).toBeTruthy();
+      expect(membership.past_plans_count).toContain('plural');
+    }
+    expect(messages('en').membership.past_plans_heading).toBe('Past Plans and Products');
+  });
+
+  it('draws the entries as one flat list inside the one card: no nested card per row', () => {
+    const card = withoutComments(read(MEMBER, 'src', 'components', 'PastPlansAndProductsCard.tsx'));
+    expect(card).toContain('flat: true');
+    expect(card).not.toContain('sectionCardStyle');
+    const planCard = withoutComments(read(MEMBER, 'src', 'components', 'MemberPlanCatalogue.tsx'));
+    expect(planCard).toMatch(/item\.flat \? styles\.flatRow : styles\.card/);
+    const flatRow = planCard.slice(planCard.indexOf('flatRow:'), planCard.indexOf('flatDetails:'));
+    expect(flatRow).not.toMatch(/sectionCardStyle|borderRadius|boxShadow|border:/);
+  });
+
+  it('reads the Products from the server, never filtering the current list itself', () => {
+    const page = withoutComments(read(MEMBER, 'src', 'app', '[locale]', 'membership', 'page.tsx'));
+    expect(page).toContain('past_items');
+    expect(page).toContain('mergePastEntries(pastPlans, pastProducts)');
   });
 });

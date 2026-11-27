@@ -8,7 +8,7 @@ import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
-import { ownPurchaseEndDate, ownPurchaseState, type OwnPurchaseState } from '../domain/memberOwnPurchases';
+import { ownPurchaseEndDate, ownPurchaseState, pastOwnPurchaseEndDate, type OwnPurchaseState } from '../domain/memberOwnPurchases';
 import { loadMemberPurchases } from './member-product-promotions';
 import {
   MEMBER_PURCHASE_SNAPSHOTS_SQL, memberPurchaseSnapshotParams, purchaseSnapshotsSql, purchaseSnapshotParams,
@@ -943,6 +943,63 @@ export async function loadOwnPurchases(gymId: string, memberId: number) {
     items.push({ ...p, own_state: state, end_date: ownPurchaseEndDate(row) });
   }
   return items;
+}
+
+/** #3539 — one Product of the member's history, as *Past Plans and Products* lists it. */
+export interface PastOwnPurchase {
+  id: string;
+  product_name: string;
+  /** What became of it: a held Product leaves the current list only once cancelled. */
+  status: 'cancelled';
+  /** 'YYYY-MM-DD' — the day the member started holding it, else `null`. */
+  start_date: string | null;
+  /** 'YYYY-MM-DD' — its last valid day. */
+  end_date: string;
+  source: 'one_time' | 'recurring';
+}
+
+const dayOf = (v: unknown): string | null =>
+  v == null ? null : (v instanceof Date ? DateTime.fromJSDate(v, { zone: 'utc' }).toISODate() : String(v).slice(0, 10));
+
+/**
+ * #3539 — the Products the member held and no longer holds, newest end first:
+ *  - a one-time purchase whose cancellation has taken effect (`pastOwnPurchaseEndDate()`,
+ *    the day `loadOwnPurchases()` stops listing it, so nothing is listed twice);
+ *  - a recurring line of the member's Active Product Set whose End Date has passed — the
+ *    exact bound (`ends_at >= CURDATE()`) under which the current list reads it.
+ * Read-only, every field the purchase's or line's own stored copy (#635 §16).
+ */
+export async function loadPastOwnPurchases(gymId: string, memberId: number): Promise<PastOwnPurchase[]> {
+  const { rows: gymRows } = await db.query<any>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+  const today = DateTime.now().setZone(resolveTimeZone(gymRows[0]?.time_zone)).toISODate()!;
+  const out: PastOwnPurchase[] = [];
+  for (const p of await loadMemberPurchases(gymId, memberId)) {
+    if (p.source === 'recurring') continue;
+    const end = pastOwnPurchaseEndDate(
+      { status: p.status, valid_until: p.valid_until ?? null, cancelled_on: p.cancelled_on ?? null }, today);
+    if (!end) continue;
+    out.push({
+      id: `one_time-${p.id}`, product_name: p.product_name, status: 'cancelled',
+      start_date: dayOf(p.purchased_at ?? p.created_at), end_date: end, source: 'one_time',
+    });
+  }
+  const { rows: lines } = await db.query<any>(
+    `SELECT DISTINCT s.source_id AS id, s.product_name, s.starts_at, s.ends_at
+       FROM product_sets ps
+       JOIN product_set_periodical_snapshots lnk ON lnk.product_set_id = ps.id
+       JOIN product_periodical_snapshots s
+         ON s.id = lnk.product_periodical_snapshot_id AND s.gym_id = ps.gym_id AND s.source_id IS NOT NULL
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'active'
+        AND s.ends_at IS NOT NULL AND s.ends_at < CURDATE()`,
+    [gymId, memberId],
+  );
+  for (const l of lines as any[]) {
+    out.push({
+      id: `recurring-${l.id}`, product_name: l.product_name, status: 'cancelled',
+      start_date: dayOf(l.starts_at), end_date: dayOf(l.ends_at)!, source: 'recurring',
+    });
+  }
+  return out.sort((a, b) => b.end_date.localeCompare(a.end_date) || a.id.localeCompare(b.id));
 }
 
 /**

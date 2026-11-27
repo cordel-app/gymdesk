@@ -47,3 +47,17 @@ export function ownPurchaseEndDate(row: OwnPurchaseRow): string | null {
   if (row.cancelled_on) return endDateOnCancel(row.valid_until, row.cancelled_on);
   return row.valid_until ?? null;
 }
+
+/**
+ * #3539 — a one-time purchase the member held whose cancellation has taken effect:
+ * an `active` (paid) purchase cancelled by the member or staff whose end date
+ * (`endDateOnCancel()`) is today or earlier. It is exactly what `ownPurchaseState()`
+ * stops listing among the current Products on that day, so a Product is never in
+ * both lists, and a purchase whose payment never completed (`status = 'cancelled'`)
+ * is not history: the member never held it. Answers the end date, else `null`.
+ */
+export function pastOwnPurchaseEndDate(row: OwnPurchaseRow, today: string): string | null {
+  if (row.status !== 'active' || !row.cancelled_on) return null;
+  const end = endDateOnCancel(row.valid_until, row.cancelled_on);
+  return end <= today ? end : null;
+}

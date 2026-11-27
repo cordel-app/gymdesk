@@ -412,7 +412,7 @@
     "products_service_filter_label": "Professional Service",
     "products_service_filter_all": "All products",
     "products_service_filter_several": "Several services",
-    "past_plans_heading": "Past Membership Plans",
+    "past_plans_heading": "Past Plans and Products",
     "other_plans_heading": "Your other Membership Plans",
     "other_plans_count": "{count, plural, one {# plan} other {# plans}}",
     "add_plan": "+ Add Plan",
@@ -468,7 +468,7 @@
     "plan_pending_payment_amount": "Pending payment: {amount}",
     "plan_pending_cancel": "Cancel",
     "promotion_duration_months": "{count, plural, one {# month} other {# months}}",
-    "past_plans_count": "{count, plural, one {# plan} other {# plans}}",
+    "past_plans_count": "{count, plural, one {# entry} other {# entries}}",
     "product_sessions_price": "{count, plural, one {Total price for # session} other {Total price for # sessions}}",
     "product_package_price": "Total price for the package",
     "product_tax_included": "Tax included",
@@ -694,6 +694,8 @@
     "past_plan_type_other": "Other",
     "plan_fee_per_member": "{count, plural, one {Per member} other {Per member × #}}",
     "plan_fee_per_family": "Per family",
+    "past_entry_type_plan": "Plan",
+    "past_entry_type_product": "Product",
     "product_cancel": "Cancel"
   },
   "payments": {

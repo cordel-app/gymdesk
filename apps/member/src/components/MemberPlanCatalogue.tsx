@@ -68,6 +68,16 @@ export interface MemberPlanCardItem {
   notice?: ReactNode;
   /** #2744 — extra content of the expanded card (*My Plans*: dates and items). */
   details?: ReactNode;
+  /**
+   * #3539 — a row of *Past Plans and Products*: no card, border or frame of its
+   * own (the section's one card is the frame), a hairline above every row (the first one
+   * separating the list from the section header).
+   */
+  flat?: boolean;
+  /** #3539 — the entry's type (`PLAN` / `PRODUCT`), already resolved, before the name. */
+  typeLabel?: string | null;
+  /** #3539 — `false` for a row with nothing more to show: no arrow, no toggle. Default true. */
+  expandable?: boolean;
 }
 
 export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLabel }: {
@@ -105,10 +115,11 @@ export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLa
 export function MemberPlanCard({ item }: { item: MemberPlanCardItem }) {
   const [open, setOpen] = useState(false);
   const [broken, setBroken] = useState(false);
-  const toggle = () => setOpen((v) => !v);
+  const expandable = item.expandable !== false;
+  const toggle = () => { if (expandable) setOpen((v) => !v); };
   const showImage = !!item.imageUrl && !broken;
   return (
-    <li style={styles.card}>
+    <li style={item.flat ? styles.flatRow : styles.card} data-flat-row={item.flat ? '' : undefined}>
       <div style={styles.cardRow}>
         {showImage && (
         <div style={styles.imageCol} onClick={(e) => e.stopPropagation()}>
@@ -121,15 +132,20 @@ export function MemberPlanCard({ item }: { item: MemberPlanCardItem }) {
             </ImagePreviewButton>
         </div>
         )}
-        <div style={styles.summary}>
+        <div style={item.flat ? { ...styles.summary, padding: '12px 0' } : styles.summary}>
           <div
-            role="button" tabIndex={0} aria-expanded={open}
-            style={styles.summaryButton}
+            role={expandable ? 'button' : undefined} tabIndex={expandable ? 0 : undefined}
+            aria-expanded={expandable ? open : undefined}
+            style={expandable ? styles.summaryButton : { ...styles.summaryButton, cursor: 'default' }}
             onClick={toggle}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
           >
             <div style={styles.head}>
-              <span style={styles.name}>{open ? '▾' : '▸'} {item.name}</span>
+              <span style={styles.name}>
+                {expandable ? `${open ? '▾' : '▸'} ` : ''}
+                {item.typeLabel && <span style={styles.typeLabel} data-entry-type>{item.typeLabel}</span>}
+                {item.name}
+              </span>
               <span style={styles.priceGroup}>
                 {item.status}
                 {item.showCharge !== false && <span style={styles.price}>{item.price ?? '—'}</span>}
@@ -151,8 +167,8 @@ export function MemberPlanCard({ item }: { item: MemberPlanCardItem }) {
           {item.action && <div style={styles.action} onClick={(e) => e.stopPropagation()}>{item.action}</div>}
         </div>
       </div>
-      {open && (
-        <div style={styles.details}>
+      {open && expandable && (
+        <div style={item.flat ? styles.flatDetails : styles.details}>
           {item.description && <p style={styles.description}>{item.description}</p>}
               {item.details}
               {item.overview && <MemberPlanOverview view={item.overview} />}
@@ -188,6 +204,13 @@ const styles: Record<string, CSSProperties> = {
   closeBtn: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: memberTheme.textMuted },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
   card: { ...sectionCardStyle, padding: 0, overflow: 'hidden' },
+  // #3539 — a flat row: no surface, border, radius or shadow of its own; the hairline is the separator role.
+  flatRow: { borderTop: `1px solid ${memberTheme.separator}`, padding: 0 },
+  flatDetails: { padding: '0 0 12px' },
+  typeLabel: {
+    display: 'inline-block', marginRight: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: 0.6,
+    textTransform: 'uppercase', color: memberTheme.textMuted, verticalAlign: 'middle',
+  },
   details: { padding: '0 14px 12px' },
   cardRow: { display: 'flex', alignItems: 'stretch' },
   imageCol: { width: 96, flexShrink: 0, position: 'relative', alignSelf: 'stretch' },

@@ -3,7 +3,7 @@
 //
 // The split is `memberPayments.ts`' (#1123) and `memberProducts.ts`' (#1121):
 // this module answers which locale **key** a row reads under and how its date is
-// written, `components/PastMembershipPlansCard.tsx` is the look, and the page
+// written, `components/PastPlansAndProductsCard.tsx` is the look, and the page
 // resolves the keys — so nothing here calls `t()` and both halves stay
 // assertable (`api/src/test/member-past-plans.unit.test.ts`, in the API suite
 // because CI runs `npm test` in `api/` only).
@@ -245,4 +245,51 @@ export function planAccessLines(entries: readonly MemberPlanAccessEntry[] | null
     }
   }
   return out;
+}
+
+/* ── #3539: Past Plans and Products ──────────────────────────────────────────
+ * The history section lists the member's finished Membership Plans and the
+ * Products they no longer hold, together. Which entries are past is the
+ * server's (`past_memberships` on `GET /me/membership`, `past_items` on
+ * `GET /me/purchases`); this only merges the two lists and says which type
+ * each entry is, so a Product is never worded as a plan or the reverse. */
+
+/** One row of `past_items`, as `GET /me/purchases` reports it. */
+export interface MemberPastProduct {
+  id: string;
+  product_name: string;
+  status: 'cancelled';
+  start_date: string | null;
+  end_date: string;
+  source: 'one_time' | 'recurring';
+}
+
+export type PastEntry =
+  | { kind: 'plan'; key: string; plan: MemberPastPlan }
+  | { kind: 'product'; key: string; product: MemberPastProduct };
+
+/** The locale key of the type label a past row carries — never inferred from anything but its list. */
+export function pastEntryTypeKey(entry: PastEntry): string {
+  return entry.kind === 'plan' ? 'membership.past_entry_type_plan' : 'membership.past_entry_type_product';
+}
+
+/**
+ * Plans and Products in one list, the most recently ended first (an entry with
+ * no end date sorts last); ties keep plans before Products and each list's own
+ * order, so the server's ordering of each half is never re-decided.
+ */
+export function mergePastEntries(plans: MemberPastPlan[], products: MemberPastProduct[]): PastEntry[] {
+  const entries: Array<PastEntry & { end: string; order: number }> = [
+    ...plans.map((plan, i) => ({
+      kind: 'plan' as const, plan, order: i, end: plan.ended_on?.slice(0, 10) ?? '',
+      key: plan.product_set_id != null ? `plan-ps-${plan.product_set_id}` : `plan-${plan.id}`,
+    })),
+    ...products.map((product, i) => ({
+      kind: 'product' as const, product, order: plans.length + i, end: product.end_date ?? '',
+      key: `product-${product.id}`,
+    })),
+  ];
+  return entries
+    .sort((a, b) => b.end.localeCompare(a.end) || a.order - b.order)
+    .map(({ end: _end, order: _order, ...entry }) => entry as PastEntry);
 }
