@@ -1023,6 +1023,21 @@ export function setCommitErrorKey(code: string | null | undefined): string {
 }
 
 /**
+ * #3501 — the statuses of a held plan that will generate no further charge: a plan
+ * already *Cancelled* or *Cancels at End Date* (`cancels_on_end_date` as the Product
+ * Set view words it, `active_cancel_at_period_end` as stored). Its card shows the
+ * status chip and no price, frequency or fee-scope note at all — never a `0 €`.
+ * Presentation only: nothing billed, forecast or recorded reads this.
+ */
+const PLAN_STATUSES_WITHOUT_CHARGE: ReadonlySet<string> = new Set([
+  'cancelled', 'cancels_on_end_date', 'active_cancel_at_period_end',
+]);
+
+export function planShowsCharge(status: string | null | undefined): boolean {
+  return !PLAN_STATUSES_WITHOUT_CHARGE.has(String(status ?? ''));
+}
+
+/**
  * #2834 stage 2 — the note that says how a held plan's Membership Fee is charged, beside its
  * price: once per member (with how many fees that is) or once for the family. `price` stays
  * the price of one fee, the server's; the count is the server's `membership_fee_units`, the

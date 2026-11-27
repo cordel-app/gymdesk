@@ -104,6 +104,23 @@ describe('Member Membership sections (#634)', () => {
     expect(inFlightSrc).not.toContain('confirm');
   });
 
+  it('opens the paid cart\'s detail from the row itself, with no separate buttons (#3509)', () => {
+    const src = stripComments(read('SubmittedCartSummary.tsx'));
+    // The two header buttons are gone: the Billing Event link lives in the expanded detail only.
+    expect(src).not.toContain('action_view_billing_event');
+    expect(src).not.toContain('SummaryPurchaseDetailToggle');
+    expect(src).not.toContain('/payments/billing-events');
+    // The header is the toggle, operable from the keyboard, with its expanded state exposed.
+    expect(src).toContain('role="button"');
+    expect(src).toContain('tabIndex={0}');
+    expect(src).toContain('aria-expanded={open}');
+    expect(src).toContain('onKeyDown={onKeyDown}');
+    // The detail renders outside the clickable header, so its links never toggle the row.
+    const header = src.slice(src.indexOf('role="button"'), src.indexOf('{open && ('));
+    expect(header).not.toContain('<SummaryPurchaseDetail ');
+    expect(src).toContain('<SummaryPurchaseDetail ');
+  });
+
   it('commits through the server\'s own answer — activate, then save-and-pay on payment_required', () => {
     const lib = stripComments(readFileSync(join(__dirname, '..', 'lib', 'productSetCommit.ts'), 'utf-8'));
     expect(lib).toContain('/product-sets/${id}/activate');

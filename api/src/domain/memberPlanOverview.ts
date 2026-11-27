@@ -16,6 +16,7 @@
 
 import { advanceBillingDate, type BillingDateUnit } from './billingDate';
 import type { BillingEventDate } from './billingEventSimulation';
+import { isRecurringFrequency } from './productClassification';
 
 export interface MemberPlanOverviewProduct {
   section: 'session' | 'oneoff' | 'periodical';
@@ -24,6 +25,12 @@ export interface MemberPlanOverviewProduct {
   quantity: number;
   /** The Product's billing frequency, or a Session Benefit's renewal frequency. */
   frequency: string | null;
+  /**
+   * #3504 — whether the item recurs: a Product billed every period, or a
+   * Session Benefit that renews (`isRecurringFrequency()`, #550's one list).
+   * `false` is One-off; an unset frequency is One-off too, never guessed.
+   */
+  recurring: boolean;
   mandatory: boolean;
   action: string | null;
   value: number | null;
@@ -36,6 +43,12 @@ export interface MemberPlanOverviewProduct {
   /** #2495 — the Product's thumbnail and full image, for the circular thumbnail. */
   image_url: string | null;
   image_full_url: string | null;
+  /**
+   * #3504 — the Professional Services the Product gives access to, filled by
+   * `attachPlanItemAccess()` (an empty list: it grants none). This module only
+   * reserves the field, since the services are a read of the database.
+   */
+  access: Array<{ id: number; name: string }>;
 }
 
 export interface MemberPlanOverview {
@@ -101,12 +114,14 @@ export function buildMemberPlanOverview(enriched: any, startsAt: string): Member
   const products: MemberPlanOverviewProduct[] = [];
   for (const [section, rows] of sections) {
     for (const r of rows) {
+      const frequency: string | null = (section === 'session' ? r.frequency : r.product_billing_frequency) ?? null;
       products.push({
         section,
         product_id: num(r.product_id),
         name: String(r.product_name ?? ''),
         quantity: num(r.quantity, 1),
-        frequency: (section === 'session' ? r.frequency : r.product_billing_frequency) ?? null,
+        frequency,
+        recurring: isRecurringFrequency(frequency),
         mandatory: r.mandatory === undefined ? true : Boolean(Number(r.mandatory)) || r.mandatory === true,
         action: r.action ?? null,
         value: numOrNull(r.value),
@@ -117,6 +132,7 @@ export function buildMemberPlanOverview(enriched: any, startsAt: string): Member
         declined: false,
         image_url: r.product_image_thumbnail_url ?? r.product_image_url ?? null,
         image_full_url: r.product_image_url ?? null,
+        access: [],
       });
       const last = products[products.length - 1];
       last.declined = !last.mandatory && declinedKeys.has(`${section}:${last.product_id}`);

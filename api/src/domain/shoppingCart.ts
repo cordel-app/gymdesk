@@ -19,6 +19,32 @@ export function cartCounts(view: {
 }
 
 /**
+ * #3487 — the plan lifecycle marks a cart carries without adding anything: a plan the cart will
+ * cancel at its period end (#3007), reactivate (#3114) or cancel today (#3358). Each is part of what
+ * the cart's commit does, so a cart holding only these is still an active cart.
+ */
+export const CART_PLAN_CHANGE_STATUSES: readonly string[] = ['to_be_canceled', 'to_be_reactivated', 'to_be_canceled_immediately'];
+
+/**
+ * #3487 — how many changes a cart makes beside what it adds (`cartCounts()`): plans it marks
+ * (`CART_PLAN_CHANGE_STATUSES`), recurring lines it removes and lines it cancels immediately. A cart
+ * is active while it adds or changes anything, however it was created (a staff removal in the Admin
+ * App included), so the Members App reads this beside the counts rather than the additions alone.
+ * Zero for any version that is not a cart (In Cart or Pending Payment). Pure: no I/O.
+ */
+export function cartChangeCount(view: {
+  status: string;
+  plans: readonly { status?: string | null }[];
+  removed_lines: readonly unknown[];
+  lines_cancelling_now: number;
+}): number {
+  if (view.status !== 'in_cart' && view.status !== 'pending_payment') return 0;
+  return view.plans.filter((p) => p.status != null && CART_PLAN_CHANGE_STATUSES.includes(p.status)).length
+    + view.removed_lines.length
+    + view.lines_cancelling_now;
+}
+
+/**
  * #3305 — a cart staff are still preparing: the owner's purchase (`purchases`, #3251) is In Cart and
  * was created from the Admin App (`purchases.channel = 'admin_app'`, #3278 — written once, from the
  * route, never from a request field). That is the whole rule: what the cart holds (a plan change,
