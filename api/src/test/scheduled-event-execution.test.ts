@@ -100,6 +100,19 @@ describe('executing persisted Billing Events (#1325 PR 2c)', () => {
     expect((await attempts(eventId)).length).toBe(0);
   });
 
+  it('#3497: a payer whose Default Payment Method is not Automated is not charged; Automated is', async () => {
+    const { eventId, memberId } = await setup({ date: YESTERDAY });
+    await db.query("UPDATE members SET default_payment_method = 'cash' WHERE id = ?", [memberId]);
+    await executeDueScheduledEvents({ today: TODAY });
+    expect(provider.calls.length).toBe(0);
+    expect(Number((await event(eventId)).is_scheduled)).toBe(1);
+    expect((await attempts(eventId)).length).toBe(0);
+
+    await db.query("UPDATE members SET default_payment_method = 'automated' WHERE id = ?", [memberId]);
+    await executeDueScheduledEvents({ today: TODAY });
+    expect(await attempts(eventId)).toEqual([expect.objectContaining({ method: 'provider', status: 'completed' })]);
+  });
+
   it('keeps a PENDING_PROCESSING outcome unresolved, never a failure, and refuses to charge it again', async () => {
     provider.next = { success: false, providerRef: 'ref', providerStatus: 'PENDING_PROCESSING' };
     const { eventId } = await setup();

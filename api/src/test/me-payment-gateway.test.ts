@@ -71,6 +71,12 @@ describe('GET /me/payment-gateway-status (#3512)', () => {
     await db.query('DELETE FROM payment_methods WHERE gym_id = ? AND member_id = ?', [gymId, solo]);
   });
 
+  it('#3497: reads the stored Default Payment Method, and only Automated asks to register', async () => {
+    await db.query("UPDATE members SET default_payment_method = 'cash' WHERE id = ?", [solo]);
+    expect((await as(SOLO)()).body).toEqual({ default_payment_method: 'cash', has_monei_token: false, registration_required: false });
+    await db.query('UPDATE members SET default_payment_method = NULL WHERE id = ?', [solo]);
+  });
+
   it('stops asking once a MONEI token is stored, and writes nothing', async () => {
     await storeToken(solo, 'monei', 'tok_monei');
     const res = await as(SOLO)();

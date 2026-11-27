@@ -3,7 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { getRequestLocale } from '../infra/locale';
-import { modifiedAuditSet, resolveRequestActor } from '../domain/auditActor';
+import { resolveRequestActor } from '../domain/auditActor';
 import {
   catalogueCodeForOption,
   defaultPaymentMethodChanged,
@@ -86,10 +86,10 @@ memberDefaultPaymentMethodRouter.put('/', requireModuleWrite('MEMBERS'), async (
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
     // Saving the value already stored writes nothing, so a repeated save is a no-op.
     if (parsed.value !== stored) {
-      const audit = modifiedAuditSet(resolveRequestActor(ctx));
       await db.query(
-        `UPDATE members SET default_payment_method = ?, ${audit.sql} WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-        [parsed.value, ...audit.params, memberId, gymId]);
+        `UPDATE members SET default_payment_method = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+          WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+        [parsed.value, resolveRequestActor(ctx), memberId, gymId]);
       if (defaultPaymentMethodChanged(stored, parsed.value)) {
         recordAudit(req, {
           action: 'update', entityType: 'member', entityId: memberId,

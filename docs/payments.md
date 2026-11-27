@@ -836,6 +836,7 @@ Per due event, under the event's row lock, exactly one of these:
 | **Already attempted today**, or `MAX_FAILED_DAYS` (2) failed days reached | no | untouched | untouched |
 | **Waived** (`amount = 0`) | no | `is_scheduled = 0`, `event_type = 'waived_billing'` | one `completed` row, `method 'waive'` |
 | **No stored card** | no | untouched — stays scheduled, past due | nothing attempted |
+| **Payer's Default Payment Method is not Automated** (#3497: `members.default_payment_method` is `members_app`, `cash` or `card`) | no | untouched — stays scheduled, past due, for staff or a payment link to collect | nothing attempted |
 | **Success** | yes | `is_scheduled = 0`, `event_type = 'recurring_payment'` | the attempt row, written **before** the call, closed `completed` with the raw `provider_status` (NULL when the answer named none, #3289) |
 | **Rejected** | yes, declined | `event_type = 'failed_billing'` | the attempt closed `failed`, with `failure_code`/`failure_message` and the raw status |
 | **In flight** (`PENDING_PROCESSING`, …) | yes | unchanged | the attempt stays `pending` with the raw status — the webhook settles it |
