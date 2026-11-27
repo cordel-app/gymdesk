@@ -1,5 +1,5 @@
-// #2885 — "a document was issued for this Billing Event". Generate Receipt and
-// Generate Complete Invoice are the ⋮ menu's (`useBillingEventActions`), while
+// #2885 — "a document was issued for this Billing Event". Generate Complete
+// Invoice is the ⋮ menu's (`useBillingEventActions`; receipts are the system's, #3548), while
 // the Receipts & Invoices table lives in the event's expanded row, which both
 // hosts (Payments → Billing Events and the Member card's Payments tab) render
 // and which never remounts when the list re-reads. This is the one signal

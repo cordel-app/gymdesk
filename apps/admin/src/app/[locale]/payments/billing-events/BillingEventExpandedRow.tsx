@@ -13,6 +13,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { ReceiptsInvoicesSection } from './InvoicesSection';
+import { receiptPending } from './receiptsInvoicesView';
 import { useBillingEventDocumentsChanged } from './documentsChanged';
 
 export interface Transaction {
@@ -357,6 +358,7 @@ export function ExpandedRow({
           billingEventId={billingEventId}
           gymFmt={gymFmt}
           receipt={{ number: details?.receipt_number ?? null, issuedAt: details?.receipt_issued_at ?? null }}
+          receiptPending={!!details && receiptPending({ canIssueReceipt: details.can_issue_receipt, receiptNumber: details.receipt_number })}
           refundReceipts={billingEvent.refund_receipts}
         />
 

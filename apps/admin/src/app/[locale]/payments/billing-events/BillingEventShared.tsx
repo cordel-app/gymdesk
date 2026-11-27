@@ -20,7 +20,7 @@ import { PaymentActionKind, actionRequest } from './paymentActions';
 import { RefundModal } from './RefundModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CompleteInvoiceModal } from './CompleteInvoiceModal';
-import { menuDocumentBlocks, operationChipKeys, refundReceiptMenuEntries, type FullInvoiceForm } from './receiptsInvoicesView';
+import { menuFullInvoiceBlock, menuReceiptState, operationChipKeys, refundReceiptMenuEntries, type FullInvoiceForm } from './receiptsInvoicesView';
 import { listNameBadgeStyle } from '@/components/listChrome';
 import { notifyBillingEventDocumentsChanged } from './documentsChanged';
 import { BillingEventDetailsModal } from './BillingEventDetailsModal';
@@ -59,7 +59,7 @@ export interface BillingEventHeaderRow {
   can_refund?: boolean;
   refunded_amount?: string | null;
   refund_state?: string | null;
-  /** #2648 stage 6: the ⋮ menu's Generate Receipt / Generate Complete Invoice. */
+  /** #2648 stage 6 / #3548: the ⋮ menu's View Receipt / Generate Complete Invoice. */
   receipt_number?: string | null;
   can_issue_receipt?: boolean;
   has_full_invoice?: boolean;
@@ -285,17 +285,13 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
-  /** Issues the receipt number on first use and opens the PDF (#787); the route is idempotent. */
-  async function generateReceipt(row: R) {
+  /** #3548: opens an issued receipt's PDF. A read: the number is the system's (#3511), never issued here. */
+  async function viewReceipt(row: R) {
     const id = row.id!;
     setReceiptBusyId(id);
     try {
-      const blob = await pdfFetch(`/payments/${id}/receipt`, row.receipt_number ? 'GET' : 'POST');
+      const blob = await pdfFetch(`/payments/${id}/receipt`, 'GET');
       window.open(URL.createObjectURL(blob), '_blank');
-      if (!row.receipt_number) toast(t('billing_events_page.doc_generated'), 'success');
-      openDetails(id);
-      if (!row.receipt_number) notifyBillingEventDocumentsChanged(id);
-      onChanged();
     } catch (err: any) {
       toast(err?.message ?? t('billing_events_page.action_error'));
     } finally {
@@ -461,20 +457,31 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
     // #2648 stage 6: the event's documents. The simplified invoice has no item —
     // the system issues it; a receipt waits for the payment.
     if (row.id != null) {
-      const blocks = menuDocumentBlocks({
+      const docInput = {
         canWrite, canIssueReceipt: !!row.can_issue_receipt, receiptNumber: row.receipt_number ?? null,
         amount: row.amount, hasFullInvoice: !!row.has_full_invoice,
-      });
+      };
+      const fullBlock = menuFullInvoiceBlock(docInput);
       const blockTitle = (b: string | null) => b === 'gen_blocked_read_only'
         ? (readOnlyTitle ?? t('billing_events_page.gen_blocked_read_only'))
         : b ? t(`billing_events_page.${b}` as any) : undefined;
-      items.push({
-        label: receiptBusyId === id ? t('billing_events_page.doc_generating')
-          : row.receipt_number ? t('billing_events_page.view_receipt') : t('billing_events_page.generate_receipt'),
-        onClick: () => generateReceipt(row),
-        disabled: blocks.receipt != null || receiptBusyId === id,
-        title: blockTitle(blocks.receipt),
-      });
+      // #3548: no Generate Receipt — the system issues it when the payment
+      // completes. An issued one is viewed; a missing one reads as pending.
+      const receiptState = menuReceiptState(docInput);
+      if (receiptState === 'view') {
+        items.push({
+          label: receiptBusyId === id ? t('billing_events_page.doc_generating') : t('billing_events_page.view_receipt'),
+          onClick: () => viewReceipt(row),
+          disabled: receiptBusyId === id,
+        });
+      } else if (receiptState === 'pending') {
+        items.push({
+          label: t('billing_events_page.receipt_pending'),
+          onClick: () => {},
+          disabled: true,
+          title: t('billing_events_page.receipt_pending_hint'),
+        });
+      }
       for (const rr of refundReceiptMenuEntries(row.refund_receipts)) {
         items.push({
           label: t(`billing_events_page.${rr.labelKey}`, { number: rr.number }),
@@ -484,8 +491,8 @@ export function useBillingEventActions<R extends BillingEventHeaderRow>(opts: {
       items.push({
         label: t('billing_events_page.generate_full_invoice'),
         onClick: () => { setInvoiceError(null); setInvoicing(row); },
-        disabled: blocks.full != null,
-        title: blockTitle(blocks.full),
+        disabled: fullBlock != null,
+        title: blockTitle(fullBlock),
       });
     }
     // #2480: Cancel the pending event itself (never a dismissed dialog).

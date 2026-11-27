@@ -1,12 +1,12 @@
 // #2806 — the Receipts & Invoices section: which documents a Billing Event
-// lists, when each ⋮ menu document action is offered (#2648 stage 6), and that
+// lists, when each ⋮ menu document entry is offered (#2648 stage 6, #3548), and that
 // every label exists in the three locales.
 import { describe, it, expect } from 'vitest';
 import en from '../../locales/base/en.json';
 import es from '../../locales/base/es.json';
 import ca from '../../locales/base/ca.json';
 import {
-  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, invoiceLinks, menuDocumentBlocks, operationChipKeys, refundReceiptMenuEntries,
+  DOCUMENT_KINDS, billingDocuments, documentStatusKey, documentTypeKey, fullInvoiceFormError, invoiceLinks, menuFullInvoiceBlock, menuReceiptState, operationChipKeys, receiptPending, refundReceiptMenuEntries,
 } from '../app/[locale]/payments/billing-events/receiptsInvoicesView';
 import type { InvoiceRow } from '../app/[locale]/payments/billing-events/verifactuInvoiceView';
 
@@ -27,9 +27,9 @@ describe('Receipts & Invoices section', () => {
 
   it('labels the menu actions, every type, status and block reason in every locale', () => {
     const keys = [
-      'generate_receipt', 'view_receipt', 'generate_full_invoice', 'invoices_empty',
+      'view_receipt', 'receipt_pending', 'receipt_pending_hint', 'generate_full_invoice', 'invoices_empty',
       ...DOCUMENT_KINDS.map((k) => documentTypeKey(k)), documentStatusKey('issued')!, documentStatusKey('draft')!, documentStatusKey('replaced')!,
-      'gen_blocked_exists', 'gen_blocked_not_paid', 'gen_blocked_no_amount', 'gen_blocked_read_only',
+      'gen_blocked_exists', 'gen_blocked_no_amount', 'gen_blocked_read_only',
       'full_inv_name_required', 'full_inv_tax_id_required', 'full_inv_address_required',
       'col_doc_type', 'col_doc_status', 'doc_view',
     ];
@@ -39,6 +39,8 @@ describe('Receipts & Invoices section', () => {
     expect((en as any).billing_events_page.generate_full_invoice).toBe('Generate Complete Invoice');
     // The system issues the simplified invoice: there is no action for it any more.
     for (const locale of [en, es, ca] as any[]) expect(locale.billing_events_page.generate_simple_invoice).toBeUndefined();
+    // #3548: nor for the receipt — the system issues it.
+    for (const locale of [en, es, ca] as any[]) expect(locale.billing_events_page.generate_receipt).toBeUndefined();
   });
 
   it('lists nothing when no document was generated', () => {
@@ -70,25 +72,29 @@ describe('Receipts & Invoices section', () => {
     expect(documentStatusKey('replaced')).toBe('doc_status_replaced');
   });
 
-  it('offers both menu actions for a paid event with no documents', () => {
-    expect(menuDocumentBlocks(base)).toEqual({ receipt: null, full: null });
+  it('offers View Receipt only for an issued receipt, to every role (#3548)', () => {
+    expect(menuReceiptState({ canIssueReceipt: true, receiptNumber: 'R-0001' })).toBe('view');
+    expect(menuReceiptState({ canIssueReceipt: false, receiptNumber: 'R-0001' })).toBe('view');
   });
 
-  it('keeps the receipt action (to view it) once issued, and blocks a second complete invoice', () => {
-    expect(menuDocumentBlocks({ ...base, receiptNumber: 'R-0001', hasFullInvoice: true }))
-      .toEqual({ receipt: null, full: 'gen_blocked_exists' });
+  it('shows a paid eligible event with no receipt as pending, never as an action (#3548)', () => {
+    expect(menuReceiptState({ canIssueReceipt: true, receiptNumber: null })).toBe('pending');
+    expect(receiptPending({ canIssueReceipt: true, receiptNumber: null })).toBe(true);
+    expect(receiptPending({ canIssueReceipt: true, receiptNumber: 'R-0001' })).toBe(false);
   });
 
-  it('disables the receipt until the payment is received, but still offers the complete invoice', () => {
-    expect(menuDocumentBlocks({ ...base, canIssueReceipt: false })).toEqual({ receipt: 'gen_blocked_not_paid', full: null });
+  it('offers no receipt entry for an ineligible event (#3548)', () => {
+    expect(menuReceiptState({ canIssueReceipt: false, receiptNumber: null })).toBeNull();
+    expect(receiptPending({ canIssueReceipt: false, receiptNumber: null })).toBe(false);
   });
 
-  it('offers no complete invoice with no amount, and no writes to a read-only role', () => {
-    expect(menuDocumentBlocks({ ...base, amount: '0.00' }).full).toBe('gen_blocked_no_amount');
-    expect(menuDocumentBlocks({ ...base, amount: null }).full).toBe('gen_blocked_no_amount');
-    expect(menuDocumentBlocks({ ...base, canWrite: false })).toEqual({ receipt: 'gen_blocked_read_only', full: 'gen_blocked_read_only' });
-    // Viewing a receipt already issued is not a write.
-    expect(menuDocumentBlocks({ ...base, canWrite: false, receiptNumber: 'R-0001' }).receipt).toBeNull();
+  it('offers the complete invoice once, paid or not, with an amount, to a writer', () => {
+    expect(menuFullInvoiceBlock(base)).toBeNull();
+    expect(menuFullInvoiceBlock({ ...base, canIssueReceipt: false })).toBeNull();
+    expect(menuFullInvoiceBlock({ ...base, hasFullInvoice: true })).toBe('gen_blocked_exists');
+    expect(menuFullInvoiceBlock({ ...base, amount: '0.00' })).toBe('gen_blocked_no_amount');
+    expect(menuFullInvoiceBlock({ ...base, amount: null })).toBe('gen_blocked_no_amount');
+    expect(menuFullInvoiceBlock({ ...base, canWrite: false })).toBe('gen_blocked_read_only');
   });
 
   it('requires the three customer fields of a full invoice', () => {
