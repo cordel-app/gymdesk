@@ -17,6 +17,9 @@ import { requireFeatureEnabled } from '../infra/featureFlags';
 import { resolveMemberId } from './me';
 import { refuseUnlessMayViewPayments } from './family-add-rights';
 import { loadMemberPurchases, type MemberPurchase } from './member-purchases';
+import { db } from '../infra/db';
+import { commitCharge } from './product-set-checkout';
+import { cartTotal, loadCartPurchases } from './cart-checkout';
 
 export const PURCHASE_HISTORY_DEFAULT_LIMIT = 10;
 export const PURCHASE_HISTORY_MAX_LIMIT = 50;
@@ -30,6 +33,13 @@ export interface MemberPurchaseView {
   created_at: string;
   /** Persisted: `purchaseTotalAmount()` over its Billing Events; null with none. */
   total_amount: string | null;
+  /**
+   * #3495: an `in_cart` purchase's Initial Payment — what checking the cart out asks for now, the
+   * figure the cart's own Summary and Save & Pay charge (`commitCharge()` for a cart carrying a
+   * Product Set, `cartTotal()` for standalone purchases alone). Null on every other status, and when
+   * the figure cannot be computed.
+   */
+  initial_payment_amount: string | null;
   owner: { id: number; name: string | null };
   plans: Array<{
     name: string | null;
@@ -67,6 +77,7 @@ export function toMemberPurchaseView(p: MemberPurchase): MemberPurchaseView {
     status: p.status,
     created_at: p.created_at,
     total_amount: p.total_amount,
+    initial_payment_amount: null,
     owner: { id: p.owner.id, name: p.owner.name },
     plans: p.plans.map((plan) => ({
       name: plan.name,
@@ -93,6 +104,33 @@ export function toMemberPurchaseView(p: MemberPurchase): MemberPurchaseView {
       created_at: e.created_at,
     })),
   };
+}
+
+/**
+ * #3495 — the Initial Payment of the member's open cart (`purchaseId`, status `in_cart`): computed by
+ * the functions the cart's Summary and checkout use, so nothing is priced here. Null when it cannot be
+ * computed (never 0, which would claim the cart owes nothing).
+ */
+export async function cartInitialPayment(gymId: string, ownerMemberId: number, purchaseId: number): Promise<string | null> {
+  try {
+    const { rows } = await db.query<any>(
+      `SELECT id, status, owner_member_id, previous_product_set_id, starts_at
+         FROM product_sets
+        WHERE gym_id = ? AND purchase_id = ? AND status = 'in_cart'
+        ORDER BY id DESC LIMIT 1`, [gymId, purchaseId]);
+    let amount: number;
+    if (rows[0]) {
+      const { charge } = await commitCharge(gymId, rows[0]);
+      amount = charge ? charge.amount : 0;
+    } else {
+      const cart = (await loadCartPurchases(db, gymId, ownerMemberId))
+        .filter((c) => c.purchase_id == null || c.purchase_id === purchaseId);
+      amount = cartTotal(cart);
+    }
+    return Number.isFinite(amount) && amount >= 0 ? (Math.round(amount * 100) / 100).toFixed(2) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** `limit` / `offset` of a request: integers in range, else a 400 message. */
@@ -124,7 +162,12 @@ mePurchaseHistoryRouter.get('/', requireRole('member'), requireFeatureEnabled('m
       const memberId = await resolveMemberId(gymId, ctx);
       if (await refuseUnlessMayViewPayments(res, gymId, memberId)) return;
       const { items, total } = await loadMemberPurchases(gymId, memberId, parsed.limit, parsed.offset);
-      res.json({ items: items.map(toMemberPurchaseView), total, limit: parsed.limit, offset: parsed.offset });
+      const views = await Promise.all(items.map(async (p) => {
+        const view = toMemberPurchaseView(p);
+        if (p.status === 'in_cart') view.initial_payment_amount = await cartInitialPayment(gymId, p.owner.id, p.id);
+        return view;
+      }));
+      res.json({ items: views, total, limit: parsed.limit, offset: parsed.offset });
     } catch (err) {
       next(err);
     }

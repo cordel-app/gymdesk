@@ -19,6 +19,8 @@ export interface PurchaseHistoryItem {
   status: string;
   created_at: string;
   total_amount: string | null;
+  /** #3495: an `in_cart` purchase's Initial Payment (the API's figure); null otherwise. */
+  initial_payment_amount?: string | null;
   owner: PurchaseHistoryMember;
   plans: Array<{
     name: string | null;
@@ -112,6 +114,21 @@ export function purchaseTotal(p: PurchaseHistoryItem): number | null {
   if (p.total_amount == null) return null;
   const n = Number(p.total_amount);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * #3495 — the amount a purchase's header states. An `in_cart` purchase states its cart's Initial
+ * Payment (the API's figure, `null` when the API could not compute it); any other purchase states
+ * the amount recorded for it, and `0` when nothing was recorded — never a sentence in place of an
+ * amount. It decides no status: the purchase's own lifecycle is still `status`.
+ */
+export function purchaseHeaderAmount(p: PurchaseHistoryItem): number | null {
+  if (p.status === 'in_cart') {
+    if (p.initial_payment_amount == null) return null;
+    const n = Number(p.initial_payment_amount);
+    return Number.isFinite(n) ? n : null;
+  }
+  return purchaseTotal(p) ?? 0;
 }
 
 /** The beneficiary note of an item: only when it is for somebody other than the buyer. */

@@ -735,7 +735,6 @@
   "purchases": {
     "date": "Comprat el {date}",
     "total": "Total",
-    "no_total": "Encara sense pagament",
     "items_heading": "Articles",
     "no_items": "Sense articles",
     "plan": "Pla",

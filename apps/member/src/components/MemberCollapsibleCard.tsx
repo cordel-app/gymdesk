@@ -29,11 +29,20 @@ import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
  *    member's goal cards).
  */
 export function MemberCollapsibleCard({
-  title, summary, defaultOpen = false, bodyStyle, cardStyle, children,
+  title, summary, subtitle, center, amount, defaultOpen = false, bodyStyle, cardStyle, children,
 }: {
   title: string;
   /** A one-line hint beside the title — the next payment, how many past plans. */
   summary?: string | null;
+  /** #3495: a second line under the title (a date). */
+  subtitle?: string | null;
+  /**
+   * #3495: content centred in the header row (a status chip). With it, the header is three columns —
+   * title left, this centred, the summary / amount and caret right.
+   */
+  center?: ReactNode;
+  /** #3495: a prominent figure at the right of the header, before the caret (an amount). */
+  amount?: string | null;
   /** The *initial* state only, so a member reading an open card keeps it open. */
   defaultOpen?: boolean;
   /** What the body is laid out as, which is the caller's and not the chrome's. */
@@ -45,10 +54,16 @@ export function MemberCollapsibleCard({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section style={cardStyle ? { ...styles.card, ...cardStyle } : styles.card}>
-      <button type="button" onClick={() => setOpen((prev) => !prev)} aria-expanded={open} style={styles.toggle}>
-        <span style={styles.title}>{title}</span>
+      <button type="button" onClick={() => setOpen((prev) => !prev)} aria-expanded={open}
+        style={center != null ? styles.toggleCentered : styles.toggle}>
+        <span style={styles.heading}>
+          <span style={styles.title}>{title}</span>
+          {subtitle && <span style={styles.subtitle}>{subtitle}</span>}
+        </span>
+        {center != null && <span style={styles.center}>{center}</span>}
         <span style={styles.right}>
           {summary && <span style={styles.summary}>{summary}</span>}
+          {amount && <span style={styles.amount}>{amount}</span>}
           <span style={styles.caret} aria-hidden="true">{open ? '▾' : '▸'}</span>
         </span>
       </button>
@@ -64,6 +79,15 @@ const styles: Record<string, CSSProperties> = {
     width: '100%', padding: '14px 16px', background: 'none', border: 'none',
     cursor: 'pointer', textAlign: 'left', font: 'inherit',
   },
+  toggleCentered: {
+    display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'center', gap: 12,
+    width: '100%', padding: '14px 16px', background: 'none', border: 'none',
+    cursor: 'pointer', textAlign: 'left', font: 'inherit',
+  },
+  heading: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 },
+  subtitle: { fontSize: 12, color: memberTheme.textMuted },
+  center: { justifySelf: 'center' },
+  amount: { fontSize: 18, fontWeight: 700, color: memberTheme.text, whiteSpace: 'nowrap' },
   title: { fontSize: 15, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   right: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   summary: { fontSize: 12.5, color: memberTheme.textMuted },
