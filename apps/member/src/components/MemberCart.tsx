@@ -35,6 +35,7 @@ import {
   cartItemsRemovable,
   cartPendingAmount,
   cartPhase,
+  cartPendingChanges,
   pendingCheckoutSetId,
   pendingCartCancelErrorKey,
   separateStandaloneCart,
@@ -325,9 +326,12 @@ export function MemberCart({ refreshKey, onChanged, onPendingCheckout }: MemberC
     }
   }
 
+  // #3487: a cart that only changes what the member holds (a plan staff removed) says so too.
+  const changes = cartPendingChanges(view);
   const countsText = (plans: number, products: number) => [
     plans > 0 ? t('membership.cart_plans', { count: plans }) : null,
     products > 0 ? t('membership.cart_products', { count: products }) : null,
+    changes > 0 ? t('membership.cart_changes', { count: changes }) : null,
   ].filter(Boolean).join(' · ');
   const family = t('membership.summary_beneficiary_family');
   const cardItems = (items: CartItem[]) => toCartCardItems(items as any, (a, c) => money(a, c), cartBeneficiaryLabel(review ?? cartSummary, family));

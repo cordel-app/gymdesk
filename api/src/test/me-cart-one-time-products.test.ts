@@ -98,7 +98,7 @@ describe('one-time Products in the member cart', () => {
     const view = await as(m.clerk, 'get', `/${id}`);
     expect(view.status).toBe(200);
     expect(view.body.purchases.map((p: any) => p.id)).toEqual([oneOffId, sessionsId]);
-    expect(view.body.cart).toEqual({ plans: 0, products: 3 });
+    expect(view.body.cart).toEqual({ plans: 0, products: 3, changes: 0 });
 
     const review = await as(m.clerk, 'get', `/${id}/review`);
     expect(review.body.amount_due).toBe(total);
@@ -162,7 +162,7 @@ describe('one-time Products in the member cart', () => {
     expect(await purchaseStatus(b)).toBe('in_cart');
     const view = await as(m.clerk, 'get', `/${id}`);
     expect(view.body.purchases.map((p: any) => p.id)).toEqual([b]);
-    expect(view.body.cart).toEqual({ plans: 0, products: 1 });
+    expect(view.body.cart).toEqual({ plans: 0, products: 1, changes: 0 });
     expect((await as(m.clerk, 'delete', `/${id}/purchases/${a}`)).status).toBe(404);
   });
 
