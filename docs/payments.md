@@ -853,7 +853,7 @@ Per due event, under the event's row lock, exactly one of these:
 | **Provider error** (threw / never answered) | attempted | unchanged | the attempt stays `pending` with **no** provider status: an unknown outcome, never a failure |
 
 Counters returned: `{ processed, succeeded, failed, waived, paused, receipts_issued,
-invoices_issued, invoices_failed, scheduled_events }`. The first four are also written to
+invoices_issued, invoices_failed, paid_documents, scheduled_events }`. The first four are also written to
 `billing_run_log`; the rest are reported only — a pause is explicable from its audit row, and a
 receipt or invoice that failed to auto-issue is not a failed run.
 
@@ -873,6 +873,27 @@ type gets none, so a transaction is never invoiced twice. Nothing is issued with
 bucket. The VERI*FACTU Alta record is written with each invoice exactly as for a staff-issued one;
 an event whose issue is refused (e.g. an invalid issuer NIF) is logged, counted in
 `invoices_failed` and retried by the next run while it is inside the window.
+
+**Every paid event gets its documents, and a failure is retried (#3511).** Every payment
+completion path — the webhook / read-back settle, staff Pay Cash / Pay Card, Pay now, both cash
+`record-payment` routes and the Admin's Save & Pay (desk or stored card) — calls
+`ensurePaidEventDocuments()` (`api/src/api/paid-event-documents.ts`), which allocates the
+event's **receipt number** (`issueReceiptNumber()`, under `receiptOwed()` in
+`domain/paidEventDocuments.ts`: receiptable, paid, positive, not cancelled) and runs
+`generatePaidRepresentations()`. Before #3511 a receipt number was allocated automatically only
+for a nightly charge, so a checkout, a purchase or a desk payment showed *No receipt or
+invoice* until staff asked for one, and the paths that did issue an invoice swallowed its failure
+with no log. A failure now is logged with the event id and never touches the payment. The
+nightly run then reconciles (`reconcilePaidEventDocuments()`, after the automatic invoices): every
+event paid in the last `PAID_DOCUMENTS_CATCH_UP_DAYS` (7) days, at most
+`PAID_DOCUMENTS_BATCH_SIZE` (500), that lacks its receipt number or (with the private bucket)
+an issued invoice with its paid representation, gets them; it is reported as `paid_documents`
+and never fails the run. Historical events are backfilled by hand:
+`npm run billing:backfill-paid-documents` (dry run unless `--execute`, optional `--since
+YYYY-MM-DD`; from the VPS as `node dist/scripts/backfill-paid-event-documents.js`), which issues
+today's documents in the current series. Decisions taken: a cancelled event and a €0.00 one get
+nothing automatically (a receipt stays available on demand for money collected on a cancelled
+event); the receipt is the number, its PDF still rendered and stored on first read.
 
 **A complete invoice replaces the simplified one (#2648 stage 7).** A complete invoice
 requested for an event that already holds a standing simplified invoice (issued, not
@@ -1548,8 +1569,9 @@ allowed it.
 The number comes from `issueReceiptNumber()` (`api/src/domain/receiptNumbers.ts`) and
 nowhere else. It reads the event `FOR UPDATE` before spending anything, so one payment can
 never burn two numbers; the format is `<year>-<4-digit seq>`, and the year is the one the
-receipt is *issued* in. Two callers: `POST /payments/:id/receipt` (on demand) and the
-nightly run (automatically, per settled charge).
+receipt is *issued* in. Callers: `POST /payments/:id/receipt` (on demand), the
+nightly run (per settled charge) and, since #3511, `ensurePaidEventDocuments()` on every
+payment completion and in the nightly reconciliation.
 
 ### Assigned Plan status model
 

@@ -1,6 +1,6 @@
 import { primaryPlanSnapshotId, promotionHolderSql, setOwnerIsBeneficiary } from './plan-snapshot-lines';
 import { purchaseOfSet, stampEventPurchase } from './purchases';
-import { generatePaidRepresentations } from './billing-invoices';
+import { ensurePaidEventDocumentsLater } from './paid-event-documents';
 import { recordPaymentAttempt } from './payment-attempt';
 import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
@@ -1403,7 +1403,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       return res.status(409).json(activePlanConflictBody(outcome.conflicts, row?.plan_name ?? null));
     }
     // #2648 stage 6: the paid event gets its simplified invoice (best-effort).
-    if (paidEventId != null) generatePaidRepresentations(gymId, paidEventId).catch(() => {});
+    if (paidEventId != null) ensurePaidEventDocumentsLater(gymId, paidEventId, req.log);
     const row = await loadAssignmentRow(gymId, req.params.id);
     recordAudit(req, {
       action: 'record_payment', entityType: 'user_membership', entityId: req.params.id,
