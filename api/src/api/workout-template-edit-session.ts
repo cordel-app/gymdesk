@@ -48,11 +48,16 @@ export async function readWorkoutTemplateContentTx(tx: Tx, templateId: number | 
   return { blocks, exercises };
 }
 
-/** The columns an INSERT may name: stored ones, never a generated column. */
+/**
+ * The columns an INSERT may name: stored ones, never a generated column. MySQL 8
+ * reports `DEFAULT_GENERATED` for a column with an expression default
+ * (`created_at DEFAULT CURRENT_TIMESTAMP`), which is writable and must be
+ * restored as stored, so only VIRTUAL / STORED generated columns are excluded.
+ */
 async function writableColumns(tx: Tx, table: string): Promise<Set<string>> {
   const { rows } = await tx.query(
     `SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND EXTRA NOT LIKE '%GENERATED%'`,
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND EXTRA NOT LIKE '%VIRTUAL GENERATED%' AND EXTRA NOT LIKE '%STORED GENERATED%'`,
     [table],
   );
   return new Set(rows.map((r: { name: string }) => r.name));
