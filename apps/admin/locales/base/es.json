@@ -3223,7 +3223,10 @@
     "activate_confirm": "Este plan pasará a ser el plan de entrenamiento activo del miembro.",
     "activate_confirm_replace": "El plan \"{name}\" se completará y este plan pasará a ser el plan de entrenamiento activo del miembro.",
     "save_draft": "Guardar borrador",
-    "save_and_activate": "Guardar y activar"
+    "save_and_activate": "Guardar y activar",
+    "save_draft_title": "Guardar el borrador",
+    "save_draft_question": "¿Guardar los cambios como borrador, o guardarlos y activar el plan?",
+    "draft_saved": "Borrador guardado."
   },
   "template_workouts": {
     "title": "Rutinas",

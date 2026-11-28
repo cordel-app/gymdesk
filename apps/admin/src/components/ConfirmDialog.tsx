@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { overlayStyle, modalStyle, btnStyle } from './ui';
+import { overlayStyle, modalStyle, btnStyle, primaryBtnStyle } from './ui';
+import { secondaryBtnStyle } from './formChrome';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -28,10 +29,22 @@ interface ConfirmDialogProps {
   secondaryLabel?: string;
   onSecondary?: () => void;
   busy?: boolean;
+  /**
+   * #3477: what the confirm button is. `destructive` (the default, every
+   * existing caller) keeps the red confirm and the blue third answer;
+   * `primary` is a non-destructive choice — Cancel and the third answer wear
+   * the theme's secondary button and the confirm the theme's primary one, so
+   * nothing in the dialog is a colour the gym's Theme cannot move.
+   */
+  tone?: 'destructive' | 'primary';
 }
 
-export function ConfirmDialog({ open, title, message, details, question, confirmLabel, cancelLabel, onConfirm, onCancel, secondaryLabel, onSecondary, busy }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, title, message, details, question, confirmLabel, cancelLabel, onConfirm, onCancel, secondaryLabel, onSecondary, busy, tone = 'destructive' }: ConfirmDialogProps) {
   if (!open) return null;
+  const primary = tone === 'primary';
+  const cancelStyle = primary ? secondaryBtnStyle : btnStyle('#aaa');
+  const secondaryStyle = primary ? secondaryBtnStyle : btnStyle('#2c7be5');
+  const confirmStyle = primary ? primaryBtnStyle() : btnStyle('#c0392b');
 
   return (
     <div style={overlayStyle} onClick={onCancel}>
@@ -41,12 +54,12 @@ export function ConfirmDialog({ open, title, message, details, question, confirm
         {details && <div style={{ marginTop: 14 }}>{details}</div>}
         {question && <p style={{ margin: '14px 0 0', fontSize: 15 }}>{question}</p>}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} style={btnStyle('#aaa')} disabled={busy}>{cancelLabel}</button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} style={cancelStyle} disabled={busy}>{cancelLabel}</button>
           {secondaryLabel && onSecondary && (
-            <button onClick={onSecondary} style={btnStyle('#2c7be5')} disabled={busy}>{secondaryLabel}</button>
+            <button onClick={onSecondary} style={secondaryStyle} disabled={busy}>{secondaryLabel}</button>
           )}
-          <button onClick={onConfirm} style={btnStyle('#c0392b')} disabled={busy}>{confirmLabel}</button>
+          <button onClick={onConfirm} style={confirmStyle} disabled={busy}>{confirmLabel}</button>
         </div>
       </div>
     </div>

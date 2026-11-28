@@ -175,6 +175,9 @@ export default function TrainingPlansPage() {
   const [activationBusy, setActivationBusy] = useState(false);
   // #3547: the Draft copy this Edit session created (not resumed) — the one Cancel discards.
   const [createdDraftId, setCreatedDraftId] = useState<number | null>(null);
+  // #3477: a Draft saved with Save Draft in this Edit session holds the user's work, so a later
+  // Cancel must not discard it.
+  const [savedDraftId, setSavedDraftId] = useState<number | null>(null);
 
   // #613: impersonation-aware; read-only roles see controls disabled.
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
@@ -331,8 +334,10 @@ export default function TrainingPlansPage() {
     const draftRow = rows.find((r) => r.id === editingId);
     const source = draftRow?.draft_of_plan_id ? rows.find((r) => r.id === draftRow.draft_of_plan_id) : undefined;
     const discard = !!draftRow?.draft_of_plan_id
+      && draftRow.id !== savedDraftId
       && (draftRow.id === createdDraftId || source?.status === 'active');
     setCreatedDraftId(null);
+    setSavedDraftId(null);
     if (discard && draftRow) {
       apiFetch(`/members/${draftRow.member_id}/training-plans/${draftRow.id}`, { method: 'DELETE' })
         .then(() => { load(); })
@@ -374,11 +379,13 @@ export default function TrainingPlansPage() {
     });
   }
 
-  // Save on an Active plan, and #3547's Save Draft on a Draft: the changes are persisted and the
-  // plan keeps its status (a Draft stays a Draft; nothing else changes).
+  // Save on an Active plan: the changes are persisted and the plan keeps its status.
+  // #3477: Save on a Draft asks first — Cancel, Save Draft or Save and Activate — in one dialog
+  // that also says what activating would complete.
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('training_plans.error_required')); return; }
     const row = rows.find((r) => r.id === editingId)!;
+    if (row.status === 'draft') { setEditError(null); await openActivation(row, true); return; }
     setEditSaving(true); setEditError(null);
     try {
       await putEdit(row);
@@ -393,12 +400,25 @@ export default function TrainingPlansPage() {
     }
   }
 
-  // #3547: Save & Activate on a Draft — confirms what it replaces; the changes are saved and the
-  // Draft activated through the one activation route.
-  async function saveAndActivate() {
-    if (!editForm.name.trim()) { setEditError(t('training_plans.error_required')); return; }
-    const row = rows.find((r) => r.id === editingId);
-    if (row) await openActivation(row, true);
+  // #3477: Save Draft from the Save dialog — the changes are persisted, the plan stays a Draft
+  // and the editor stays open so the user can keep working on it. Nothing is activated.
+  async function saveDraftFromDialog() {
+    if (!activation) return;
+    const { row } = activation;
+    setActivationBusy(true);
+    try {
+      await putEdit(row);
+      setActivation(null);
+      setSavedDraftId(row.id);
+      toast(t('training_plans.draft_saved'), 'success');
+      load();
+      refetchHierarchy(row.id);
+    } catch (err: any) {
+      setActivation(null);
+      setEditError(err.message ?? t('training_plans.error_generic'));
+    } finally {
+      setActivationBusy(false);
+    }
   }
 
   // #3477: Activate — from Save, the changes are saved first; then the one activation route.
@@ -410,7 +430,7 @@ export default function TrainingPlansPage() {
       if (fromSave) await putEdit(row);
       await apiFetch(`/members/${row.member_id}/training-plans/${row.id}/activate`, { method: 'POST' });
       setActivation(null);
-      if (fromSave || editingId === row.id) { setEditingId(null); setEditError(null); setCreatedDraftId(null); }
+      if (fromSave || editingId === row.id) { setEditingId(null); setEditError(null); setCreatedDraftId(null); setSavedDraftId(null); }
       load();
       refetchHierarchy(row.id);
     } catch (err: any) {
@@ -565,7 +585,6 @@ export default function TrainingPlansPage() {
                   onDelete={() => guardUnsaved(() => setDeleting(row))}
                   onEditFormChange={setEditForm}
                   onSave={saveEdit}
-                  onSaveAndActivate={saveAndActivate}
                   onCancel={cancelEdit}
                   apiFetch={apiFetch}
                   toast={toast}
@@ -597,17 +616,21 @@ export default function TrainingPlansPage() {
 
       <ConfirmDialog
         open={activation !== null}
-        title={t('training_plans.activate_title')}
+        title={activation?.fromSave ? t('training_plans.save_draft_title') : t('training_plans.activate_title')}
         message={activation?.versionDraft
           ? t('training_plans.version_confirm')
           : activation?.currentPlanName
             ? t('training_plans.activate_confirm_replace', { name: displayTrainingPlanName(activation.currentPlanName) })
             : t('training_plans.activate_confirm')}
-        confirmLabel={t('training_plans.activate')}
+        question={activation?.fromSave ? t('training_plans.save_draft_question') : undefined}
+        confirmLabel={activation?.fromSave ? t('training_plans.save_and_activate') : t('training_plans.activate')}
         cancelLabel={t('training_plans.cancel')}
+        secondaryLabel={activation?.fromSave ? t('training_plans.save_draft') : undefined}
+        onSecondary={activation?.fromSave ? saveDraftFromDialog : undefined}
         onConfirm={confirmActivation}
         onCancel={() => setActivation(null)}
         busy={activationBusy}
+        tone="primary"
       />
 
       <ConfirmDialog
@@ -660,7 +683,7 @@ function PlanCard({
   row, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t,
   onToggleExpand, onEdit, onDetails, onDuplicate, onActivate, onComplete, onDelete,
-  onEditFormChange, onSave, onSaveAndActivate, onCancel,
+  onEditFormChange, onSave, onCancel,
   apiFetch, toast, onChanged,
 }: {
   row: TrainingPlanRow;
@@ -683,7 +706,6 @@ function PlanCard({
   onDelete: () => void;
   onEditFormChange: (f: EditForm) => void;
   onSave: () => void;
-  onSaveAndActivate: () => void;
   onCancel: () => void;
   apiFetch: ReturnType<typeof useApiClient>['apiFetch'];
   toast: (msg: string) => void;
@@ -808,19 +830,11 @@ function PlanCard({
       {editing && (
         <div style={{ ...formActionsRowStyle, padding: '14px 16px', marginTop: 12 }}>
           <button onClick={onCancel} style={secondaryBtnStyle}>{t('training_plans.cancel')}</button>
-          {/* #3547: a Draft is saved as a Draft or saved and activated; an Active plan is saved. */}
-          {row.status === 'draft' ? (<>
-            <button onClick={onSave} disabled={editSaving} style={secondaryBtnStyle}>
-              {editSaving ? t('training_plans.saving') : t('training_plans.save_draft')}
-            </button>
-            <button onClick={onSaveAndActivate} disabled={editSaving} style={primaryBtnStyle()}>
-              {t('training_plans.save_and_activate')}
-            </button>
-          </>) : (
-            <button onClick={onSave} disabled={editSaving} style={primaryBtnStyle()}>
-              {editSaving ? t('training_plans.saving') : t('training_plans.save_changes')}
-            </button>
-          )}
+          {/* #3477: one Save; on a Draft it opens the Cancel / Save Draft / Save and Activate
+              dialog, on an Active plan it saves. */}
+          <button onClick={onSave} disabled={editSaving} style={primaryBtnStyle()}>
+            {editSaving ? t('training_plans.saving') : t('training_plans.save_changes')}
+          </button>
         </div>
       )}
     </div>
