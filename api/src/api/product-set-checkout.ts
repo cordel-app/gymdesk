@@ -24,7 +24,7 @@ import { advanceBillingDate } from '../domain/billingDate';
 import { scheduleOwnerOfSetSql } from '../domain/scheduleOwner';
 import { chargeableSetPurchases, linkSetPurchasesToEvent, purchaseChargeLine } from './set-purchases';
 import { cartChargeLine, cartPurchasesForCharge, joinCartPurchasesToEvent } from './cart-checkout';
-import { purchaseName, purchaseOfSet, stampEventPurchase } from './purchases';
+import { nameSetCheckoutFromContents, purchaseName, purchaseOfSet, stampEventPurchase } from './purchases';
 import { writeEventLines } from './billing-event-lines-writer';
 import { initialEventNameFor } from './billing-event-name';
 import { loadInitialChargeTaxRates } from './initial-charge-taxes';
@@ -375,6 +375,9 @@ export async function ensureInitialEvent(tx: Tx, input: {
   /** #1182: the plain-text actor snapshot written as `created_by`. */
   actor: string | null;
 }): Promise<number> {
+  // #3553: a waived Admin commit writes its event before the version moves; its cart is named first
+  // (a no-op once the cart has left `in_cart`, so a retry keeps the name already sent).
+  await nameSetCheckoutFromContents(tx, input.gymId, input.productSetId);
   const { rows: existing } = await tx.query<{ id: number }>(
     `SELECT be.id FROM billing_events be
       WHERE be.gym_id = ? AND be.product_set_id = ? AND be.event_type = 'payment_recorded'

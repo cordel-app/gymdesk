@@ -3,7 +3,7 @@ import { expireCarts } from './cart-expiry';
 import { recordPaymentAttempt } from './payment-attempt';
 import { originOf } from '../domain/itemOrigin';
 import { insertPurchase, insertPurchasePromotion, deletePurchase, lockPurchase, updatePurchase } from './purchase-writer';
-import { checkoutNameStillHolds, planCheckoutPurchase, splitOffCheckout } from './purchases';
+import { checkoutNameStillHolds, nameCheckoutFromContents, planCheckoutPurchase, splitOffCheckout } from './purchases';
 import { DateTime } from 'luxon';
 import { computeValidUntil } from '../domain/productValidity';
 import { resolveTimeZone } from '../domain/homeDashboard';
@@ -618,6 +618,9 @@ export async function startProductPurchase(
   input: StartPurchaseInput,
 ): Promise<StartPurchaseResult> {
   const { row, snapshot, price, actorName, assignedMemberId } = await resolvePurchase(input, input.fromDraftId);
+  // #3288: the payment's description is the canonical name of the purchase it charges (planned
+  // before either branch: the free one below names its purchase with it too).
+  const checkoutPlan = await planCheckoutPurchase(db, input.gymId, input.fromDraftId == null ? [] : [input.fromDraftId]);
 
   // #3082: a Promotion that waives the Product leaves nothing to pay. The purchase completes in
   // this transaction: a paid Billing Event and no payment request, so no provider is called.
@@ -628,6 +631,8 @@ export async function startProductPurchase(
         // #3251: the checkout is the draft's purchase (a purchase of its own when its cart holds more).
         const cartId = input.fromDraftId == null ? null
           : await splitOffCheckout(tx, input.gymId, input.memberId, [input.fromDraftId], actorName, checkoutPlan.planned);
+        // #3553: an Admin checkout of the whole cart takes the name planned from its line.
+        if (cartId != null) await nameCheckoutFromContents(tx, input.gymId, cartId, { lineIds: [input.fromDraftId!] });
       if (cartId != null && !(await checkoutNameStillHolds(tx, input.gymId, cartId, checkoutPlan.name))) {
         throw Object.assign(new Error('The cart changed; read it again'), { status: 409, code: 'cart_changed' });
       }
@@ -684,8 +689,6 @@ export async function startProductPurchase(
   const pageToken = crypto.randomUUID();
   const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-  // #3288: the payment's description is the canonical name of the purchase it charges.
-  const checkoutPlan = await planCheckoutPurchase(db, input.gymId, input.fromDraftId == null ? [] : [input.fromDraftId]);
   const provider = getPaymentProvider();
   const result = await provider.createPaymentRequest({
     orderId,
@@ -708,7 +711,9 @@ export async function startProductPurchase(
     const purchaseId = await db.transaction(async (tx) => {
       // #3251: the checkout is the draft's purchase (a purchase of its own when its cart holds more).
       const cartId = input.fromDraftId == null ? null
-        : await splitOffCheckout(tx, input.gymId, input.memberId, [input.fromDraftId], actorName);
+        : await splitOffCheckout(tx, input.gymId, input.memberId, [input.fromDraftId], actorName, checkoutPlan.planned);
+      // #3553: an Admin checkout of the whole cart takes the name planned from its line.
+      if (cartId != null) await nameCheckoutFromContents(tx, input.gymId, cartId, { lineIds: [input.fromDraftId!] });
       if (input.fromDraftId != null) {
         // The draft is promoted, not duplicated: gone in the transaction that
         // writes its pending replacement (#1657).
