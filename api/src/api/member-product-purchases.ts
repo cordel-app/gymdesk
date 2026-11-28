@@ -55,7 +55,7 @@ import { resolveTimeZone } from '../domain/homeDashboard';
 import { loadEditLockForDraftEdit } from './product-set-checkout';
 import { recurringLineCancellationEnd } from './cancellation-entitlement';
 import { AssigneeRefused, loadEligibleAssignees, resolveAssignedMember } from './product-assignee';
-import { CartCheckoutRefused, cartChargeLine, cartTotal, loadCartPurchases, startCartCheckout } from './cart-checkout';
+import { CartCheckoutRefused, cartChargeLine, cartTotal, deleteStandaloneCartPurchases, loadCartPurchases, startCartCheckout } from './cart-checkout';
 import { chargeLineView, contractedItems, initialPaymentBreakdown } from '../domain/checkoutSummary';
 import { purchaseView } from '../domain/purchaseView';
 import { getRequestLocale } from '../infra/locale';
@@ -732,6 +732,37 @@ memberProductPurchasesRouter.post('/checkout', requireModuleWrite('MEMBERS'), as
     if (err instanceof CartCheckoutRefused) return res.status(err.status).json({ error: err.code, message: err.message });
     next(err);
   }
+});
+
+/**
+ * #3554 — Cancel a cart of standalone one-time Products (no Draft Product Set carries them): every
+ * one of the member's `in_cart` standalone purchases is deleted through the writer the Draft's own
+ * Cancel uses (`deleteStandaloneCartPurchases()`, #2967), and the emptied cart with them. Nothing
+ * confirmed is touched and no payment attempt, Billing Event or charge is written. A cart holding a
+ * Draft is cancelled through `DELETE /product-sets/:id`, which takes these purchases with it, so
+ * this route refuses one (`409 cart_has_draft`) rather than leave the Draft behind.
+ */
+memberProductPurchasesRouter.delete('/cart', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = memberIdOf(req);
+  try {
+    if (!(await loadMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
+    await expireCarts({ gymId, ownerMemberId: memberId });
+    const out = await db.transaction(async (tx) => {
+      const { rows } = await tx.query<{ id: number }>(
+        `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart' LIMIT 1`,
+        [gymId, memberId]);
+      if (rows[0]) return { draftId: Number(rows[0].id), deleted: 0 };
+      return { draftId: null, deleted: await deleteStandaloneCartPurchases(tx, gymId, memberId) };
+    });
+    if (out.draftId != null) return res.status(409).json({ error: 'cart_has_draft', product_set_id: out.draftId });
+    if (out.deleted === 0) return res.status(404).json({ error: 'Cart not found' });
+    recordAudit(req, {
+      action: 'delete', entityType: 'member', entityId: memberId,
+      previous: { product_purchase_cart: out.deleted },
+    });
+    res.json({ deleted: out.deleted });
+  } catch (err) { next(err); }
 });
 
 /**

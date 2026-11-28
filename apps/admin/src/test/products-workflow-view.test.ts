@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  billingMode, cancelRequestFor, inFlightSetTitle, pendingPlanChangeCount, cartCancelContents, cartCancelIntroKey, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount, cartExpirySeconds, hasCartInCart,
+  billingMode, cancelRequestFor, inFlightSetTitle, pendingPlanChangeCount, cartCancelContents, cartCancelIntroKey, contractedMembersText, discountText, lineReducedToZero, splitContracted, pendingCancelErrorKey, pendingOneOffCount, saveAndPayEnabled, saveAndPayTarget, withoutZeroRows, psStatusKey, standaloneCartCount, cartExpirySeconds, hasCartInCart, summaryCancelRequest, summaryCancelContents, standaloneCartNames,
 } from '@/app/[locale]/members/productsWorkflowView';
 import { displayedEndsAt } from '@/components/assignedPlan/assignedPlanProfile';
 
@@ -218,5 +218,29 @@ describe('basePriceFormula', () => {
   });
   it('omits the proration on a line that was not prorated', () => {
     expect(basePriceFormula({ quantity: 3, unit_price: 10, days: null, period_days: null }, money)).toBe('3 × 10.00 €');
+  });
+});
+
+describe('#3554 — the Summary Cancel of a cart of standalone one-time Products', () => {
+  const cart = [
+    { status: 'in_cart', cart_expires_at: '2026-11-28T03:00:00Z', product_name: 'Towel' },
+    { status: 'in_cart', cart_expires_at: null, product_name: 'Recurring line' },
+    { status: 'active', cart_expires_at: null, product_name: 'Bought' },
+  ];
+  const input = (current: any, cartPurchases: number) => ({
+    current, review: null, pendingOneOffs: 0, cartPurchases, cartProductNames: standaloneCartNames(cart),
+  });
+
+  it('discards a cart of standalone purchases alone through the cart route', () => {
+    expect(summaryCancelRequest(input(null, 1), 7)).toEqual({ kind: 'discard_cart', path: '/members/7/product-purchases/cart', method: 'DELETE' });
+    expect(summaryCancelRequest(input({ id: 2, status: 'active' }, 1), 7)?.kind).toBe('discard_cart');
+    expect(summaryCancelContents(input(null, 1))).toEqual({ plans: [], products: ['Towel'] });
+  });
+
+  it('keeps the Draft\'s own Cancel for a mixed cart and offers none for an empty one', () => {
+    expect(summaryCancelRequest(input({ id: 4, status: 'in_cart' }, 1), 7)?.kind).toBe('discard_draft');
+    expect(summaryCancelRequest(input({ id: 4, status: 'pending_payment' }, 1), 7)?.kind).toBe('cancel_pending');
+    expect(summaryCancelRequest(input(null, 0), 7)).toBeNull();
+    expect(summaryCancelRequest(input({ id: 2, status: 'active' }, 0), 7)).toBeNull();
   });
 });
