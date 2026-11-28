@@ -36,6 +36,11 @@ export function standaloneCartCount(purchases: Array<{ status: string; cart_expi
   return purchases.filter((p) => p.status === 'in_cart' && p.cart_expires_at != null).length;
 }
 
+/** #3554 — the names of the same purchases `standaloneCartCount()` counts, in list order. */
+export function standaloneCartNames(purchases: Array<{ status: string; cart_expires_at?: string | null; product_name: string }>): string[] {
+  return purchases.filter((p) => p.status === 'in_cart' && p.cart_expires_at != null).map((p) => p.product_name);
+}
+
 /**
  * #3274 follow-up — the cart's one countdown, in seconds, or `null` when nothing is In Cart.
  * The clock is the purchase's (`purchases.expires_at`): the server reports it as the in-cart
@@ -386,6 +391,8 @@ export interface WorkflowInput {
   pendingOneOffs: number;
   /** #2965 — `standaloneCartCount()`; absent reads as none. */
   cartPurchases?: number;
+  /** #3554 — `standaloneCartNames()`: what a cart of standalone purchases' Cancel confirmation lists. */
+  cartProductNames?: string[];
 }
 
 /** A Draft that has not expired — the cart the standalone purchases are paid with (#2949 stage 5). */
@@ -455,6 +462,7 @@ export function withoutZeroRows<
  */
 export type CancelRequest =
   | { kind: 'discard_draft'; path: string; method: 'DELETE' }
+  | { kind: 'discard_cart'; path: string; method: 'DELETE' }
   | { kind: 'cancel_pending'; path: string; method: 'POST' };
 
 export function cancelRequestFor(set: { id: number; status: string } | null | undefined): CancelRequest | null {
@@ -464,6 +472,24 @@ export function cancelRequestFor(set: { id: number; status: string } | null | un
     return { kind: 'cancel_pending', path: `/product-sets/${set.id}/cancel`, method: 'POST' };
   }
   return null;
+}
+
+/**
+ * #3554 — the Summary's Cancel: the in-flight version's own (`cancelRequestFor()`, whose Draft discard
+ * takes the standalone cart purchases with it), else, for a cart of standalone one-time Products
+ * alone, the cart's (`DELETE /members/:id/product-purchases/cart`). `null` offers no Cancel.
+ */
+export function summaryCancelRequest(input: WorkflowInput, memberId: number): CancelRequest | null {
+  const own = cancelRequestFor(input.current);
+  if (own) return own;
+  if (cartAlone(input)) return { kind: 'discard_cart', path: `/members/${memberId}/product-purchases/cart`, method: 'DELETE' };
+  return null;
+}
+
+/** #3554 — what the cancel confirmation lists: a standalone cart's names, else the Draft's review. */
+export function summaryCancelContents(input: WorkflowInput): { plans: string[]; products: string[] } {
+  if (cartAlone(input)) return { plans: [], products: [...(input.cartProductNames ?? [])] };
+  return cartCancelContents(input.review);
 }
 
 /** The `members.*` key explaining a refused cancellation of a pending version (stage 1's 409 codes). */

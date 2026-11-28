@@ -35,7 +35,7 @@ import { useProductSetDetail } from './MemberProductSet';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { ProposedSetForecast } from './ProposedSetForecast';
 import { ProductsWorkflowBar, ProductsWorkflowActions, useDraftReview } from './MemberProductsWorkflow';
-import { billingMode, cartExpirySeconds, hasCartInCart, pendingOneOffCount, saveAndPayTarget, standaloneCartCount, submittedCartNoteKey, submittedCartView, type SubmittedCart } from './productsWorkflowView';
+import { billingMode, cartExpirySeconds, hasCartInCart, pendingOneOffCount, saveAndPayTarget, standaloneCartCount, standaloneCartNames, submittedCartNoteKey, submittedCartView, type SubmittedCart } from './productsWorkflowView';
 import { SubmittedCartSummary } from './SubmittedCartSummary';
 import { StandaloneCartSummary } from './StandaloneCartSummary';
 import { ReviewChangesModal } from './ReviewChangesModal';
@@ -220,6 +220,7 @@ export function MemberExpandedRow({
     // #2965 — standalone one-time Products waiting in the cart: a Draft's Save & Pay pays them,
     // and with no Draft they are a cart of their own with its own Summary.
     cartPurchases: standaloneCartCount(purchasedProducts),
+    cartProductNames: standaloneCartNames(purchasedProducts),
   };
   // #3274 follow-up — the cart's one countdown (the purchase's clock), taken when the data is read.
   const cartSeconds = useMemo(
@@ -687,6 +688,7 @@ export function MemberExpandedRow({
               )}
               {(inFlightSetsShown || saveAndPayTarget(workflow) != null || cartPaymentLink != null) && (
               <ProductsWorkflowActions
+                memberId={memberId}
                 current={configuration.current_product_set}
                 workflow={workflow}
                 canWrite={canWriteMembers && canManagePackages}

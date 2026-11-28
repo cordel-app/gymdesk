@@ -14,7 +14,7 @@ import { primaryBtnSmall } from '@/components/ui';
 import { secondaryBtnSmall } from '@/components/formChrome';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { ProductSetSummary } from './membershipConfiguration';
-import { cancelRequestFor, cartCancelContents, cartCancelIntroKey, pendingCancelErrorKey, psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
+import { cartCancelIntroKey, summaryCancelContents, summaryCancelRequest, pendingCancelErrorKey, psStatusKey, saveAndPayEnabled, type ReviewSummary, type WorkflowInput } from './productsWorkflowView';
 
 /** The Draft's review (`changes` + `amount_due`), re-read whenever the configuration was. */
 export function useDraftReview(current: ProductSetSummary | null, reloadKey: unknown): ReviewSummary | null {
@@ -86,8 +86,10 @@ export function ProductsWorkflowBar({
 
 /** #2446 — the one global Save & Pay and Cancel, rendered at the bottom-left of the Summary. */
 export function ProductsWorkflowActions({
-  current, workflow, canWrite, busy, onSaveAndPay, onDiscarded,
+  memberId, current, workflow, canWrite, busy, onSaveAndPay, onDiscarded,
 }: {
+  /** #3554 — the member whose standalone cart a Cancel discards. */
+  memberId: number;
   current: ProductSetSummary | null;
   workflow: WorkflowInput;
   canWrite: boolean;
@@ -105,12 +107,12 @@ export function ProductsWorkflowActions({
   // #1881 — the same in-flight version the Recurring section's Cancel acts on.
   // #2747 stage 2: a Draft is discarded; a version awaiting payment is cancelled
   // and kept (`cancelRequestFor()`), and the server refuses it while a payment
-  // settled or is still unresolved.
-  const request = canWrite ? cancelRequestFor(current) : null;
+  // settled or is still unresolved. #3554: a cart of standalone one-time Products alone is discarded too.
+  const request = canWrite ? summaryCancelRequest({ ...workflow, current }, memberId) : null;
   const canDiscard = request != null;
   const pending = request?.kind === 'cancel_pending';
   // #3162 — the cart's contents, named, between the opening sentence and the question; an empty section is omitted.
-  const contents = cartCancelContents(workflow.review);
+  const contents = summaryCancelContents({ ...workflow, current });
   const contentsDetails = pending ? undefined : (contents.plans.length + contents.products.length > 0 ? (
     <div data-cancel-cart-contents style={{ fontSize: 14, lineHeight: 1.5 }}>
       {([['ps_cancel_plans', contents.plans], ['ps_cancel_products', contents.products]] as const).map(([key, names]) => names.length > 0 ? (
