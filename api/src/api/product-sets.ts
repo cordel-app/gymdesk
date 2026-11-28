@@ -10,7 +10,7 @@ import { primaryPlanSnapshotId } from './plan-snapshot-lines';
 import { deleteProductSetAndOwnPlanSnapshots, discardDraftSet } from './plan-snapshot-ownership';
 import { activateSetPurchases, moveSetPurchases } from './set-purchases';
 import { deleteStandaloneCartPurchases } from './cart-checkout';
-import { openCart, refreshCart, touchPurchases } from './purchases';
+import { nameSetCheckoutFromContents, openCart, refreshCart, touchPurchases } from './purchases';
 import { setCartExpiredSql, setCartLiveSql } from '../domain/cartExpiry';
 import {
   PendingAttempt,
@@ -156,6 +156,8 @@ export async function submitForPayment(tx: Tx, gymId: string, id: number, paymen
   if (!row) return { kind: 'not_found' };
   if (row.status !== 'in_cart') return { kind: 'not_allowed', status: row.status };
   if (Number(row.expired) === 1) return { kind: 'expired' };
+  // #3553: an Admin Save & Pay names its cart after what it pays for, before anything moves.
+  await nameSetCheckoutFromContents(tx, gymId, id);
   // #2624 stage 4: the Promotions applied while it was a Draft are captured now.
   const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
   await confirmDraftPromotionSnapshots(tx, gymId, id);
@@ -186,6 +188,8 @@ export async function activate(tx: Tx, gymId: string, id: number): Promise<MoveO
   if (row.status !== 'in_cart' && row.status !== 'pending_payment') return { kind: 'not_allowed', status: row.status };
   if (row.status === 'in_cart' && Number(row.expired) === 1) return { kind: 'expired' };
   if (row.status === 'in_cart') {
+    // #3553: a free Admin commit names its cart too (a cancellation-only cart included).
+    await nameSetCheckoutFromContents(tx, gymId, id);
     // #2624 stage 4: a free commit confirms the Draft's Promotion snapshots too.
     const { confirmDraftPromotionSnapshots } = await import('./membership-promotions');
     await confirmDraftPromotionSnapshots(tx, gymId, id);

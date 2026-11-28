@@ -23,7 +23,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { CART_ITEM_STATUS, CartItemStatus, derivePurchaseStatus } from '../domain/purchaseStatus';
 import { CART_EXPIRES_AT_SQL, cartClockSql, purchaseCartExpiredSql } from '../domain/cartExpiry';
 import { currentRequestChannel, currentRequestLocale } from '../infra/requestChannel';
-import { canonicalPurchaseName } from '../domain/purchaseName';
+import { canonicalPurchaseName, contentsPurchaseName, type PurchaseContents } from '../domain/purchaseName';
 import { DEFAULT_GYM_LOCALIZATION } from '../domain/gymLocalization';
 
 type Conn = Pick<Tx, 'query'>;
@@ -122,6 +122,93 @@ export async function createPurchase(
   return Number(insertId);
 }
 
+/**
+ * #3553 — what a checkout pays for, by name: the Product Set's plans it does not carry over unchanged
+ * from the previous version and its recurring lines it adds, the one-time lines (`lineIds`, else every
+ * line of the cart), and what it cancels (a plan marked for cancellation, a Product line the cart ends
+ * earlier than the line it was copied from). A plan's included Products are its plan's, never counted.
+ */
+export async function loadPurchaseContents(
+  exec: Conn, gymId: string, opts: { productSetId?: number | null; purchaseId?: number | null; lineIds?: number[] },
+): Promise<PurchaseContents> {
+  const contents: PurchaseContents = { plans: [], products: [], cancelledPlans: [], cancelledProducts: [] };
+  const setId = opts.productSetId ?? null;
+  if (setId != null) {
+    const { rows: plans } = await exec.query<{ name: string; status: string; carried: number }>(
+      `SELECT COALESCE(mp.name, '') AS name, s.status,
+              EXISTS (SELECT 1 FROM product_sets cur JOIN product_set_plan_snapshots pj ON pj.product_set_id = cur.previous_product_set_id
+                       WHERE cur.id = j.product_set_id AND pj.plan_snapshot_id = s.id) AS carried
+         FROM product_set_plan_snapshots j
+         JOIN plan_snapshots s ON s.id = j.plan_snapshot_id
+         LEFT JOIN membership_plans mp ON mp.id = s.membership_plan_id
+        WHERE j.product_set_id = ? AND s.gym_id = ? AND j.entitlement_only = 0
+        ORDER BY j.id`, [setId, gymId]);
+    for (const p of plans) {
+      if (p.status === 'to_be_canceled' || p.status === 'to_be_canceled_immediately') contents.cancelledPlans.push(String(p.name));
+      else if (Number(p.carried) === 0) contents.plans.push(String(p.name));
+    }
+    const { rows: lines } = await exec.query<{ name: string; carried: number; cancelled: number }>(
+      `SELECT l.product_name AS name,
+              (l.copied_from_periodical_snapshot_id IS NOT NULL OR EXISTS (
+                 SELECT 1 FROM product_sets cur JOIN product_set_periodical_snapshots pl ON pl.product_set_id = cur.previous_product_set_id
+                  WHERE cur.id = j.product_set_id AND pl.product_periodical_snapshot_id = l.id)) AS carried,
+              (src.id IS NOT NULL AND l.ends_at IS NOT NULL AND (src.ends_at IS NULL OR src.ends_at > l.ends_at)) AS cancelled
+         FROM product_set_periodical_snapshots j
+         JOIN product_periodical_snapshots l ON l.id = j.product_periodical_snapshot_id
+         LEFT JOIN product_periodical_snapshots src ON src.id = l.copied_from_periodical_snapshot_id
+        WHERE j.product_set_id = ? AND l.gym_id = ?
+        ORDER BY j.id`, [setId, gymId]);
+    for (const l of lines) {
+      if (Number(l.cancelled) === 1) contents.cancelledProducts.push(String(l.name));
+      else if (Number(l.carried) === 0) contents.products.push(String(l.name));
+    }
+  }
+  const lineIds = opts.lineIds ?? [];
+  if (lineIds.length > 0 || opts.purchaseId != null) {
+    for (const table of LINE_TABLES) {
+      const where = lineIds.length > 0
+        ? `source_id IN (${lineIds.map(() => '?').join(', ')})` : 'purchase_id = ?';
+      const { rows } = await exec.query<{ name: string }>(
+        `SELECT product_name AS name FROM ${table} WHERE gym_id = ? AND ${where} ORDER BY source_id`,
+        [gymId, ...(lineIds.length > 0 ? lineIds : [opts.purchaseId])]);
+      for (const r of rows) contents.products.push(String(r.name));
+    }
+  }
+  return contents;
+}
+
+/** #3553: the contents name of a checkout, or null outside an Admin request or when it names nothing. */
+export async function plannedContentsName(
+  exec: Conn, gymId: string, opts: { productSetId?: number | null; purchaseId?: number | null; lineIds?: number[] },
+): Promise<string | null> {
+  if (currentRequestChannel() !== 'admin_app') return null;
+  const contents = await loadPurchaseContents(exec, gymId, opts);
+  const { rows } = await exec.query<{ name: string | null }>('SELECT name FROM gyms WHERE id = ?', [gymId]);
+  return contentsPurchaseName({ gymName: rows[0]?.name, locale: currentRequestLocale(), contents });
+}
+
+/**
+ * #3553 — an Admin Save & Pay names its cart after what it pays for, at the moment it leaves the cart:
+ * only while the purchase is still `in_cart` (so a retry, a later status change or an edit after
+ * payment never renames it), and before its checkout Billing Event copies the name (#3287).
+ */
+export async function nameCheckoutFromContents(
+  tx: Conn, gymId: string, purchaseId: number | null | undefined,
+  opts: { productSetId?: number | null; lineIds?: number[] } = {},
+): Promise<void> {
+  if (purchaseId == null) return;
+  const name = await plannedContentsName(tx, gymId, { ...opts, purchaseId: opts.lineIds?.length ? null : purchaseId });
+  if (name == null) return;
+  await tx.query(
+    "UPDATE purchases SET name = ? WHERE id = ? AND gym_id = ? AND status = 'in_cart'",
+    [name, purchaseId, gymId]);
+}
+
+/** #3553: `nameCheckoutFromContents()` for the cart the Product Set `productSetId` belongs to. */
+export async function nameSetCheckoutFromContents(tx: Conn, gymId: string, productSetId: number): Promise<void> {
+  await nameCheckoutFromContents(tx, gymId, await purchaseOfSet(tx, gymId, productSetId), { productSetId });
+}
+
 /** #3288: a purchase's stored canonical name (null for none). */
 export async function purchaseName(exec: Conn, gymId: string, purchaseId: number | null | undefined): Promise<string | null> {
   if (purchaseId == null) return null;
@@ -212,9 +299,13 @@ export async function planCheckoutPurchase(
   exec: Conn, gymId: string, lineIds: number[],
 ): Promise<{ name: string; planned?: PlannedPurchaseName }> {
   const { sole } = await cartsOfLines(exec, gymId, lineIds);
+  // #3553: an Admin checkout is named after the lines it pays for; the cart itself takes the name in
+  // the transaction (`nameCheckoutFromContents()`), a checkout split off it is created with it.
+  const contentsName = lineIds.length > 0 ? await plannedContentsName(exec, gymId, { lineIds }) : null;
   const existing = sole != null ? await purchaseName(exec, gymId, sole) : null;
-  if (existing != null) return { name: existing };
+  if (existing != null) return { name: contentsName ?? existing };
   const planned = await planPurchaseName(exec, gymId);
+  if (contentsName != null) planned.name = contentsName;
   return { name: planned.name, planned };
 }
 

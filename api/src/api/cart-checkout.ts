@@ -34,7 +34,7 @@
  * cart): a cart is paid at the price it shows, exactly as a cart Product Set's linked purchases are.
  */
 import { amountChangedBody, isStaleAmount } from '../domain/expectedCheckoutAmount';
-import { checkoutNameStillHolds, planCheckoutPurchase, splitOffCheckout, stampEventPurchase } from './purchases';
+import { checkoutNameStillHolds, nameCheckoutFromContents, planCheckoutPurchase, splitOffCheckout, stampEventPurchase } from './purchases';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -262,6 +262,8 @@ export async function startCartCheckout(input: {
 
       // #3251: the lines paid are one checkout; what stays in the cart keeps the cart.
       const checkoutId = await splitOffCheckout(tx, gymId, memberId, purchases.map((p) => p.id), input.actorName, checkoutPlan.planned);
+      // #3553: an Admin checkout that is the whole cart takes the name planned from its lines.
+      await nameCheckoutFromContents(tx, gymId, checkoutId, { lineIds: purchases.map((p) => p.id) });
       if (!(await checkoutNameStillHolds(tx, gymId, checkoutId, checkoutPlan.name))) {
         throw new CartCheckoutRefused(409, 'cart_changed', 'The cart changed; read it again');
       }

@@ -128,18 +128,19 @@ describe('a purchase name, generated once in canonical form (#3288)', () => {
     expect(pay.status).toBe(201);
     const after = await purchaseRow(cartId);
     expect(after.status).toBe('pending_payment');
-    expect(after.name).toBe(born.name);
+    // #3553: the Admin's Save & Pay names the purchase after what it pays for, once, as it leaves the cart.
+    expect(after.name).toBe('Purchase Name Gym - 2 products · 0 plans');
 
     // The checkout's initial Billing Event (once 'Initial Engagement') and the provider payment.
     const events = await eventOfPurchase(cartId);
     expect(events).toHaveLength(1);
-    expect(events[0].name).toBe(born.name);
-    expect(await descriptionOfEvent(events[0].id)).toBe(born.name);
+    expect(events[0].name).toBe(after.name);
+    expect(await descriptionOfEvent(events[0].id)).toBe(after.name);
 
     // A renamed gym or new settings never rewrite a stored name.
     await db.query("UPDATE gyms SET name = 'Renamed Gym', date_format = 'YYYY-MM-DD' WHERE id = ?", [gymId]);
     try {
-      expect((await purchaseRow(cartId)).name).toBe(born.name);
+      expect((await purchaseRow(cartId)).name).toBe(after.name);
     } finally {
       await db.query("UPDATE gyms SET name = 'Purchase Name Gym', date_format = 'DD/MM/YYYY' WHERE id = ?", [gymId]);
     }
@@ -183,6 +184,82 @@ describe('a purchase name, generated once in canonical form (#3288)', () => {
     expect(rows[0].purchase_name).toBe(await expectedName(rows[0].purchase_id, 'es'));
     expect(rows[0].name).toBe(rows[0].purchase_name);
     expect(await descriptionOfEvent(rows[0].id)).toBe(rows[0].purchase_name);
+  });
+});
+
+describe('an Admin Save & Pay purchase is named after what it pays for (#3553)', () => {
+  const productName = async (id: number) =>
+    String((await db.query<any>('SELECT name FROM products WHERE id = ?', [id])).rows[0].name);
+  const planName = async (id: number) =>
+    String((await db.query<any>('SELECT name FROM membership_plans WHERE id = ?', [id])).rows[0].name);
+  const setOfAssignment = async (assignmentId: number) => Number((await db.query<any>(
+    `SELECT id FROM product_sets WHERE ${productSetOfLegacyAssignmentSql('?', 'product_sets')} ORDER BY id DESC LIMIT 1`,
+    [assignmentId])).rows[0].id);
+
+  it('one standalone recurring Product: Gym - Product, kept verbatim through a payment retry', async () => {
+    const m = await member();
+    const productId = await product('25.00', 'month');
+    const add = await staff('post', `/members/${m.id}/product-purchases`).send({ product_id: productId });
+    expect(add.status).toBe(201);
+    const setId = Number(add.body.product_set_id);
+    const cartId = await cartOfSet(setId);
+    expect((await staff('post', `/product-sets/${setId}/save-and-pay`).send({})).status).toBe(201);
+    const expected = `Purchase Name Gym - ${await productName(productId)}`;
+    expect((await purchaseRow(cartId)).name).toBe(expected);
+
+    // A second Save & Pay of the version awaiting payment is a retry: same name, same description.
+    expect((await staff('post', `/product-sets/${setId}/save-and-pay`).send({})).status).toBe(201);
+    expect((await purchaseRow(cartId)).name).toBe(expected);
+    const events = await eventOfPurchase(cartId);
+    expect(events).toHaveLength(1);
+    expect(events[0].name).toBe(expected);
+    expect(await descriptionOfEvent(events[0].id)).toBe(expected);
+  });
+
+  it('one Membership Plan: Gym - Plan; cancelling it later: Gym - Plan (Cancellation)', async () => {
+    const m = await member();
+    const planId = await plan(30);
+    const assign = await staff('post', `/membership-plans/${planId}/assign`)
+      .send({ starts_at: new Date().toISOString().slice(0, 10), owner_member_id: m.id, beneficiary_member_ids: [m.id] });
+    expect(assign.status).toBe(201);
+    const setId = await setOfAssignment(assign.body.id);
+    const cartId = await cartOfSet(setId);
+    const pay = await staff('post', `/product-sets/${setId}/pay`).send({ method: 'cash' });
+    expect(pay.status).toBeLessThan(300);
+    const named = `Purchase Name Gym - ${await planName(planId)}`;
+    expect((await purchaseRow(cartId)).name).toBe(named);
+    const [event] = await eventOfPurchase(cartId);
+    expect(event.name).toBe(named);
+
+    // The cancellation is a cart of its own, committed with nothing to pay.
+    const mark = await staff('post', `/user-memberships/${assign.body.id}/mark-cancel`).send({});
+    expect(mark.status).toBeLessThan(300);
+    const { rows } = await db.query<any>(
+      "SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'in_cart' ORDER BY id DESC LIMIT 1", [gymId, m.id]);
+    const draftId = Number(rows[0].id);
+    const cancelCart = await cartOfSet(draftId);
+    const commit = await staff('post', `/product-sets/${draftId}/activate`).send({});
+    expect(commit.status).toBe(200);
+    expect((await purchaseRow(cancelCart)).name).toBe(`${named} (Cancellation)`);
+    // The first purchase keeps its name.
+    expect((await purchaseRow(cartId)).name).toBe(named);
+  });
+
+  it('a standalone one-time cart paid from the Admin: Gym - Product, on its event and payment', async () => {
+    const m = await member();
+    const productId = await product('11.00', 'once');
+    const add = await staff('post', `/members/${m.id}/product-purchases`).send({ product_id: productId, draft: true });
+    expect(add.status).toBe(201);
+    const checkout = await staff('post', `/members/${m.id}/product-purchases/checkout`).send({});
+    expect(checkout.status).toBe(201);
+    const expected = `Purchase Name Gym - ${await productName(productId)}`;
+    const { rows } = await db.query<any>(
+      `SELECT be.id, be.name, p.name AS purchase_name FROM billing_events be JOIN purchases p ON p.id = be.purchase_id
+        WHERE be.member_id = ? AND be.event_type = 'product_purchase'`, [m.id]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].purchase_name).toBe(expected);
+    expect(rows[0].name).toBe(expected);
+    expect(await descriptionOfEvent(rows[0].id)).toBe(expected);
   });
 });
 
